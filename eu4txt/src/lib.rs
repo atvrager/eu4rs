@@ -73,11 +73,14 @@ pub trait EU4Txt {
                             ));
                         }
                         tok if tok.starts_with('"') => {
-                            tokens.push(EU4TxtToken::StringValue(
-                                iter::once(tok)
-                                    .chain(from_fn(|| tok_iter.by_ref().next_if(|t| t.ends_with('"'))))
-                                    .collect::<Vec<&str>>().join(" ")
-                            ));
+                            let mut string_parts = vec![tok];
+                            while let Some(next_tok) = tok_iter.next() {
+                                string_parts.push(next_tok);
+                                if next_tok.ends_with('"') {
+                                    break;
+                                }
+                            }
+                            tokens.push(EU4TxtToken::StringValue(string_parts.join(" ")));
                         }
                         tok if tok.parse::<i32>().is_ok() => {
                             tokens.push(EU4TxtToken::IntValue(tok.parse::<i32>().unwrap()));
@@ -231,7 +234,7 @@ pub trait EU4Txt {
     }
 
 }
-struct DefaultEU4Txt {}
+pub struct DefaultEU4Txt {}
 impl EU4Txt for DefaultEU4Txt {}
 
 
