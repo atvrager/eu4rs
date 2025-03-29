@@ -173,6 +173,63 @@ pub trait EU4Txt {
         })
     }
 
+    fn pretty_print(ast: &EU4TxtParseNode, depth: usize) -> Result<(), String> {
+        match &ast.entry {
+            EU4TxtAstItem::AssignmentList => {
+                if depth > 0 {
+                    println!("{{");
+                }
+                for child in &ast.children {
+                    match &child.entry {
+                        EU4TxtAstItem::Assignment => {
+                            Self::pretty_print(child, depth + 1)?;
+                        }
+                        _ => {
+                            return Err("Unknown type for printing!".to_string())
+                        }
+                    }
+                }
+                if depth > 0 {
+                    for _ in 0..depth {
+                        print!("  ");
+                    }
+                    println!("}}");
+                }
+            }
+            EU4TxtAstItem::Assignment => {
+                let id = ast.children.get(0).ok_or("missing id")?;
+                for _ in 0..depth {
+                    print!("  ");
+                }
+                match &id.entry {
+                    EU4TxtAstItem::Identifier(id) => {
+                        print!("{}", id);
+                    }
+                    _ => {
+                        return Err("LHS not an identifier".to_string());
+                    }
+                }
+                print!(" = ");
+                let val = ast.children.get(1).ok_or("missing val")?;
+                Self::pretty_print(val, depth)?;
+            }
+            EU4TxtAstItem::IntValue(i) => {
+                println!("{}", i);
+            }
+            EU4TxtAstItem::FloatValue(f) => {
+                println!("{}", f);
+            }
+            EU4TxtAstItem::Identifier(id) => {
+                println!("{}", id);
+            }
+            _ => {
+                println!("Unknown -> {:?}", ast.entry);
+                return Err("Unknown type for printing!".to_string())
+            }
+        }
+        Ok(())
+    }
+
 }
 struct DefaultEU4Txt {}
 impl EU4Txt for DefaultEU4Txt {}
@@ -183,8 +240,8 @@ mod tests {
     use super::*;
 
     const PATH: &str = 
-        "c:\\users\\atv\\Documents\\src\\eu4rs\\eu4txt\\src\\test.txt";
-        // "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Europa Universalis IV\\common\\defender_of_faith\\00_defender_of_faith.txt";
+        // "c:\\users\\atv\\Documents\\src\\eu4rs\\eu4txt\\src\\test.txt";
+        "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Europa Universalis IV\\common\\defender_of_faith\\00_defender_of_faith.txt";
 
     #[test]
     fn nonexistent() {
@@ -203,7 +260,15 @@ mod tests {
         let r = DefaultEU4Txt::open_txt(PATH);
         assert!(r.is_ok());
         let r2 = DefaultEU4Txt::parse(r.unwrap());
-        println!("{:?}", r2);
         assert!(r2.is_ok());
+    }
+
+    #[test]
+    fn pretty_print() {
+        let r = DefaultEU4Txt::open_txt(PATH);
+        assert!(r.is_ok());
+        let r2 = DefaultEU4Txt::parse(r.unwrap());
+        assert!(r2.is_ok());
+        assert!(DefaultEU4Txt::pretty_print(&r2.unwrap(), 0).is_ok());
     }
 }
