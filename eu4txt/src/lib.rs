@@ -62,7 +62,17 @@ pub trait EU4Txt {
                 let mut tok_iter = line.split_ascii_whitespace().peekable();
                 while let Some(tok) = tok_iter.next() {
                     match tok {
+                        // TODO: make the tokenizer a bit smarter, to remove vvv
+                        // Found in common/achievements.txt
+                        "={" => {
+                            tokens.push(EU4TxtToken::Equals);
+                            tokens.push(EU4TxtToken::LeftBrace);
+                        }
                         "=" => tokens.push(EU4TxtToken::Equals),
+                        tok if tok.ends_with('=') => {
+                            tokens.push(EU4TxtToken::Identifier(tok.trim_end_matches('=').to_string()));
+                            tokens.push(EU4TxtToken::Equals);
+                        }
                         "{" => tokens.push(EU4TxtToken::LeftBrace),
                         "}" => tokens.push(EU4TxtToken::RightBrace),
                         tok if tok.starts_with('#') => {
@@ -74,10 +84,12 @@ pub trait EU4Txt {
                         }
                         tok if tok.starts_with('"') => {
                             let mut string_parts = vec![tok];
-                            while let Some(next_tok) = tok_iter.next() {
-                                string_parts.push(next_tok);
-                                if next_tok.ends_with('"') {
-                                    break;
+                            if !tok.ends_with('"') {
+                                while let Some(next_tok) = tok_iter.next() {
+                                    string_parts.push(next_tok);
+                                    if next_tok.ends_with('"') {
+                                        break;
+                                    }
                                 }
                             }
                             tokens.push(EU4TxtToken::StringValue(string_parts.join(" ")));
@@ -86,7 +98,17 @@ pub trait EU4Txt {
                             tokens.push(EU4TxtToken::IntValue(tok.parse::<i32>().unwrap()));
                         }
                         tok if tok.parse::<f32>().is_ok() => {
-                            tokens.push(EU4TxtToken::FloatValue(tok.parse::<f32>().unwrap()));
+                            if tok.parse::<f32>().unwrap().is_nan() {
+                                // countries/LanNa.txt
+                                if tok == "Nan" {
+                                    tokens.push(EU4TxtToken::StringValue("Nan".to_string()));
+                                }
+                                else {
+                                    tokens.push(EU4TxtToken::FloatValue(std::f32::NAN));
+                                }
+                            } else {
+                                tokens.push(EU4TxtToken::FloatValue(tok.parse::<f32>().unwrap()));
+                            }
                         }
                         _ => {
                             tokens.push(EU4TxtToken::Identifier(tok.to_string()));
@@ -118,8 +140,13 @@ pub trait EU4Txt {
                 float.entry = EU4TxtAstItem::FloatValue(*f);
                 Ok((float, pos + 1))
             }
+            EU4TxtToken::StringValue(s) => {
+                let mut string = EU4TxtParseNode::new();
+                string.entry = EU4TxtAstItem::StringValue(s.to_string());
+                Ok((string, pos + 1))
+            }
             _ => {
-                Err(format!("Unimplemented {:?}", tok))
+                Err(format!("Unimplemented {:?} @ {}", tok, pos))
             }
         }
     }
@@ -129,7 +156,10 @@ pub trait EU4Txt {
         assignment_list.entry = EU4TxtAstItem::AssignmentList;
         let mut loop_pos = pos;
         loop {
-            let lhs_tok = tokens.get(loop_pos).ok_or("no lhs tok".to_string())?;
+            if loop_pos == tokens.len() {
+                break;
+            }
+            let lhs_tok = tokens.get(loop_pos).ok_or(format!("no lhs tok @ {}", loop_pos))?;
             match lhs_tok {
                 EU4TxtToken::RightBrace => {
                     loop_pos += 1;
@@ -140,39 +170,74 @@ pub trait EU4Txt {
             let (node_lhs, eq_pos) = Self::parse_terminal(tokens, loop_pos)?;
             // TODO: what if LHS is }?
             // TODO: assert lhs is identifier
-            let _eq = tokens.get(eq_pos).ok_or("not eq".to_string())?;
-            // TODO: assert eq is '='
-            let rhs_tok = tokens.get(eq_pos + 1).ok_or("no rhs tok".to_string())?;
-            let node_rhs: EU4TxtParseNode;
-            let next_pos: usize;
-            match rhs_tok {
-                EU4TxtToken::LeftBrace => {
-                    // return Err("left brace".to_string());
-                    (node_rhs, next_pos) = Self::parse_assignment_list(tokens, eq_pos + 2)?;
+            let eq = tokens.get(eq_pos);
+            match eq {
+                None => {
+                    assignment_list.children.push(node_lhs);
+                    loop_pos += 1;
+                    continue;
+                }
+                Some(_) => {}
+            };
+            match eq.unwrap() {
+                EU4TxtToken::Equals => {
+                    let rhs_tok = tokens.get(eq_pos + 1).ok_or("no rhs tok".to_string())?;
+                    let node_rhs: EU4TxtParseNode;
+                    let next_pos: usize;
+                    match rhs_tok {
+                        EU4TxtToken::LeftBrace => {
+                            (node_rhs, next_pos) = Self::parse_assignment_list(tokens, eq_pos + 2)?;
+                        }
+                        _ => {
+                            (node_rhs, next_pos) = Self::parse_terminal(tokens, eq_pos + 1)?;
+                        }
+                    }
+                    // TODO: assert rhs is list OR terminal
+                    let mut assignment = EU4TxtParseNode::new();
+                    assignment.entry = EU4TxtAstItem::Assignment;
+                    assignment.children.push(node_lhs);
+                    assignment.children.push(node_rhs);
+                    assignment_list.children.push(assignment);
+                    loop_pos = next_pos;
+                }
+                EU4TxtToken::Identifier(id) => {
+                    let mut unary = EU4TxtParseNode::new();
+                    unary.entry = EU4TxtAstItem::Identifier(id.to_string());
+                    assignment_list.children.push(unary);
+                    loop_pos += 1;
+                }
+                EU4TxtToken::IntValue(i) => {
+                    let mut unary = EU4TxtParseNode::new();
+                    unary.entry = EU4TxtAstItem::IntValue(*i);
+                    assignment_list.children.push(unary);
+                    loop_pos += 1;
+                }
+                EU4TxtToken::StringValue(s) => {
+                    let mut unary = EU4TxtParseNode::new();
+                    unary.entry = EU4TxtAstItem::StringValue(s.to_string());
+                    assignment_list.children.push(unary);
+                    loop_pos += 1;
+                }
+                EU4TxtToken::RightBrace => {
+                    loop_pos += 1;
                 }
                 _ => {
-                    (node_rhs, next_pos) = Self::parse_terminal(tokens, eq_pos + 1)?;
+                    return Err(format!("Unhandled {:?} in list @ {}", eq, eq_pos));
                 }
-            }
-            // TODO: assert rhs is list OR terminal
-            let mut assignment = EU4TxtParseNode::new();
-            assignment.entry = EU4TxtAstItem::Assignment;
-            assignment.children.push(node_lhs);
-            assignment.children.push(node_rhs);
-            assignment_list.children.push(assignment);
-            loop_pos = next_pos;
-            if next_pos == tokens.len() {
-                break;
             }
         }
         Ok((assignment_list, loop_pos))
     }
 
     fn parse(tokens: Vec<EU4TxtToken>) -> Result<EU4TxtParseNode, String> {
+        // TODO: define an error type enum, that way this can be an error we can discriminate
+        if tokens.len() == 0 {
+            return Err("NoTokens".to_string());
+        }
         Self::parse_assignment_list(&tokens, 0).and_then(|(n, i)| if i == tokens.len() {
             Ok(n)
         } else {
-            Err(format!("Parsing failed! {} != {}", i, tokens.len()))
+            Err(format!("Parsing failed! {} != {} tok ({:?})", i, tokens.len(), tokens.get(i).unwrap()))
         })
     }
 
