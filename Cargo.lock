@@ -787,6 +787,7 @@ dependencies = [
 name = "eu4rs"
 version = "0.1.0"
 dependencies = [
+ "ab_glyph",
  "clap",
  "env_logger",
  "eu4data",

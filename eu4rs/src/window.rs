@@ -4,7 +4,147 @@ use winit::{
     window::WindowBuilder,
 };
 // use wgpu::util::DeviceExt; // Unused for now
-use image::GenericImageView;
+use eu4data::history::ProvinceHistory;
+use image::{GenericImageView, RgbImage};
+use std::collections::HashMap;
+
+pub struct WorldData {
+    pub province_map: RgbImage,
+    pub color_to_id: HashMap<(u8, u8, u8), u32>,
+    pub province_history: HashMap<u32, ProvinceHistory>,
+}
+
+impl WorldData {
+    pub fn get_province_id(&self, x: u32, y: u32) -> Option<u32> {
+        if x >= self.province_map.width() || y >= self.province_map.height() {
+            return None;
+        }
+        let pixel = self.province_map.get_pixel(x, y);
+        let rgb = (pixel[0], pixel[1], pixel[2]);
+        self.color_to_id.get(&rgb).copied()
+    }
+
+    pub fn get_province_tooltip(&self, id: u32) -> String {
+        if let Some(hist) = self.province_history.get(&id) {
+            let owner = hist.owner.as_deref().unwrap_or("---");
+            let goods = hist.trade_goods.as_deref().unwrap_or("---");
+            format!("Province ID: {}\nOwner: {}\nGoods: {}", id, owner, goods)
+        } else {
+            format!("Province ID: {}\n(No History)", id)
+        }
+    }
+}
+
+use crate::text::TextRenderer;
+
+pub struct InspectorState<'a> {
+    pub window: &'a winit::window::Window,
+    pub surface: wgpu::Surface<'a>,
+    pub config: wgpu::SurfaceConfiguration,
+    pub renderer: Eu4Renderer,
+}
+
+impl<'a> InspectorState<'a> {
+    pub fn new(
+        window: &'a winit::window::Window,
+        instance: &wgpu::Instance,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        format: wgpu::TextureFormat, // from adapter/main
+    ) -> Self {
+        // Window already created externally
+
+        let surface = instance.create_surface(window).unwrap();
+
+        // We reuse the device/queue from main, but we need to configure surface.
+        // We assume the same adapter/format capabilities roughly or just use standard.
+        // Ideally we should check caps.
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format, // Assume compatible or query?
+            width: 400,
+            height: 300,
+            present_mode: wgpu::PresentMode::Fifo,
+            alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            view_formats: vec![],
+            desired_maximum_frame_latency: 2,
+        };
+
+        surface.configure(device, &config);
+
+        let renderer = Eu4Renderer::new(device, queue, format, false);
+
+        Self {
+            window,
+            surface,
+            config,
+            renderer,
+        }
+    }
+
+    pub fn resize(&mut self, device: &wgpu::Device, new_size: winit::dpi::PhysicalSize<u32>) {
+        if new_size.width > 0 && new_size.height > 0 {
+            self.config.width = new_size.width;
+            self.config.height = new_size.height;
+            self.surface.configure(device, &self.config);
+        }
+    }
+
+    pub fn render(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Result<(), wgpu::SurfaceError> {
+        let output = self.surface.get_current_texture()?;
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Inspector Encoder"),
+        });
+
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Inspector Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+
+            render_pass.set_pipeline(&self.renderer.render_pipeline);
+            render_pass.set_bind_group(0, &self.renderer.diffuse_bind_group, &[]);
+            render_pass.draw(0..3, 0..1);
+        }
+
+        queue.submit(std::iter::once(encoder.finish()));
+        output.present();
+        Ok(())
+    }
+
+    pub fn update_texture(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        img: &image::DynamicImage,
+    ) {
+        if let Ok(texture) = Texture::from_image(device, queue, img, Some("Inspector Texture")) {
+            // Recreate bind group!
+            // Eu4Renderer has diffuse_texture and diffuse_bind_group.
+            // We need to update them.
+            // Eu4Renderer fields are public? Yes.
+            self.renderer.update_texture(device, texture);
+        }
+    }
+}
 
 pub struct Texture {
     #[allow(dead_code)]
@@ -95,6 +235,25 @@ pub struct Eu4Renderer {
 }
 
 impl Eu4Renderer {
+    pub fn update_texture(&mut self, device: &wgpu::Device, texture: Texture) {
+        self.diffuse_texture = texture;
+        let layout = self.render_pipeline.get_bind_group_layout(0);
+        self.diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&self.diffuse_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.diffuse_texture.sampler),
+                },
+            ],
+            label: Some("diffuse_bind_group_updated"),
+        });
+    }
+
     /// Creates a new renderer.
     ///
     /// This function:
@@ -260,11 +419,20 @@ struct State<'a> {
     size: winit::dpi::PhysicalSize<u32>,
     window: &'a winit::window::Window,
     renderer: Eu4Renderer,
+    cursor_pos: Option<winit::dpi::PhysicalPosition<f64>>,
+    world_data: WorldData,
+    text_renderer: TextRenderer,
+    inspector: InspectorState<'a>,
 }
 
 impl<'a> State<'a> {
     // Creating some of the wgpu types requires async code
-    async fn new(window: &'a winit::window::Window, verbose: bool) -> State<'a> {
+    async fn new(
+        window: &'a winit::window::Window,
+        inspector_window: &'a winit::window::Window,
+        verbose: bool,
+        world_data: WorldData,
+    ) -> State<'a> {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -319,12 +487,11 @@ impl<'a> State<'a> {
         // We need dimensions data to resize...
         // Eu4Renderer has diffuse_texture.
         let renderer = Eu4Renderer::new(&device, &queue, config.format, verbose);
-        let tex_size = renderer.diffuse_texture.texture.size();
-        let (width, height) = (tex_size.width, tex_size.height);
 
-        // Cap width at 1280 (720p standard) or screen width (heuristic)
-        let target_width = if width > 1280 { 1280 } else { width };
-        let target_height = (target_width as f64 * (height as f64 / width as f64)) as u32;
+        let target_width = 1280;
+        let tex_size = renderer.diffuse_texture.texture.size();
+        let target_height =
+            (target_width as f64 * (tex_size.height as f64 / tex_size.width as f64)) as u32;
 
         if verbose {
             use std::io::Write;
@@ -337,6 +504,15 @@ impl<'a> State<'a> {
         let _ =
             window.request_inner_size(winit::dpi::PhysicalSize::new(target_width, target_height));
 
+        // Load font
+        let font_path = std::path::Path::new("assets/Roboto-Regular.ttf");
+        let font_data = std::fs::read(font_path).expect("Failed to load assets/Roboto-Regular.ttf");
+        let text_renderer = TextRenderer::new(font_data);
+
+        // Init inspector
+        let inspector =
+            InspectorState::new(inspector_window, &instance, &device, &queue, config.format);
+
         Self {
             window,
             surface,
@@ -345,6 +521,10 @@ impl<'a> State<'a> {
             config,
             size,
             renderer,
+            cursor_pos: None,
+            world_data,
+            text_renderer,
+            inspector,
         }
     }
 
@@ -361,13 +541,58 @@ impl<'a> State<'a> {
         }
     }
 
-    fn input(&mut self, _event: &WindowEvent) -> bool {
-        false
+    fn input(&mut self, event: &WindowEvent) -> bool {
+        match event {
+            WindowEvent::CursorMoved { position, .. } => {
+                self.cursor_pos = Some(*position);
+                false
+            }
+            WindowEvent::MouseInput {
+                state: winit::event::ElementState::Pressed,
+                button: winit::event::MouseButton::Left,
+                ..
+            } => {
+                if let Some(pos) = self.cursor_pos {
+                    // Map pos to texture coordinates
+                    let win_w = self.size.width as f64;
+                    let win_h = self.size.height as f64;
+                    let (tex_w, tex_h) = self.world_data.province_map.dimensions();
+
+                    // Simple stretch mapping
+                    let u = pos.x / win_w;
+                    let v = pos.y / win_h;
+
+                    let x = (u * tex_w as f64) as u32;
+                    let y = (v * tex_h as f64) as u32;
+
+                    if x < tex_w && y < tex_h {
+                        let text = if let Some(id) = self.world_data.get_province_id(x, y) {
+                            self.world_data.get_province_tooltip(id)
+                        } else {
+                            "Unknown Province".to_string()
+                        };
+
+                        let img = self.text_renderer.render(&text, 400, 300);
+                        let dynamic_img = image::DynamicImage::ImageRgba8(img);
+
+                        self.inspector
+                            .update_texture(&self.device, &self.queue, &dynamic_img);
+                        self.inspector.window.set_visible(true);
+                        self.inspector.window.request_redraw();
+
+                        return true; // Input handled
+                    }
+                }
+                false
+            }
+            _ => false,
+        }
     }
 
     fn update(&mut self) {}
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        // Main render loop
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -416,7 +641,7 @@ impl<'a> State<'a> {
 ///
 /// Initializes `winit` event loop, opens a window, creates the `State` (which wraps `Eu4Renderer`),
 /// and starts the render loop.
-pub async fn run(verbose: bool) {
+pub async fn run(verbose: bool, world_data: WorldData) {
     env_logger::init();
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new()
@@ -424,15 +649,22 @@ pub async fn run(verbose: bool) {
         .build(&event_loop)
         .unwrap();
 
-    let mut state = State::new(&window, verbose).await;
+    let inspector_window = WindowBuilder::new()
+        .with_title("Inspector")
+        .with_inner_size(winit::dpi::PhysicalSize::new(400, 300))
+        .with_visible(false) // Start hidden
+        .build(&event_loop)
+        .unwrap();
+
+    let mut state = State::new(&window, &inspector_window, verbose, world_data).await;
 
     event_loop
-        .run(move |event, elwt| {
-            match event {
-                Event::WindowEvent {
-                    ref event,
-                    window_id,
-                } if window_id == state.window().id() => {
+        .run(move |event, elwt| match event {
+            Event::WindowEvent {
+                ref event,
+                window_id,
+            } => {
+                if window_id == state.window().id() {
                     if !state.input(event) {
                         match event {
                             WindowEvent::CloseRequested => elwt.exit(),
@@ -441,24 +673,35 @@ pub async fn run(verbose: bool) {
                                 state.update();
                                 match state.render() {
                                     Ok(_) => {}
-                                    // Reconfigure the surface if lost
                                     Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
-                                    // The system is out of memory, we should probably quit
                                     Err(wgpu::SurfaceError::OutOfMemory) => elwt.exit(),
-                                    // All other errors (Outdated, Timeout) should be resolved by the next frame
                                     Err(e) => eprintln!("{:?}", e),
                                 }
                             }
                             _ => {}
                         }
                     }
+                } else if window_id == state.inspector.window.id() {
+                    match event {
+                        WindowEvent::CloseRequested => {
+                            state.inspector.window.set_visible(false);
+                        }
+                        WindowEvent::Resized(physical_size) => {
+                            state.inspector.resize(&state.device, *physical_size);
+                        }
+                        WindowEvent::RedrawRequested => {
+                            if let Err(e) = state.inspector.render(&state.device, &state.queue) {
+                                eprintln!("Inspector render error: {:?}", e);
+                            }
+                        }
+                        _ => {}
+                    }
                 }
-                Event::AboutToWait => {
-                    // RedrawRequested will only trigger once unless we manually request it.
-                    state.window().request_redraw();
-                }
-                _ => {}
             }
+            Event::AboutToWait => {
+                state.window().request_redraw();
+            }
+            _ => {}
         })
         .unwrap();
 }
@@ -472,7 +715,7 @@ pub async fn run(verbose: bool) {
 /// 4. Reading back the texture data and saving it as a PNG.
 ///
 /// Returns immediately if no GPU adapter is found (CI waiver).
-pub async fn snapshot(output_path: &std::path::Path) {
+pub async fn snapshot(output_path: &std::path::Path) -> Result<(), String> {
     // We need to re-init logger if it hasn't been initialized?
     // Actually env_logger::init() panics if called twice.
     // Let's assume it might be called.
@@ -495,8 +738,8 @@ pub async fn snapshot(output_path: &std::path::Path) {
 
     // Graceful degradation for CI
     if adapter.is_none() {
-        eprintln!("No suitable graphics adapter found. Skipping snapshot test (CI waiver).");
-        std::process::exit(0);
+        // Return a specific error string that callers can check against
+        return Err("No suitable graphics adapter found (CI waiver)".to_string());
     }
     let adapter = adapter.unwrap();
 
@@ -618,4 +861,104 @@ pub async fn snapshot(output_path: &std::path::Path) {
 
     drop(data);
     output_buffer.unmap();
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testing;
+    use crate::text::TextRenderer;
+    use eu4data::history::ProvinceHistory;
+    use image::RgbImage;
+    use std::collections::HashMap;
+    use std::path::Path;
+
+    #[test]
+    fn test_province_inspector() {
+        // 1. Setup Mock WorldData
+        let mut color_to_id = HashMap::new();
+        color_to_id.insert((255, 0, 0), 1); // Red -> ID 1
+
+        // Create 2x2 map
+        let mut province_map = RgbImage::new(2, 2);
+        province_map.put_pixel(0, 0, image::Rgb([255, 0, 0])); // (0,0) is ID 1
+        province_map.put_pixel(1, 1, image::Rgb([0, 255, 0])); // (1,1) is Unknown
+
+        let mut province_history = HashMap::new();
+        province_history.insert(
+            1,
+            ProvinceHistory {
+                // id: 1, // ID is the key, not in the value struct
+                owner: Some("SWE".to_string()),
+                trade_goods: Some("grain".to_string()),
+                base_tax: Some(0.0),
+                base_production: Some(0.0),
+                base_manpower: Some(0.0),
+                // events: vec![], // Not in struct
+            },
+        );
+
+        let world_data = WorldData {
+            province_map,
+            color_to_id,
+            province_history,
+        };
+
+        // 2. Verify Data Retrieval
+        let id = world_data.get_province_id(0, 0).expect("Should find ID 1");
+        assert_eq!(id, 1);
+
+        let tooltip = world_data.get_province_tooltip(id);
+        assert!(tooltip.contains("SWE"));
+        assert!(tooltip.contains("grain"));
+
+        // 3. Render Inspector Image
+        // Load font (borrowed from assets)
+        let font_path = Path::new("../assets/Roboto-Regular.ttf");
+        let font_path = if font_path.exists() {
+            font_path
+        } else {
+            Path::new("assets/Roboto-Regular.ttf")
+        };
+
+        if !font_path.exists() {
+            eprintln!("Skipping inspector test, font not found at {:?}", font_path);
+            return;
+        }
+
+        let font_data = std::fs::read(font_path).unwrap();
+        let renderer = TextRenderer::new(font_data);
+
+        // Use a consistent text for snapshot
+        let img = renderer.render(&tooltip, 400, 300);
+
+        // 4. Assert Snapshot
+        testing::assert_snapshot(&img, "inspector_province_1");
+    }
+
+    #[test]
+    fn test_map_snapshot() {
+        // This test runs the full headless map render
+
+        let output_path = std::env::temp_dir().join("test_map_snapshot.png");
+
+        // Block on the async snapshot function
+        match pollster::block_on(crate::window::snapshot(&output_path)) {
+            Ok(_) => {
+                // Load the result and assert
+                let img = image::open(&output_path)
+                    .expect("Failed to load map snapshot output")
+                    .to_rgba8();
+                testing::assert_snapshot(&img, "full_map_render");
+            }
+            Err(e) => {
+                if e.contains("CI waiver") {
+                    println!("Skipping test_map_snapshot: {}", e);
+                    return;
+                }
+                panic!("Snapshot generation failed: {}", e);
+            }
+        }
+    }
 }

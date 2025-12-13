@@ -37,6 +37,9 @@ enum MapMode {
     All,
 }
 
+#[cfg(test)]
+mod testing;
+mod text;
 mod window;
 
 #[derive(Subcommand)]
@@ -269,6 +272,34 @@ fn pretty_print_dir(dir: &std::path::Path, pretty_print: bool) -> Result<ScanSta
     }
     Ok(stats)
 }
+// Helper to load world data for interactive mode
+fn load_world_data(base_path: &Path) -> Result<window::WorldData, String> {
+    println!("Loading world data...");
+
+    // 1. Definitions
+    let def_path = base_path.join("map/definition.csv");
+    let definitions = load_definitions(&def_path).map_err(|e| e.to_string())?;
+    let mut color_to_id = HashMap::new();
+    for (id, def) in &definitions {
+        color_to_id.insert((def.r, def.g, def.b), *id);
+    }
+
+    // 2. History
+    let (province_history, _) =
+        eu4data::history::load_province_history(base_path).map_err(|e| e.to_string())?;
+
+    // 3. Map Image
+    let map_path = base_path.join("map/provinces.bmp");
+    println!("Loading map image from {:?}", map_path);
+    let province_map = image::open(map_path).map_err(|e| e.to_string())?.to_rgb8();
+
+    Ok(window::WorldData {
+        province_map,
+        color_to_id,
+        province_history,
+    })
+}
+
 fn main() -> Result<(), String> {
     let args = Cli::parse();
 
@@ -303,12 +334,14 @@ fn main() -> Result<(), String> {
                 return Ok(());
             }
             Commands::DrawWindow { verbose } => {
-                pollster::block_on(window::run(*verbose));
+                let base = args.eu4_path.parent().unwrap();
+                let world_data = load_world_data(base)?;
+                pollster::block_on(window::run(*verbose, world_data));
                 return Ok(());
             }
             Commands::Snapshot { output } => {
                 let path = std::path::Path::new(output);
-                pollster::block_on(window::snapshot(path));
+                pollster::block_on(window::snapshot(path))?;
                 return Ok(());
             }
             Commands::Lookup { key } => {
@@ -366,7 +399,9 @@ fn main() -> Result<(), String> {
         }
     } else {
         // Default to Source Port GUI
-        pollster::block_on(window::run(true));
+        let base = args.eu4_path.parent().unwrap();
+        let world_data = load_world_data(base)?;
+        pollster::block_on(window::run(true, world_data));
     }
 
     Ok(())
