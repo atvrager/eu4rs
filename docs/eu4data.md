@@ -1,0 +1,25 @@
+# eu4data (Library)
+
+`eu4data` is a library responsible for defining the domain model of Europa Universalis IV and providing the logic to load this data from game files.
+
+## Scope
+
+This library targets the *data definition* aspect of the game. It does not handle rendering or game simulation logic directly, but rather provides the "Static Data" that the game engine needs.
+
+## Data Models
+
+The library defines Rust structs that map to game data scopes.
+
+### Examples
+
+-   **`Province`**: Represents a single province (ID, tax, manpower, trade good, terrain).
+-   **`Country`**: Represents a tag (e.g., FRA, ENG) with its color, ideas, and history.
+-   **`TradeGood`**: Definitions of trade goods (Grain, Iron, etc.).
+-   **`TechGroup`**: Technology groups (Western, Ottoman, etc.).
+
+## Mocking and Testing
+
+To ensure robust testing without requiring a full game installation, `eu4data` includes capabilities to load data from mock strings or "virtual implementation" files.
+
+> [!NOTE]
+> Currently, the library focuses on parsing `definition.csv` for map data and basic country tag loading.
