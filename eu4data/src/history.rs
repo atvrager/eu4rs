@@ -14,3 +14,63 @@ pub struct ProvinceHistory {
     /// The base manpower value of the province.
     pub base_manpower: Option<f32>,
 }
+
+use eu4txt::DefaultEU4Txt;
+use eu4txt::EU4Txt;
+use eu4txt::from_node;
+use rayon::prelude::*;
+use std::collections::HashMap;
+use std::path::Path;
+use std::sync::Mutex;
+
+/// Loads all province history files from the `history/provinces` directory.
+/// Returns a map of Province ID -> ProvinceHistory.
+pub type HistoryLoadResult = (HashMap<u32, ProvinceHistory>, (usize, usize));
+
+pub fn load_province_history(
+    base_path: &Path,
+) -> Result<HistoryLoadResult, std::io::Error> {
+    let history_path = base_path.join("history/provinces");
+
+    if !history_path.is_dir() {
+        return Ok((HashMap::new(), (0, 0)));
+    }
+
+    // Collect entries first to bridge to rayon (read_dir is not Send)
+    let entries: Vec<_> = std::fs::read_dir(history_path)?
+        .filter_map(|e| e.ok())
+        .collect();
+
+    let results = Mutex::new((HashMap::new(), (0, 0)));
+
+    entries.par_iter().for_each(|entry| {
+        let path = entry.path();
+        if path.extension().is_none_or(|ext| ext != "txt") {
+            return;
+        }
+
+        // Helper closure for the "happy path" to allow early exit on failure
+        let try_load = || -> Option<(u32, ProvinceHistory)> {
+            let stem = path.file_stem()?.to_str()?;
+            let id_part = stem.split_whitespace().next()?;
+            let id = id_part.parse::<u32>().ok()?;
+
+            let tokens = DefaultEU4Txt::open_txt(path.to_str()?).ok()?;
+            let ast = DefaultEU4Txt::parse(tokens).ok()?;
+            let hist = from_node::<ProvinceHistory>(&ast).ok()?;
+
+            Some((id, hist))
+        };
+
+        if let Some((id, hist)) = try_load() {
+            let mut lock = results.lock().unwrap();
+            lock.0.insert(id, hist);
+            lock.1.0 += 1;
+        } else {
+            let mut lock = results.lock().unwrap();
+            lock.1.1 += 1;
+        }
+    });
+
+    Ok(results.into_inner().unwrap())
+}

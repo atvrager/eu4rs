@@ -5,6 +5,7 @@ use std::path::Path;
 
 // use encoding_rs::WINDOWS_1252;
 use encoding_rs_io::DecodeReaderBytesBuilder;
+use rayon::prelude::*;
 
 /// content of a localisation file is typically:
 /// l_english:
@@ -65,23 +66,36 @@ impl Localisation {
         let header_suffix = format!("_{}:", language).to_lowercase();
         // We will check if "l" + header_suffix matches "l_english:" or "L_ENGLISH:" (lowercased)
 
-        for entry in std::fs::read_dir(dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.extension().is_some_and(|e| e == "yml") {
-                count += self.load_file(&path, &header_suffix)?;
+        // Create a thread-safe collection of results
+        let paths: Vec<_> = std::fs::read_dir(dir)?
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|e| e == "yml"))
+            .collect();
+
+        // Process files in parallel
+        let results: Vec<Vec<(String, String)>> = paths
+            .par_iter()
+            .map(|path| Self::parse_file(path, &header_suffix))
+            .collect::<std::io::Result<Vec<_>>>()?;
+
+        for entries in results {
+            for (key, value) in entries {
+                self.map.insert(key, value);
+                count += 1;
             }
         }
         Ok(count)
     }
 
-    fn load_file(&mut self, path: &Path, header_suffix: &str) -> std::io::Result<usize> {
+    /// Parses a single localisation file and returns key-value pairs.
+    fn parse_file(path: &Path, header_suffix: &str) -> std::io::Result<Vec<(String, String)>> {
         let file = File::open(path)?;
         // Use default encoding (UTF-8) with BOM sniffing.
         // Localisation files are typically UTF-8 BOM.
         let reader = BufReader::new(DecodeReaderBytesBuilder::new().build(file));
 
-        let mut count = 0;
+        let mut entries = Vec::new();
         let mut correct_language = false;
 
         for (i, line) in reader.lines().enumerate() {
@@ -102,7 +116,7 @@ impl Localisation {
                     correct_language = true;
                 } else {
                     // Wrong language, skip
-                    return Ok(0);
+                    return Ok(Vec::new());
                 }
                 continue;
             }
@@ -110,7 +124,7 @@ impl Localisation {
             // If we haven't seen the language tag yet...
             if !correct_language {
                 if i > 5 {
-                    return Ok(0);
+                    return Ok(Vec::new());
                 }
                 continue;
             }
@@ -124,12 +138,11 @@ impl Localisation {
                     && let Some(end_quote) = val_part[start_quote + 1..].rfind('"')
                 {
                     let value = &val_part[start_quote + 1..start_quote + 1 + end_quote];
-                    self.map.insert(key, value.to_string());
-                    count += 1;
+                    entries.push((key, value.to_string()));
                 }
             }
         }
-        Ok(count)
+        Ok(entries)
     }
 
     /// Scans the directory for available languages by checking `l_<language>:` headers.
@@ -188,7 +201,10 @@ l_english:
         write!(file, "{}", content).expect("write temp");
 
         let mut loc = Localisation::new();
-        loc.load_file(file.path(), "_english:").expect("load");
+        let entries = Localisation::parse_file(file.path(), "_english:").expect("load");
+        for (k, v) in entries {
+            loc.insert(k, v);
+        }
 
         assert_eq!(loc.get("KEY"), Some(&"Value".to_string()));
         assert_eq!(loc.get("KEY_TWO"), Some(&"Value Two".to_string()));

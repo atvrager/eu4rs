@@ -10,9 +10,11 @@ pub struct Country {
 }
 
 use eu4txt::{DefaultEU4Txt, EU4Txt, EU4TxtAstItem};
+use rayon::prelude::*;
 use std::collections::HashMap;
 use std::error::Error;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 pub type TagMap = HashMap<String, PathBuf>;
 
@@ -67,36 +69,31 @@ use eu4txt::from_node;
 /// Loads all country definitions based on the provided TagMap.
 /// Returns a map of Tag -> Country.
 pub fn load_country_map(base_path: &Path, tags: &TagMap) -> HashMap<String, Country> {
-    let mut countries = HashMap::new();
+    let results = Mutex::new(HashMap::new());
 
     // We are going to be tolerant here. If a country fails to load, we just skip it.
     // In a real game engine, we might want to log this.
 
-    for (tag, rel_path) in tags {
+    tags.par_iter().for_each(|(tag, rel_path)| {
         let full_path = base_path.join("common").join(rel_path);
-        // Note: rel_path from country_tags usually starts with "countries/", so join("common").join(...) is correct because
-        // country_tags entries are relative to "common". E.g. "countries/Sweden.txt".
 
         if !full_path.exists() {
-            continue;
+            return;
         }
 
-        let tokens = match DefaultEU4Txt::open_txt(full_path.to_str().unwrap()) {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
+        // Try to load the country, using a block to easily bail out on any error
+        let maybe_country = (|| {
+            let tokens = DefaultEU4Txt::open_txt(full_path.to_str()?).ok()?;
+            let ast = DefaultEU4Txt::parse(tokens).ok()?;
+            from_node::<Country>(&ast).ok()
+        })();
 
-        let ast = match DefaultEU4Txt::parse(tokens) {
-            Ok(a) => a,
-            Err(_) => continue,
-        };
-
-        if let Ok(country) = from_node::<Country>(&ast) {
-            countries.insert(tag.clone(), country);
+        if let Some(country) = maybe_country {
+            results.lock().unwrap().insert(tag.clone(), country);
         }
-    }
+    });
 
-    countries
+    results.into_inner().unwrap()
 }
 
 #[cfg(test)]

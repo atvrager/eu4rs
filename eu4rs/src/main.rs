@@ -1,7 +1,6 @@
 use clap::{Parser, Subcommand};
 use eu4data::{
     Tradegood,
-    history::ProvinceHistory,
     map::{DefaultMap, load_definitions},
 };
 use eu4txt::{DefaultEU4Txt, EU4Txt, from_node};
@@ -148,61 +147,10 @@ fn draw_map(base_path: &Path, output_path: &Path, mode: MapMode) -> Result<(), S
     }
 
     // 3. Load Province History (ID -> Data)
-    let history_path = base_path.join("history/provinces");
-    println!("Loading history from {:?}", history_path);
-    let mut province_history: HashMap<u32, ProvinceHistory> = HashMap::new();
-    let mut stats_history = (0, 0); // (ok, err)
+    println!("Loading history...");
+    let (province_history, stats_history) =
+        eu4data::history::load_province_history(base_path).map_err(|e| e.to_string())?;
 
-    if history_path.is_dir() {
-        for entry in std::fs::read_dir(history_path).unwrap() {
-            let entry = entry.unwrap();
-            let path = entry.path();
-            if path.extension().is_some_and(|ext| ext == "txt") {
-                // Parse ID from filename "123 - Name.txt"
-                let stem = path.file_stem().unwrap().to_str().unwrap();
-                let id_part = stem.split_whitespace().next().unwrap();
-                if let Ok(id) = id_part.parse::<u32>() {
-                    // Parse file content
-                    let tokens = match DefaultEU4Txt::open_txt(path.to_str().unwrap()) {
-                        Ok(t) => t,
-                        Err(e) => {
-                            // Open failed (IO error)
-                            stats_history.1 += 1;
-                            if stats_history.1 <= 5 {
-                                println!("Failed to open {}: {}", path.display(), e);
-                            }
-                            continue;
-                        }
-                    };
-
-                    match DefaultEU4Txt::parse(tokens) {
-                        Ok(ast) => match from_node::<ProvinceHistory>(&ast) {
-                            Ok(hist) => {
-                                stats_history.0 += 1;
-                                province_history.insert(id, hist);
-                            }
-                            Err(e) => {
-                                stats_history.1 += 1;
-                                if stats_history.1 <= 5 {
-                                    println!("Failed to deserialize {}: {}", path.display(), e);
-                                }
-                            }
-                        },
-                        Err(e) => {
-                            if e == "NoTokens" {
-                                // Empty file, safe to ignore (no history data).
-                            } else {
-                                stats_history.1 += 1;
-                                if stats_history.1 <= 5 {
-                                    println!("Failed to parse {}: {}", path.display(), e);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
     println!(
         "History Stats: Success={}, Failure={}",
         stats_history.0, stats_history.1
