@@ -12,6 +12,9 @@ use std::vec::Vec;
 use encoding_rs::WINDOWS_1252;
 use encoding_rs_io::DecodeReaderBytesBuilder;
 
+pub mod de;
+pub use de::from_node;
+
 
 
 /// Represents a token scanned from an EU4 text file.

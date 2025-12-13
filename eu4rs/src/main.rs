@@ -1,6 +1,8 @@
-use eu4txt::{DefaultEU4Txt, EU4Txt};
+use eu4txt::{DefaultEU4Txt, EU4Txt, from_node};
 use std::path::PathBuf;
-use clap::Parser;
+use clap::{Parser, Subcommand};
+use std::collections::HashMap;
+use eu4data::Tradegood;
 
 const PATH: &str =
     "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Europa Universalis IV\\common";
@@ -15,6 +17,30 @@ struct Cli {
     /// Pretty print parsed files
     #[arg(long)]
     pretty_print: bool,
+
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Dump tradegoods.txt to JSON
+    DumpTradegoods,
+}
+
+fn dump_tradegoods(base_path: &std::path::Path) -> Result<(), String> {
+    let path = base_path.join("tradegoods/00_tradegoods.txt");
+    println!("Loading {:?}", path);
+    let tokens = DefaultEU4Txt::open_txt(path.to_str().unwrap()).map_err(|e| e.to_string())?;
+    let ast = DefaultEU4Txt::parse(tokens)?;
+    
+    // The AST root is an AssignmentList (Top Level)
+    // We want to deserialize it into a HashMap<String, Tradegood>
+    let goods: HashMap<String, Tradegood> = from_node(&ast)?;
+    
+    println!("{}", serde_json::to_string_pretty(&goods).map_err(|e| e.to_string())?);
+    
+    Ok(())
 }
 
 struct ScanStats {
@@ -74,6 +100,16 @@ fn pretty_print_dir(dir: &std::path::Path, pretty_print: bool) -> Result<ScanSta
 }
 fn main() -> Result<(), String> {
     let args = Cli::parse();
+
+    if let Some(cmd) = &args.command {
+        match cmd {
+            Commands::DumpTradegoods => {
+                dump_tradegoods(&args.eu4_path)?;
+                return Ok(());
+            }
+        }
+    }
+
     match pretty_print_dir(&args.eu4_path, args.pretty_print) {
         Ok(stats) => {
             println!("Done! Success: {}, Failure: {}", stats.success, stats.failure);

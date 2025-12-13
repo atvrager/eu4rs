@@ -7,6 +7,7 @@ A Rust toolset for parsing and analyzing Europa Universalis IV text files.
 This project is organized as a Cargo Workspace containing:
 
 - **`eu4rs`**: The main command-line application that scans and processes EU4 files.
+- **`eu4data`**: A library containing strong types and logic for EU4 game objects.
 - **`eu4txt`**: A library (`crate`) providing a custom parser/tokenizer for the EU4 text format (Windows-1252 encoded).
 
 ## Installation
@@ -43,6 +44,7 @@ cargo run -p eu4rs -- --pretty-print --eu4-path "path/to/specific/file.txt"
 - **Encoding Support**: Automatically handles `WINDOWS_1252` encoding common in Paradox files.
 - **Tolerant Parsing**: Designed to handle quirks in game files (mostly).
 - **Statistics**: detailed verification stats including token and AST node counts to verify deep parsing.
+- **Serde Support**: `eu4txt` implements `serde::Deserializer`, allowing direct mapping of game files to Rust structs (in `eu4data`).
 
 ## License
 
