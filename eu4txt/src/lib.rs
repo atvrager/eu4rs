@@ -248,7 +248,6 @@ pub trait EU4Txt {
                             (node_rhs, next_pos) = Self::parse_terminal(tokens, eq_pos + 1)?;
                         }
                     }
-                    // TODO: assert rhs is list OR terminal
                     let mut assignment = EU4TxtParseNode::new();
                     assignment.entry = EU4TxtAstItem::Assignment;
                     assignment.children.push(node_lhs);
@@ -256,35 +255,13 @@ pub trait EU4Txt {
                     assignment_list.children.push(assignment);
                     loop_pos = next_pos;
                 }
-                EU4TxtToken::Identifier(id) => {
-                    let mut unary = EU4TxtParseNode::new();
-                    unary.entry = EU4TxtAstItem::Identifier(id.to_string());
-                    assignment_list.children.push(unary);
-                    loop_pos += 1;
-                }
-                EU4TxtToken::IntValue(i) => {
-                    let mut unary = EU4TxtParseNode::new();
-                    unary.entry = EU4TxtAstItem::IntValue(*i);
-                    assignment_list.children.push(unary);
-                    loop_pos += 1;
-                }
-                EU4TxtToken::FloatValue(f) => {
-                    let mut unary = EU4TxtParseNode::new();
-                    unary.entry = EU4TxtAstItem::FloatValue(*f);
-                    assignment_list.children.push(unary);
-                    loop_pos += 1;
-                }
-                EU4TxtToken::StringValue(s) => {
-                    let mut unary = EU4TxtParseNode::new();
-                    unary.entry = EU4TxtAstItem::StringValue(s.to_string());
-                    assignment_list.children.push(unary);
-                    loop_pos += 1;
-                }
-                EU4TxtToken::RightBrace => {
-                    loop_pos += 1;
-                }
                 _ => {
-                    return Err(format!("Unhandled {:?} in list @ {}", eq, eq_pos));
+                    // Not an assignment (key=val).
+                    // It is a value in a list (val val val).
+                    // node_lhs is the value.
+                    // We consume it (loop_pos moves to eq_pos).
+                    assignment_list.children.push(node_lhs);
+                    loop_pos = eq_pos;
                 }
             }
         }
