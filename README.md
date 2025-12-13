@@ -42,6 +42,7 @@ cargo run -p eu4rs -- --pretty-print --eu4-path "path/to/specific/file.txt"
 - **Custom Parser**: Handles EU4's specific text format, including comments (`#`), whitespace-separated tokens, and `key=value` structures.
 - **Encoding Support**: Automatically handles `WINDOWS_1252` encoding common in Paradox files.
 - **Tolerant Parsing**: Designed to handle quirks in game files (mostly).
+- **Statistics**: detailed verification stats including token and AST node counts to verify deep parsing.
 
 ## License
 

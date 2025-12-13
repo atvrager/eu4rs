@@ -6,7 +6,6 @@
 
 use std::path::PathBuf;
 use std::fs::File;
-use std::iter::{self, from_fn};
 use std::io::{BufReader, Read};
 use std::vec::Vec;
 
@@ -16,7 +15,7 @@ use encoding_rs_io::DecodeReaderBytesBuilder;
 
 
 /// Represents a token scanned from an EU4 text file.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum EU4TxtToken {
     /// An alphanumeric identifier (keys, values).
     Identifier(String),
@@ -71,6 +70,11 @@ impl EU4TxtParseNode {
             entry: EU4TxtAstItem::Brace,
         }
     }
+
+    /// Counts the total number of nodes in this subtree (inclusive).
+    pub fn node_count(&self) -> usize {
+        1 + self.children.iter().map(|c| c.node_count()).sum::<usize>()
+    }
 }
 
 pub trait EU4Txt {
@@ -83,71 +87,91 @@ pub trait EU4Txt {
                             .build(file));
         let mut contents = String::new();
         buf_reader.read_to_string(&mut contents)?;
-        let (tokens, _comments): (Vec<EU4TxtToken>, Vec<EU4TxtToken>) = {
-            let mut tokens: Vec<EU4TxtToken> = Vec::new();
-            let mut comments: Vec<EU4TxtToken> = Vec::new();
-            let mut line_iter = contents.lines().peekable();
-            while let Some(line) = line_iter.next() {
-                let mut tok_iter = line.split_ascii_whitespace().peekable();
-                while let Some(tok) = tok_iter.next() {
-                    match tok {
-                        // TODO: make the tokenizer a bit smarter, to remove vvv
-                        // Found in common/achievements.txt
-                        "={" => {
-                            tokens.push(EU4TxtToken::Equals);
-                            tokens.push(EU4TxtToken::LeftBrace);
+
+        let mut tokens: Vec<EU4TxtToken> = Vec::new();
+        let mut chars = contents.chars().peekable();
+
+        while let Some(&c) = chars.peek() {
+            match c {
+                c if c.is_whitespace() => {
+                    chars.next();
+                }
+                '#' => {
+                    // Comment
+                    let mut comment = String::new();
+                    chars.next(); // consume #
+                    while let Some(&nc) = chars.peek() {
+                        if nc == '\n' || nc == '\r' {
+                            break;
                         }
-                        "=" => tokens.push(EU4TxtToken::Equals),
-                        tok if tok.ends_with('=') => {
-                            tokens.push(EU4TxtToken::Identifier(tok.trim_end_matches('=').to_string()));
-                            tokens.push(EU4TxtToken::Equals);
+                        comment.push(chars.next().unwrap());
+                    }
+                    // tokens.push(EU4TxtToken::Comment(comment)); // checking logic generally ignores comments, we can skip them or store them
+                }
+                '{' => {
+                    tokens.push(EU4TxtToken::LeftBrace);
+                    chars.next();
+                }
+                '}' => {
+                    tokens.push(EU4TxtToken::RightBrace);
+                    chars.next();
+                }
+                '=' => {
+                    tokens.push(EU4TxtToken::Equals);
+                    chars.next();
+                }
+                '"' => {
+                    // String
+                    chars.next(); // consume "
+                    let mut s = String::new();
+                    while let Some(&nc) = chars.peek() {
+                        if nc == '"' {
+                            chars.next(); // consume closing "
+                            break;
                         }
-                        "{" => tokens.push(EU4TxtToken::LeftBrace),
-                        "}" => tokens.push(EU4TxtToken::RightBrace),
-                        tok if tok.starts_with('#') => {
-                            comments.push(EU4TxtToken::Comment(
-                                iter::once(tok)
-                                    .chain(from_fn(|| tok_iter.by_ref().next()))
-                                    .collect::<Vec<&str>>().join(" ")
-                            ));
+                        // Handle escaped quotes if necessary? EU4 usually just "text"
+                        // But let's just consume
+                        s.push(chars.next().unwrap());
+                    }
+                    tokens.push(EU4TxtToken::StringValue(s));
+                }
+                _ => {
+                    // Identifier or Number
+                    let mut s = String::new();
+                    while let Some(&nc) = chars.peek() {
+                        if nc.is_whitespace() || nc == '=' || nc == '{' || nc == '}' || nc == '#' || nc == '"' {
+                            break;
                         }
-                        tok if tok.starts_with('"') => {
-                            let mut string_parts = vec![tok];
-                            if !tok.ends_with('"') {
-                                while let Some(next_tok) = tok_iter.next() {
-                                    string_parts.push(next_tok);
-                                    if next_tok.ends_with('"') {
-                                        break;
-                                    }
+                        s.push(chars.next().unwrap());
+                    }
+                    
+                    if let Ok(i) = s.parse::<i32>() {
+                        tokens.push(EU4TxtToken::IntValue(i));
+                    } else if let Ok(f) = s.parse::<f32>() {
+                        if f.is_nan() {
+                             if s == "nan" || s == "NaN" { // case insensitive check might be safer but s is exact
+                                // It could be a string "Nan", treating as float NaN for now if it parses, but "Nan" is parsed as NaN by rust?
+                                // "Nan".parse::<f32>() is Ok(NaN).
+                                // But some files have "Nan" as a country tag or name.
+                                // If it looks like a number...
+                                // logic from old parser:
+                                if s == "Nan" {
+                                    tokens.push(EU4TxtToken::StringValue(s));
+                                } else {
+                                     tokens.push(EU4TxtToken::FloatValue(f));
                                 }
-                            }
-                            tokens.push(EU4TxtToken::StringValue(string_parts.join(" ")));
+                             } else {
+                                 tokens.push(EU4TxtToken::FloatValue(f));
+                             }
+                        } else {
+                            tokens.push(EU4TxtToken::FloatValue(f));
                         }
-                        tok if tok.parse::<i32>().is_ok() => {
-                            tokens.push(EU4TxtToken::IntValue(tok.parse::<i32>().unwrap()));
-                        }
-                        tok if tok.parse::<f32>().is_ok() => {
-                            if tok.parse::<f32>().unwrap().is_nan() {
-                                // countries/LanNa.txt
-                                if tok == "Nan" {
-                                    tokens.push(EU4TxtToken::StringValue("Nan".to_string()));
-                                }
-                                else {
-                                    tokens.push(EU4TxtToken::FloatValue(std::f32::NAN));
-                                }
-                            } else {
-                                tokens.push(EU4TxtToken::FloatValue(tok.parse::<f32>().unwrap()));
-                            }
-                        }
-                        _ => {
-                            tokens.push(EU4TxtToken::Identifier(tok.to_string()));
-                        }
+                    } else {
+                        tokens.push(EU4TxtToken::Identifier(s));
                     }
                 }
             }
-            (tokens, comments)
-        };
-        // tokens.iter().for_each(|f| println!("{:?}", f));
+        }
         Ok(tokens)
     }
 
@@ -238,6 +262,12 @@ pub trait EU4Txt {
                 EU4TxtToken::IntValue(i) => {
                     let mut unary = EU4TxtParseNode::new();
                     unary.entry = EU4TxtAstItem::IntValue(*i);
+                    assignment_list.children.push(unary);
+                    loop_pos += 1;
+                }
+                EU4TxtToken::FloatValue(f) => {
+                    let mut unary = EU4TxtParseNode::new();
+                    unary.entry = EU4TxtAstItem::FloatValue(*f);
                     assignment_list.children.push(unary);
                     loop_pos += 1;
                 }
