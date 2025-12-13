@@ -318,10 +318,7 @@ pub trait EU4Txt {
             EU4TxtAstItem::Brace => {
                 // Do nothing or print?
             }
-            _ => {
-                println!("Unknown -> {:?}", ast.entry);
-                return Err(format!("Unknown type for printing: {:?}", ast.entry));
-            }
+
         }
         Ok(())
     }
