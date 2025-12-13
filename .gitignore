@@ -1,4 +1,3 @@
 target/
 *.profraw
-map_out.png
-water_test.png
+map_*.png

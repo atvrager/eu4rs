@@ -23,14 +23,23 @@ struct Cli {
     command: Option<Commands>,
 }
 
+#[derive(Clone, Copy, Debug, clap::ValueEnum, PartialEq)]
+enum MapMode {
+    TradeGoods,
+    Political,
+    All,
+}
+
 #[derive(Subcommand)]
 enum Commands {
     /// Dump tradegoods.txt to JSON
     DumpTradegoods,
-    /// Render Trade Goods Map
+    /// Render Map
     DrawMap {
         #[arg(long, default_value = "map_out.png")]
         output: PathBuf,
+        #[arg(long, value_enum, default_value_t = MapMode::TradeGoods)]
+        mode: MapMode,
     },
 }
 
@@ -45,7 +54,7 @@ fn dump_tradegoods(base_path: &std::path::Path) -> Result<(), String> {
     Ok(())
 }
 
-fn draw_map(base_path: &Path, output_path: &Path) -> Result<(), String> {
+fn draw_map(base_path: &Path, output_path: &Path, mode: MapMode) -> Result<(), String> {
     // 1. Load Definitions (ID -> Color, Color -> ID)
     let def_path = base_path.join("map/definition.csv");
     println!("Loading definitions from {:?}", def_path);
@@ -56,7 +65,7 @@ fn draw_map(base_path: &Path, output_path: &Path) -> Result<(), String> {
     for (id, def) in &definitions {
         color_to_id.insert((def.r, def.g, def.b), *id);
     }
-    
+
     // 1b. Load Default Map (Sea/Lakes)
     let default_map_path = base_path.join("map/default.map");
     println!("Loading default map from {:?}", default_map_path);
@@ -69,17 +78,32 @@ fn draw_map(base_path: &Path, output_path: &Path) -> Result<(), String> {
     for id in default_map.lakes { water_ids.insert(id); }
     println!("Loaded {} water provinces (sea+lakes).", water_ids.len());
 
-    // 2. Load Trade Goods (Name -> Color)
-    let goods_path = base_path.join("common/tradegoods/00_tradegoods.txt");
-    println!("Loading trade goods from {:?}", goods_path);
-    let tokens = DefaultEU4Txt::open_txt(goods_path.to_str().unwrap()).map_err(|e| e.to_string())?;
-    let ast = DefaultEU4Txt::parse(tokens)?;
-    let goods: HashMap<String, Tradegood> = from_node(&ast)?;
+    // 2. Load Data based on Mode
+    let mut goods: HashMap<String, Tradegood> = HashMap::new();
+    let mut countries: HashMap<String, eu4data::countries::Country> = HashMap::new();
+
+    match mode {
+        MapMode::TradeGoods => {
+            let goods_path = base_path.join("common/tradegoods/00_tradegoods.txt");
+            println!("Loading trade goods from {:?}", goods_path);
+            let tokens = DefaultEU4Txt::open_txt(goods_path.to_str().unwrap()).map_err(|e| e.to_string())?;
+            let ast = DefaultEU4Txt::parse(tokens)?;
+            goods = from_node(&ast)?;
+        }
+        MapMode::Political => {
+            println!("Loading country tags...");
+            let tags = eu4data::countries::load_tags(base_path).map_err(|e| e.to_string())?;
+            println!("Loading {} country definitions...", tags.len());
+            countries = eu4data::countries::load_country_map(base_path, &tags);
+            println!("Loaded {} countries.", countries.len());
+        }
+        MapMode::All => unreachable!("MapMode::All should be handled by caller"),
+    }
     
-    // 3. Load Province History (ID -> Trade Good)
+    // 3. Load Province History (ID -> Data)
     let history_path = base_path.join("history/provinces");
     println!("Loading history from {:?}", history_path);
-    let mut province_goods: HashMap<u32, String> = HashMap::new();
+    let mut province_history: HashMap<u32, ProvinceHistory> = HashMap::new();
     let mut stats_history = (0, 0); // (ok, err)
 
     if history_path.is_dir() {
@@ -95,9 +119,10 @@ fn draw_map(base_path: &Path, output_path: &Path) -> Result<(), String> {
                      let tokens = match DefaultEU4Txt::open_txt(path.to_str().unwrap()) {
                          Ok(t) => t,
                          Err(e) => {
-                             stats_history.1 += 1;
-                             if stats_history.1 <= 5 { println!("Failed to open {}: {}", path.display(), e); }
-                             continue;
+                            // Open failed (IO error)
+                            stats_history.1 += 1;
+                            if stats_history.1 <= 5 { println!("Failed to open {}: {}", path.display(), e); }
+                            continue;
                          }
                      };
                      
@@ -106,9 +131,7 @@ fn draw_map(base_path: &Path, output_path: &Path) -> Result<(), String> {
                              match from_node::<ProvinceHistory>(&ast) {
                                  Ok(hist) => {
                                      stats_history.0 += 1;
-                                     if let Some(good) = hist.trade_goods {
-                                         province_goods.insert(id, good);
-                                     }
+                                     province_history.insert(id, hist);
                                  },
                                  Err(e) => {
                                      stats_history.1 += 1;
@@ -119,7 +142,6 @@ fn draw_map(base_path: &Path, output_path: &Path) -> Result<(), String> {
                          Err(e) => {
                              if e == "NoTokens" {
                                  // Empty file, safe to ignore (no history data).
-                                 // Do not increment failure count, maybe just a distinct counter or ignore.
                              } else {
                                  stats_history.1 += 1;
                                  if stats_history.1 <= 5 { println!("Failed to parse {}: {}", path.display(), e); }
@@ -131,39 +153,50 @@ fn draw_map(base_path: &Path, output_path: &Path) -> Result<(), String> {
         }
     }
     println!("History Stats: Success={}, Failure={}", stats_history.0, stats_history.1);
-    println!("Loaded {} definitions.", definitions.len());
-    println!("Loaded {} province trade goods.", province_goods.len());
     
-    // 4. Load Map Image
+    // 4. Render
     let map_path = base_path.join("map/provinces.bmp");
     println!("Loading map image from {:?}", map_path);
     let img = image::open(map_path).map_err(|e| e.to_string())?.to_rgb8();
     let (width, height) = img.dimensions();
     let mut out_img = RgbImage::new(width, height);
     
-    // 5. Render
     println!("Rendering...");
     for (x, y, pixel) in img.enumerate_pixels() {
         let (r, g, b) = (pixel[0], pixel[1], pixel[2]);
         if let Some(id) = color_to_id.get(&(r, g, b)) {
-            // Find trade good
-            let mut out_color = Rgb([100, 100, 100]); // Default Grey (No Goods / Wasteland)
+            let mut out_color = Rgb([100, 100, 100]); // Default Grey
             
             if water_ids.contains(id) {
-                out_color = Rgb([64, 164, 223]); // Nice Blue
-            } else if let Some(good_name) = province_goods.get(id) {
-                if let Some(good) = goods.get(good_name) {
-                    if good.color.len() >= 3 {
-                         let fr = (good.color[0] * 255.0) as u8;
-                         let fg = (good.color[1] * 255.0) as u8;
-                         let fb = (good.color[2] * 255.0) as u8;
-                         out_color = Rgb([fr, fg, fb]);
+                out_color = Rgb([64, 164, 223]); // Water Blue
+            } else if let Some(hist) = province_history.get(id) {
+                match mode {
+                    MapMode::TradeGoods => {
+                        if let Some(good_name) = &hist.trade_goods {
+                            if let Some(good) = goods.get(good_name) {
+                                if good.color.len() >= 3 {
+                                     let fr = (good.color[0] * 255.0) as u8;
+                                     let fg = (good.color[1] * 255.0) as u8;
+                                     let fb = (good.color[2] * 255.0) as u8;
+                                     out_color = Rgb([fr, fg, fb]);
+                                }
+                            }
+                        }
                     }
+                    MapMode::Political => {
+                        if let Some(owner) = &hist.owner {
+                            if let Some(country) = countries.get(owner) {
+                                if country.color.len() >= 3 {
+                                    out_color = Rgb([country.color[0], country.color[1], country.color[2]]);
+                                }
+                            }
+                        }
+                    }
+                    MapMode::All => unreachable!(),
                 }
             }
             out_img.put_pixel(x, y, out_color);
         } else {
-             // Unknown Color on map?
              out_img.put_pixel(x, y, Rgb([0, 0, 0]));
         }
     }
@@ -238,15 +271,28 @@ fn main() -> Result<(), String> {
                 dump_tradegoods(&args.eu4_path)?;
                 return Ok(());
             }
-            Commands::DrawMap { output } => {
-                let base = args.eu4_path.parent().unwrap(); // Arg is usually .../common. We need root.
-                // Wait, constant PATH is `.../common`.
-                // If user uses default, we need `../`.
-                // Let's assume user passes 'common'. path.parent() should be 'EU4'.
-                // If the user passes root, then we need to be careful.
-                // Current default is `.../common`.
-                // `draw_map` expects `base` to be the root folder (containing `common`, `map`, `history`).
-                draw_map(base, output)?;
+            Commands::DrawMap { output, mode } => {
+                let base = args.eu4_path.parent().unwrap(); 
+                match mode {
+                    MapMode::All => {
+                         // Render Political
+                         println!("=== Rendering Political Map ===");
+                         draw_map(base, &PathBuf::from("map_political.png"), MapMode::Political)?;
+                         
+                         // Render Trade Goods
+                         println!("\n=== Rendering Trade Goods Map ===");
+                         draw_map(base, &PathBuf::from("map_tradegoods.png"), MapMode::TradeGoods)?;
+                    }
+                    _ => {
+                        // User specified a single mode.
+                        // If output is default "map_out.png", maybe we should try to be smarter? 
+                        // But sticking to what they asked: "get tradegoods in its own uniquely named file".
+                        // If they run specifically `TradeGoods` without output arg, it goes to `map_out.png`.
+                        // Let's rely on `All` for the specific naming, OR we can override default if it wasn't touched.
+                        // But checking if arg was passed is hard with Clap structure here.
+                        draw_map(base, output, *mode)?;
+                    }
+                }
                 return Ok(());
             }
         }
