@@ -6,12 +6,18 @@ use std::path::Path;
 /// A mapping between a Province ID and its color on the map bitmap.
 #[derive(Debug, Deserialize)]
 pub struct ProvinceDefinition {
+    /// The unique Province ID.
     pub id: u32,
+    /// Red component of the province color (0-255).
     pub r: u8,
+    /// Green component of the province color (0-255).
     pub g: u8,
+    /// Blue component of the province color (0-255).
     pub b: u8,
+    /// The name of the province.
     pub name: String,
-    pub x: String, // unused but present in csv
+    /// Unused field (often 'x' in definition.csv).
+    pub x: String,
 }
 
 /// Loads province definitions from a CSV file.
@@ -53,4 +59,46 @@ pub struct DefaultMap {
     /// List of province IDs that are lakes.
     #[serde(default)]
     pub lakes: Vec<u32>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn test_load_definitions() {
+        let data = "1;10;10;10;Stockholm;x\n2;20;20;20;Paris;x";
+        let mut file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+        write!(file, "{}", data).expect("Failed to write to temp file");
+        let path = file.path();
+
+        let defs = load_definitions(path).expect("Failed to load definitions");
+        assert_eq!(defs.len(), 2);
+
+        let stockholm = defs.get(&1).unwrap();
+        assert_eq!(stockholm.name, "Stockholm");
+        assert_eq!(stockholm.r, 10);
+
+        let paris = defs.get(&2).unwrap();
+        assert_eq!(paris.name, "Paris");
+        assert_eq!(paris.b, 20);
+    }
+
+    #[test]
+    fn test_load_definitions_broken() {
+        // Test resilience against empty lines or bad rows
+        let data = "1;10;10;10;Stockholm;x\n;;;;;\n3;30;30;30;Berlin;x";
+        let mut file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+        write!(file, "{}", data).expect("Failed to write to temp file");
+        let path = file.path();
+
+        // depending on CSV parser strictness, this might fail or skip.
+        // flexible(true) should handle some, but deserializing empty strings to integer might fail.
+        // Our current logic 'continue's on error.
+        let defs = load_definitions(path).unwrap();
+        // Should have 1 and 3. Line 2 fails deserialize.
+        assert!(defs.contains_key(&1));
+        assert!(defs.contains_key(&3));
+    }
 }
