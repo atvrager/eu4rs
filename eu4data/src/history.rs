@@ -27,9 +27,7 @@ use std::sync::Mutex;
 /// Returns a map of Province ID -> ProvinceHistory.
 pub type HistoryLoadResult = (HashMap<u32, ProvinceHistory>, (usize, usize));
 
-pub fn load_province_history(
-    base_path: &Path,
-) -> Result<HistoryLoadResult, std::io::Error> {
+pub fn load_province_history(base_path: &Path) -> Result<HistoryLoadResult, std::io::Error> {
     let history_path = base_path.join("history/provinces");
 
     if !history_path.is_dir() {
@@ -52,10 +50,27 @@ pub fn load_province_history(
         // Helper closure for the "happy path" to allow early exit on failure
         let try_load = || -> Option<(u32, ProvinceHistory)> {
             let stem = path.file_stem()?.to_str()?;
-            let id_part = stem.split_whitespace().next()?;
+
+            // Robustly parse ID: handle "123 - Name", "123-Name", "123 Name"
+            let id_str = stem.split('-').next().unwrap_or(stem).trim();
+            let id_part = id_str.split_whitespace().next().unwrap_or(id_str);
             let id = id_part.parse::<u32>().ok()?;
 
             let tokens = DefaultEU4Txt::open_txt(path.to_str()?).ok()?;
+
+            if tokens.is_empty() {
+                return Some((
+                    id,
+                    ProvinceHistory {
+                        trade_goods: None,
+                        owner: None,
+                        base_tax: None,
+                        base_production: None,
+                        base_manpower: None,
+                    },
+                ));
+            }
+
             let ast = DefaultEU4Txt::parse(tokens).ok()?;
             let hist = from_node::<ProvinceHistory>(&ast).ok()?;
 
