@@ -248,14 +248,7 @@ pub trait EU4Txt {
                     println!("{{");
                 }
                 for child in &ast.children {
-                    match &child.entry {
-                        EU4TxtAstItem::Assignment => {
-                            Self::pretty_print(child, depth + 1)?;
-                        }
-                        _ => {
-                            return Err("Unknown type for printing!".to_string())
-                        }
-                    }
+                    Self::pretty_print(child, depth + 1)?;
                 }
                 if depth > 0 {
                     for _ in 0..depth {
@@ -290,9 +283,15 @@ pub trait EU4Txt {
             EU4TxtAstItem::Identifier(id) => {
                 println!("{}", id);
             }
+            EU4TxtAstItem::StringValue(s) => {
+                println!("\"{}\"", s);
+            }
+            EU4TxtAstItem::Brace => {
+                // Do nothing or print?
+            }
             _ => {
                 println!("Unknown -> {:?}", ast.entry);
-                return Err("Unknown type for printing!".to_string())
+                return Err(format!("Unknown type for printing: {:?}", ast.entry));
             }
         }
         Ok(())
