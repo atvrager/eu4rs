@@ -35,6 +35,63 @@ impl WorldData {
     }
 }
 
+/// Decoupled application state for logic testing
+pub struct AppState {
+    pub world_data: WorldData,
+    pub window_size: (u32, u32),
+    pub cursor_pos: Option<(f64, f64)>,
+}
+
+impl AppState {
+    pub fn new(world_data: WorldData, width: u32, height: u32) -> Self {
+        Self {
+            world_data,
+            window_size: (width, height),
+            cursor_pos: None,
+        }
+    }
+
+    pub fn resize(&mut self, width: u32, height: u32) {
+        if width > 0 && height > 0 {
+            self.window_size = (width, height);
+        }
+    }
+
+    pub fn update_cursor(&mut self, x: f64, y: f64) {
+        self.cursor_pos = Some((x, y));
+    }
+
+    pub fn get_selected_province(&self) -> Option<(u32, String)> {
+        if let Some((mx, my)) = self.cursor_pos {
+            // Map pos to texture coordinates
+            let (win_w, win_h) = self.window_size;
+            let (tex_w, tex_h) = self.world_data.province_map.dimensions();
+
+            // Avoid divide by zero
+            if win_w == 0 || win_h == 0 {
+                return None;
+            }
+
+            // Simple stretch mapping
+            // NOTE: This assumes render stretches texture to full window
+            let u = mx / win_w as f64;
+            let v = my / win_h as f64;
+
+            let x = (u * tex_w as f64) as u32;
+            let y = (v * tex_h as f64) as u32;
+
+            if x < tex_w && y < tex_h {
+                if let Some(id) = self.world_data.get_province_id(x, y) {
+                    return Some((id, self.world_data.get_province_tooltip(id)));
+                } else {
+                    return Some((0, "Unknown Province".to_string()));
+                }
+            }
+        }
+        None
+    }
+}
+
 use crate::text::TextRenderer;
 
 pub struct InspectorState<'a> {
@@ -419,8 +476,7 @@ struct State<'a> {
     size: winit::dpi::PhysicalSize<u32>,
     window: &'a winit::window::Window,
     renderer: Eu4Renderer,
-    cursor_pos: Option<winit::dpi::PhysicalPosition<f64>>,
-    world_data: WorldData,
+    app_state: AppState, // Encapsulated logic state
     text_renderer: TextRenderer,
     inspector: InspectorState<'a>,
 }
@@ -513,6 +569,9 @@ impl<'a> State<'a> {
         let inspector =
             InspectorState::new(inspector_window, &instance, &device, &queue, config.format);
 
+        // Create AppState
+        let app_state = AppState::new(world_data, size.width, size.height);
+
         Self {
             window,
             surface,
@@ -521,8 +580,7 @@ impl<'a> State<'a> {
             config,
             size,
             renderer,
-            cursor_pos: None,
-            world_data,
+            app_state,
             text_renderer,
             inspector,
         }
@@ -538,13 +596,16 @@ impl<'a> State<'a> {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
+
+            // Forward resize to AppState
+            self.app_state.resize(new_size.width, new_size.height);
         }
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
         match event {
             WindowEvent::CursorMoved { position, .. } => {
-                self.cursor_pos = Some(*position);
+                self.app_state.update_cursor(position.x, position.y);
                 false
             }
             WindowEvent::MouseInput {
@@ -552,36 +613,17 @@ impl<'a> State<'a> {
                 button: winit::event::MouseButton::Left,
                 ..
             } => {
-                if let Some(pos) = self.cursor_pos {
-                    // Map pos to texture coordinates
-                    let win_w = self.size.width as f64;
-                    let win_h = self.size.height as f64;
-                    let (tex_w, tex_h) = self.world_data.province_map.dimensions();
+                // Delegate logic check to AppState
+                if let Some((_id, text)) = self.app_state.get_selected_province() {
+                    let img = self.text_renderer.render(&text, 400, 300);
+                    let dynamic_img = image::DynamicImage::ImageRgba8(img);
 
-                    // Simple stretch mapping
-                    let u = pos.x / win_w;
-                    let v = pos.y / win_h;
+                    self.inspector
+                        .update_texture(&self.device, &self.queue, &dynamic_img);
+                    self.inspector.window.set_visible(true);
+                    self.inspector.window.request_redraw();
 
-                    let x = (u * tex_w as f64) as u32;
-                    let y = (v * tex_h as f64) as u32;
-
-                    if x < tex_w && y < tex_h {
-                        let text = if let Some(id) = self.world_data.get_province_id(x, y) {
-                            self.world_data.get_province_tooltip(id)
-                        } else {
-                            "Unknown Province".to_string()
-                        };
-
-                        let img = self.text_renderer.render(&text, 400, 300);
-                        let dynamic_img = image::DynamicImage::ImageRgba8(img);
-
-                        self.inspector
-                            .update_texture(&self.device, &self.queue, &dynamic_img);
-                        self.inspector.window.set_visible(true);
-                        self.inspector.window.request_redraw();
-
-                        return true; // Input handled
-                    }
+                    return true;
                 }
                 false
             }
@@ -960,5 +1002,112 @@ mod tests {
                 panic!("Snapshot generation failed: {}", e);
             }
         }
+    }
+
+    #[test]
+    fn test_world_data_logic() {
+        use crate::window::WorldData;
+        use eu4data::history::ProvinceHistory;
+        use image::{Rgb, RgbImage};
+        use std::collections::HashMap;
+
+        // 1. Create a 2x2 Image
+        // (0,0) = Red -> ID 1
+        // (1,0) = Green -> ID 2
+        // (0,1) = Blue -> Unknown
+        // (1,1) = Black -> Unknown
+        let mut img = RgbImage::new(2, 2);
+        img.put_pixel(0, 0, Rgb([255, 0, 0]));
+        img.put_pixel(1, 0, Rgb([0, 255, 0]));
+        img.put_pixel(0, 1, Rgb([0, 0, 255]));
+        img.put_pixel(1, 1, Rgb([0, 0, 0]));
+
+        // 2. Map Colors to IDs
+        let mut color_to_id = HashMap::new();
+        color_to_id.insert((255, 0, 0), 1);
+        color_to_id.insert((0, 255, 0), 2);
+
+        // 3. History
+        let mut history = HashMap::new();
+        history.insert(
+            1,
+            ProvinceHistory {
+                owner: Some("SWE".to_string()),
+                trade_goods: Some("grain".to_string()),
+                base_tax: None,
+                base_production: None,
+                base_manpower: None,
+            },
+        );
+
+        let world = WorldData {
+            province_map: img,
+            color_to_id,
+            province_history: history,
+        };
+
+        // Test ID lookup
+        assert_eq!(world.get_province_id(0, 0), Some(1));
+        assert_eq!(world.get_province_id(1, 0), Some(2));
+        assert_eq!(world.get_province_id(0, 1), None); // Blue not in map
+        assert_eq!(world.get_province_id(100, 100), None); // Out of bounds
+
+        // Test Tooltip
+        let tt1 = world.get_province_tooltip(1);
+        assert!(tt1.contains("ID: 1"));
+        assert!(tt1.contains("Owner: SWE"));
+        assert!(tt1.contains("Goods: grain"));
+
+        let tt2 = world.get_province_tooltip(2);
+        assert!(tt2.contains("ID: 2"));
+        assert!(tt2.contains("(No History)"));
+    }
+
+    #[test]
+    fn test_app_state_logic() {
+        use crate::window::{AppState, WorldData};
+        use image::RgbImage;
+        use std::collections::HashMap;
+
+        // Tests Interaction Logic without Window/WGPU dependency
+
+        // 1. Setup Mock
+        let mut color_to_id = HashMap::new();
+        color_to_id.insert((255, 0, 0), 1);
+        let mut img = RgbImage::new(100, 100);
+        // Fill Red
+        for p in img.pixels_mut() {
+            *p = image::Rgb([255, 0, 0]);
+        }
+
+        let world = WorldData {
+            province_map: img,
+            color_to_id,
+            province_history: HashMap::new(),
+        };
+
+        // 2. Init AppState (Window size 100x100)
+        let mut app = AppState::new(world, 100, 100);
+
+        // 3. Test Selection (Middle of map -> ID 1)
+        app.update_cursor(50.0, 50.0);
+        let sel = app.get_selected_province();
+        assert!(sel.is_some());
+        let (id, text) = sel.unwrap();
+        assert_eq!(id, 1);
+        assert!(text.contains("ID: 1"));
+
+        // 4. Test Resize (Window 200x200, but map still 100x100)
+        // Cursor at 100.0, 100.0 (Middle of window) should still be ID 1
+        app.resize(200, 200);
+        app.update_cursor(100.0, 100.0);
+
+        let sel2 = app.get_selected_province();
+        assert!(sel2.is_some());
+        assert_eq!(sel2.unwrap().0, 1);
+
+        // 5. Test Update Cursor
+        app.update_cursor(0.0, 0.0);
+        assert_eq!(app.cursor_pos, Some((0.0, 0.0)));
     }
 }

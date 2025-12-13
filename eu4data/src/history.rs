@@ -89,3 +89,61 @@ pub fn load_province_history(base_path: &Path) -> Result<HistoryLoadResult, std:
 
     Ok(results.into_inner().unwrap())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::io::Write;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_load_province_history() {
+        let dir = tempdir().unwrap();
+        let history_path = dir.path().join("history/provinces");
+        fs::create_dir_all(&history_path).unwrap();
+
+        // 1. Valid file
+        let file_path = history_path.join("1 - Stockholm.txt");
+        let mut file = fs::File::create(file_path).unwrap();
+        writeln!(
+            file,
+            r#"
+            trade_goods = grain
+            owner = SWE
+            base_tax = 10.0
+            base_production = 5.0
+            "#
+        )
+        .unwrap();
+
+        // 2. File with irregular name
+        let file_path = history_path.join("2-Svealand.txt");
+        let mut file = fs::File::create(file_path).unwrap();
+        // Missing fields should be handled by Option::None
+        writeln!(file, "owner = SWE").unwrap();
+
+        // 3. Broken file (non-parsable ID)
+        let file_path = history_path.join("invalid_name.txt");
+        fs::File::create(file_path).unwrap();
+
+        // 4. Broken file (bad syntax)
+        let file_path = history_path.join("3 - Kalmar.txt");
+        let mut file = fs::File::create(file_path).unwrap();
+        writeln!(file, "this is not legitimate eu4 script").unwrap();
+
+        let (map, (success, fail)) = load_province_history(dir.path()).unwrap();
+
+        assert_eq!(success, 2);
+        assert_eq!(fail, 2); // "invalid_name.txt" fails ID parse, "3 - Kalmar" fails content parse
+
+        let p1 = map.get(&1).unwrap();
+        assert_eq!(p1.owner.as_deref(), Some("SWE"));
+        assert_eq!(p1.base_tax, Some(10.0));
+        assert_eq!(p1.trade_goods.as_deref(), Some("grain"));
+
+        let p2 = map.get(&2).unwrap();
+        assert_eq!(p2.owner.as_deref(), Some("SWE"));
+        assert_eq!(p2.base_tax, None);
+    }
+}

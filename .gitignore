@@ -1,3 +1,4 @@
 target/
 *.profraw
 map_*.png
+coverage.json

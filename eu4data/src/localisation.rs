@@ -210,4 +210,83 @@ l_english:
         assert_eq!(loc.get("KEY_TWO"), Some(&"Value Two".to_string()));
         assert_eq!(loc.get("BROKEN"), None);
     }
+
+    #[test]
+    fn test_load_from_dir() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // 1. English File
+        let file_path = dir.path().join("english.yml");
+        let mut file = std::fs::File::create(file_path).unwrap();
+        write!(
+            file,
+            r#"
+l_english:
+ KEY_ENG: "English"
+            "#
+        )
+        .unwrap();
+
+        // 2. Spanish File (should be effectively ignored when loading english)
+        let file_path = dir.path().join("spanish.yml");
+        let mut file = std::fs::File::create(file_path).unwrap();
+        write!(
+            file,
+            r#"
+l_spanish:
+ KEY_SPA: "Spanish"
+            "#
+        )
+        .unwrap();
+
+        // 3. Mixed/Wrong Header (should be ignored)
+        let file_path = dir.path().join("broken.yml");
+        let mut file = std::fs::File::create(file_path).unwrap();
+        write!(
+            file,
+            r#"
+l_german:
+ KEY_GER: "German"
+            "#
+        )
+        .unwrap();
+
+        // Test loading English
+        let mut loc = Localisation::new();
+        let count = loc.load_from_dir(dir.path(), "english").unwrap();
+
+        assert_eq!(count, 1);
+        assert_eq!(loc.get("KEY_ENG"), Some(&"English".to_string()));
+        assert_eq!(loc.get("KEY_SPA"), None);
+
+        // Test loading Spanish
+        let mut loc = Localisation::new();
+        let count = loc.load_from_dir(dir.path(), "l_spanish").unwrap();
+
+        assert_eq!(count, 1);
+        assert_eq!(loc.get("KEY_SPA"), Some(&"Spanish".to_string()));
+    }
+
+    #[test]
+    fn test_list_languages() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // 1. English
+        let file_path = dir.path().join("english.yml");
+        let mut file = std::fs::File::create(file_path).unwrap();
+        write!(file, "l_english:").unwrap();
+
+        // 2. French
+        let file_path = dir.path().join("french.yml");
+        let mut file = std::fs::File::create(file_path).unwrap();
+        write!(file, "l_french:").unwrap();
+
+        // 3. Non-YAML
+        let file_path = dir.path().join("other.txt");
+        let mut file = std::fs::File::create(file_path).unwrap();
+        write!(file, "l_german:").unwrap();
+
+        let langs = Localisation::list_languages(dir.path()).unwrap();
+        assert_eq!(langs, vec!["english", "french"]);
+    }
 }

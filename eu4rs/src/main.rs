@@ -1,312 +1,21 @@
-use clap::{Parser, Subcommand};
-use eu4data::{
-    Tradegood,
-    map::{DefaultMap, load_definitions},
-};
-use eu4txt::{DefaultEU4Txt, EU4Txt, from_node};
-use image::{Rgb, RgbImage};
-use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use clap::Parser;
+use std::path::PathBuf;
 
-const PATH: &str =
-    "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Europa Universalis IV\\common";
-
-#[derive(Parser)]
-#[command(version, about, long_about = None)]
-struct Cli {
-    /// Path to EU4 installation or directory to scan
-    #[arg(long, default_value = PATH)]
-    eu4_path: PathBuf,
-
-    /// Pretty print parsed files
-    #[arg(long)]
-    pretty_print: bool,
-
-    /// Language to load (e.g. "english", "spanish")
-    #[arg(long, default_value = "english")]
-    language: String,
-
-    #[command(subcommand)]
-    command: Option<Commands>,
-}
-
-#[derive(Clone, Copy, Debug, clap::ValueEnum, PartialEq)]
-enum MapMode {
-    TradeGoods,
-    Political,
-    All,
-}
+mod args;
+mod ops;
+mod window;
 
 #[cfg(test)]
 mod testing;
 mod text;
-mod window;
 
-#[derive(Subcommand)]
-enum Commands {
-    /// Dump `tradegoods.txt` to JSON format.
-    DumpTradegoods,
+use args::{Cli, Commands, MapMode};
 
-    /// Render a map of the world.
-    DrawMap {
-        /// Output path for the image (default: "map_out.png").
-        #[arg(long, default_value = "map_out.png")]
-        output: PathBuf,
-        /// The map mode to render (e.g., TradeGoods, Political).
-        #[arg(long, value_enum, default_value_t = MapMode::TradeGoods)]
-        mode: MapMode,
-    },
-
-    /// Open the interactive map window (default behavior).
-    DrawWindow {
-        /// Enable verbose logging.
-        #[arg(long, default_value_t = true)]
-        verbose: bool,
-    },
-
-    /// Render map to an image file (headless mode).
-    Snapshot {
-        /// Output path for the image.
-        #[arg(short, long, default_value = "snapshot.png")]
-        output: String,
-    },
-
-    /// Lookup a localisation key.
-    ///
-    /// Example: `lookup PROV1` -> "Stockholm"
-    Lookup {
-        /// The key to look up (e.g. PROV1, trade_efficiency).
-        key: String,
-    },
-
-    /// List all available languages found in the localisation directory.
-    Languages,
-}
-
-fn dump_tradegoods(base_path: &std::path::Path) -> Result<(), String> {
-    let path = base_path.join("tradegoods/00_tradegoods.txt");
-    println!("Loading {:?}", path);
-    // dump_tradegoods logic here
-    let tokens = DefaultEU4Txt::open_txt(path.to_str().unwrap()).map_err(|e| e.to_string())?;
-    let ast = DefaultEU4Txt::parse(tokens)?;
-    let goods: HashMap<String, Tradegood> = from_node(&ast)?;
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&goods).map_err(|e| e.to_string())?
-    );
-    Ok(())
-}
-
-fn draw_map(base_path: &Path, output_path: &Path, mode: MapMode) -> Result<(), String> {
-    // 1. Load Definitions (ID -> Color, Color -> ID)
-    let def_path = base_path.join("map/definition.csv");
-    println!("Loading definitions from {:?}", def_path);
-    let definitions = load_definitions(&def_path).map_err(|e| e.to_string())?;
-
-    // Build reverse map (RGB -> ID)
-    let mut color_to_id: HashMap<(u8, u8, u8), u32> = HashMap::new();
-    for (id, def) in &definitions {
-        color_to_id.insert((def.r, def.g, def.b), *id);
-    }
-
-    // 1b. Load Default Map (Sea/Lakes)
-    let default_map_path = base_path.join("map/default.map");
-    println!("Loading default map from {:?}", default_map_path);
-    let dm_tokens =
-        DefaultEU4Txt::open_txt(default_map_path.to_str().unwrap()).map_err(|e| e.to_string())?;
-    let dm_ast = DefaultEU4Txt::parse(dm_tokens)?;
-    let default_map: DefaultMap = from_node(&dm_ast)?;
-
-    let mut water_ids: HashSet<u32> = HashSet::new();
-    for id in default_map.sea_starts {
-        water_ids.insert(id);
-    }
-    for id in default_map.lakes {
-        water_ids.insert(id);
-    }
-    println!("Loaded {} water provinces (sea+lakes).", water_ids.len());
-
-    // 2. Load Data based on Mode
-    let mut goods: HashMap<String, Tradegood> = HashMap::new();
-    let mut countries: HashMap<String, eu4data::countries::Country> = HashMap::new();
-
-    match mode {
-        MapMode::TradeGoods => {
-            let goods_path = base_path.join("common/tradegoods/00_tradegoods.txt");
-            println!("Loading trade goods from {:?}", goods_path);
-            let tokens =
-                DefaultEU4Txt::open_txt(goods_path.to_str().unwrap()).map_err(|e| e.to_string())?;
-            let ast = DefaultEU4Txt::parse(tokens)?;
-            goods = from_node(&ast)?;
-        }
-        MapMode::Political => {
-            println!("Loading country tags...");
-            let tags = eu4data::countries::load_tags(base_path).map_err(|e| e.to_string())?;
-            println!("Loading {} country definitions...", tags.len());
-            countries = eu4data::countries::load_country_map(base_path, &tags);
-            println!("Loaded {} countries.", countries.len());
-        }
-        MapMode::All => unreachable!("MapMode::All should be handled by caller"),
-    }
-
-    // 3. Load Province History (ID -> Data)
-    println!("Loading history...");
-    let (province_history, stats_history) =
-        eu4data::history::load_province_history(base_path).map_err(|e| e.to_string())?;
-
-    println!(
-        "History Stats: Success={}, Failure={}",
-        stats_history.0, stats_history.1
-    );
-
-    // 4. Render
-    let map_path = base_path.join("map/provinces.bmp");
-    println!("Loading map image from {:?}", map_path);
-    let img = image::open(map_path).map_err(|e| e.to_string())?.to_rgb8();
-    let (width, height) = img.dimensions();
-    let mut out_img = RgbImage::new(width, height);
-
-    println!("Rendering...");
-    for (x, y, pixel) in img.enumerate_pixels() {
-        let (r, g, b) = (pixel[0], pixel[1], pixel[2]);
-        if let Some(id) = color_to_id.get(&(r, g, b)) {
-            let mut out_color = Rgb([100, 100, 100]); // Default Grey
-
-            if water_ids.contains(id) {
-                out_color = Rgb([64, 164, 223]); // Water Blue
-            } else if let Some(hist) = province_history.get(id) {
-                match mode {
-                    MapMode::TradeGoods => {
-                        if let Some(good) = hist
-                            .trade_goods
-                            .as_ref()
-                            .and_then(|name| goods.get(name))
-                            .filter(|g| g.color.len() >= 3)
-                        {
-                            let fr = (good.color[0] * 255.0) as u8;
-                            let fg = (good.color[1] * 255.0) as u8;
-                            let fb = (good.color[2] * 255.0) as u8;
-                            out_color = Rgb([fr, fg, fb]);
-                        }
-                    }
-                    MapMode::Political => {
-                        if let Some(country) = hist
-                            .owner
-                            .as_ref()
-                            .and_then(|tag| countries.get(tag))
-                            .filter(|c| c.color.len() >= 3)
-                        {
-                            out_color = Rgb([country.color[0], country.color[1], country.color[2]]);
-                        }
-                    }
-                    MapMode::All => unreachable!(),
-                }
-            }
-            out_img.put_pixel(x, y, out_color);
-        } else {
-            out_img.put_pixel(x, y, Rgb([0, 0, 0]));
-        }
-    }
-
-    out_img.save(output_path).map_err(|e| e.to_string())?;
-    println!("Saved {:?}", output_path);
-    Ok(())
-}
-
-struct ScanStats {
-    success: usize,
-    failure: usize,
-    tokens: usize,
-    nodes: usize,
-}
-
-fn pretty_print_dir(dir: &std::path::Path, pretty_print: bool) -> Result<ScanStats, String> {
-    let mut stats = ScanStats {
-        success: 0,
-        failure: 0,
-        tokens: 0,
-        nodes: 0,
-    };
-    if dir.is_dir() {
-        for entry in std::fs::read_dir(dir).unwrap() {
-            let entry = entry.unwrap();
-            let path = entry.path();
-            if path.is_dir() {
-                // println!("{}", path.display());
-                let sub_stats = pretty_print_dir(&path, pretty_print)?;
-                stats.success += sub_stats.success;
-                stats.failure += sub_stats.failure;
-                stats.tokens += sub_stats.tokens;
-                stats.nodes += sub_stats.nodes;
-            } else if path.extension().is_some_and(|ext| ext == "txt") {
-                // println!("{}", path.display());
-                let tokens = match DefaultEU4Txt::open_txt(path.to_str().unwrap()) {
-                    Ok(t) => t,
-                    Err(_) => {
-                        // println!("Expected encoding error potentially");
-                        continue;
-                    }
-                };
-
-                match DefaultEU4Txt::parse(tokens.clone()) {
-                    // Clone because parse consumers tokens (or we change parse sig)
-                    // Actually parse takes Vec<Token>, opens_txt returns Vec<Token>.
-                    // We need the count before move, or just count tokens.len()
-                    Ok(ast) => {
-                        stats.success += 1;
-                        stats.tokens += tokens.len();
-                        stats.nodes += ast.node_count();
-                        if pretty_print {
-                            DefaultEU4Txt::pretty_print(&ast, 0)?;
-                        }
-                    }
-                    Err(e) => {
-                        if e != "NoTokens" {
-                            println!("Parse Fail: {} : {}", path.display(), e);
-                            stats.failure += 1;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    Ok(stats)
-}
-// Helper to load world data for interactive mode
-fn load_world_data(base_path: &Path) -> Result<window::WorldData, String> {
-    println!("Loading world data...");
-
-    // 1. Definitions
-    let def_path = base_path.join("map/definition.csv");
-    let definitions = load_definitions(&def_path).map_err(|e| e.to_string())?;
-    let mut color_to_id = HashMap::new();
-    for (id, def) in &definitions {
-        color_to_id.insert((def.r, def.g, def.b), *id);
-    }
-
-    // 2. History
-    let (province_history, _) =
-        eu4data::history::load_province_history(base_path).map_err(|e| e.to_string())?;
-
-    // 3. Map Image
-    let map_path = base_path.join("map/provinces.bmp");
-    println!("Loading map image from {:?}", map_path);
-    let province_map = image::open(map_path).map_err(|e| e.to_string())?.to_rgb8();
-
-    Ok(window::WorldData {
-        province_map,
-        color_to_id,
-        province_history,
-    })
-}
-
-fn main() -> Result<(), String> {
-    let args = Cli::parse();
-
+fn run(args: Cli) -> Result<(), String> {
     if let Some(cmd) = &args.command {
         match cmd {
             Commands::DumpTradegoods => {
-                dump_tradegoods(&args.eu4_path)?;
+                ops::dump_tradegoods(&args.eu4_path)?;
                 return Ok(());
             }
             Commands::DrawMap { output, mode } => {
@@ -314,28 +23,28 @@ fn main() -> Result<(), String> {
                 match mode {
                     MapMode::All => {
                         println!("=== Rendering Political Map ===");
-                        draw_map(
+                        ops::draw_map(
                             base,
                             &PathBuf::from("map_political.png"),
                             MapMode::Political,
                         )?;
 
                         println!("\n=== Rendering Trade Goods Map ===");
-                        draw_map(
+                        ops::draw_map(
                             base,
                             &PathBuf::from("map_tradegoods.png"),
                             MapMode::TradeGoods,
                         )?;
                     }
                     _ => {
-                        draw_map(base, output, *mode)?;
+                        ops::draw_map(base, output, *mode)?;
                     }
                 }
                 return Ok(());
             }
             Commands::DrawWindow { verbose } => {
                 let base = args.eu4_path.parent().unwrap();
-                let world_data = load_world_data(base)?;
+                let world_data = ops::load_world_data(base)?;
                 pollster::block_on(window::run(*verbose, world_data));
                 return Ok(());
             }
@@ -379,10 +88,8 @@ fn main() -> Result<(), String> {
     }
 
     // Default behavior handling:
-    // If pretty_print flag is set, run the scanner.
-    // Otherwise, default to GUI window.
     if args.pretty_print {
-        match pretty_print_dir(&args.eu4_path, args.pretty_print) {
+        match ops::pretty_print_dir(&args.eu4_path, args.pretty_print) {
             Ok(stats) => {
                 println!(
                     "Done! Success: {}, Failure: {}",
@@ -400,9 +107,96 @@ fn main() -> Result<(), String> {
     } else {
         // Default to Source Port GUI
         let base = args.eu4_path.parent().unwrap();
-        let world_data = load_world_data(base)?;
+        let world_data = ops::load_world_data(base)?;
         pollster::block_on(window::run(true, world_data));
     }
 
     Ok(())
+}
+
+fn main() -> Result<(), String> {
+    run(Cli::parse())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use std::io::Write;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_pretty_print_dir_logic() {
+        let dir = tempdir().unwrap();
+        let valid_path = dir.path().join("valid.txt");
+        let mut valid_file = File::create(&valid_path).unwrap();
+        writeln!(valid_file, "good_key = value").unwrap();
+
+        let invalid_path = dir.path().join("invalid.txt");
+        let mut invalid_file = File::create(&invalid_path).unwrap();
+        writeln!(invalid_file, "key =").unwrap();
+
+        let stats = ops::pretty_print_dir(dir.path(), false).expect("pretty_print_dir failed");
+
+        assert_eq!(stats.success, 1);
+        assert_eq!(stats.failure, 1);
+        assert!(stats.tokens > 0);
+        assert!(stats.nodes > 0);
+    }
+
+    #[test]
+    fn test_dump_tradegoods_dispatch() {
+        let dir = tempdir().unwrap();
+        // The implementation expects `path/tradegoods/00_tradegoods.txt`
+        // OR `path/common/tradegoods/00_tradegoods.txt` depending on logic.
+        // `ops::dump_tradegoods` does `base_path.join("tradegoods/00_tradegoods.txt")`.
+
+        let tradegoods_dir = dir.path().join("tradegoods");
+        std::fs::create_dir_all(&tradegoods_dir).unwrap();
+
+        let tg_file = tradegoods_dir.join("00_tradegoods.txt");
+        let mut f = File::create(&tg_file).unwrap();
+        writeln!(f, r#"grain = {{ color = {{ 1 1 1 }} }}"#).unwrap();
+
+        let args = Cli {
+            eu4_path: dir.path().to_path_buf(),
+            pretty_print: false,
+            language: "english".to_string(),
+            command: Some(Commands::DumpTradegoods),
+        };
+
+        let result = run(args);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_run_lookup_missing_path() {
+        let dir = tempdir().unwrap();
+        // Missing localisation dir
+        let args = Cli {
+            eu4_path: dir.path().to_path_buf(),
+            pretty_print: false,
+            language: "english".to_string(),
+            command: Some(Commands::Lookup {
+                key: "TEST".to_string(),
+            }),
+        };
+        // It prints warning but returns Ok(()) usually in current impl
+        // Let's verify it doesn't panic.
+        assert!(run(args).is_ok());
+    }
+
+    #[test]
+    fn test_pretty_print_missing_dir() {
+        let dir = tempdir().unwrap();
+        let missing = dir.path().join("missing");
+        let args = Cli {
+            eu4_path: missing,
+            pretty_print: true,
+            language: "english".to_string(),
+            command: None,
+        };
+        // Should print error but return Ok
+        assert!(run(args).is_ok());
+    }
 }

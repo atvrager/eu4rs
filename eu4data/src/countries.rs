@@ -102,28 +102,95 @@ mod tests {
     use std::io::Write;
 
     #[test]
-    fn test_country_mock() {
-        let data = r#"
-            color = { 10 20 200 }
-            graphical_culture = westerngfx
-        "#;
+    fn test_load_tags() {
+        let dir = tempfile::tempdir().unwrap();
+        let tags_dir = dir.path().join("common/country_tags");
+        std::fs::create_dir_all(&tags_dir).unwrap();
 
-        // Write to temp file
-        let mut file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
-        write!(file, "{}", data).expect("Failed to write");
-        let path = file.path().to_str().unwrap().to_string();
+        let file_path = tags_dir.join("00_countries.txt");
+        let mut file = std::fs::File::create(file_path).unwrap();
+        write!(
+            file,
+            r#"
+            SWE = "countries/Sweden.txt"
+            ENG = "countries/England.txt"
+            "#
+        )
+        .unwrap();
 
-        // Testing direct parsing, so tags map is irrelevant here.
-        // But if I wanted to test load_country_map, I would need it.
-        // For now, let's just delete the unused map.
+        let tags = load_tags(dir.path()).unwrap();
+        assert_eq!(tags.len(), 2);
+        assert_eq!(
+            tags.get("SWE")
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .replace("\\", "/"),
+            "countries/Sweden.txt"
+        ); // normalize separators
+        assert_eq!(
+            tags.get("ENG")
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .replace("\\", "/"),
+            "countries/England.txt"
+        );
+    }
 
-        use eu4txt::{DefaultEU4Txt, EU4Txt, from_node};
-        let tokens = DefaultEU4Txt::open_txt(&path).expect("Tok");
-        let ast = DefaultEU4Txt::parse(tokens).expect("Parse");
-        let country: Country = from_node(&ast).expect("De");
+    #[test]
+    fn test_load_country_map() {
+        let dir = tempfile::tempdir().unwrap();
+        let common_dir = dir.path().join("common");
+        std::fs::create_dir_all(common_dir.join("countries")).unwrap();
 
-        assert_eq!(country.color.len(), 3);
-        assert_eq!(country.color[0], 10);
-        assert_eq!(country.color[2], 200);
+        // 1. Create mock country files
+        let sweden_path = common_dir.join("countries/Sweden.txt");
+        let mut file = std::fs::File::create(&sweden_path).unwrap();
+        write!(
+            file,
+            r#"
+            color = {{ 10 20 200 }}
+            "#
+        )
+        .unwrap();
+
+        let england_path = common_dir.join("countries/England.txt");
+        let mut file = std::fs::File::create(&england_path).unwrap();
+        write!(
+            file,
+            r#"
+            color = {{ 200 10 10 }}
+            "#
+        )
+        .unwrap();
+
+        // 2. Create tag map
+        let mut tags = TagMap::new();
+        tags.insert(
+            "SWE".to_string(),
+            std::path::PathBuf::from("countries/Sweden.txt"),
+        );
+        tags.insert(
+            "ENG".to_string(),
+            std::path::PathBuf::from("countries/England.txt"),
+        );
+        tags.insert(
+            "FRA".to_string(),
+            std::path::PathBuf::from("countries/France.txt"),
+        ); // Does not exist
+
+        // 3. Load
+        let countries = load_country_map(dir.path(), &tags);
+
+        assert_eq!(countries.len(), 2);
+
+        let swe = countries.get("SWE").unwrap();
+        assert_eq!(swe.color, vec![10, 20, 200]);
+
+        let eng = countries.get("ENG").unwrap();
+        assert_eq!(eng.color, vec![200, 10, 10]);
+
+        assert!(countries.get("FRA").is_none());
     }
 }
