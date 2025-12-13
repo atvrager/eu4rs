@@ -774,6 +774,8 @@ name = "eu4data"
 version = "0.1.0"
 dependencies = [
  "csv",
+ "encoding_rs",
+ "encoding_rs_io",
  "eu4txt",
  "serde",
  "serde_json",

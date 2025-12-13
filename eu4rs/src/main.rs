@@ -23,6 +23,10 @@ struct Cli {
     #[arg(long)]
     pretty_print: bool,
 
+    /// Language to load (e.g. "english", "spanish")
+    #[arg(long, default_value = "english")]
+    language: String,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -38,27 +42,43 @@ mod window;
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Dump tradegoods.txt to JSON
+    /// Dump `tradegoods.txt` to JSON format.
     DumpTradegoods,
-    /// Render Map
+
+    /// Render a map of the world.
     DrawMap {
+        /// Output path for the image (default: "map_out.png").
         #[arg(long, default_value = "map_out.png")]
         output: PathBuf,
+        /// The map mode to render (e.g., TradeGoods, Political).
         #[arg(long, value_enum, default_value_t = MapMode::TradeGoods)]
         mode: MapMode,
     },
-    /// Open the interactive map window
-    /// Open the interactive map window
+
+    /// Open the interactive map window (default behavior).
     DrawWindow {
-        #[arg(long, default_value_t = true)] // Default to true for now as user likes it
+        /// Enable verbose logging.
+        #[arg(long, default_value_t = true)]
         verbose: bool,
     },
-    /// Render map to an image file (headless)
+
+    /// Render map to an image file (headless mode).
     Snapshot {
-        /// Output path for the image
+        /// Output path for the image.
         #[arg(short, long, default_value = "snapshot.png")]
         output: String,
     },
+
+    /// Lookup a localisation key.
+    ///
+    /// Example: `lookup PROV1` -> "Stockholm"
+    Lookup {
+        /// The key to look up (e.g. PROV1, trade_efficiency).
+        key: String,
+    },
+
+    /// List all available languages found in the localisation directory.
+    Languages,
 }
 
 fn dump_tradegoods(base_path: &std::path::Path) -> Result<(), String> {
@@ -341,6 +361,37 @@ fn main() -> Result<(), String> {
             Commands::Snapshot { output } => {
                 let path = std::path::Path::new(output);
                 pollster::block_on(window::snapshot(path));
+                return Ok(());
+            }
+            Commands::Lookup { key } => {
+                let loc_path = args.eu4_path.parent().unwrap().join("localisation");
+                let mut loc = eu4data::localisation::Localisation::new();
+                println!(
+                    "Loading localisation from {:?} ({})...",
+                    loc_path, args.language
+                );
+                match loc.load_from_dir(&loc_path, &args.language) {
+                    Ok(n) => println!("Loaded {} keys.", n),
+                    Err(e) => println!("Warning: Failed to load localisation: {}", e),
+                }
+
+                match loc.get(key) {
+                    Some(val) => println!("{} -> {}", key, val),
+                    None => println!("{} -> [NOT_FOUND]", key),
+                }
+                return Ok(());
+            }
+            Commands::Languages => {
+                let loc_path = args.eu4_path.parent().unwrap().join("localisation");
+                match eu4data::localisation::Localisation::list_languages(&loc_path) {
+                    Ok(langs) => {
+                        println!("Available languages:");
+                        for lang in langs {
+                            println!("- {}", lang);
+                        }
+                    }
+                    Err(e) => println!("Error scanning languages: {}", e),
+                }
                 return Ok(());
             }
         }

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 pub mod countries;
 pub mod history;
+pub mod localisation;
 pub mod map;
 
 /// Represents a trade good in EU4, determining the value and bonuses of a province's production.

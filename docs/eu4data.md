@@ -15,11 +15,11 @@ The library defines Rust structs that map to game data scopes.
 -   **`Province`**: Represents a single province (ID, tax, manpower, trade good, terrain).
 -   **`Country`**: Represents a tag (e.g., FRA, ENG) with its color, ideas, and history.
 -   **`TradeGood`**: Definitions of trade goods (Grain, Iron, etc.).
--   **`TechGroup`**: Technology groups (Western, Ottoman, etc.).
+-   **`Localisation`**: Handling of `.yml` localisation files (UTF-8 with BOM) and language filtering.
 
 ## Mocking and Testing
 
 To ensure robust testing without requiring a full game installation, `eu4data` includes capabilities to load data from mock strings or "virtual implementation" files.
 
 > [!NOTE]
-> Currently, the library focuses on parsing `definition.csv` for map data and basic country tag loading.
+> The library supports `definition.csv` for map data, country loading, and a robust **Localisation** system supporting multiple languages.
