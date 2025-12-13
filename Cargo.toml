@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "eu4rs",
+    "eu4txt",
+]
+resolver = "2"

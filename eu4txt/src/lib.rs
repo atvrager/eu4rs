@@ -1,3 +1,9 @@
+//! A parser library for Europa Universalis IV text files.
+//!
+//! This library provides a tokenizer and recursive-descent parser for the EU4
+//! text format, which is loosely based on braces `{}` and `key = value` assignments,
+//! typically encoded in `WINDOWS_1252`.
+
 use std::path::PathBuf;
 use std::fs::File;
 use std::iter::{self, from_fn};
@@ -7,35 +13,58 @@ use std::vec::Vec;
 use encoding_rs::WINDOWS_1252;
 use encoding_rs_io::DecodeReaderBytesBuilder;
 
+
+
+/// Represents a token scanned from an EU4 text file.
 #[derive(Debug)]
 pub enum EU4TxtToken {
+    /// An alphanumeric identifier (keys, values).
     Identifier(String),
+    /// A quoted string value.
     StringValue(String),
+    /// A floating point number.
     FloatValue(f32),
+    /// An integer number.
     IntValue(i32),
+    /// A comment starting with `#`.
     Comment(String),
+    /// `{`
     LeftBrace,
+    /// `}`
     RightBrace,
+    /// `=`
     Equals,
 }
 
+/// Represents an item in the Abstract Syntax Tree (AST).
 #[derive(Debug)]
 pub enum EU4TxtAstItem {
+    /// An empty brace pair `{}` or container helper.
     Brace,
+    /// A `key = value` assignment.
     Assignment,
+    /// A list of assignments or values (usually enclosed in braces).
     AssignmentList,
+    /// An identifier value.
     Identifier(String),
+    /// A string value.
     StringValue(String),
+    /// A float value.
     FloatValue(f32),
+    /// An integer value.
     IntValue(i32),
 }
 
+/// A node in the EU4 parse tree.
 #[derive(Debug)]
 pub struct EU4TxtParseNode {
+    /// Child nodes (for lists or assignments).
     pub children: Vec<EU4TxtParseNode>,
+    /// The type of item and its data.
     pub entry: EU4TxtAstItem,
 }
 impl EU4TxtParseNode {
+    /// Creates a new empty node with `Brace` type.
     pub fn new() -> EU4TxtParseNode {
         EU4TxtParseNode {
             children: Vec::new(),
