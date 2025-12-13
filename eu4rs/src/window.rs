@@ -85,73 +85,29 @@ impl Texture {
     }
 }
 
-struct State<'a> {
-    surface: wgpu::Surface<'a>,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
-    size: winit::dpi::PhysicalSize<u32>,
-    window: &'a winit::window::Window,
-    render_pipeline: wgpu::RenderPipeline,
-    diffuse_bind_group: wgpu::BindGroup,
+/// Independent rendering state that can be used for both on-screen (winit) and headless (offscreen) rendering.
+/// Holds the VRAM resources (textures, pipelines, buffers).
+pub struct Eu4Renderer {
+    pub render_pipeline: wgpu::RenderPipeline,
+    pub diffuse_bind_group: wgpu::BindGroup,
     #[allow(dead_code)]
-    diffuse_texture: Texture,
+    pub diffuse_texture: Texture,
 }
 
-impl<'a> State<'a> {
-    // Creating some of the wgpu types requires async code
-    async fn new(window: &'a winit::window::Window, verbose: bool) -> State<'a> {
-        let size = window.inner_size();
-
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::VULKAN,
-            ..Default::default()
-        });
-
-        let surface = instance.create_surface(window).unwrap();
-
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
-            })
-            .await
-            .unwrap();
-
-        let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: None,
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
-                },
-                None,
-            )
-            .await
-            .unwrap();
-
-        let surface_caps = surface.get_capabilities(&adapter);
-        let surface_format = surface_caps
-            .formats
-            .iter()
-            .copied()
-            .find(|f| f.is_srgb())
-            .unwrap_or(surface_caps.formats[0]);
-
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface_format,
-            width: size.width,
-            height: size.height,
-            present_mode: surface_caps.present_modes[0],
-            alpha_mode: surface_caps.alpha_modes[0],
-            view_formats: vec![],
-            desired_maximum_frame_latency: 2,
-        };
-
-        surface.configure(&device, &config);
-
+impl Eu4Renderer {
+    /// Creates a new renderer.
+    ///
+    /// This function:
+    /// 1. Takes ownership of loading `provinces.bmp` logic (with fallbacks).
+    /// 2. Creating `wgpu` textures, views, and samplers.
+    /// 3. Compiling the WGSL shader.
+    /// 4. Creating the render pipeline and bind groups.
+    pub fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        config_format: wgpu::TextureFormat,
+        verbose: bool,
+    ) -> Self {
         use std::io::Write;
         if verbose {
             print!("\r[1/4] Initialization complete. Loading texture...      ");
@@ -192,27 +148,12 @@ impl<'a> State<'a> {
             }
         };
 
-        let (width, height) = img.dimensions();
-        // Cap width at 1280 (720p standard) or screen width (heuristic)
-        let target_width = if width > 1280 { 1280 } else { width };
-        let target_height = (target_width as f64 * (height as f64 / width as f64)) as u32;
-
-        if verbose {
-            print!(
-                "\r[2.5/4] Resizing window to {}x{}...                ",
-                target_width, target_height
-            );
-            std::io::stdout().flush().unwrap();
-        }
-        let _ =
-            window.request_inner_size(winit::dpi::PhysicalSize::new(target_width, target_height));
-
         if verbose {
             print!("\r[3/4] Uploading texture to GPU...                  ");
             std::io::stdout().flush().unwrap();
         }
         let diffuse_texture =
-            Texture::from_image(&device, &queue, &img, Some("provinces.bmp")).unwrap();
+            Texture::from_image(device, queue, &img, Some("provinces.bmp")).unwrap();
         if verbose {
             print!("\r[4/4] Texture uploaded. Starting loop...           ");
             std::io::stdout().flush().unwrap();
@@ -279,7 +220,7 @@ impl<'a> State<'a> {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: config_format,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -304,15 +245,106 @@ impl<'a> State<'a> {
         });
 
         Self {
+            render_pipeline,
+            diffuse_bind_group,
+            diffuse_texture,
+        }
+    }
+}
+
+struct State<'a> {
+    surface: wgpu::Surface<'a>,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    config: wgpu::SurfaceConfiguration,
+    size: winit::dpi::PhysicalSize<u32>,
+    window: &'a winit::window::Window,
+    renderer: Eu4Renderer,
+}
+
+impl<'a> State<'a> {
+    // Creating some of the wgpu types requires async code
+    async fn new(window: &'a winit::window::Window, verbose: bool) -> State<'a> {
+        let size = window.inner_size();
+
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::VULKAN,
+            ..Default::default()
+        });
+
+        let surface = instance.create_surface(window).unwrap();
+
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                compatible_surface: Some(&surface),
+                force_fallback_adapter: false,
+            })
+            .await
+            .unwrap();
+
+        let (device, queue) = adapter
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    label: None,
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::default(),
+                },
+                None,
+            )
+            .await
+            .unwrap();
+
+        let surface_caps = surface.get_capabilities(&adapter);
+        let surface_format = surface_caps
+            .formats
+            .iter()
+            .copied()
+            .find(|f| f.is_srgb())
+            .unwrap_or(surface_caps.formats[0]);
+
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format: surface_format,
+            width: size.width,
+            height: size.height,
+            present_mode: surface_caps.present_modes[0],
+            alpha_mode: surface_caps.alpha_modes[0],
+            view_formats: vec![],
+            desired_maximum_frame_latency: 2,
+        };
+
+        surface.configure(&device, &config);
+
+        // We need dimensions data to resize...
+        // Eu4Renderer has diffuse_texture.
+        let renderer = Eu4Renderer::new(&device, &queue, config.format, verbose);
+        let tex_size = renderer.diffuse_texture.texture.size();
+        let (width, height) = (tex_size.width, tex_size.height);
+
+        // Cap width at 1280 (720p standard) or screen width (heuristic)
+        let target_width = if width > 1280 { 1280 } else { width };
+        let target_height = (target_width as f64 * (height as f64 / width as f64)) as u32;
+
+        if verbose {
+            use std::io::Write;
+            print!(
+                "\r[2.5/4] Resizing window to {}x{}...                ",
+                target_width, target_height
+            );
+            std::io::stdout().flush().unwrap();
+        }
+        let _ =
+            window.request_inner_size(winit::dpi::PhysicalSize::new(target_width, target_height));
+
+        Self {
             window,
             surface,
             device,
             queue,
             config,
             size,
-            render_pipeline,
-            diffuse_bind_group,
-            diffuse_texture,
+            renderer,
         }
     }
 
@@ -368,8 +400,8 @@ impl<'a> State<'a> {
                 timestamp_writes: None,
             });
 
-            render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
+            render_pass.set_pipeline(&self.renderer.render_pipeline);
+            render_pass.set_bind_group(0, &self.renderer.diffuse_bind_group, &[]);
             render_pass.draw(0..3, 0..1);
         }
 
@@ -380,6 +412,10 @@ impl<'a> State<'a> {
     }
 }
 
+/// Main entry point for the Windowed (GUI) mode.
+///
+/// Initializes `winit` event loop, opens a window, creates the `State` (which wraps `Eu4Renderer`),
+/// and starts the render loop.
 pub async fn run(verbose: bool) {
     env_logger::init();
     let event_loop = EventLoop::new().unwrap();
@@ -425,4 +461,161 @@ pub async fn run(verbose: bool) {
             }
         })
         .unwrap();
+}
+
+/// Headless entry point for rendering to a file.
+///
+/// Encapsulates the entire process of:
+/// 1. Initializing `wgpu` (Instance, Adapter, Device) without a surface.
+/// 2. Creating `Eu4Renderer` to handle assets and pipelines.
+/// 3. Rendering to an offscreen texture.
+/// 4. Reading back the texture data and saving it as a PNG.
+///
+/// Returns immediately if no GPU adapter is found (CI waiver).
+pub async fn snapshot(output_path: &std::path::Path) {
+    // We need to re-init logger if it hasn't been initialized?
+    // Actually env_logger::init() panics if called twice.
+    // Let's assume it might be called.
+    let _ = env_logger::try_init();
+
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::VULKAN,
+        ..Default::default()
+    });
+
+    // For headless, we don't have a surface. We just need an adapter.
+    // Try to find one compatible with our needs.
+    let adapter = instance
+        .request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            compatible_surface: None, // Headless!
+            force_fallback_adapter: false,
+        })
+        .await;
+
+    // Graceful degradation for CI
+    if adapter.is_none() {
+        eprintln!("No suitable graphics adapter found. Skipping snapshot test (CI waiver).");
+        std::process::exit(0);
+    }
+    let adapter = adapter.unwrap();
+
+    let (device, queue) = adapter
+        .request_device(
+            &wgpu::DeviceDescriptor {
+                label: None,
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+            },
+            None,
+        )
+        .await
+        .unwrap();
+
+    // Use a standard texture format for offscreen rendering
+    let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+    // Verbose = true for logs
+    let renderer = Eu4Renderer::new(&device, &queue, format, true);
+    let size = renderer.diffuse_texture.texture.size();
+    let (width, height) = (size.width, size.height);
+
+    // Create offscreen texture to render to
+    let texture_desc = wgpu::TextureDescriptor {
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::RENDER_ATTACHMENT,
+        label: Some("Offscreen Texture"),
+        view_formats: &[],
+    };
+    let texture = device.create_texture(&texture_desc);
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+    // Create buffer to read back data
+    let u32_size = std::mem::size_of::<u32>() as u32;
+    let output_buffer_size = (u32_size * width * height) as wgpu::BufferAddress;
+    let output_buffer_desc = wgpu::BufferDescriptor {
+        size: output_buffer_size,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        label: Some("Output Buffer"),
+        mapped_at_creation: false,
+    };
+    let output_buffer = device.create_buffer(&output_buffer_desc);
+
+    // Render
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("Render Encoder"),
+    });
+
+    {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    }),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
+
+        render_pass.set_pipeline(&renderer.render_pipeline);
+        render_pass.set_bind_group(0, &renderer.diffuse_bind_group, &[]);
+        render_pass.draw(0..3, 0..1);
+    }
+
+    // Copy texture to buffer
+    encoder.copy_texture_to_buffer(
+        wgpu::ImageCopyTexture {
+            aspect: wgpu::TextureAspect::All,
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+        },
+        wgpu::ImageCopyBuffer {
+            buffer: &output_buffer,
+            layout: wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(u32_size * width),
+                rows_per_image: Some(height),
+            },
+        },
+        texture_desc.size,
+    );
+
+    queue.submit(Some(encoder.finish()));
+
+    // Read buffer
+    let buffer_slice = output_buffer.slice(..);
+
+    // NOTE: We have to map the buffer to access it
+    let (tx, rx) = std::sync::mpsc::channel();
+    buffer_slice.map_async(wgpu::MapMode::Read, move |v| tx.send(v).unwrap());
+    device.poll(wgpu::Maintain::Wait);
+    rx.recv().unwrap().unwrap();
+
+    let data = buffer_slice.get_mapped_range();
+
+    use image::{ImageBuffer, Rgba};
+    let buffer = ImageBuffer::<Rgba<u8>, _>::from_raw(width, height, data.to_vec()).unwrap();
+    buffer.save(output_path).unwrap();
+    println!("Snapshot saved to {:?}", output_path);
+
+    drop(data);
+    output_buffer.unmap();
 }

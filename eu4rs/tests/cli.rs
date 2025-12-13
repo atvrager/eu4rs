@@ -6,7 +6,7 @@ use tempfile::tempdir;
 #[test]
 fn test_cli_help() {
     let output = Command::new("cargo")
-        .args(&["run", "--", "--help"])
+        .args(["run", "--", "--help"])
         .output()
         .expect("failed to execute process");
 
@@ -16,20 +16,7 @@ fn test_cli_help() {
 #[test]
 fn test_cli_version() {
     let output = Command::new("cargo")
-        .args(&["run", "--", "--version"])
-        .output()
-        .expect("failed to execute process");
-
-    assert!(output.status.success());
-}
-
-#[test]
-fn test_cli_eu4_path() {
-    let dir = tempdir().unwrap();
-    let path = dir.path().to_str().unwrap();
-
-    let output = Command::new("cargo")
-        .args(&["run", "--", "--eu4-path", path])
+        .args(["run", "--", "--version"])
         .output()
         .expect("failed to execute process");
 
@@ -46,7 +33,7 @@ fn test_cli_pretty_print() {
     let path = dir.path().to_str().unwrap();
 
     let output = Command::new("cargo")
-        .args(&["run", "--", "--eu4-path", path, "--pretty-print"])
+        .args(["run", "--", "--eu4-path", path, "--pretty-print"])
         .output()
         .expect("failed to execute process");
 

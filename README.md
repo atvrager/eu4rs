@@ -33,6 +33,12 @@ cargo build --release
 ## Usage
 
 
+# Launch the Interactive Map (GUI) - Recommended default
+cargo run
+
+# Render map to an image file (Headless)
+cargo run -- snapshot --output my_map.png
+
 # Parse and pretty-print files (verifies parsing logic)
 cargo run -p eu4rs -- --pretty-print --eu4-path "path/to/specific/file.txt"
 ```
@@ -44,6 +50,8 @@ cargo run -p eu4rs -- --pretty-print --eu4-path "path/to/specific/file.txt"
 - **Tolerant Parsing**: Designed to handle quirks in game files (mostly).
 - **CI/CD**: Automated GitHub Actions pipeline for building, testing, and linting (`fmt`, `clippy`).
 - **Statistics**: The `Filescanner` provides quick statistics on your installation.
+- **Interactive Map**: A hardware-accelerated (Vulkan/wgpu) map viewer that renders the game's `provinces.bmp` with correct aspect ratio and windowing.
+- **Headless Rendering**: Ability to render the map to an image file without opening a window (`--snapshot`), suitable for automated testing in CI.
 - **Serde Support**: `eu4txt` implements `serde::Deserializer`, allowing direct mapping of game files to Rust structs (in `eu4data`).
 
 ## License

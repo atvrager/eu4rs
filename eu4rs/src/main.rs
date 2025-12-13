@@ -53,6 +53,12 @@ enum Commands {
         #[arg(long, default_value_t = true)] // Default to true for now as user likes it
         verbose: bool,
     },
+    /// Render map to an image file (headless)
+    Snapshot {
+        /// Output path for the image
+        #[arg(short, long, default_value = "snapshot.png")]
+        output: String,
+    },
 }
 
 fn dump_tradegoods(base_path: &std::path::Path) -> Result<(), String> {
@@ -330,6 +336,11 @@ fn main() -> Result<(), String> {
             }
             Commands::DrawWindow { verbose } => {
                 pollster::block_on(window::run(*verbose));
+                return Ok(());
+            }
+            Commands::Snapshot { output } => {
+                let path = std::path::Path::new(output);
+                pollster::block_on(window::snapshot(path));
                 return Ok(());
             }
         }
