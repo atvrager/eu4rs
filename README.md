@@ -2,7 +2,15 @@
 
 ![Rust CI](https://github.com/atvrager/eu4rs/actions/workflows/ci.yml/badge.svg)
 
-A Rust toolset for parsing and analyzing Europa Universalis IV text files.
+A# eu4rs
+
+**eu4rs** is an experimental open-source game engine reimplementation ("source port") for *Europa Universalis IV*.
+
+## Goals
+- **Performance**: High-performance rendering using `wgpu` (Vulkan/Metal/DX12).
+- **Compatibility**: Load and play using original game assets (data-driven design).
+- **Portability**: Native support for Windows and Linux.
+- **Safety**: Built in Rust for memory safety and concurrency.
 
 ## Project Structure
 
@@ -24,17 +32,6 @@ cargo build --release
 
 ## Usage
 
-Run the tool using `cargo run`:
-
-```powershell
-# Show help
-cargo run -p eu4rs -- --help
-
-# Scan the default Steam directory (hardcoded)
-cargo run -p eu4rs
-
-# Scan a specific directory
-cargo run -p eu4rs -- --eu4-path "C:/path/to/eu4/common"
 
 # Parse and pretty-print files (verifies parsing logic)
 cargo run -p eu4rs -- --pretty-print --eu4-path "path/to/specific/file.txt"

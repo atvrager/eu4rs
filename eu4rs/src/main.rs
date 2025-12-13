@@ -34,6 +34,8 @@ enum MapMode {
     All,
 }
 
+mod window;
+
 #[derive(Subcommand)]
 enum Commands {
     /// Dump tradegoods.txt to JSON
@@ -44,6 +46,12 @@ enum Commands {
         output: PathBuf,
         #[arg(long, value_enum, default_value_t = MapMode::TradeGoods)]
         mode: MapMode,
+    },
+    /// Open the interactive map window
+    /// Open the interactive map window
+    DrawWindow {
+        #[arg(long, default_value_t = true)] // Default to true for now as user likes it
+        verbose: bool,
     },
 }
 
@@ -300,7 +308,6 @@ fn main() -> Result<(), String> {
                 let base = args.eu4_path.parent().unwrap();
                 match mode {
                     MapMode::All => {
-                        // Render Political
                         println!("=== Rendering Political Map ===");
                         draw_map(
                             base,
@@ -308,7 +315,6 @@ fn main() -> Result<(), String> {
                             MapMode::Political,
                         )?;
 
-                        // Render Trade Goods
                         println!("\n=== Rendering Trade Goods Map ===");
                         draw_map(
                             base,
@@ -317,34 +323,40 @@ fn main() -> Result<(), String> {
                         )?;
                     }
                     _ => {
-                        // User specified a single mode.
-                        // If output is default "map_out.png", maybe we should try to be smarter?
-                        // But sticking to what they asked: "get tradegoods in its own uniquely named file".
-                        // If they run specifically `TradeGoods` without output arg, it goes to `map_out.png`.
-                        // Let's rely on `All` for the specific naming, OR we can override default if it wasn't touched.
-                        // But checking if arg was passed is hard with Clap structure here.
                         draw_map(base, output, *mode)?;
                     }
                 }
                 return Ok(());
             }
+            Commands::DrawWindow { verbose } => {
+                pollster::block_on(window::run(*verbose));
+                return Ok(());
+            }
         }
     }
 
-    match pretty_print_dir(&args.eu4_path, args.pretty_print) {
-        Ok(stats) => {
-            println!(
-                "Done! Success: {}, Failure: {}",
-                stats.success, stats.failure
-            );
-            println!(
-                "Total Tokens: {}, Total Nodes: {}",
-                stats.tokens, stats.nodes
-            );
+    // Default behavior handling:
+    // If pretty_print flag is set, run the scanner.
+    // Otherwise, default to GUI window.
+    if args.pretty_print {
+        match pretty_print_dir(&args.eu4_path, args.pretty_print) {
+            Ok(stats) => {
+                println!(
+                    "Done! Success: {}, Failure: {}",
+                    stats.success, stats.failure
+                );
+                println!(
+                    "Total Tokens: {}, Total Nodes: {}",
+                    stats.tokens, stats.nodes
+                );
+            }
+            Err(e) => {
+                println!("pretty_print_dir critical failure: {}", e);
+            }
         }
-        Err(e) => {
-            println!("pretty_print_dir critical failure: {}", e);
-        }
+    } else {
+        // Default to Source Port GUI
+        pollster::block_on(window::run(true));
     }
 
     Ok(())
