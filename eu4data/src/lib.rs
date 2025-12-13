@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-pub mod map;
-pub mod history;
 pub mod countries;
+pub mod history;
+pub mod map;
 
 /// Represents a trade good in EU4, determining the value and bonuses of a province's production.
 #[derive(Debug, Deserialize, Serialize)]
@@ -17,8 +17,8 @@ pub struct Tradegood {
     /// Province-scope modifiers (e.g., manpower increase).
     #[serde(default)]
     pub province: Option<HashMap<String, f32>>,
-    #[serde(default)] 
-    pub chance: Option<HashMap<String, serde_json::Value>>, 
+    #[serde(default)]
+    pub chance: Option<HashMap<String, serde_json::Value>>,
 }
 
 #[cfg(test)]
@@ -38,11 +38,15 @@ mod tests {
                 factor = 1
             }
         "#;
-        
+
         // Write to temp file
         let mut file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
         write!(file, "{}", data).expect("Failed to write to temp file");
-        let path = file.path().to_str().expect("Failed to get path").to_string();
+        let path = file
+            .path()
+            .to_str()
+            .expect("Failed to get path")
+            .to_string();
 
         // Use parser
         // Note: DefaultEU4Txt::open_txt re-opens the file by path.

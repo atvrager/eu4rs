@@ -1,5 +1,7 @@
 # eu4rs
 
+![Rust CI](https://github.com/atvrager/eu4rs/actions/workflows/ci.yml/badge.svg)
+
 A Rust toolset for parsing and analyzing Europa Universalis IV text files.
 
 ## Project Structure
@@ -43,7 +45,8 @@ cargo run -p eu4rs -- --pretty-print --eu4-path "path/to/specific/file.txt"
 - **Custom Parser**: Handles EU4's specific text format, including comments (`#`), whitespace-separated tokens, and `key=value` structures.
 - **Encoding Support**: Automatically handles `WINDOWS_1252` encoding common in Paradox files.
 - **Tolerant Parsing**: Designed to handle quirks in game files (mostly).
-- **Statistics**: detailed verification stats including token and AST node counts to verify deep parsing.
+- **CI/CD**: Automated GitHub Actions pipeline for building, testing, and linting (`fmt`, `clippy`).
+- **Statistics**: The `Filescanner` provides quick statistics on your installation.
 - **Serde Support**: `eu4txt` implements `serde::Deserializer`, allowing direct mapping of game files to Rust structs (in `eu4data`).
 
 ## License

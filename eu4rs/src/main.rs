@@ -1,9 +1,13 @@
-use eu4data::{Tradegood, map::{load_definitions, DefaultMap}, history::ProvinceHistory};
-use image::{RgbImage, Rgb};
+use clap::{Parser, Subcommand};
+use eu4data::{
+    Tradegood,
+    history::ProvinceHistory,
+    map::{DefaultMap, load_definitions},
+};
+use eu4txt::{DefaultEU4Txt, EU4Txt, from_node};
+use image::{Rgb, RgbImage};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use eu4txt::{DefaultEU4Txt, EU4Txt, from_node};
-use clap::{Parser, Subcommand};
 
 const PATH: &str =
     "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Europa Universalis IV\\common";
@@ -47,10 +51,13 @@ fn dump_tradegoods(base_path: &std::path::Path) -> Result<(), String> {
     let path = base_path.join("tradegoods/00_tradegoods.txt");
     println!("Loading {:?}", path);
     // dump_tradegoods logic here
-     let tokens = DefaultEU4Txt::open_txt(path.to_str().unwrap()).map_err(|e| e.to_string())?;
+    let tokens = DefaultEU4Txt::open_txt(path.to_str().unwrap()).map_err(|e| e.to_string())?;
     let ast = DefaultEU4Txt::parse(tokens)?;
     let goods: HashMap<String, Tradegood> = from_node(&ast)?;
-    println!("{}", serde_json::to_string_pretty(&goods).map_err(|e| e.to_string())?);
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&goods).map_err(|e| e.to_string())?
+    );
     Ok(())
 }
 
@@ -59,7 +66,7 @@ fn draw_map(base_path: &Path, output_path: &Path, mode: MapMode) -> Result<(), S
     let def_path = base_path.join("map/definition.csv");
     println!("Loading definitions from {:?}", def_path);
     let definitions = load_definitions(&def_path).map_err(|e| e.to_string())?;
-    
+
     // Build reverse map (RGB -> ID)
     let mut color_to_id: HashMap<(u8, u8, u8), u32> = HashMap::new();
     for (id, def) in &definitions {
@@ -69,13 +76,18 @@ fn draw_map(base_path: &Path, output_path: &Path, mode: MapMode) -> Result<(), S
     // 1b. Load Default Map (Sea/Lakes)
     let default_map_path = base_path.join("map/default.map");
     println!("Loading default map from {:?}", default_map_path);
-    let dm_tokens = DefaultEU4Txt::open_txt(default_map_path.to_str().unwrap()).map_err(|e| e.to_string())?;
+    let dm_tokens =
+        DefaultEU4Txt::open_txt(default_map_path.to_str().unwrap()).map_err(|e| e.to_string())?;
     let dm_ast = DefaultEU4Txt::parse(dm_tokens)?;
     let default_map: DefaultMap = from_node(&dm_ast)?;
-    
+
     let mut water_ids: HashSet<u32> = HashSet::new();
-    for id in default_map.sea_starts { water_ids.insert(id); }
-    for id in default_map.lakes { water_ids.insert(id); }
+    for id in default_map.sea_starts {
+        water_ids.insert(id);
+    }
+    for id in default_map.lakes {
+        water_ids.insert(id);
+    }
     println!("Loaded {} water provinces (sea+lakes).", water_ids.len());
 
     // 2. Load Data based on Mode
@@ -86,7 +98,8 @@ fn draw_map(base_path: &Path, output_path: &Path, mode: MapMode) -> Result<(), S
         MapMode::TradeGoods => {
             let goods_path = base_path.join("common/tradegoods/00_tradegoods.txt");
             println!("Loading trade goods from {:?}", goods_path);
-            let tokens = DefaultEU4Txt::open_txt(goods_path.to_str().unwrap()).map_err(|e| e.to_string())?;
+            let tokens =
+                DefaultEU4Txt::open_txt(goods_path.to_str().unwrap()).map_err(|e| e.to_string())?;
             let ast = DefaultEU4Txt::parse(tokens)?;
             goods = from_node(&ast)?;
         }
@@ -99,7 +112,7 @@ fn draw_map(base_path: &Path, output_path: &Path, mode: MapMode) -> Result<(), S
         }
         MapMode::All => unreachable!("MapMode::All should be handled by caller"),
     }
-    
+
     // 3. Load Province History (ID -> Data)
     let history_path = base_path.join("history/provinces");
     println!("Loading history from {:?}", history_path);
@@ -110,86 +123,95 @@ fn draw_map(base_path: &Path, output_path: &Path, mode: MapMode) -> Result<(), S
         for entry in std::fs::read_dir(history_path).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "txt") {
+            if path.extension().is_some_and(|ext| ext == "txt") {
                 // Parse ID from filename "123 - Name.txt"
                 let stem = path.file_stem().unwrap().to_str().unwrap();
                 let id_part = stem.split_whitespace().next().unwrap();
                 if let Ok(id) = id_part.parse::<u32>() {
                     // Parse file content
-                     let tokens = match DefaultEU4Txt::open_txt(path.to_str().unwrap()) {
-                         Ok(t) => t,
-                         Err(e) => {
+                    let tokens = match DefaultEU4Txt::open_txt(path.to_str().unwrap()) {
+                        Ok(t) => t,
+                        Err(e) => {
                             // Open failed (IO error)
                             stats_history.1 += 1;
-                            if stats_history.1 <= 5 { println!("Failed to open {}: {}", path.display(), e); }
+                            if stats_history.1 <= 5 {
+                                println!("Failed to open {}: {}", path.display(), e);
+                            }
                             continue;
-                         }
-                     };
-                     
-                     match DefaultEU4Txt::parse(tokens) {
-                         Ok(ast) => {
-                             match from_node::<ProvinceHistory>(&ast) {
-                                 Ok(hist) => {
-                                     stats_history.0 += 1;
-                                     province_history.insert(id, hist);
-                                 },
-                                 Err(e) => {
-                                     stats_history.1 += 1;
-                                     if stats_history.1 <= 5 { println!("Failed to deserialize {}: {}", path.display(), e); }
-                                 }
-                             }
-                         },
-                         Err(e) => {
-                             if e == "NoTokens" {
-                                 // Empty file, safe to ignore (no history data).
-                             } else {
-                                 stats_history.1 += 1;
-                                 if stats_history.1 <= 5 { println!("Failed to parse {}: {}", path.display(), e); }
-                             }
-                         }
-                     }
+                        }
+                    };
+
+                    match DefaultEU4Txt::parse(tokens) {
+                        Ok(ast) => match from_node::<ProvinceHistory>(&ast) {
+                            Ok(hist) => {
+                                stats_history.0 += 1;
+                                province_history.insert(id, hist);
+                            }
+                            Err(e) => {
+                                stats_history.1 += 1;
+                                if stats_history.1 <= 5 {
+                                    println!("Failed to deserialize {}: {}", path.display(), e);
+                                }
+                            }
+                        },
+                        Err(e) => {
+                            if e == "NoTokens" {
+                                // Empty file, safe to ignore (no history data).
+                            } else {
+                                stats_history.1 += 1;
+                                if stats_history.1 <= 5 {
+                                    println!("Failed to parse {}: {}", path.display(), e);
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
-    println!("History Stats: Success={}, Failure={}", stats_history.0, stats_history.1);
-    
+    println!(
+        "History Stats: Success={}, Failure={}",
+        stats_history.0, stats_history.1
+    );
+
     // 4. Render
     let map_path = base_path.join("map/provinces.bmp");
     println!("Loading map image from {:?}", map_path);
     let img = image::open(map_path).map_err(|e| e.to_string())?.to_rgb8();
     let (width, height) = img.dimensions();
     let mut out_img = RgbImage::new(width, height);
-    
+
     println!("Rendering...");
     for (x, y, pixel) in img.enumerate_pixels() {
         let (r, g, b) = (pixel[0], pixel[1], pixel[2]);
         if let Some(id) = color_to_id.get(&(r, g, b)) {
             let mut out_color = Rgb([100, 100, 100]); // Default Grey
-            
+
             if water_ids.contains(id) {
                 out_color = Rgb([64, 164, 223]); // Water Blue
             } else if let Some(hist) = province_history.get(id) {
                 match mode {
                     MapMode::TradeGoods => {
-                        if let Some(good_name) = &hist.trade_goods {
-                            if let Some(good) = goods.get(good_name) {
-                                if good.color.len() >= 3 {
-                                     let fr = (good.color[0] * 255.0) as u8;
-                                     let fg = (good.color[1] * 255.0) as u8;
-                                     let fb = (good.color[2] * 255.0) as u8;
-                                     out_color = Rgb([fr, fg, fb]);
-                                }
-                            }
+                        if let Some(good) = hist
+                            .trade_goods
+                            .as_ref()
+                            .and_then(|name| goods.get(name))
+                            .filter(|g| g.color.len() >= 3)
+                        {
+                            let fr = (good.color[0] * 255.0) as u8;
+                            let fg = (good.color[1] * 255.0) as u8;
+                            let fb = (good.color[2] * 255.0) as u8;
+                            out_color = Rgb([fr, fg, fb]);
                         }
                     }
                     MapMode::Political => {
-                        if let Some(owner) = &hist.owner {
-                            if let Some(country) = countries.get(owner) {
-                                if country.color.len() >= 3 {
-                                    out_color = Rgb([country.color[0], country.color[1], country.color[2]]);
-                                }
-                            }
+                        if let Some(country) = hist
+                            .owner
+                            .as_ref()
+                            .and_then(|tag| countries.get(tag))
+                            .filter(|c| c.color.len() >= 3)
+                        {
+                            out_color = Rgb([country.color[0], country.color[1], country.color[2]]);
                         }
                     }
                     MapMode::All => unreachable!(),
@@ -197,17 +219,16 @@ fn draw_map(base_path: &Path, output_path: &Path, mode: MapMode) -> Result<(), S
             }
             out_img.put_pixel(x, y, out_color);
         } else {
-             out_img.put_pixel(x, y, Rgb([0, 0, 0]));
+            out_img.put_pixel(x, y, Rgb([0, 0, 0]));
         }
     }
-    
+
     out_img.save(output_path).map_err(|e| e.to_string())?;
     println!("Saved {:?}", output_path);
     Ok(())
 }
 
 struct ScanStats {
-
     success: usize,
     failure: usize,
     tokens: usize,
@@ -215,7 +236,12 @@ struct ScanStats {
 }
 
 fn pretty_print_dir(dir: &std::path::Path, pretty_print: bool) -> Result<ScanStats, String> {
-    let mut stats = ScanStats { success: 0, failure: 0, tokens: 0, nodes: 0 };
+    let mut stats = ScanStats {
+        success: 0,
+        failure: 0,
+        tokens: 0,
+        nodes: 0,
+    };
     if dir.is_dir() {
         for entry in std::fs::read_dir(dir).unwrap() {
             let entry = entry.unwrap();
@@ -227,33 +253,32 @@ fn pretty_print_dir(dir: &std::path::Path, pretty_print: bool) -> Result<ScanSta
                 stats.failure += sub_stats.failure;
                 stats.tokens += sub_stats.tokens;
                 stats.nodes += sub_stats.nodes;
-            } else {
-                if path.extension().map_or(false, |ext| ext == "txt") {
-                     // println!("{}", path.display());
-                    let tokens = match DefaultEU4Txt::open_txt(path.to_str().unwrap()) {
-                        Ok(t) => t,
-                        Err(_) => {
-                            // println!("Expected encoding error potentially");
-                            continue;
+            } else if path.extension().is_some_and(|ext| ext == "txt") {
+                // println!("{}", path.display());
+                let tokens = match DefaultEU4Txt::open_txt(path.to_str().unwrap()) {
+                    Ok(t) => t,
+                    Err(_) => {
+                        // println!("Expected encoding error potentially");
+                        continue;
+                    }
+                };
+
+                match DefaultEU4Txt::parse(tokens.clone()) {
+                    // Clone because parse consumers tokens (or we change parse sig)
+                    // Actually parse takes Vec<Token>, opens_txt returns Vec<Token>.
+                    // We need the count before move, or just count tokens.len()
+                    Ok(ast) => {
+                        stats.success += 1;
+                        stats.tokens += tokens.len();
+                        stats.nodes += ast.node_count();
+                        if pretty_print {
+                            DefaultEU4Txt::pretty_print(&ast, 0)?;
                         }
-                    };
-                    
-                    match DefaultEU4Txt::parse(tokens.clone()) { // Clone because parse consumers tokens (or we change parse sig)
-                        // Actually parse takes Vec<Token>, opens_txt returns Vec<Token>.
-                        // We need the count before move, or just count tokens.len()
-                        Ok(ast) => {
-                            stats.success += 1;
-                            stats.tokens += tokens.len();
-                            stats.nodes += ast.node_count();
-                             if pretty_print {
-                                DefaultEU4Txt::pretty_print(&ast, 0)?;
-                            }
-                        },
-                        Err(e) => {
-                            if e != "NoTokens" {
-                                println!("Parse Fail: {} : {}", path.display(), e);
-                                stats.failure += 1;
-                            }
+                    }
+                    Err(e) => {
+                        if e != "NoTokens" {
+                            println!("Parse Fail: {} : {}", path.display(), e);
+                            stats.failure += 1;
                         }
                     }
                 }
@@ -272,20 +297,28 @@ fn main() -> Result<(), String> {
                 return Ok(());
             }
             Commands::DrawMap { output, mode } => {
-                let base = args.eu4_path.parent().unwrap(); 
+                let base = args.eu4_path.parent().unwrap();
                 match mode {
                     MapMode::All => {
-                         // Render Political
-                         println!("=== Rendering Political Map ===");
-                         draw_map(base, &PathBuf::from("map_political.png"), MapMode::Political)?;
-                         
-                         // Render Trade Goods
-                         println!("\n=== Rendering Trade Goods Map ===");
-                         draw_map(base, &PathBuf::from("map_tradegoods.png"), MapMode::TradeGoods)?;
+                        // Render Political
+                        println!("=== Rendering Political Map ===");
+                        draw_map(
+                            base,
+                            &PathBuf::from("map_political.png"),
+                            MapMode::Political,
+                        )?;
+
+                        // Render Trade Goods
+                        println!("\n=== Rendering Trade Goods Map ===");
+                        draw_map(
+                            base,
+                            &PathBuf::from("map_tradegoods.png"),
+                            MapMode::TradeGoods,
+                        )?;
                     }
                     _ => {
                         // User specified a single mode.
-                        // If output is default "map_out.png", maybe we should try to be smarter? 
+                        // If output is default "map_out.png", maybe we should try to be smarter?
                         // But sticking to what they asked: "get tradegoods in its own uniquely named file".
                         // If they run specifically `TradeGoods` without output arg, it goes to `map_out.png`.
                         // Let's rely on `All` for the specific naming, OR we can override default if it wasn't touched.
@@ -300,8 +333,14 @@ fn main() -> Result<(), String> {
 
     match pretty_print_dir(&args.eu4_path, args.pretty_print) {
         Ok(stats) => {
-            println!("Done! Success: {}, Failure: {}", stats.success, stats.failure);
-            println!("Total Tokens: {}, Total Nodes: {}", stats.tokens, stats.nodes);
+            println!(
+                "Done! Success: {}, Failure: {}",
+                stats.success, stats.failure
+            );
+            println!(
+                "Total Tokens: {}, Total Nodes: {}",
+                stats.tokens, stats.nodes
+            );
         }
         Err(e) => {
             println!("pretty_print_dir critical failure: {}", e);

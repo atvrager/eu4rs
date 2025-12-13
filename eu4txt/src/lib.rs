@@ -4,9 +4,9 @@
 //! text format, which is loosely based on braces `{}` and `key = value` assignments,
 //! typically encoded in `WINDOWS_1252`.
 
-use std::path::PathBuf;
 use std::fs::File;
 use std::io::{BufReader, Read};
+use std::path::PathBuf;
 use std::vec::Vec;
 
 use encoding_rs::WINDOWS_1252;
@@ -14,8 +14,6 @@ use encoding_rs_io::DecodeReaderBytesBuilder;
 
 pub mod de;
 pub use de::from_node;
-
-
 
 /// Represents a token scanned from an EU4 text file.
 #[derive(Debug, Clone)]
@@ -65,6 +63,12 @@ pub struct EU4TxtParseNode {
     /// The type of item and its data.
     pub entry: EU4TxtAstItem,
 }
+impl Default for EU4TxtParseNode {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EU4TxtParseNode {
     /// Creates a new empty node with `Brace` type.
     pub fn new() -> EU4TxtParseNode {
@@ -84,10 +88,11 @@ pub trait EU4Txt {
     fn open_txt(path: &str) -> std::io::Result<Vec<EU4TxtToken>> {
         let path = PathBuf::from(path);
         let file = File::open(path)?;
-        let mut buf_reader =
-            BufReader::new(DecodeReaderBytesBuilder::new()
-                            .encoding(Some(WINDOWS_1252))
-                            .build(file));
+        let mut buf_reader = BufReader::new(
+            DecodeReaderBytesBuilder::new()
+                .encoding(Some(WINDOWS_1252))
+                .build(file),
+        );
         let mut contents = String::new();
         buf_reader.read_to_string(&mut contents)?;
 
@@ -142,17 +147,24 @@ pub trait EU4Txt {
                     // Identifier or Number
                     let mut s = String::new();
                     while let Some(&nc) = chars.peek() {
-                        if nc.is_whitespace() || nc == '=' || nc == '{' || nc == '}' || nc == '#' || nc == '"' {
+                        if nc.is_whitespace()
+                            || nc == '='
+                            || nc == '{'
+                            || nc == '}'
+                            || nc == '#'
+                            || nc == '"'
+                        {
                             break;
                         }
                         s.push(chars.next().unwrap());
                     }
-                    
+
                     if let Ok(i) = s.parse::<i32>() {
                         tokens.push(EU4TxtToken::IntValue(i));
                     } else if let Ok(f) = s.parse::<f32>() {
                         if f.is_nan() {
-                             if s == "nan" || s == "NaN" { // case insensitive check might be safer but s is exact
+                            if s == "nan" || s == "NaN" {
+                                // case insensitive check might be safer but s is exact
                                 // It could be a string "Nan", treating as float NaN for now if it parses, but "Nan" is parsed as NaN by rust?
                                 // "Nan".parse::<f32>() is Ok(NaN).
                                 // But some files have "Nan" as a country tag or name.
@@ -161,11 +173,11 @@ pub trait EU4Txt {
                                 if s == "Nan" {
                                     tokens.push(EU4TxtToken::StringValue(s));
                                 } else {
-                                     tokens.push(EU4TxtToken::FloatValue(f));
+                                    tokens.push(EU4TxtToken::FloatValue(f));
                                 }
-                             } else {
-                                 tokens.push(EU4TxtToken::FloatValue(f));
-                             }
+                            } else {
+                                tokens.push(EU4TxtToken::FloatValue(f));
+                            }
                         } else {
                             tokens.push(EU4TxtToken::FloatValue(f));
                         }
@@ -178,7 +190,10 @@ pub trait EU4Txt {
         Ok(tokens)
     }
 
-    fn parse_terminal(tokens: &Vec<EU4TxtToken>, pos: usize) -> Result<(EU4TxtParseNode, usize), String> {
+    fn parse_terminal(
+        tokens: &[EU4TxtToken],
+        pos: usize,
+    ) -> Result<(EU4TxtParseNode, usize), String> {
         let tok: &EU4TxtToken = tokens.get(pos).ok_or("Unexpected EOF")?;
         match tok {
             EU4TxtToken::Identifier(s) => {
@@ -201,13 +216,14 @@ pub trait EU4Txt {
                 string.entry = EU4TxtAstItem::StringValue(s.to_string());
                 Ok((string, pos + 1))
             }
-            _ => {
-                Err(format!("Unimplemented {:?} @ {}", tok, pos))
-            }
+            _ => Err(format!("Unimplemented {:?} @ {}", tok, pos)),
         }
     }
 
-    fn parse_assignment_list(tokens: &Vec<EU4TxtToken>, pos: usize) -> Result<(EU4TxtParseNode, usize), String> {
+    fn parse_assignment_list(
+        tokens: &[EU4TxtToken],
+        pos: usize,
+    ) -> Result<(EU4TxtParseNode, usize), String> {
         let mut assignment_list = EU4TxtParseNode::new();
         assignment_list.entry = EU4TxtAstItem::AssignmentList;
         let mut loop_pos = pos;
@@ -215,26 +231,22 @@ pub trait EU4Txt {
             if loop_pos == tokens.len() {
                 break;
             }
-            let lhs_tok = tokens.get(loop_pos).ok_or(format!("no lhs tok @ {}", loop_pos))?;
-            match lhs_tok {
-                EU4TxtToken::RightBrace => {
-                    loop_pos += 1;
-                    break;
-                }
-                _ => {}
+            let lhs_tok = tokens
+                .get(loop_pos)
+                .ok_or(format!("no lhs tok @ {}", loop_pos))?;
+            if let EU4TxtToken::RightBrace = lhs_tok {
+                loop_pos += 1;
+                break;
             }
             let (node_lhs, eq_pos) = Self::parse_terminal(tokens, loop_pos)?;
             // TODO: what if LHS is }?
             // TODO: assert lhs is identifier
             let eq = tokens.get(eq_pos);
-            match eq {
-                None => {
-                    assignment_list.children.push(node_lhs);
-                    loop_pos += 1;
-                    continue;
-                }
-                Some(_) => {}
-            };
+            if eq.is_none() {
+                assignment_list.children.push(node_lhs);
+                loop_pos += 1;
+                continue;
+            }
             match eq.unwrap() {
                 EU4TxtToken::Equals => {
                     let rhs_tok = tokens.get(eq_pos + 1).ok_or("no rhs tok".to_string())?;
@@ -270,13 +282,20 @@ pub trait EU4Txt {
 
     fn parse(tokens: Vec<EU4TxtToken>) -> Result<EU4TxtParseNode, String> {
         // TODO: define an error type enum, that way this can be an error we can discriminate
-        if tokens.len() == 0 {
+        if tokens.is_empty() {
             return Err("NoTokens".to_string());
         }
-        Self::parse_assignment_list(&tokens, 0).and_then(|(n, i)| if i == tokens.len() {
-            Ok(n)
-        } else {
-            Err(format!("Parsing failed! {} != {} tok ({:?})", i, tokens.len(), tokens.get(i).unwrap()))
+        Self::parse_assignment_list(&tokens, 0).and_then(|(n, i)| {
+            if i == tokens.len() {
+                Ok(n)
+            } else {
+                Err(format!(
+                    "Parsing failed! {} != {} tok ({:?})",
+                    i,
+                    tokens.len(),
+                    tokens.get(i).unwrap()
+                ))
+            }
         })
     }
 
@@ -297,7 +316,7 @@ pub trait EU4Txt {
                 }
             }
             EU4TxtAstItem::Assignment => {
-                let id = ast.children.get(0).ok_or("missing id")?;
+                let id = ast.children.first().ok_or("missing id")?;
                 for _ in 0..depth {
                     print!("  ");
                 }
@@ -328,23 +347,18 @@ pub trait EU4Txt {
             EU4TxtAstItem::Brace => {
                 // Do nothing or print?
             }
-
         }
         Ok(())
     }
-
 }
 pub struct DefaultEU4Txt {}
 impl EU4Txt for DefaultEU4Txt {}
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const PATH: &str = 
-        // "c:\\users\\atv\\Documents\\src\\eu4rs\\eu4txt\\src\\test.txt";
-        "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Europa Universalis IV\\common\\defender_of_faith\\00_defender_of_faith.txt";
+    use std::io::Write;
 
     #[test]
     fn nonexistent() {
@@ -354,13 +368,21 @@ mod tests {
 
     #[test]
     fn exists() {
-        let r = DefaultEU4Txt::open_txt(PATH);
+        let mut file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+        write!(file, "key = value").expect("Failed to write");
+        let path = file.path().to_str().unwrap();
+
+        let r = DefaultEU4Txt::open_txt(path);
         assert!(r.is_ok());
     }
 
     #[test]
     fn parse() {
-        let r = DefaultEU4Txt::open_txt(PATH);
+        let mut file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+        write!(file, "key = value").expect("Failed to write");
+        let path = file.path().to_str().unwrap();
+
+        let r = DefaultEU4Txt::open_txt(path);
         assert!(r.is_ok());
         let r2 = DefaultEU4Txt::parse(r.unwrap());
         assert!(r2.is_ok());
@@ -368,7 +390,11 @@ mod tests {
 
     #[test]
     fn pretty_print() {
-        let r = DefaultEU4Txt::open_txt(PATH);
+        let mut file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+        write!(file, "key = value").expect("Failed to write");
+        let path = file.path().to_str().unwrap();
+
+        let r = DefaultEU4Txt::open_txt(path);
         assert!(r.is_ok());
         let r2 = DefaultEU4Txt::parse(r.unwrap());
         assert!(r2.is_ok());

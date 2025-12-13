@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::path::Path;
 use std::error::Error;
+use std::path::Path;
 
 /// A mapping between a Province ID and its color on the map bitmap.
 #[derive(Debug, Deserialize)]
@@ -19,10 +19,10 @@ pub fn load_definitions(path: &Path) -> Result<HashMap<u32, ProvinceDefinition>,
     let mut reader = csv::ReaderBuilder::new()
         .delimiter(b';')
         .has_headers(false) // definitions.csv usually has no headers? Or maybe it does. Let's assume no for now or check.
-        // Actually, many eu4 files have a header line like 'province;red;green;blue;x;x' or similar. 
+        // Actually, many eu4 files have a header line like 'province;red;green;blue;x;x' or similar.
         // But frequently standard csv parser fails because of 'x' column?
         // Let's try flexible parsing.
-        .flexible(true) 
+        .flexible(true)
         .from_path(path)?;
 
     let mut definitions = HashMap::new();
@@ -31,14 +31,14 @@ pub fn load_definitions(path: &Path) -> Result<HashMap<u32, ProvinceDefinition>,
         // So we should specific handle or skip first row if it fails?
         // Let's try to just deserialize.
         match result {
-             Ok(record) => {
-                 let def: ProvinceDefinition = record;
-                 definitions.insert(def.id, def);
-             }
-             Err(_) => {
-                 // Likely header or malformed line. Skip.
-                 continue;
-             }
+            Ok(record) => {
+                let def: ProvinceDefinition = record;
+                definitions.insert(def.id, def);
+            }
+            Err(_) => {
+                // Likely header or malformed line. Skip.
+                continue;
+            }
         }
     }
     Ok(definitions)
