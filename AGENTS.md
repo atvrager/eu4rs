@@ -165,7 +165,18 @@ For critical logic provided by Gemini:
 1. **Ask Opus to review** the snippet ("LLM-as-a-Judge")
 2. Prompt: "Rate this code 1-5 on correctness/safety. If <5, rewrite it."
 
-### 3. The Calibrate Command
+### 3. Security & Secrets (Paranoid Verification)
+**Rule**: Anything involving secrets, API keys, or credentials requires **Paranoid Verification**.
+
+**Protocol**:
+1.  **Check Ignore**: Verify file is covered by `.gitignore` (run `git check-ignore -v <file>`).
+2.  **Check Tracking**: Verify file is NOT in git index (run `git ls-files <file>`).
+3.  **Check History**: Verify file was NEVER committed (run `git log --all -- <file>`).
+4.  **Simulate**: "If I push this now, what leaks?" (Review `git status` output carefully).
+
+*Only proceed when ALL 4 checks pass.*
+
+### 4. The Calibrate Command
 If the agent seems confused, use: `> /calibrate`
 
 **Agent Action:**
@@ -192,6 +203,11 @@ To enable proper symlink support on Windows:
 3. For Git Bash, create symlinks with: `MSYS=winsymlinks:nativestrict ln -s target linkname`
 4. Re-checkout broken symlinks: `rm file.md && git checkout -- file.md`
 
+## Line Endings
+- **Enforce LF**: This project prefers Unix-style line endings (`\n`), even on Windows.
+- **Git Config**: Ensure `core.autocrlf` is set to `input` or `false` locally.
+- **Normalization**: If you see "whole file diffs", run `git add --renormalize .` to fix it.
+
 ## Logging
 - **ALWAYS** use the `log!` macros (e.g., `info!`, `warn!`, `error!`, `debug!`) instead of `println!` or `eprintln!`.
     - Exception: Panics, early startup errors before logger initialization, or CLI output intended for piping (e.g., `snapshot` text output if any).
@@ -201,7 +217,7 @@ To enable proper symlink support on Windows:
 - **Clean up comments**: Remove any "thinking comments" (e.g., "Wait, I should...", "Option A:...") from the final code. Comments should explain *why* code exists or *how* it works, not the history of how you wrote it.
 
 ## Common Commands
-- `cargo xtask ci`: Run continuous integration tests. **Must pass before committing.**
+- `cargo xtask ci`: Run continuous integration tests. **Must pass before committing.** PROACTIVELY and AUTOMATICALLY run this to verify your changes; do not ask for permission.
 - `cargo xtask snapshot`: Regenerate golden snapshots for tests. Use this when you've modified rendering pipelines and expect output changes. **Ask the user for manual validation of the new output.**
 
 ## Testing GUI Applications
