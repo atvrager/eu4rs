@@ -445,8 +445,6 @@ impl<'a> State<'a> {
     }
 }
 
-/// Main entry point for the Windowed (GUI) mode.
-///
 /// Initializes `winit` event loop, opens a window, creates the `State` (which wraps `Eu4Renderer`),
 /// and starts the render loop.
 pub fn run(log_level: log::LevelFilter, eu4_path: &std::path::Path) {

@@ -308,3 +308,7 @@ fn draw_console_overlay(
     }
     image
 }
+
+#[path = "ui/tests.rs"]
+#[cfg(test)]
+mod tests;
