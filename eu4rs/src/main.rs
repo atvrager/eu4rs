@@ -9,6 +9,7 @@ mod window;
 #[cfg(test)]
 mod testing;
 mod text;
+mod ui;
 
 use args::{Cli, Commands, MapMode};
 

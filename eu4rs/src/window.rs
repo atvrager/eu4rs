@@ -47,6 +47,27 @@ impl WorldData {
             format!("Province ID: {}\n(No History)", id)
         }
     }
+
+    pub fn get_mode_specific_tooltip(&self, id: u32, mode: MapMode) -> String {
+        if let Some(hist) = self.province_history.get(&id) {
+            match mode {
+                MapMode::Province => format!("Province ID: {}", id),
+                MapMode::Political => format!("Owner: {}", hist.owner.as_deref().unwrap_or("---")),
+                MapMode::TradeGoods => {
+                    format!("Goods: {}", hist.trade_goods.as_deref().unwrap_or("---"))
+                }
+                MapMode::Religion => {
+                    format!("Religion: {}", hist.religion.as_deref().unwrap_or("---"))
+                }
+                MapMode::Culture => {
+                    format!("Culture: {}", hist.culture.as_deref().unwrap_or("---"))
+                }
+                _ => format!("Province ID: {}", id),
+            }
+        } else {
+            format!("Province ID: {} (No History)", id)
+        }
+    }
 }
 
 /// Decoupled application state for logic testing
@@ -77,6 +98,37 @@ impl AppState {
             last_cursor_pos: None,
             current_map_mode: MapMode::Province,
         }
+    }
+
+    pub fn get_hover_text(&self) -> Option<String> {
+        if let Some((mx, my)) = self.cursor_pos {
+            let (win_w, win_h) = self.window_size;
+            let (tex_w, tex_h) = self.world_data.province_map.dimensions();
+            if win_w == 0 || win_h == 0 {
+                return None;
+            }
+
+            let (u_world, v_world) =
+                self.camera
+                    .screen_to_world(mx, my, win_w as f64, win_h as f64);
+            if !(0.0..=1.0).contains(&v_world) {
+                return None;
+            }
+
+            let x = (u_world * tex_w as f64) as u32;
+            let y = (v_world * tex_h as f64) as u32;
+
+            #[allow(clippy::collapsible_if)]
+            if x < tex_w && y < tex_h {
+                if let Some(id) = self.world_data.get_province_id(x, y) {
+                    return Some(
+                        self.world_data
+                            .get_mode_specific_tooltip(id, self.current_map_mode),
+                    );
+                }
+            }
+        }
+        None
     }
 
     pub fn toggle_map_mode(&mut self) -> MapMode {
@@ -143,119 +195,6 @@ impl AppState {
 }
 
 use crate::text::TextRenderer;
-
-pub struct InspectorState<'a> {
-    pub window: &'a winit::window::Window,
-    pub surface: wgpu::Surface<'a>,
-    pub config: wgpu::SurfaceConfiguration,
-    pub renderer: Eu4Renderer,
-}
-
-impl<'a> InspectorState<'a> {
-    pub fn new(
-        window: &'a winit::window::Window,
-        instance: &wgpu::Instance,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        format: wgpu::TextureFormat, // from adapter/main
-    ) -> Self {
-        // Window already created externally
-
-        let surface = instance.create_surface(window).unwrap();
-
-        // We reuse the device/queue from main, but we need to configure surface.
-        // We assume the same adapter/format capabilities roughly or just use standard.
-        // Ideally we should check caps.
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format, // Assume compatible or query?
-            width: 400,
-            height: 300,
-            present_mode: wgpu::PresentMode::Fifo,
-            alpha_mode: wgpu::CompositeAlphaMode::Auto,
-            view_formats: vec![],
-            desired_maximum_frame_latency: 2,
-        };
-
-        surface.configure(device, &config);
-
-        let renderer = Eu4Renderer::new(device, queue, format, false);
-
-        // Initialize Inspector Camera to Identity (0.5, 0.5 center, 1.0 scale)
-        // Otherwise it defaults to 0s and samples only one pixel.
-        renderer.update_camera_buffer(queue, [0.5, 0.5, 1.0, 1.0]);
-
-        Self {
-            window,
-            surface,
-            config,
-            renderer,
-        }
-    }
-
-    pub fn resize(&mut self, device: &wgpu::Device, new_size: winit::dpi::PhysicalSize<u32>) {
-        if new_size.width > 0 && new_size.height > 0 {
-            self.config.width = new_size.width;
-            self.config.height = new_size.height;
-            self.surface.configure(device, &self.config);
-        }
-    }
-
-    pub fn render(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-    ) -> Result<(), wgpu::SurfaceError> {
-        let output = self.surface.get_current_texture()?;
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Inspector Encoder"),
-        });
-
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Inspector Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
-
-            render_pass.set_pipeline(&self.renderer.render_pipeline);
-            render_pass.set_bind_group(0, &self.renderer.diffuse_bind_group, &[]);
-            render_pass.draw(0..3, 0..1);
-        }
-
-        queue.submit(std::iter::once(encoder.finish()));
-        output.present();
-        Ok(())
-    }
-
-    pub fn update_texture(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        img: &image::DynamicImage,
-    ) {
-        if let Ok(texture) = Texture::from_image(device, queue, img, Some("Inspector Texture")) {
-            // Recreate bind group!
-            // Eu4Renderer has diffuse_texture and diffuse_bind_group.
-            // We need to update them.
-            // Eu4Renderer fields are public? Yes.
-            self.renderer.update_texture(device, texture);
-        }
-    }
-}
 
 pub struct Texture {
     #[allow(dead_code)]
@@ -341,9 +280,14 @@ impl Texture {
 pub struct Eu4Renderer {
     pub render_pipeline: wgpu::RenderPipeline,
     pub diffuse_bind_group: wgpu::BindGroup,
-    #[allow(dead_code)]
     pub diffuse_texture: Texture,
     pub camera_buffer: wgpu::Buffer,
+
+    // UI Overlay components
+    pub ui_pipeline: wgpu::RenderPipeline,
+    pub ui_bind_group: wgpu::BindGroup,
+    pub ui_texture: Texture,
+    pub ui_camera_buffer: wgpu::Buffer,
 }
 
 impl Eu4Renderer {
@@ -370,6 +314,41 @@ impl Eu4Renderer {
             ],
             label: Some("diffuse_bind_group_updated"),
         });
+    }
+
+    pub fn update_ui_texture(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        img: &image::RgbaImage,
+    ) {
+        // Option A: Write to existing texture if size matches (faster) or recreate?
+        // Let's assume size might change, so we recreate or reuse intelligently.
+        // For simplicity: new texture from image.
+        let dyn_img = image::DynamicImage::ImageRgba8(img.clone());
+        if let Ok(new_tex) = Texture::from_image(device, queue, &dyn_img, Some("UI Texture")) {
+            self.ui_texture = new_tex;
+
+            let bind_group_layout = self.ui_pipeline.get_bind_group_layout(0);
+            self.ui_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&self.ui_texture.view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&self.ui_texture.sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: self.ui_camera_buffer.as_entire_binding(),
+                    },
+                ],
+                label: Some("ui_bind_group"),
+            });
+        }
     }
 
     pub fn update_camera_buffer(&self, queue: &wgpu::Queue, data: [f32; 4]) {
@@ -508,6 +487,7 @@ impl Eu4Renderer {
                 push_constant_ranges: &[],
             });
 
+        // 1. Regular Map Pipeline (No Blending / Replace)
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
@@ -545,11 +525,85 @@ impl Eu4Renderer {
             multiview: None,
         });
 
+        // 2. UI Pipeline (Alpha Blending)
+        let ui_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("UI Pipeline"),
+            layout: Some(&render_pipeline_layout), // Same layout (texture+sampler+camera)
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_main", // Same shader
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING), // Enable Blending
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        });
+
+        // UI Camera (Identity for overlay 1:1)
+        // Center 0.5, Scale 1.0 means the texture covers the screen exactly (if UVs are 0-1).
+        // Since we generate the UI texture to match screen size, this is perfect.
+        let ui_camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("UI Camera Buffer"),
+            contents: bytemuck::cast_slice(&[0.5f32, 0.5f32, 1.0f32, 1.0f32]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        // Initial Dummy UI Texture (Transparent 1x1)
+        let dummy_ui = image::DynamicImage::ImageRgba8(image::RgbaImage::new(1, 1));
+        let ui_texture = Texture::from_image(device, queue, &dummy_ui, Some("UI Texture")).unwrap();
+
+        let ui_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&ui_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&ui_texture.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: ui_camera_buffer.as_entire_binding(),
+                },
+            ],
+            label: Some("ui_bind_group"),
+        });
+
         Self {
             render_pipeline,
             diffuse_bind_group,
             diffuse_texture,
             camera_buffer,
+            ui_pipeline,
+            ui_bind_group,
+            ui_texture,
+            ui_camera_buffer,
         }
     }
 }
@@ -564,17 +618,30 @@ struct State<'a> {
     renderer: Eu4Renderer,
     app_state: AppState, // Encapsulated logic state
     text_renderer: TextRenderer,
-    inspector: InspectorState<'a>,
+    ui_state: crate::ui::UIState,
 }
 
 impl<'a> State<'a> {
     // Creating some of the wgpu types requires async code
     async fn new(
         window: &'a winit::window::Window,
-        inspector_window: &'a winit::window::Window,
         verbose: bool,
         world_data: WorldData,
     ) -> State<'a> {
+        // Enforce 1920x1080 Physical or specific size if possible, otherwise use existing.
+        // The user specifically asked for "Physical" to avoid DPI issues.
+        // Winit doesn't easily let us "force" exact physical pixels if OS scaling is active,
+        // but we can try to request initialization at a size that matches.
+        // For strict "No DPI Scaling" behavior, we often just ignore scale factor or request specific inner physical size.
+        // However, on Windows, the OS decorates the window.
+        // Let's try to request the physical size immediately.
+
+        let target_width = 1920;
+        let target_height = 1080;
+        let _ =
+            window.request_inner_size(winit::dpi::PhysicalSize::new(target_width, target_height));
+
+        // Wait for resize? No, we proceed.
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -610,7 +677,7 @@ impl<'a> State<'a> {
             .formats
             .iter()
             .copied()
-            .find(|f| f.is_srgb())
+            .find(wgpu::TextureFormat::is_srgb)
             .unwrap_or(surface_caps.formats[0]);
 
         let config = wgpu::SurfaceConfiguration {
@@ -626,37 +693,27 @@ impl<'a> State<'a> {
 
         surface.configure(&device, &config);
 
-        // We need dimensions data to resize...
-        // Eu4Renderer has diffuse_texture.
         let renderer = Eu4Renderer::new(&device, &queue, config.format, verbose);
-
-        let target_width = 1280;
-        let tex_size = renderer.diffuse_texture.texture.size();
-        let target_height =
-            (target_width as f64 * (tex_size.height as f64 / tex_size.width as f64)) as u32;
-
-        if verbose {
-            use std::io::Write;
-            print!(
-                "\r[2.5/4] Resizing window to {}x{}...                ",
-                target_width, target_height
-            );
-            std::io::stdout().flush().unwrap();
-        }
-        let _ =
-            window.request_inner_size(winit::dpi::PhysicalSize::new(target_width, target_height));
 
         // Load font
         let font_path = std::path::Path::new("assets/Roboto-Regular.ttf");
         let font_data = std::fs::read(font_path).expect("Failed to load assets/Roboto-Regular.ttf");
         let text_renderer = TextRenderer::new(font_data);
 
-        // Init inspector
-        let inspector =
-            InspectorState::new(inspector_window, &instance, &device, &queue, config.format);
-
         // Create AppState
-        let app_state = AppState::new(world_data, size.width, size.height);
+        let mut app_state = AppState::new(world_data, size.width, size.height);
+
+        // Initial Camera Setup: "Fit Height"
+        // view_height_tex = 1.0 (covering full map height).
+        // view_height_tex = (1.0 / zoom) * content_aspect / screen_aspect
+        // 1.0 = (1.0 / zoom) * content_aspect / screen_aspect
+        // zoom = content_aspect / screen_aspect
+
+        let screen_aspect = size.width as f64 / size.height as f64;
+        let content_aspect = app_state.camera.content_aspect;
+        app_state.camera.zoom = content_aspect / screen_aspect;
+        // Make sure we clamp? Camera::pan logic clamps.
+        // We'll trust this calculation is close enough to start.
 
         Self {
             window,
@@ -668,7 +725,7 @@ impl<'a> State<'a> {
             renderer,
             app_state,
             text_renderer,
-            inspector,
+            ui_state: crate::ui::UIState::new(),
         }
     }
 
@@ -694,6 +751,20 @@ impl<'a> State<'a> {
                 let old_pos = self.app_state.last_cursor_pos;
                 self.app_state.last_cursor_pos = Some((position.x, position.y));
                 self.app_state.update_cursor(position.x, position.y);
+
+                // Update UI State Cursor
+                self.ui_state.set_cursor_pos(Some((position.x, position.y)));
+
+                // Update Hover Tooltip if strictly over map
+                if !self.ui_state.sidebar_open || position.x < (self.size.width as f64 - 300.0) {
+                    if let Some(text) = self.app_state.get_hover_text() {
+                        self.ui_state.set_hovered_tooltip(Some(text));
+                    } else {
+                        self.ui_state.set_hovered_tooltip(None);
+                    }
+                } else {
+                    self.ui_state.set_hovered_tooltip(None);
+                }
 
                 #[allow(clippy::collapsible_if)]
                 if self.app_state.is_panning {
@@ -754,7 +825,15 @@ impl<'a> State<'a> {
                 button: winit::event::MouseButton::Left,
                 ..
             } => {
-                // Delegate logic check to AppState
+                let mx = self.app_state.cursor_pos.unwrap_or((0.0, 0.0)).0;
+
+                // Check UI first
+                if self.ui_state.on_click(mx, self.size.width as f64) {
+                    println!("Click consumed by UI");
+                    return true;
+                }
+
+                // Map Logic
                 println!("Click detected at {:?}", self.app_state.cursor_pos);
                 if let Some((id, text)) = self.app_state.get_selected_province() {
                     println!(
@@ -762,13 +841,10 @@ impl<'a> State<'a> {
                         id,
                         text.lines().next().unwrap_or("")
                     );
-                    let img = self.text_renderer.render(&text, 400, 300);
-                    let dynamic_img = image::DynamicImage::ImageRgba8(img);
 
-                    self.inspector
-                        .update_texture(&self.device, &self.queue, &dynamic_img);
-                    self.inspector.window.set_visible(true);
-                    self.inspector.window.request_redraw();
+                    // Update UI Selection
+                    self.ui_state.set_selected_province(Some((id, text)));
+                    self.ui_state.set_sidebar_open(true);
 
                     return true;
                 }
@@ -787,6 +863,9 @@ impl<'a> State<'a> {
             } => {
                 let new_mode = self.app_state.toggle_map_mode();
                 println!("Switched Map Mode to: {:?}", new_mode);
+
+                self.ui_state.map_mode = new_mode;
+                self.ui_state.set_dirty();
 
                 // Update Texture
                 let img = match new_mode {
@@ -808,6 +887,25 @@ impl<'a> State<'a> {
                     self.renderer.update_texture(&self.device, texture);
                 }
                 true
+            }
+
+            WindowEvent::KeyboardInput {
+                event:
+                    winit::event::KeyEvent {
+                        state: winit::event::ElementState::Pressed,
+                        physical_key:
+                            winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::Escape),
+                        ..
+                    },
+                ..
+            } => {
+                if self.ui_state.sidebar_open {
+                    self.ui_state.set_sidebar_open(false);
+                    println!("Closed Sidebar");
+                    true
+                } else {
+                    false
+                }
             }
             _ => false,
         }
@@ -835,6 +933,19 @@ impl<'a> State<'a> {
                 label: Some("Render Encoder"),
             });
 
+        // 1. Update UI Texture if Dirty
+        if self.ui_state.dirty {
+            let ui_img = crate::ui::draw_ui(
+                &self.ui_state,
+                &self.text_renderer,
+                self.size.width,
+                self.size.height,
+            );
+            self.renderer
+                .update_ui_texture(&self.device, &self.queue, &ui_img);
+            self.ui_state.dirty = false;
+        }
+
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -856,9 +967,15 @@ impl<'a> State<'a> {
                 timestamp_writes: None,
             });
 
+            // Draw Map
             render_pass.set_pipeline(&self.renderer.render_pipeline);
             render_pass.set_bind_group(0, &self.renderer.diffuse_bind_group, &[]);
-            render_pass.draw(0..3, 0..1);
+            render_pass.draw(0..3, 0..1); // Full screen triangle for map
+
+            // Draw UI Overlay
+            render_pass.set_pipeline(&self.renderer.ui_pipeline);
+            render_pass.set_bind_group(0, &self.renderer.ui_bind_group, &[]);
+            render_pass.draw(0..3, 0..1); // Full screen triangle for UI
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -880,14 +997,7 @@ pub async fn run(verbose: bool, world_data: WorldData) {
         .build(&event_loop)
         .unwrap();
 
-    let inspector_window = WindowBuilder::new()
-        .with_title("Inspector")
-        .with_inner_size(winit::dpi::PhysicalSize::new(400, 300))
-        .with_visible(false) // Start hidden
-        .build(&event_loop)
-        .unwrap();
-
-    let mut state = State::new(&window, &inspector_window, verbose, world_data).await;
+    let mut state = State::new(&window, verbose, world_data).await;
 
     event_loop
         .run(move |event, elwt| match event {
@@ -895,34 +1005,17 @@ pub async fn run(verbose: bool, world_data: WorldData) {
                 ref event,
                 window_id,
             } => {
-                if window_id == state.window().id() {
-                    if !state.input(event) {
-                        match event {
-                            WindowEvent::CloseRequested => elwt.exit(),
-                            WindowEvent::Resized(physical_size) => state.resize(*physical_size),
-                            WindowEvent::RedrawRequested => {
-                                state.update();
-                                match state.render() {
-                                    Ok(_) => {}
-                                    Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
-                                    Err(wgpu::SurfaceError::OutOfMemory) => elwt.exit(),
-                                    Err(e) => eprintln!("{:?}", e),
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                } else if window_id == state.inspector.window.id() {
+                if window_id == state.window().id() && !state.input(event) {
                     match event {
-                        WindowEvent::CloseRequested => {
-                            state.inspector.window.set_visible(false);
-                        }
-                        WindowEvent::Resized(physical_size) => {
-                            state.inspector.resize(&state.device, *physical_size);
-                        }
+                        WindowEvent::CloseRequested => elwt.exit(),
+                        WindowEvent::Resized(physical_size) => state.resize(*physical_size),
                         WindowEvent::RedrawRequested => {
-                            if let Err(e) = state.inspector.render(&state.device, &state.queue) {
-                                eprintln!("Inspector render error: {:?}", e);
+                            state.update();
+                            match state.render() {
+                                Ok(_) => {}
+                                Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
+                                Err(wgpu::SurfaceError::OutOfMemory) => elwt.exit(),
+                                Err(e) => eprintln!("{:?}", e),
                             }
                         }
                         _ => {}
