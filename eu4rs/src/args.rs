@@ -19,6 +19,10 @@ pub struct Cli {
     #[arg(long, default_value = "english")]
     pub language: String,
 
+    /// Log level (error, warn, info, debug, trace)
+    #[arg(long, default_value = "info")]
+    pub log_level: String,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 }

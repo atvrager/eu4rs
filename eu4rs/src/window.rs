@@ -354,8 +354,26 @@ impl Eu4Renderer {
         }
     }
 
-    pub fn update_camera_buffer(&self, queue: &wgpu::Queue, data: [f32; 4]) {
+    pub fn update_camera_buffer(&self, queue: &wgpu::Queue, data: crate::camera::CameraUniform) {
         queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[data]));
+    }
+
+    pub fn update_maps(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        input_images: HashMap<MapMode, image::DynamicImage>,
+    ) {
+        self.map_textures.clear();
+        for (mode, img) in input_images {
+            if let Ok(texture) =
+                Texture::from_image(device, queue, &img, Some(&format!("{:?} Texture", mode)))
+            {
+                self.map_textures.insert(mode, texture);
+            }
+        }
+        // Force refresh of bind group for default mode (Province)
+        self.set_map_mode(device, MapMode::Province);
     }
 
     /// Creates a new renderer.
@@ -396,7 +414,7 @@ impl Eu4Renderer {
         // Create Camera Buffer
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera Buffer"),
-            contents: bytemuck::cast_slice(&[0.5f32, 0.5f32, 1.0f32, 1.0f32]), // Initial Identity (Center 0.5, Scale 1.0)
+            contents: bytemuck::cast_slice(&[crate::camera::CameraUniform::default()]), // Initial Identity
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -546,13 +564,24 @@ impl Eu4Renderer {
         // Since we generate the UI texture to match screen size, this is perfect.
         let ui_camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("UI Camera Buffer"),
-            contents: bytemuck::cast_slice(&[0.5f32, 0.5f32, 1.0f32, 1.0f32]),
+            contents: bytemuck::cast_slice(&[crate::camera::CameraUniform::default()]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        // Initial Dummy UI Texture (Transparent 1x1)
-        let dummy_ui = image::DynamicImage::ImageRgba8(image::RgbaImage::new(1, 1));
-        let ui_texture = Texture::from_image(device, queue, &dummy_ui, Some("UI Texture")).unwrap();
+        // Initial UI Texture: Plain dark background
+        // Console will render properly on first update
+        let mut initial_ui = image::RgbaImage::new(1920, 1080);
+        for pixel in initial_ui.pixels_mut() {
+            *pixel = image::Rgba([20, 20, 25, 255]); // Dark console background
+        }
+
+        let ui_texture = Texture::from_image(
+            device,
+            queue,
+            &image::DynamicImage::ImageRgba8(initial_ui),
+            Some("UI Texture"),
+        )
+        .unwrap();
 
         let ui_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &texture_bind_group_layout,
@@ -586,6 +615,14 @@ impl Eu4Renderer {
     }
 }
 
+use crate::logger::ConsoleLog;
+use std::sync::mpsc::Receiver;
+
+enum AppFlow {
+    Loading(Receiver<Result<WorldData, String>>),
+    Running(Box<AppState>),
+}
+
 struct State<'a> {
     surface: wgpu::Surface<'a>,
     device: wgpu::Device,
@@ -594,17 +631,19 @@ struct State<'a> {
     size: winit::dpi::PhysicalSize<u32>,
     window: &'a winit::window::Window,
     renderer: Eu4Renderer,
-    app_state: AppState, // Encapsulated logic state
     text_renderer: TextRenderer,
     ui_state: crate::ui::UIState,
+
+    flow: AppFlow,
+    console_log: ConsoleLog,
 }
 
 impl<'a> State<'a> {
     // Creating some of the wgpu types requires async code
     async fn new(
         window: &'a winit::window::Window,
-        verbose: bool,
-        world_data: WorldData,
+        log_level: log::LevelFilter,
+        eu4_path: &std::path::Path,
     ) -> State<'a> {
         // Enforce 1920x1080 Physical or specific size if possible, otherwise use existing.
         // The user specifically asked for "Physical" to avoid DPI issues.
@@ -671,49 +710,42 @@ impl<'a> State<'a> {
 
         surface.configure(&device, &config);
 
-        let mut map_images = HashMap::new();
-        map_images.insert(
-            MapMode::Province,
-            image::DynamicImage::ImageRgb8(world_data.province_map.clone()),
-        );
-        map_images.insert(
-            MapMode::Political,
-            image::DynamicImage::ImageRgb8(world_data.political_map.clone()),
-        );
-        map_images.insert(
-            MapMode::TradeGoods,
-            image::DynamicImage::ImageRgb8(world_data.tradegoods_map.clone()),
-        );
-        map_images.insert(
-            MapMode::Religion,
-            image::DynamicImage::ImageRgb8(world_data.religion_map.clone()),
-        );
-        map_images.insert(
-            MapMode::Culture,
-            image::DynamicImage::ImageRgb8(world_data.culture_map.clone()),
-        );
-
-        let renderer = Eu4Renderer::new(&device, &queue, config.format, verbose, map_images);
-
-        // Load font
+        // Load font immediately for console (TextRenderer)
         let font_path = std::path::Path::new("assets/Roboto-Regular.ttf");
         let font_data = std::fs::read(font_path).expect("Failed to load assets/Roboto-Regular.ttf");
         let text_renderer = TextRenderer::new(font_data);
 
-        // Create AppState
-        let mut app_state = AppState::new(world_data, size.width, size.height);
+        // Initialize Logger
+        let console_log = match crate::logger::init(log_level) {
+            Ok(cl) => cl,
+            Err(_) => crate::logger::ConsoleLog::new(50),
+        };
 
-        // Initial Camera Setup: "Fit Height"
-        // view_height_tex = 1.0 (covering full map height).
-        // view_height_tex = (1.0 / zoom) * content_aspect / screen_aspect
-        // 1.0 = (1.0 / zoom) * content_aspect / screen_aspect
-        // zoom = content_aspect / screen_aspect
+        // Create Dummy Maps for Initial Loading State
+        let mut map_images = HashMap::new();
+        let black_pixel = image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
+            1,
+            1,
+            image::Rgb([0, 0, 0]),
+        ));
 
-        let screen_aspect = size.width as f64 / size.height as f64;
-        let content_aspect = app_state.camera.content_aspect;
-        app_state.camera.zoom = content_aspect / screen_aspect;
-        // Make sure we clamp? Camera::pan logic clamps.
-        // We'll trust this calculation is close enough to start.
+        map_images.insert(MapMode::Province, black_pixel.clone());
+        map_images.insert(MapMode::Political, black_pixel.clone());
+        map_images.insert(MapMode::TradeGoods, black_pixel.clone());
+        map_images.insert(MapMode::Religion, black_pixel.clone());
+        map_images.insert(MapMode::Culture, black_pixel.clone());
+
+        // Initialize Renderer with Dummy Maps
+        let verbose = log_level >= log::LevelFilter::Info;
+        let renderer = Eu4Renderer::new(&device, &queue, config.format, verbose, map_images);
+
+        // Spawn async loading thread
+        let (tx, rx) = std::sync::mpsc::channel();
+        let eu4_path_clone = eu4_path.to_path_buf();
+        std::thread::spawn(move || {
+            let res = crate::ops::load_world_data(&eu4_path_clone).map_err(|e| e.to_string());
+            let _ = tx.send(res);
+        });
 
         Self {
             window,
@@ -723,9 +755,10 @@ impl<'a> State<'a> {
             config,
             size,
             renderer,
-            app_state,
             text_renderer,
             ui_state: crate::ui::UIState::new(),
+            flow: AppFlow::Loading(rx),
+            console_log,
         }
     }
 
@@ -740,24 +773,31 @@ impl<'a> State<'a> {
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
 
-            // Forward resize to AppState
-            self.app_state.resize(new_size.width, new_size.height);
+            // Forward resize to AppState if Running
+            if let AppFlow::Running(ref mut app_state) = self.flow {
+                app_state.resize(new_size.width, new_size.height);
+            }
         }
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
+        let app_state = match &mut self.flow {
+            AppFlow::Running(state) => state,
+            AppFlow::Loading(_) => return false,
+        };
+
         match event {
             WindowEvent::CursorMoved { position, .. } => {
-                let old_pos = self.app_state.last_cursor_pos;
-                self.app_state.last_cursor_pos = Some((position.x, position.y));
-                self.app_state.update_cursor(position.x, position.y);
+                let old_pos = app_state.last_cursor_pos;
+                app_state.last_cursor_pos = Some((position.x, position.y));
+                app_state.update_cursor(position.x, position.y);
 
                 // Update UI State Cursor
                 self.ui_state.set_cursor_pos(Some((position.x, position.y)));
 
                 // Update Hover Tooltip if strictly over map
                 if !self.ui_state.sidebar_open || position.x < (self.size.width as f64 - 300.0) {
-                    if let Some(text) = self.app_state.get_hover_text() {
+                    if let Some(text) = app_state.get_hover_text() {
                         self.ui_state.set_hovered_tooltip(Some(text));
                     } else {
                         self.ui_state.set_hovered_tooltip(None);
@@ -767,11 +807,11 @@ impl<'a> State<'a> {
                 }
 
                 #[allow(clippy::collapsible_if)]
-                if self.app_state.is_panning {
+                if app_state.is_panning {
                     if let Some((ox, oy)) = old_pos {
                         let dx = position.x - ox;
                         let dy = position.y - oy;
-                        self.app_state.camera.pan(
+                        app_state.camera.pan(
                             dx,
                             dy,
                             self.size.width as f64,
@@ -800,8 +840,8 @@ impl<'a> State<'a> {
                     }
                 };
 
-                if let Some((cx, cy)) = self.app_state.cursor_pos {
-                    self.app_state.camera.zoom(
+                if let Some((cx, cy)) = app_state.cursor_pos {
+                    app_state.camera.zoom(
                         zoom_factor,
                         cx,
                         cy,
@@ -817,7 +857,7 @@ impl<'a> State<'a> {
                 button: winit::event::MouseButton::Middle,
                 ..
             } => {
-                self.app_state.is_panning = *state == winit::event::ElementState::Pressed;
+                app_state.is_panning = *state == winit::event::ElementState::Pressed;
                 true
             }
             WindowEvent::MouseInput {
@@ -825,18 +865,18 @@ impl<'a> State<'a> {
                 button: winit::event::MouseButton::Left,
                 ..
             } => {
-                let mx = self.app_state.cursor_pos.unwrap_or((0.0, 0.0)).0;
+                let mx = app_state.cursor_pos.unwrap_or((0.0, 0.0)).0;
 
                 // Check UI first
                 if self.ui_state.on_click(mx, self.size.width as f64) {
-                    println!("Click consumed by UI");
+                    log::info!("Click consumed by UI");
                     return true;
                 }
 
                 // Map Logic
-                println!("Click detected at {:?}", self.app_state.cursor_pos);
-                if let Some((id, text)) = self.app_state.get_selected_province() {
-                    println!(
+                log::debug!("Click detected at {:?}", app_state.cursor_pos);
+                if let Some((id, text)) = app_state.get_selected_province() {
+                    log::info!(
                         "Picked Province: {} ({})",
                         id,
                         text.lines().next().unwrap_or("")
@@ -861,11 +901,18 @@ impl<'a> State<'a> {
                     },
                 ..
             } => {
-                let new_mode = self.app_state.toggle_map_mode();
-                println!("Switched Map Mode to: {:?}", new_mode);
+                let new_mode = app_state.toggle_map_mode();
+                log::info!("Switched Map Mode to: {:?}", new_mode);
 
                 self.ui_state.map_mode = new_mode;
                 self.ui_state.set_dirty();
+
+                // Update hover tooltip for new map mode
+                if let Some(text) = app_state.get_hover_text() {
+                    self.ui_state.set_hovered_tooltip(Some(text));
+                } else {
+                    self.ui_state.set_hovered_tooltip(None);
+                }
 
                 // Update Texture
                 self.renderer.set_map_mode(&self.device, new_mode);
@@ -884,25 +931,90 @@ impl<'a> State<'a> {
             } => {
                 if self.ui_state.sidebar_open {
                     self.ui_state.set_sidebar_open(false);
-                    println!("Closed Sidebar");
+                    log::info!("Closed Sidebar");
                     true
                 } else {
                     false
                 }
             }
             _ => false,
+        } // match event
+    }
+
+    fn update(&mut self) {
+        if let AppFlow::Loading(rx) = &self.flow
+            && let Ok(res) = rx.try_recv()
+        {
+            match res {
+                Ok(world_data) => {
+                    log::info!("World Data loaded successfully. Initializing Map...");
+
+                    // Construct Map Images
+                    let mut map_images = HashMap::new();
+                    map_images.insert(
+                        MapMode::Province,
+                        image::DynamicImage::ImageRgb8(world_data.province_map.clone()),
+                    );
+                    map_images.insert(
+                        MapMode::Political,
+                        image::DynamicImage::ImageRgb8(world_data.political_map.clone()),
+                    );
+                    map_images.insert(
+                        MapMode::TradeGoods,
+                        image::DynamicImage::ImageRgb8(world_data.tradegoods_map.clone()),
+                    );
+                    map_images.insert(
+                        MapMode::Religion,
+                        image::DynamicImage::ImageRgb8(world_data.religion_map.clone()),
+                    );
+                    map_images.insert(
+                        MapMode::Culture,
+                        image::DynamicImage::ImageRgb8(world_data.culture_map.clone()),
+                    );
+
+                    // Update Renderer with real maps
+                    self.renderer
+                        .update_maps(&self.device, &self.queue, map_images);
+
+                    // Create AppState
+                    let mut app_state =
+                        AppState::new(world_data, self.size.width, self.size.height);
+
+                    // Init Camera
+                    let screen_aspect = self.size.width as f64 / self.size.height as f64;
+                    let content_aspect = app_state.camera.content_aspect;
+                    app_state.camera.zoom = content_aspect / screen_aspect;
+
+                    self.flow = AppFlow::Running(Box::new(app_state));
+
+                    // Flash taskbar
+                    self.window.request_user_attention(Some(
+                        winit::window::UserAttentionType::Informational,
+                    ));
+                }
+                Err(e) => {
+                    log::error!("Failed to load world data: {}", e);
+                }
+            }
         }
     }
 
-    fn update(&mut self) {}
-
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         // Main render loop
-        // Update Camera Buffer logic
-        let uniform = self
-            .app_state
-            .camera
-            .to_uniform_data(self.size.width as f32, self.size.height as f32);
+        let (uniform, _app_state_ptr) = match &self.flow {
+            AppFlow::Running(app_state) => (
+                app_state
+                    .camera
+                    .to_uniform_data(self.size.width as f32, self.size.height as f32),
+                Some(app_state),
+            ),
+            AppFlow::Loading(_) => (
+                // Identity/Dummy uniform for loading screen
+                crate::camera::CameraUniform::default(),
+                None,
+            ),
+        };
+
         self.renderer.update_camera_buffer(&self.queue, uniform);
 
         let output = self.surface.get_current_texture()?;
@@ -916,17 +1028,42 @@ impl<'a> State<'a> {
                 label: Some("Render Encoder"),
             });
 
-        // 1. Update UI Texture if Dirty
-        if self.ui_state.dirty {
-            let ui_img = crate::ui::draw_ui(
-                &self.ui_state,
-                &self.text_renderer,
-                self.size.width,
-                self.size.height,
-            );
+        // 1. Update UI Texture
+        // If Loading: Draw Console.
+        // If Running: Draw UI (Sidebar etc).
+
+        let should_draw_ui = match &self.flow {
+            AppFlow::Running(_) => self.ui_state.dirty,
+            AppFlow::Loading(_) => true, // Always redraw console for now (scrolling)? Or check if logs changed?
+                                         // For simplicity, redraw always or check dirty flag in ConsoleLog?
+        };
+
+        if should_draw_ui {
+            let ui_img = match self.flow {
+                AppFlow::Running(ref _app) => crate::ui::draw_ui(
+                    &self.ui_state,
+                    &self.text_renderer,
+                    self.size.width,
+                    self.size.height,
+                ),
+                AppFlow::Loading(_) => {
+                    // Draw Console
+                    let logs = self.console_log.get_lines();
+                    crate::ui::draw_console(
+                        &logs,
+                        &self.text_renderer,
+                        self.size.width,
+                        self.size.height,
+                    )
+                }
+            };
+
             self.renderer
                 .update_ui_texture(&self.device, &self.queue, &ui_img);
-            self.ui_state.dirty = false;
+
+            if let AppFlow::Running(_) = self.flow {
+                self.ui_state.dirty = false;
+            }
         }
 
         {
@@ -937,9 +1074,9 @@ impl<'a> State<'a> {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
+                            r: 0.05, // Darker background for loading/map
+                            g: 0.05,
+                            b: 0.05,
                             a: 1.0,
                         }),
                         store: wgpu::StoreOp::Store,
@@ -950,15 +1087,17 @@ impl<'a> State<'a> {
                 timestamp_writes: None,
             });
 
-            // Draw Map
-            render_pass.set_pipeline(&self.renderer.render_pipeline);
-            render_pass.set_bind_group(0, &self.renderer.diffuse_bind_group, &[]);
-            render_pass.draw(0..3, 0..1); // Full screen triangle for map
+            // Draw Map (Only if Running? Or draw Dummy if Loading (which is black/pink?))
+            if let AppFlow::Running(_) = self.flow {
+                render_pass.set_pipeline(&self.renderer.render_pipeline);
+                render_pass.set_bind_group(0, &self.renderer.diffuse_bind_group, &[]);
+                render_pass.draw(0..3, 0..1);
+            }
 
-            // Draw UI Overlay
+            // Draw UI Overlay (Sidebar OR Console)
             render_pass.set_pipeline(&self.renderer.ui_pipeline);
             render_pass.set_bind_group(0, &self.renderer.ui_bind_group, &[]);
-            render_pass.draw(0..3, 0..1); // Full screen triangle for UI
+            render_pass.draw(0..3, 0..1);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -972,15 +1111,21 @@ impl<'a> State<'a> {
 ///
 /// Initializes `winit` event loop, opens a window, creates the `State` (which wraps `Eu4Renderer`),
 /// and starts the render loop.
-pub async fn run(verbose: bool, world_data: WorldData) {
-    env_logger::init();
+pub async fn run(log_level: log::LevelFilter, eu4_path: &std::path::Path) {
+    // Logger init is handled by State::new -> logger::init
+    // env_logger::init();
+
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new()
         .with_title("eu4rs Source Port")
+        .with_visible(false) // Start hidden to avoid white flash
         .build(&event_loop)
         .unwrap();
 
-    let mut state = State::new(&window, verbose, world_data).await;
+    let mut state = State::new(&window, log_level, eu4_path).await;
+
+    // Show window now that we're initialized
+    window.set_visible(true);
 
     event_loop
         .run(move |event, elwt| match event {
@@ -1026,11 +1171,10 @@ pub async fn snapshot(
     eu4_path: &std::path::Path,
     output_path: &std::path::Path,
     mode: MapMode,
+    log_level: log::LevelFilter,
 ) -> Result<(), String> {
     // We need to re-init logger if it hasn't been initialized?
-    // Actually env_logger::init() panics if called twice.
-    // Let's assume it might be called.
-    let _ = env_logger::try_init();
+    let _ = crate::logger::init(log_level);
 
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::VULKAN,
@@ -1105,8 +1249,9 @@ pub async fn snapshot(
             .or_insert_with(|| image::DynamicImage::ImageRgb8(world_data.province_map));
     }
 
-    // Verbose = true for logs
-    let mut renderer = Eu4Renderer::new(&device, &queue, format, true, map_images);
+    // Verbose = true for logs if Info or below
+    let verbose = log_level >= log::LevelFilter::Info;
+    let mut renderer = Eu4Renderer::new(&device, &queue, format, verbose, map_images);
     renderer.set_map_mode(&device, mode);
 
     let size = renderer.map_textures[&mode].texture.size();
@@ -1315,6 +1460,7 @@ mod tests {
             path,
             &output_path,
             MapMode::Province,
+            log::LevelFilter::Info,
         )) {
             Ok(_) => {
                 // Load the result and assert
@@ -1350,6 +1496,7 @@ mod tests {
                 steam_path,
                 &output_path,
                 MapMode::Political,
+                log::LevelFilter::Info,
             )) {
                 Ok(_) => {
                     let img = image::open(&output_path)
@@ -1380,6 +1527,7 @@ mod tests {
                 steam_path,
                 &output_path,
                 MapMode::TradeGoods,
+                log::LevelFilter::Info,
             )) {
                 Ok(_) => {
                     let img = image::open(&output_path)
@@ -1412,6 +1560,7 @@ mod tests {
                 steam_path,
                 &output_path,
                 MapMode::Religion,
+                log::LevelFilter::Info,
             )) {
                 Ok(_) => {
                     let img = image::open(&output_path)
@@ -1444,6 +1593,7 @@ mod tests {
                 steam_path,
                 &output_path,
                 MapMode::Culture,
+                log::LevelFilter::Info,
             )) {
                 Ok(_) => {
                     let img = image::open(&output_path)

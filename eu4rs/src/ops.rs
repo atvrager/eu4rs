@@ -11,6 +11,11 @@ use image::{Rgb, RgbImage};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+/// Normalize path for display - convert to forward slashes for cleaner logging
+fn display_path(path: &Path) -> String {
+    path.display().to_string().replace('\\', "/")
+}
+
 pub fn dump_tradegoods(base_path: &std::path::Path) -> Result<(), String> {
     let path = base_path.join("tradegoods/00_tradegoods.txt");
     println!("Loading {:?}", path);
@@ -225,7 +230,7 @@ pub fn pretty_print_dir(dir: &std::path::Path, pretty_print: bool) -> Result<Sca
 }
 
 pub fn load_world_data(base_path: &Path) -> Result<window::WorldData, String> {
-    println!("Loading world data...");
+    log::info!("Loading world data...");
 
     // 1. Definitions
     let def_path = base_path.join("map/definition.csv");
@@ -241,18 +246,18 @@ pub fn load_world_data(base_path: &Path) -> Result<window::WorldData, String> {
 
     // 3. Map Image
     let map_path = base_path.join("map/provinces.bmp");
-    println!("Loading map image from {:?}", map_path);
+    log::info!("Loading map image from {}", display_path(&map_path));
     let province_map = image::open(map_path).map_err(|e| e.to_string())?.to_rgb8();
 
     // 4. Countries
-    println!("Loading country tags...");
+    log::info!("Loading country tags...");
     let tags = eu4data::countries::load_tags(base_path).map_err(|e| e.to_string())?;
-    println!("Loading {} country definitions...", tags.len());
+    log::info!("Loading {} country definitions...", tags.len());
     let countries = eu4data::countries::load_country_map(base_path, &tags);
-    println!("Loaded {} countries.", countries.len());
+    log::info!("Loaded {} countries.", countries.len());
 
     // 4b. Religions & Cultures & Tradegoods
-    println!("Loading religions, cultures, and tradegoods...");
+    log::info!("Loading religions, cultures, and tradegoods...");
     let religions = eu4data::religions::load_religions(base_path).map_err(|e| e.to_string())?;
     let cultures = eu4data::cultures::load_cultures(base_path).map_err(|e| e.to_string())?;
 
@@ -267,7 +272,7 @@ pub fn load_world_data(base_path: &Path) -> Result<window::WorldData, String> {
     } else {
         HashMap::new()
     };
-    println!(
+    log::info!(
         "Loaded {} religions, {} cultures, {} tradegoods.",
         religions.len(),
         cultures.len(),
@@ -291,7 +296,7 @@ pub fn load_world_data(base_path: &Path) -> Result<window::WorldData, String> {
     }
 
     // 6. Generate All Maps
-    println!("Generating Maps (Political, TradeGoods, Religion, Culture)...");
+    log::info!("Generating Maps (Political, TradeGoods, Religion, Culture)...");
     let (width, height) = province_map.dimensions();
     let mut political_map = RgbImage::new(width, height);
     let mut tradegoods_map = RgbImage::new(width, height);

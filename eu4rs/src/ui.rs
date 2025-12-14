@@ -240,3 +240,86 @@ pub fn draw_ui(
 
     image
 }
+
+/// Renders the Loading Console.
+///
+/// Displays recent log lines from the bottom up.
+pub fn draw_console(
+    logs: &[(log::Level, String)],
+    text_renderer: &TextRenderer,
+    width: u32,
+    height: u32,
+) -> RgbaImage {
+    let mut image = RgbaImage::new(width, height);
+
+    // Fill background with black/dark gray (already cleared to 0?)
+    // draw_console is called when Loading, and State::render clears screen to dark bg.
+    // The UI texture is overlay. So transparency allows seeing the cleared color.
+    // But if we want a solid console background, we can paint it here.
+    // Let's keep it transparent or semi-transparent background to look cool?
+    // User requested "Loading screen... console view".
+    // Let's make it fully opaque black or dark so it feels like a console terminal.
+
+    // Draw logs from bottom up
+    // TextRenderer uses 30px line spacing (text.rs:59), so we need to match
+    let line_height = 36; // 30px + 6px extra spacing for readability
+    let start_x = 10;
+    let mut current_y = height as i32 - 40; // Start slightly up
+
+    for (level, msg) in logs.iter().rev() {
+        if current_y < 0 {
+            break;
+        }
+
+        let color_marker = match level {
+            log::Level::Error => "[ERROR] ",
+            log::Level::Warn => "[WARN]  ",
+            log::Level::Info => "[INFO]  ",
+            log::Level::Debug => "[DEBUG] ",
+            log::Level::Trace => "[TRACE] ",
+        };
+
+        let full_line = format!("{}{}", color_marker, msg);
+
+        // Render text line
+        // We reuse logic from draw_ui, but here we just render one line.
+        // Optimization: TextRenderer::render creates a full buffer.
+        // Ideally we'd modify TextRenderer to render to a target buffer, but for now:
+        let text_img = text_renderer.render(&full_line, width - 20, line_height as u32);
+
+        // Blit
+        for (tx, ty, px) in text_img.enumerate_pixels() {
+            if px[3] > 0 {
+                let target_x = start_x + tx;
+                let target_y = current_y as u32 + ty;
+                if target_x < width && target_y < height {
+                    // Tint based on level?
+                    // TextRenderer outputs white text usually.
+                    // We can multiply color here.
+                    let color = match level {
+                        log::Level::Error => Rgba([255, 100, 100, px[3]]),
+                        log::Level::Warn => Rgba([255, 255, 100, px[3]]),
+                        _ => *px,
+                    };
+                    image.put_pixel(target_x, target_y, color);
+                }
+            }
+        }
+        current_y -= line_height;
+    }
+
+    // Draw Loading Title
+    let title = "LOADING EU4 DATA...";
+    let title_img = text_renderer.render(title, width, 40);
+    for (tx, ty, px) in title_img.enumerate_pixels() {
+        if px[3] > 0 {
+            let target_x = tx + 20;
+            let target_y = ty + 20;
+            if target_x < width && target_y < height {
+                image.put_pixel(target_x, target_y, *px);
+            }
+        }
+    }
+
+    image
+}

@@ -15,9 +15,9 @@ impl TextRenderer {
     /// Renders multiline text to an image.
     pub fn render(&self, text: &str, width: u32, height: u32) -> RgbaImage {
         let mut image = RgbaImage::new(width, height);
-        // Fill with black background
+        // Fill with transparent background for proper compositing
         for pixel in image.pixels_mut() {
-            *pixel = Rgba([0, 0, 0, 255]);
+            *pixel = Rgba([0, 0, 0, 0]);
         }
 
         let scale = PxScale { x: 24.0, y: 24.0 };

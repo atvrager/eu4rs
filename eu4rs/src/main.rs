@@ -6,6 +6,7 @@ mod camera;
 mod ops;
 mod window;
 
+pub mod logger;
 #[cfg(test)]
 mod testing;
 mod text;
@@ -44,16 +45,19 @@ fn run(args: Cli) -> Result<(), String> {
                 }
                 return Ok(());
             }
-            Commands::DrawWindow { verbose } => {
+            Commands::DrawWindow { verbose: _ } => {
                 let base = args.eu4_path.parent().unwrap();
-                let world_data = ops::load_world_data(base)?;
-                pollster::block_on(window::run(*verbose, world_data));
+                let level =
+                    std::str::FromStr::from_str(&args.log_level).unwrap_or(log::LevelFilter::Info);
+                pollster::block_on(window::run(level, base));
                 return Ok(());
             }
             Commands::Snapshot { output, mode } => {
                 let base = args.eu4_path.parent().unwrap();
                 let path = std::path::Path::new(output);
-                pollster::block_on(window::snapshot(base, path, *mode))?;
+                let level =
+                    std::str::FromStr::from_str(&args.log_level).unwrap_or(log::LevelFilter::Info);
+                pollster::block_on(window::snapshot(base, path, *mode, level))?;
                 return Ok(());
             }
             Commands::Lookup { key } => {
@@ -110,8 +114,8 @@ fn run(args: Cli) -> Result<(), String> {
     } else {
         // Default to Source Port GUI
         let base = args.eu4_path.parent().unwrap();
-        let world_data = ops::load_world_data(base)?;
-        pollster::block_on(window::run(true, world_data));
+        let level = std::str::FromStr::from_str(&args.log_level).unwrap_or(log::LevelFilter::Info);
+        pollster::block_on(window::run(level, base));
     }
 
     Ok(())
@@ -165,6 +169,7 @@ mod tests {
             eu4_path: dir.path().to_path_buf(),
             pretty_print: false,
             language: "english".to_string(),
+            log_level: "info".to_string(),
             command: Some(Commands::DumpTradegoods),
         };
 
@@ -180,6 +185,7 @@ mod tests {
             eu4_path: dir.path().to_path_buf(),
             pretty_print: false,
             language: "english".to_string(),
+            log_level: "info".to_string(),
             command: Some(Commands::Lookup {
                 key: "TEST".to_string(),
             }),
@@ -197,6 +203,7 @@ mod tests {
             eu4_path: missing,
             pretty_print: true,
             language: "english".to_string(),
+            log_level: "info".to_string(),
             command: None,
         };
         // Should print error but return Ok

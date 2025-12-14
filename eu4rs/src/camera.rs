@@ -164,21 +164,35 @@ impl Camera {
     /// Returns the raw data for a Uniform Buffer.
     /// Format: [pos_x, pos_y, inv_zoom_x, inv_zoom_y]
     /// We pass 1.0/zoom corrected for aspect ratio to simplify shader math.
-    pub fn to_uniform_data(&self, screen_width: f32, screen_height: f32) -> [f32; 4] {
+    pub fn to_uniform_data(&self, screen_width: f32, screen_height: f32) -> CameraUniform {
         if screen_width == 0.0 || screen_height == 0.0 {
-            return [0.0; 4];
+            return CameraUniform::default();
         }
         let screen_aspect = screen_width / screen_height;
         // inv_zoom_x implies the width of the view in texture coords.
         let view_width_tex = 1.0 / self.zoom as f32;
         let view_height_tex = view_width_tex * self.content_aspect as f32 / screen_aspect;
 
-        [
-            self.position.0 as f32,
-            self.position.1 as f32,
-            view_width_tex,
-            view_height_tex,
-        ]
+        CameraUniform {
+            pos: [self.position.0 as f32, self.position.1 as f32],
+            zoom: [view_width_tex, view_height_tex],
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct CameraUniform {
+    pub pos: [f32; 2],
+    pub zoom: [f32; 2],
+}
+
+impl Default for CameraUniform {
+    fn default() -> Self {
+        Self {
+            pos: [0.5, 0.5],
+            zoom: [1.0, 1.0],
+        }
     }
 }
 
