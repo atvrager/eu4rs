@@ -102,6 +102,23 @@ When opening Antigravity, select **Claude Opus 4.5 (Thinking)** as your primary 
 5. **Use parallel delegation**: Independent subtasks can run concurrently on different models
 6. **Think step-by-step**: Explain routing decision and reasoning before delegating
 
+**Proactive Model Switching (MANDATORY):**
+
+Since model switching requires manual user action (Antigravity dropdown), the agent MUST:
+
+1. **Announce tier mismatch immediately**: If the user's task is clearly suited for a different tier than the current model, say so upfront before starting work.
+
+2. **Provide explicit switch instructions**: Tell the user exactly which model to select. Example:
+   > ⚠️ **Model Mismatch**: This task (documentation update) is **Tier 1** work. I'm Claude Opus, which is overkill for this.
+   > 
+   > **Suggested action**: Switch to **Gemini 3 (Low)** in Antigravity's model dropdown, then re-submit your request. This saves quota and is just as effective for this task.
+
+3. **Be aggressive, not passive**: Don't just mention routing in passing—make it a clear call-to-action if the mismatch is significant (e.g., using Opus for Tier 1 work).
+
+4. **Proceed if user insists**: If the user acknowledges the mismatch but wants to continue anyway, proceed without further prompting.
+
+5. **Minimize ambiguous cases**: If you are **Claude Opus 4.5 (Thinking)**, flag ANY task below Tier 4. If you are **Gemini 3 (Low)**, flag ANY task above Tier 2. Err on the side of suggesting a switch—user can override.
+
 ### Quota Management
 
 Monitor model quota levels and adjust routing strategy accordingly:
@@ -175,15 +192,6 @@ For critical logic provided by Gemini:
 4.  **Simulate**: "If I push this now, what leaks?" (Review `git status` output carefully).
 
 *Only proceed when ALL 4 checks pass.*
-
-### 4. The Calibrate Command
-If the agent seems confused, use: `> /calibrate`
-
-**Agent Action:**
-1. Re-read `AGENTS.md`
-2. State current model and role
-3. Run one self-test routing query
-4. Confirm quota status
 
 ## Platform
 - **Likely Windows**: This is a game modding project, so Windows is the primary platform. Check your shell early in a session.
