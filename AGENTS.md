@@ -44,22 +44,27 @@ When opening Antigravity, select **Claude Opus 4.5 (Thinking)** as your primary 
 ### Routing Rules (MANDATORY)
 
 **Available Models in Antigravity:**
-- **Claude Opus 4.5 (Thinking)**: Highest intelligence, best routing (SWE-bench: 80.9%, ARC-AGI: 37.6%)
-- **Claude Sonnet 4.5 (Thinking)**: Extended reasoning mode for complex analysis (SWE-bench: 77.2% → 82% with compute)
-- **Claude Sonnet 4.5**: Balanced performance, cost-efficient (SWE-bench: 77.2%, fast execution)
-- **Gemini 3 Pro (High)**: Complex reasoning, multimodal (SWE-bench: 76.2%, 1M token context, ARC-AGI: 31.1%)
-- **Gemini 3 (Low)**: Rapid prototyping, most cost-efficient (`thinking_level: low`)
+- **Claude Opus 4.5 (Thinking)** (`M12`): Highest intelligence, best routing (SWE-bench: 80.9%, ARC-AGI: 37.6%)
+- **Claude Sonnet 4.5 (Thinking)** (`CLAUDE_4_5_SONNET_THINKING`): Extended reasoning mode for complex analysis (SWE-bench: 77.2% → 82% with compute)
+- **Claude Sonnet 4.5** (`CLAUDE_4_5_SONNET`): Balanced performance, cost-efficient (SWE-bench: 77.2%, fast execution)
+- **Gemini 3 Pro (High)** (`M8`): Complex reasoning, multimodal (SWE-bench: 76.2%, 1M token context, ARC-AGI: 31.1%)
+- **Gemini 3 Pro (Low)** (`M7`): Rapid prototyping, most cost-efficient (`thinking_level: low`)
+
+> **Note**: The `M#` codes are internal Antigravity placeholder IDs visible in `USER_SETTINGS_CHANGE` metadata. Use these to confirm model identity.
 
 **5-Tier Routing Strategy (Optimized for Cost-Effectiveness):**
 
-**Tier 1: Gemini 3 (Low) - Default for Speed & Cost**
+**Tier 1: Gemini 3 Pro (Low) - Default for Speed & Cost**
 - **Rapid prototyping** and initial exploration
 - **UI/front-end generation** (egui components, rendering)
 - **Documentation** generation and updates
 - **Code reviews** (non-critical)
 - **Large file analysis** (>500 lines) - leverages 1M token context
 - **Simple refactoring** and formatting tasks
-- **Cost**: Lowest, fastest iteration
+- **Git operations**: commits, rebases, log analysis
+- **Test scaffolding**: writing test boilerplate
+- **Research tasks**: web searches, reading docs
+- **Cost**: Lowest, fastest iteration. **Prefer this tier to balance quota.**
 
 **Tier 2: Claude Sonnet 4.5 - Balanced Production Work**
 - **Standard feature implementation**
@@ -75,7 +80,9 @@ When opening Antigravity, select **Claude Opus 4.5 (Thinking)** as your primary 
 - **Very large context** needs (>200K tokens)
 - **Second opinions** on architectural decisions
 - **Tasks requiring strict prompt adherence**
-- **Cost**: Similar to Sonnet, but better for non-coding reasoning
+- **Alternative to Sonnet** when Claude quota is low (<50%)
+- **Feature implementation** (when Gemini quota is healthier than Claude)
+- **Cost**: Similar to Sonnet, but better for non-coding reasoning. **Use to balance quota.**
 
 **Tier 4: Claude Sonnet 4.5 (Thinking) - Deep Analysis**
 - **Complex multi-step planning** requiring extended reasoning
