@@ -2,6 +2,178 @@
 
 > **Meta-Rule**: This configuration is **agent-agnostic**. Write rules based on project conventions and principles, not specific AI model capabilities or tool implementations. Focus on *what* to do, not *how* a particular model does it. The only assumption is that `atv` will use Antigravity for the foreseeable future.
 
+## Dual-Model Workflow
+
+This project uses a **dual-model routing strategy** to optimize development efficiency. You have access to two powerful models with complementary strengths:
+
+**Claude 4.5 Opus (primary)**: Best for deep reasoning, precise code implementation, debugging complex issues, back-end architecture, task decomposition, and producing reliable, production-ready code.
+
+**Gemini 3.0 Pro (secondary)**: Best for rapid prototyping, front-end/UI generation, handling large contexts/multimodal inputs (e.g., images, long files), creative exploration, and quick code reviews/second opinions.
+
+### Which Model to Select in Antigravity?
+
+**Recommendation: Start with Claude Opus 4.5 (Thinking)**
+
+When opening Antigravity, select **Claude Opus 4.5 (Thinking)** as your primary model. Here's why:
+
+**Claude Opus is the best router** because:
+- **Superior task decomposition**: Opus excels at breaking down complex requests into subtasks and determining which model should handle each piece (SWE-bench: 80.9%, +7 intelligence points over Sonnet)
+- **Best delegation judgment**: Opus can assess task complexity and make informed routing decisions, completing tasks impossible for Sonnet
+- **Meta-reasoning**: Opus is best at reasoning about *how* to solve a problem before diving in, with enhanced long-horizon thinking
+- **Quota awareness**: Opus can interpret quota constraints and adjust strategy accordingly
+
+**Why not Sonnet 4.5 as router?**
+- Sonnet is excellent for execution (77.2% SWE-bench) but Opus is 90-95% better at strategic planning
+- Sonnet is more cost-efficient for direct work, but less effective at orchestrating multi-model workflows
+
+**Why not Gemini as router?**
+- Gemini tends to tackle tasks head-on rather than stepping back to plan delegation
+- While Gemini 3 Pro (High) has strong reasoning (ARC-AGI: 31.1%), it's more focused on solving problems itself rather than orchestrating which model should solve them
+
+**In practice:**
+1. **Select Claude Opus 4.5 (Thinking)** in Antigravity's model dropdown
+2. The router model will read this AGENTS.md and follow the 5-tier routing strategy below
+3. The router will delegate to cheaper models (Gemini 3 Low, Sonnet 4.5) for appropriate tasks
+4. You get optimal cost-effectiveness: Deep strategic planning + cheaper models for execution
+
+**Fallback model selection (when primary quota is exhausted):**
+- **Claude quota out → Select Gemini 3 Pro (High)**: Best Gemini for general-purpose work, 76.2% SWE-bench, strong reasoning
+- **Gemini quota out → Select Claude Sonnet 4.5**: Balanced Claude option, 90-95% of Opus performance at lower cost
+- **Both low → Select whichever has more quota**, prioritize Claude for critical work, Gemini for exploration
+
+### Routing Rules (MANDATORY)
+
+**Available Models in Antigravity:**
+- **Claude Opus 4.5 (Thinking)**: Highest intelligence, best routing (SWE-bench: 80.9%, ARC-AGI: 37.6%)
+- **Claude Sonnet 4.5 (Thinking)**: Extended reasoning mode for complex analysis (SWE-bench: 77.2% → 82% with compute)
+- **Claude Sonnet 4.5**: Balanced performance, cost-efficient (SWE-bench: 77.2%, fast execution)
+- **Gemini 3 Pro (High)**: Complex reasoning, multimodal (SWE-bench: 76.2%, 1M token context, ARC-AGI: 31.1%)
+- **Gemini 3 (Low)**: Rapid prototyping, most cost-efficient (`thinking_level: low`)
+
+**5-Tier Routing Strategy (Optimized for Cost-Effectiveness):**
+
+**Tier 1: Gemini 3 (Low) - Default for Speed & Cost**
+- **Rapid prototyping** and initial exploration
+- **UI/front-end generation** (egui components, rendering)
+- **Documentation** generation and updates
+- **Code reviews** (non-critical)
+- **Large file analysis** (>500 lines) - leverages 1M token context
+- **Simple refactoring** and formatting tasks
+- **Cost**: Lowest, fastest iteration
+
+**Tier 2: Claude Sonnet 4.5 - Balanced Production Work**
+- **Standard feature implementation**
+- **Moderate refactoring** tasks
+- **Code generation** for well-defined requirements
+- **Agentic tasks** (browser interaction, spreadsheet filling)
+- **Graduate-level reasoning** tasks
+- **Cost**: ~5x Gemini, but 90-95% of Opus performance
+
+**Tier 3: Gemini 3 Pro (High) - Complex Reasoning & Multimodal**
+- **Multimodal tasks** (images, video, game assets)
+- **Abstract reasoning** challenges (ARC-AGI: 31.1%)
+- **Very large context** needs (>200K tokens)
+- **Second opinions** on architectural decisions
+- **Tasks requiring strict prompt adherence**
+- **Cost**: Similar to Sonnet, but better for non-coding reasoning
+
+**Tier 4: Claude Sonnet 4.5 (Thinking) - Deep Analysis**
+- **Complex multi-step planning** requiring extended reasoning
+- **Detailed technical analysis** and system design
+- **Multi-constraint optimization** problems
+- **Advanced debugging** with ambiguity
+- **Cost**: Higher latency + token usage, use selectively
+
+**Tier 5: Claude Opus 4.5 (Thinking) - Critical Production Only**
+- **Production bug fixes** requiring peak intelligence
+- **Complex debugging** sessions (SWE-bench leader: 80.9%)
+- **Deep architectural refactoring** with tradeoffs
+- **Core engine implementation** (parser, game logic)
+- **Final implementation** of critical features
+- **Performance optimization** requiring deep analysis
+- **Tasks impossible for Sonnet** (handles ambiguity, long-horizon planning)
+- **Cost**: Highest, reserve for critical work
+
+**Workflow Guidelines:**
+1. **Start with planning** using deep reasoning (adopt an "Opus-like" strategic mindset, regardless of your active model identity)
+2. **Delegate down the tiers**: Default to lowest tier that can handle the task
+3. **Escalate when needed**: If Gemini 3 (Low) struggles → Sonnet 4.5 → Gemini 3 Pro (High) → Sonnet 4.5 (Thinking) → Opus 4.5 (Thinking)
+4. **Review delegated output**: Always critically review cheaper model output before integration
+5. **Use parallel delegation**: Independent subtasks can run concurrently on different models
+6. **Think step-by-step**: Explain routing decision and reasoning before delegating
+
+### Quota Management
+
+Monitor model quota levels and adjust routing strategy accordingly:
+
+**Quota Thresholds:**
+- **Healthy** (>50%): Use normal routing rules
+- **Low** (<50%): Prefer the healthier model for non-critical tasks
+- **Critical** (<10%): Reserve quota only for tasks that require that specific model's strengths
+
+**Priority Tiers:**
+1. **Critical (preserve quota)**:
+   - Production bug fixes
+   - Complex debugging sessions
+   - Final implementation of core features
+   - Security-sensitive code
+
+2. **Standard (normal routing)**:
+   - Feature implementation
+   - Refactoring
+   - Code reviews
+   - Architecture decisions
+
+3. **Flexible (use available quota)**:
+   - Prototyping
+   - Exploration
+   - Documentation generation
+   - UI mockups
+   - Second opinions
+
+**Fallback Strategy:**
+- If Gemini quota is critical: Claude handles all tasks (may be slower for UI/prototyping)
+- If Claude quota is critical: Gemini handles all tasks (requires extra review for production code)
+- If both are critical: Notify user and request guidance on priority tasks
+
+## Agent Testing & Calibration
+
+### 1. Routing Calibration Suite
+To ensure the router is making optimal decisions, run this "Golden Set" of prompts periodically.
+
+**Test Protocol:** Ask: *"How would you route the following task?"*
+
+| Task Description | Expected Tier | Rationale |
+|------------------|---------------|-----------|
+| "Create a new egui widget" | **Tier 1** | Prototyping/UI |
+| "Find parsing error in 2000-line log" | **Tier 1** | Large context, pattern matching |
+| "Refactor `Country` struct to ECS pattern" | **Tier 5** | Deep architectural refactoring |
+| "Debug panic in save parser" | **Tier 5** | Complex debugging |
+| "Draft trade goods comparison table" | **Tier 1** | Documentation |
+| "Analyze map mode glitch screenshot" | **Tier 3** | Multimodal input required |
+
+### 2. Output Verification Protocols
+
+**Self-Correction Pattern:**
+For complex tasks (Tier 4+), the agent must explicitly perform a "Self-Review" step:
+1. **Generate** initial solution
+2. **Critique** against requirements (edge cases, idioms)
+3. **Refine** code based on critique
+
+**Determinism Check:**
+For critical logic provided by Gemini:
+1. **Ask Opus to review** the snippet ("LLM-as-a-Judge")
+2. Prompt: "Rate this code 1-5 on correctness/safety. If <5, rewrite it."
+
+### 3. The Calibrate Command
+If the agent seems confused, use: `> /calibrate`
+
+**Agent Action:**
+1. Re-read `AGENTS.md`
+2. State current model and role
+3. Run one self-test routing query
+4. Confirm quota status
+
 ## Platform
 - **Likely Windows**: This is a game modding project, so Windows is the primary platform. Check your shell early in a session.
 - **Shell detection**: You may get PowerShell (default) or bash (advanced user). Run a quick check early to know what commands will work.
