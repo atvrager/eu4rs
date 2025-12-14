@@ -36,6 +36,12 @@ cargo build --release
 # Launch the Interactive Map (GUI) - Recommended default
 cargo run
 
+### Controls
+- **Zoom**: Scroll Wheel (Up/Down)
+- **Pan**: Middle Mouse Button (Hold & Drag)
+- **Inspect**: Left Click on a province to view details
+
+
 # Render map to an image file (Headless)
 cargo run -- snapshot --output my_map.png
 

@@ -23,12 +23,34 @@ fn vs_main(
 
 // Fragment shader
 
+struct CameraUniform {
+    pos: vec2<f32>,
+    inv_zoom: vec2<f32>,
+};
+
 @group(0) @binding(0)
 var t_diffuse: texture_2d<f32>;
 @group(0) @binding(1)
 var s_diffuse: sampler;
+@group(0) @binding(2)
+var<uniform> camera: CameraUniform;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(t_diffuse, s_diffuse, in.tex_coords);
+    // Transform UV to World Space
+    let centered_uv = in.tex_coords - vec2<f32>(0.5, 0.5);
+    let world_uv = camera.pos + centered_uv * camera.inv_zoom;
+
+    // Wrap X axis
+    let u = (world_uv.x % 1.0 + 1.0) % 1.0;
+    
+    // Check Y bounds (Black border)
+    if (world_uv.y < 0.0 || world_uv.y > 1.0) {
+        return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+    }
+    
+    // Use world_uv.y as is
+    let final_uv = vec2<f32>(u, world_uv.y);
+
+    return textureSample(t_diffuse, s_diffuse, final_uv);
 }

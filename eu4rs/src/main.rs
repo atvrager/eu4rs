@@ -2,6 +2,7 @@ use clap::Parser;
 use std::path::PathBuf;
 
 mod args;
+mod camera;
 mod ops;
 mod window;
 

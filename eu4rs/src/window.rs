@@ -1,12 +1,13 @@
+use crate::camera::Camera;
+use eu4data::history::ProvinceHistory;
+use image::{GenericImageView, RgbImage};
+use std::collections::HashMap;
+use wgpu::util::DeviceExt; // Now used for buffer creation
 use winit::{
     event::{Event, WindowEvent},
     event_loop::EventLoop,
     window::WindowBuilder,
 };
-// use wgpu::util::DeviceExt; // Unused for now
-use eu4data::history::ProvinceHistory;
-use image::{GenericImageView, RgbImage};
-use std::collections::HashMap;
 
 pub struct WorldData {
     pub province_map: RgbImage,
@@ -40,14 +41,26 @@ pub struct AppState {
     pub world_data: WorldData,
     pub window_size: (u32, u32),
     pub cursor_pos: Option<(f64, f64)>,
+    pub camera: Camera,
+    pub is_panning: bool,
+    pub last_cursor_pos: Option<(f64, f64)>,
 }
 
 impl AppState {
     pub fn new(world_data: WorldData, width: u32, height: u32) -> Self {
+        let (tex_w, tex_h) = world_data.province_map.dimensions();
+        let content_aspect = if tex_h > 0 {
+            tex_w as f64 / tex_h as f64
+        } else {
+            1.0
+        };
         Self {
             world_data,
             window_size: (width, height),
             cursor_pos: None,
+            camera: Camera::new(content_aspect),
+            is_panning: false,
+            last_cursor_pos: None,
         }
     }
 
@@ -72,13 +85,23 @@ impl AppState {
                 return None;
             }
 
-            // Simple stretch mapping
-            // NOTE: This assumes render stretches texture to full window
-            let u = mx / win_w as f64;
-            let v = my / win_h as f64;
+            // Camera Transform Logic
+            let (u_world, v_world) =
+                self.camera
+                    .screen_to_world(mx, my, win_w as f64, win_h as f64);
+            println!(
+                "Screen ({}, {}) -> World ({:.4}, {:.4})",
+                mx, my, u_world, v_world
+            );
 
-            let x = (u * tex_w as f64) as u32;
-            let y = (v * tex_h as f64) as u32;
+            if !(0.0..=1.0).contains(&v_world) {
+                println!("Click Out of Bounds (Y)");
+                return None;
+            }
+
+            let x = (u_world * tex_w as f64) as u32;
+            let y = (v_world * tex_h as f64) as u32;
+            println!("Texture Coords: ({}, {})", x, y);
 
             if x < tex_w && y < tex_h {
                 if let Some(id) = self.world_data.get_province_id(x, y) {
@@ -130,6 +153,10 @@ impl<'a> InspectorState<'a> {
         surface.configure(device, &config);
 
         let renderer = Eu4Renderer::new(device, queue, format, false);
+
+        // Initialize Inspector Camera to Identity (0.5, 0.5 center, 1.0 scale)
+        // Otherwise it defaults to 0s and samples only one pixel.
+        renderer.update_camera_buffer(queue, [0.5, 0.5, 1.0, 1.0]);
 
         Self {
             window,
@@ -289,14 +316,17 @@ pub struct Eu4Renderer {
     pub diffuse_bind_group: wgpu::BindGroup,
     #[allow(dead_code)]
     pub diffuse_texture: Texture,
+    pub camera_buffer: wgpu::Buffer,
 }
 
 impl Eu4Renderer {
     pub fn update_texture(&mut self, device: &wgpu::Device, texture: Texture) {
         self.diffuse_texture = texture;
-        let layout = self.render_pipeline.get_bind_group_layout(0);
+
+        let camera_bind_group_layout = self.render_pipeline.get_bind_group_layout(0);
+
         self.diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &layout,
+            layout: &camera_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -306,9 +336,17 @@ impl Eu4Renderer {
                     binding: 1,
                     resource: wgpu::BindingResource::Sampler(&self.diffuse_texture.sampler),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.camera_buffer.as_entire_binding(),
+                },
             ],
             label: Some("diffuse_bind_group_updated"),
         });
+    }
+
+    pub fn update_camera_buffer(&self, queue: &wgpu::Queue, data: [f32; 4]) {
+        queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[data]));
     }
 
     /// Creates a new renderer.
@@ -373,8 +411,14 @@ impl Eu4Renderer {
         if verbose {
             print!("\r[4/4] Texture uploaded. Starting loop...           ");
             std::io::stdout().flush().unwrap();
-            println!(); // Newline at the end
         }
+
+        // Create Camera Buffer
+        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Buffer"),
+            contents: bytemuck::cast_slice(&[0.5f32, 0.5f32, 1.0f32, 1.0f32]), // Initial Identity (Center 0.5, Scale 1.0)
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -395,6 +439,16 @@ impl Eu4Renderer {
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
                 ],
                 label: Some("texture_bind_group_layout"),
             });
@@ -409,6 +463,10 @@ impl Eu4Renderer {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: camera_buffer.as_entire_binding(),
                 },
             ],
             label: Some("diffuse_bind_group"),
@@ -464,6 +522,7 @@ impl Eu4Renderer {
             render_pipeline,
             diffuse_bind_group,
             diffuse_texture,
+            camera_buffer,
         }
     }
 }
@@ -605,8 +664,63 @@ impl<'a> State<'a> {
     fn input(&mut self, event: &WindowEvent) -> bool {
         match event {
             WindowEvent::CursorMoved { position, .. } => {
+                let old_pos = self.app_state.last_cursor_pos;
+                self.app_state.last_cursor_pos = Some((position.x, position.y));
                 self.app_state.update_cursor(position.x, position.y);
+
+                #[allow(clippy::collapsible_if)]
+                if self.app_state.is_panning {
+                    if let Some((ox, oy)) = old_pos {
+                        let dx = position.x - ox;
+                        let dy = position.y - oy;
+                        self.app_state.camera.pan(
+                            dx,
+                            dy,
+                            self.size.width as f64,
+                            self.size.height as f64,
+                        );
+                        return true;
+                    }
+                }
                 false
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let zoom_factor = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(_, y) => {
+                        if *y > 0.0 {
+                            1.1
+                        } else {
+                            0.9
+                        }
+                    }
+                    winit::event::MouseScrollDelta::PixelDelta(pos) => {
+                        if pos.y > 0.0 {
+                            1.1
+                        } else {
+                            0.9
+                        }
+                    }
+                };
+
+                if let Some((cx, cy)) = self.app_state.cursor_pos {
+                    self.app_state.camera.zoom(
+                        zoom_factor,
+                        cx,
+                        cy,
+                        self.size.width as f64,
+                        self.size.height as f64,
+                    );
+                    return true;
+                }
+                false
+            }
+            WindowEvent::MouseInput {
+                state,
+                button: winit::event::MouseButton::Middle,
+                ..
+            } => {
+                self.app_state.is_panning = *state == winit::event::ElementState::Pressed;
+                true
             }
             WindowEvent::MouseInput {
                 state: winit::event::ElementState::Pressed,
@@ -614,7 +728,13 @@ impl<'a> State<'a> {
                 ..
             } => {
                 // Delegate logic check to AppState
-                if let Some((_id, text)) = self.app_state.get_selected_province() {
+                println!("Click detected at {:?}", self.app_state.cursor_pos);
+                if let Some((id, text)) = self.app_state.get_selected_province() {
+                    println!(
+                        "Picked Province: {} ({})",
+                        id,
+                        text.lines().next().unwrap_or("")
+                    );
                     let img = self.text_renderer.render(&text, 400, 300);
                     let dynamic_img = image::DynamicImage::ImageRgba8(img);
 
@@ -635,6 +755,13 @@ impl<'a> State<'a> {
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         // Main render loop
+        // Update Camera Buffer logic
+        let uniform = self
+            .app_state
+            .camera
+            .to_uniform_data(self.size.width as f32, self.size.height as f32);
+        self.renderer.update_camera_buffer(&self.queue, uniform);
+
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
