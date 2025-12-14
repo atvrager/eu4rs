@@ -3,7 +3,15 @@ use crate::logger::ConsoleLog;
 use crate::text::TextRenderer;
 
 fn get_font_data() -> Option<Vec<u8>> {
-    std::fs::read("assets/Roboto-Regular.ttf").ok()
+    // Try workspace root (if running from root)
+    if let Ok(data) = std::fs::read("assets/Roboto-Regular.ttf") {
+        return Some(data);
+    }
+    // Try parent (if running from crate dir)
+    if let Ok(data) = std::fs::read("../assets/Roboto-Regular.ttf") {
+        return Some(data);
+    }
+    None
 }
 
 #[test]
@@ -56,10 +64,7 @@ fn test_click_handling() {
 fn test_render_snapshot() {
     let font_data = match get_font_data() {
         Some(d) => d,
-        None => {
-            eprintln!("Skipping snapshot test: font not found");
-            return;
-        }
+        None => panic!("Failed to load assets/Roboto-Regular.ttf for test"),
     };
 
     let text_renderer = TextRenderer::new(font_data);
@@ -77,4 +82,31 @@ fn test_render_snapshot() {
 
     // Use crate::testing for verify
     crate::testing::assert_snapshot(&img, "ui_render_complex");
+}
+
+#[test]
+fn test_render_full_ui() {
+    let font_data = match get_font_data() {
+        Some(d) => d,
+        None => panic!("Failed to load assets/Roboto-Regular.ttf for test"),
+    };
+    let text_renderer = TextRenderer::new(font_data);
+    let console_log = ConsoleLog::new(10);
+
+    // Populate logger buffer manually
+    console_log.push(log::Level::Info, "System started".into());
+    console_log.push(log::Level::Warn, "Low memory".into());
+    console_log.push(log::Level::Error, "Crash imminent".into());
+
+    let mut ui = UIState::new();
+    ui.set_sidebar_open(true);
+    ui.set_selected_province(Some((1, "Test Prov".into())));
+    ui.console_open = true; // Enable console overlay
+    ui.map_mode = MapMode::TradeGoods;
+
+    // Render
+    let img = ui.render(&text_renderer, 800, 600, &console_log);
+
+    // Snapshot verify
+    crate::testing::assert_snapshot(&img, "ui_render_full");
 }

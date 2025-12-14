@@ -15,6 +15,109 @@ use crate::text::TextRenderer;
 use crate::logger::ConsoleLog;
 use std::sync::mpsc::Receiver;
 
+#[derive(Debug, PartialEq, Clone)]
+#[allow(dead_code)]
+pub enum WindowAction {
+    None,
+    Exit,
+    Redraw,
+    ToggleConsole,
+    SetMapMode(MapMode),
+    Resize(u32, u32),
+}
+
+#[derive(Debug, PartialEq)]
+#[allow(dead_code)]
+pub enum GameInput {
+    CursorMoved { x: f64, y: f64 },
+    SetPanning(bool),
+    Pan { dx: f64, dy: f64 },
+    Zoom { amount: f32 },
+    PrimaryClick,
+    ToggleConsole,
+    CycleMapMode,
+}
+
+/// Processes a game input and updates the application state.
+pub fn process_input(
+    input: GameInput,
+    app_state: &mut AppState,
+    ui_state: &mut crate::ui::UIState,
+    width: u32,
+    height: u32,
+) -> WindowAction {
+    match input {
+        GameInput::CursorMoved { x, y } => {
+            let old_pos = app_state.last_cursor_pos;
+            app_state.last_cursor_pos = Some((x, y));
+            app_state.update_cursor(x, y);
+
+            // Update UI State Cursor
+            ui_state.set_cursor_pos(Some((x, y)));
+
+            // Update Hover Tooltip if strictly over map
+            if !ui_state.sidebar_open || x < (width as f64 - 300.0) {
+                if let Some(text) = app_state.get_hover_text() {
+                    ui_state.set_hovered_tooltip(Some(text));
+                } else {
+                    ui_state.set_hovered_tooltip(None);
+                }
+            } else {
+                ui_state.set_hovered_tooltip(None);
+            }
+
+            #[allow(clippy::collapsible_if)]
+            if app_state.is_panning {
+                if let Some((old_x, old_y)) = old_pos {
+                    let dx = x - old_x;
+                    let dy = y - old_y;
+                    app_state.camera.pan(dx, dy, width as f64, height as f64);
+                    return WindowAction::Redraw;
+                }
+            }
+        }
+        GameInput::Pan { dx, dy } => {
+            // Manual pan command?
+            app_state.camera.pan(dx, dy, width as f64, height as f64);
+            return WindowAction::Redraw;
+        }
+        GameInput::SetPanning(is_panning) => {
+            app_state.is_panning = is_panning;
+        }
+        GameInput::Zoom { amount } => {
+            if let Some((mx, my)) = app_state.cursor_pos {
+                let factor = 1.0 + amount;
+                app_state
+                    .camera
+                    .zoom(factor.into(), mx, my, width as f64, height as f64);
+                return WindowAction::Redraw;
+            }
+        }
+        GameInput::PrimaryClick => {
+            // If not clicking on sidebar
+            #[allow(clippy::collapsible_if)]
+            if !ui_state.sidebar_open || app_state.cursor_pos.unwrap().0 < (width as f64 - 300.0) {
+                if let Some((id, text)) = app_state.get_selected_province() {
+                    log::info!("Clicked Province: {} - {}", id, text);
+                    ui_state.set_selected_province(Some((id, text)));
+                    ui_state.set_sidebar_open(true);
+                    return WindowAction::Redraw;
+                }
+            }
+        }
+        GameInput::ToggleConsole => {
+            ui_state.toggle_console();
+            return WindowAction::ToggleConsole;
+        }
+        GameInput::CycleMapMode => {
+            let new_mode = app_state.toggle_map_mode();
+            log::info!("Switched Map Mode to: {:?}", new_mode);
+            return WindowAction::SetMapMode(new_mode);
+        }
+    }
+    WindowAction::None
+}
+
 enum AppFlow {
     Loading(Receiver<Result<WorldData, String>>),
     Running(Box<AppState>),
@@ -183,81 +286,31 @@ impl<'a> State<'a> {
             AppFlow::Loading(_) => return false,
         };
 
-        match event {
-            WindowEvent::CursorMoved { position, .. } => {
-                let old_pos = app_state.last_cursor_pos;
-                app_state.last_cursor_pos = Some((position.x, position.y));
-                app_state.update_cursor(position.x, position.y);
-
-                // Update UI State Cursor
-                self.ui_state.set_cursor_pos(Some((position.x, position.y)));
-
-                // Update Hover Tooltip if strictly over map
-                if !self.ui_state.sidebar_open || position.x < (self.size.width as f64 - 300.0) {
-                    if let Some(text) = app_state.get_hover_text() {
-                        self.ui_state.set_hovered_tooltip(Some(text));
-                    } else {
-                        self.ui_state.set_hovered_tooltip(None);
-                    }
-                } else {
-                    // Over sidebar
-                    self.ui_state.set_hovered_tooltip(None);
-                }
-
-                #[allow(clippy::collapsible_if)]
-                if app_state.is_panning {
-                    if let Some((old_x, old_y)) = old_pos {
-                        let dx = position.x - old_x;
-                        let dy = position.y - old_y;
-                        app_state.camera.pan(
-                            dx,
-                            dy,
-                            self.size.width as f64,
-                            self.size.height as f64,
-                        );
-                    }
-                }
-            }
+        // Map WindowEvent to GameInput
+        let input = match event {
+            WindowEvent::CursorMoved { position, .. } => Some(GameInput::CursorMoved {
+                x: position.x,
+                y: position.y,
+            }),
             WindowEvent::MouseInput {
                 state,
                 button: winit::event::MouseButton::Middle,
                 ..
-            } => {
-                app_state.is_panning = *state == winit::event::ElementState::Pressed;
-            }
+            } => Some(GameInput::SetPanning(
+                *state == winit::event::ElementState::Pressed,
+            )),
             WindowEvent::MouseWheel { delta, .. } => {
-                let zoom_amount = match delta {
+                let amount = match delta {
                     winit::event::MouseScrollDelta::LineDelta(_, y) => *y * 0.1,
                     winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32 * 0.01,
                 };
-                // Zoom towards cursor
-                if let Some((mx, my)) = app_state.cursor_pos {
-                    app_state.camera.zoom(
-                        zoom_amount.into(),
-                        mx,
-                        my,
-                        self.size.width as f64,
-                        self.size.height as f64,
-                    );
-                }
+                Some(GameInput::Zoom { amount })
             }
             WindowEvent::MouseInput {
                 state: winit::event::ElementState::Pressed,
                 button: winit::event::MouseButton::Left,
                 ..
-            } => {
-                // If not clicking on sidebar
-                #[allow(clippy::collapsible_if)]
-                if !self.ui_state.sidebar_open
-                    || app_state.cursor_pos.unwrap().0 < (self.size.width as f64 - 300.0)
-                {
-                    if let Some((id, text)) = app_state.get_selected_province() {
-                        println!("Clicked Province: {} - {}", id, text);
-                        self.ui_state.set_selected_province(Some((id, text)));
-                        self.ui_state.set_sidebar_open(true); // Open sidebar on click
-                    }
-                }
-            }
+            } => Some(GameInput::PrimaryClick),
             WindowEvent::KeyboardInput {
                 event:
                     winit::event::KeyEvent {
@@ -267,21 +320,37 @@ impl<'a> State<'a> {
                     },
                 ..
             } => match keycode {
-                winit::keyboard::KeyCode::KeyC => {
-                    self.ui_state.toggle_console();
-                }
-                winit::keyboard::KeyCode::Tab => {
-                    let new_mode = app_state.toggle_map_mode();
-                    println!("Switched Map Mode to: {:?}", new_mode);
-                    self.renderer.set_map_mode(&self.device, new_mode);
-                }
-                _ => {}
+                winit::keyboard::KeyCode::KeyC => Some(GameInput::ToggleConsole),
+                winit::keyboard::KeyCode::Tab => Some(GameInput::CycleMapMode),
+                _ => None,
             },
-            _ => {
-                return false;
+            _ => None,
+        };
+
+        if let Some(game_input) = input {
+            let action = process_input(
+                game_input,
+                app_state,
+                &mut self.ui_state,
+                self.size.width,
+                self.size.height,
+            );
+
+            // Handle side-effects
+            match action {
+                WindowAction::None => false,
+                WindowAction::Redraw => true,
+                WindowAction::ToggleConsole => true,
+                WindowAction::SetMapMode(mode) => {
+                    self.renderer.set_map_mode(&self.device, mode);
+                    true
+                }
+                WindowAction::Exit => true,
+                WindowAction::Resize(_, _) => true,
             }
+        } else {
+            false
         }
-        true
     }
 
     fn update(&mut self) {
@@ -1079,5 +1148,108 @@ mod tests {
         // 5. Test Update Cursor
         app.update_cursor(0.0, 0.0);
         assert_eq!(app.cursor_pos, Some((0.0, 0.0)));
+    }
+    #[test]
+    fn test_input_handling() {
+        use crate::window::{AppState, GameInput, WindowAction, WorldData, process_input};
+        use eu4data::history::ProvinceHistory;
+        use image::RgbImage;
+        use std::collections::HashMap;
+
+        // 1. Setup Mock Data
+        let mut color_to_id = HashMap::new();
+        color_to_id.insert((255, 0, 0), 1);
+        let mut img = RgbImage::new(100, 100);
+        for p in img.pixels_mut() {
+            *p = image::Rgb([255, 0, 0]);
+        }
+
+        let mut history = HashMap::new();
+        history.insert(
+            1,
+            ProvinceHistory {
+                owner: Some("SWE".to_string()),
+                trade_goods: None,
+                base_tax: None,
+                base_production: None,
+                base_manpower: None,
+                religion: None,
+                culture: None,
+            },
+        );
+
+        let world = WorldData {
+            province_map: img,
+            political_map: RgbImage::new(1, 1),
+            tradegoods_map: RgbImage::new(1, 1),
+            religion_map: RgbImage::new(1, 1),
+            culture_map: RgbImage::new(1, 1),
+            color_to_id,
+            province_history: history,
+            countries: HashMap::new(),
+        };
+
+        let mut app_state = AppState::new(world, 100, 100);
+        let mut ui_state = crate::ui::UIState::new();
+
+        // 2. Test Toggle Console
+        let action = process_input(
+            GameInput::ToggleConsole,
+            &mut app_state,
+            &mut ui_state,
+            100,
+            100,
+        );
+        assert_eq!(action, WindowAction::ToggleConsole);
+        assert!(ui_state.console_open);
+
+        // 3. Test Map Mode Switch
+        let action = process_input(
+            GameInput::CycleMapMode,
+            &mut app_state,
+            &mut ui_state,
+            100,
+            100,
+        );
+        match action {
+            WindowAction::SetMapMode(m) => assert_ne!(m, crate::args::MapMode::Province),
+            _ => panic!("Expected SetMapMode action"),
+        }
+
+        // 4. Test Mouse Click (Select Province)
+        // Set cursor via input first
+        process_input(
+            GameInput::CursorMoved { x: 50.0, y: 50.0 },
+            &mut app_state,
+            &mut ui_state,
+            100,
+            100,
+        );
+
+        // Now Click
+        let action = process_input(
+            GameInput::PrimaryClick,
+            &mut app_state,
+            &mut ui_state,
+            100,
+            100,
+        );
+        assert_eq!(action, WindowAction::Redraw);
+        assert!(ui_state.sidebar_open);
+        assert_eq!(ui_state.selected_province.as_ref().unwrap().0, 1);
+
+        // 5. Test Zoom (Mouse Wheel)
+        // Ensure cursor is set (from previous step 50.0, 50.0)
+        let initial_zoom = app_state.camera.zoom;
+        let action = process_input(
+            GameInput::Zoom { amount: 0.1 },
+            &mut app_state,
+            &mut ui_state,
+            100,
+            100,
+        );
+        assert_eq!(action, WindowAction::Redraw);
+        // Expect zoom to increase (multiply by 1.1)
+        assert!(app_state.camera.zoom > initial_zoom);
     }
 }

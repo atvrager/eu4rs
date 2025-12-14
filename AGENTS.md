@@ -208,6 +208,18 @@ To enable proper symlink support on Windows:
 - **Git Config**: Ensure `core.autocrlf` is set to `input` or `false` locally.
 - **Normalization**: If you see "whole file diffs", run `git add --renormalize .` to fix it.
 
+## Documentation
+
+- **Rust Code (Rustdoc)**:
+  - **Focus on the "Why"**: Experienced engineers will read this. Explain *why* code exists, design constraints, and specific sharp edges.
+  - **Skip the Obvious**: Do not document trivial getters or self-explanatory logic.
+  - **Auto-Generatable**: Use standard Rustdoc formats that work with generators.
+
+- **Project Documentation (`docs/` folder)**:
+  - **Scope**: Document non-trivial systems, especially those specific to the game domain or data model (e.g., Paradox file formats, map logic).
+  - **Assumptions**: Assume standard CS knowledge; do not explain generic algorithms unless the API usage is unique.
+  - **Format**: Markdown files in the `docs/` directory.
+
 ## Logging
 - **ALWAYS** use the `log!` macros (e.g., `info!`, `warn!`, `error!`, `debug!`) instead of `println!` or `eprintln!`.
     - Exception: Panics, early startup errors before logger initialization, or CLI output intended for piping (e.g., `snapshot` text output if any).
@@ -235,6 +247,14 @@ To enable proper symlink support on Windows:
 - **Visual verification required**: GUI applications (like the main eu4rs app) cannot be effectively tested via automated command execution. Ask the user to run the program manually for visual verification.
 - **Batch questions**: You can ask up to 3 questions at once when requesting testing feedback.
 
+## Snapshot Testing
+- **When to use**: Visual output (UI, Map rendering) or complex deterministic data structures where manual assertion is tedious.
+- **How to use**: Use `crate::testing::assert_snapshot(&image, "snapshot_name")`.
+- **Location**: Snapshots are stored in [`eu4rs/tests/goldens/`](eu4rs/tests/goldens/README.md).
+- **Updating**:
+    - **One-off**: Delete the `.png` file and run the test.
+    - **Batch**: Run `cargo xtask snapshot` to regenerate all golden snapshots.
+
 ## Git Workflow
 - **Commit reordering**: When you need to update an older commit, consider reordering commits via interactive rebase rather than using fixup/squash. Move the older commit to HEAD (or your new changes down to it), amend directly, then reorder back. This is simpler when there aren't many overlapping files between commits.
 - **Non-interactive rebase**: Don't try to drive vim interactively. Use `GIT_SEQUENCE_EDITOR` and `GIT_EDITOR` with scripts or `sed`:
@@ -253,3 +273,13 @@ To enable proper symlink support on Windows:
 - **Focus on Deltas**: Write commit messages based ONLY on the actual code changes (diffs). Do not summarize the conversation history.
 - **Format**: Use bulleted lists for details.
 - **Content**: Be professional and technical. Do not mention "I ran CI" or "User requested this". Assume competence.
+- **PowerShell Warning**: On Windows, the backtick `` ` `` is the escape character.
+    - **Avoid backticks** in `git commit -m` strings if possible.
+    - **Double-escape** if necessary (`` `` ` ``), or better yet, write the message to a file and use `git commit -F`.
+    - **Watch out for**: `` `t `` (tab), `` `n `` (newline), which can silently corrupt messages (e.g., `` `test `` becomes `   est`).
+
+## Communication Standards
+- **Backticks for Code**: Always wrap code expressions, function names, variable names, and file paths in backticks to distinguish them from natural language.
+    - **Good**: "The `process_input` function returns `true`."
+    - **Good**: "Set `val p = foo` before calling."
+    - **Bad**: "The process_input function returns true."
