@@ -72,6 +72,7 @@ pub fn draw_map(base_path: &Path, output_path: &Path, mode: MapMode) -> Result<(
             countries = eu4data::countries::load_country_map(base_path, &tags);
             println!("Loaded {} countries.", countries.len());
         }
+        MapMode::Province => {} // No extra data needed
         MapMode::All => unreachable!("MapMode::All should be handled by caller"),
     }
 
@@ -124,6 +125,9 @@ pub fn draw_map(base_path: &Path, output_path: &Path, mode: MapMode) -> Result<(
                         {
                             out_color = Rgb([country.color[0], country.color[1], country.color[2]]);
                         }
+                    }
+                    MapMode::Province => {
+                        out_color = Rgb([r, g, b]);
                     }
                     MapMode::All => unreachable!(),
                 }
@@ -216,10 +220,59 @@ pub fn load_world_data(base_path: &Path) -> Result<window::WorldData, String> {
     println!("Loading map image from {:?}", map_path);
     let province_map = image::open(map_path).map_err(|e| e.to_string())?.to_rgb8();
 
+    // 4. Countries
+    println!("Loading country tags...");
+    let tags = eu4data::countries::load_tags(base_path).map_err(|e| e.to_string())?;
+    println!("Loading {} country definitions...", tags.len());
+    let countries = eu4data::countries::load_country_map(base_path, &tags);
+    println!("Loaded {} countries.", countries.len());
+
+    // 5. Default Map (Water)
+    let default_map_path = base_path.join("map/default.map");
+    let mut water_ids = HashSet::new();
+    if default_map_path.exists()
+        && let Ok(dm_tokens) = DefaultEU4Txt::open_txt(default_map_path.to_str().unwrap())
+        && let Ok(dm_ast) = DefaultEU4Txt::parse(dm_tokens)
+        && let Ok(default_map) = from_node::<DefaultMap>(&dm_ast)
+    {
+        for id in default_map.sea_starts {
+            water_ids.insert(id);
+        }
+        for id in default_map.lakes {
+            water_ids.insert(id);
+        }
+    }
+
+    // 6. Generate Political Map
+    println!("Generating Political Map...");
+    let (width, height) = province_map.dimensions();
+    let mut political_map = RgbImage::new(width, height);
+
+    for (x, y, pixel) in province_map.enumerate_pixels() {
+        let (r, g, b) = (pixel[0], pixel[1], pixel[2]);
+        if let Some(id) = color_to_id.get(&(r, g, b)) {
+            let mut out_color = Rgb([100, 100, 100]); // Gray (Unowned/Wasteland)
+
+            if water_ids.contains(id) {
+                out_color = Rgb([64, 164, 223]); // Water Blue
+            } else if let Some(hist) = province_history.get(id)
+                && let Some(country) = hist.owner.as_ref().and_then(|tag| countries.get(tag))
+                && country.color.len() >= 3
+            {
+                out_color = Rgb([country.color[0], country.color[1], country.color[2]]);
+            }
+            political_map.put_pixel(x, y, out_color);
+        } else {
+            political_map.put_pixel(x, y, Rgb([0, 0, 0]));
+        }
+    }
+
     Ok(window::WorldData {
         province_map,
+        political_map,
         color_to_id,
         province_history,
+        countries,
     })
 }
 

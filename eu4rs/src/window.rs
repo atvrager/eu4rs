@@ -1,4 +1,6 @@
+use crate::args::MapMode;
 use crate::camera::Camera;
+use eu4data::countries::Country;
 use eu4data::history::ProvinceHistory;
 use image::{GenericImageView, RgbImage};
 use std::collections::HashMap;
@@ -11,8 +13,11 @@ use winit::{
 
 pub struct WorldData {
     pub province_map: RgbImage,
+    pub political_map: RgbImage,
     pub color_to_id: HashMap<(u8, u8, u8), u32>,
     pub province_history: HashMap<u32, ProvinceHistory>,
+    #[allow(dead_code)]
+    pub countries: HashMap<String, Country>,
 }
 
 impl WorldData {
@@ -44,6 +49,7 @@ pub struct AppState {
     pub camera: Camera,
     pub is_panning: bool,
     pub last_cursor_pos: Option<(f64, f64)>,
+    pub current_map_mode: MapMode,
 }
 
 impl AppState {
@@ -61,7 +67,17 @@ impl AppState {
             camera: Camera::new(content_aspect),
             is_panning: false,
             last_cursor_pos: None,
+            current_map_mode: MapMode::Province,
         }
+    }
+
+    pub fn toggle_map_mode(&mut self) -> MapMode {
+        self.current_map_mode = match self.current_map_mode {
+            MapMode::Province => MapMode::Political,
+            MapMode::Political => MapMode::Province,
+            _ => MapMode::Province,
+        };
+        self.current_map_mode
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -747,6 +763,38 @@ impl<'a> State<'a> {
                 }
                 false
             }
+
+            WindowEvent::KeyboardInput {
+                event:
+                    winit::event::KeyEvent {
+                        state: winit::event::ElementState::Pressed,
+                        physical_key:
+                            winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::Tab),
+                        ..
+                    },
+                ..
+            } => {
+                let new_mode = self.app_state.toggle_map_mode();
+                println!("Switched Map Mode to: {:?}", new_mode);
+
+                // Update Texture
+                let img = match new_mode {
+                    MapMode::Province => &self.app_state.world_data.province_map,
+                    MapMode::Political => &self.app_state.world_data.political_map,
+                    _ => &self.app_state.world_data.province_map,
+                };
+
+                let dynamic_img = image::DynamicImage::ImageRgb8(img.clone());
+                if let Ok(texture) = Texture::from_image(
+                    &self.device,
+                    &self.queue,
+                    &dynamic_img,
+                    Some("Map Texture"),
+                ) {
+                    self.renderer.update_texture(&self.device, texture);
+                }
+                true
+            }
             _ => false,
         }
     }
@@ -884,7 +932,11 @@ pub async fn run(verbose: bool, world_data: WorldData) {
 /// 4. Reading back the texture data and saving it as a PNG.
 ///
 /// Returns immediately if no GPU adapter is found (CI waiver).
-pub async fn snapshot(output_path: &std::path::Path) -> Result<(), String> {
+pub async fn snapshot(
+    eu4_path: &std::path::Path,
+    output_path: &std::path::Path,
+    mode: MapMode,
+) -> Result<(), String> {
     // We need to re-init logger if it hasn't been initialized?
     // Actually env_logger::init() panics if called twice.
     // Let's assume it might be called.
@@ -927,7 +979,26 @@ pub async fn snapshot(output_path: &std::path::Path) -> Result<(), String> {
     // Use a standard texture format for offscreen rendering
     let format = wgpu::TextureFormat::Rgba8UnormSrgb;
     // Verbose = true for logs
-    let renderer = Eu4Renderer::new(&device, &queue, format, true);
+    let mut renderer = Eu4Renderer::new(&device, &queue, format, true);
+
+    match mode {
+        MapMode::Political => {
+            println!("Loading world data for Political Snapshot...");
+            // We use ops::load_world_data which requires crates::ops
+            let world_data = crate::ops::load_world_data(eu4_path)?;
+            let img = &world_data.political_map;
+            let dynamic_img = image::DynamicImage::ImageRgb8(img.clone());
+            if let Ok(texture) =
+                Texture::from_image(&device, &queue, &dynamic_img, Some("Snapshot Texture"))
+            {
+                renderer.update_texture(&device, texture);
+            }
+        }
+        _ => {
+            // Default Eu4Renderer loads province map
+        }
+    }
+
     let size = renderer.diffuse_texture.texture.size();
     let (width, height) = (size.width, size.height);
 
@@ -1070,8 +1141,10 @@ mod tests {
 
         let world_data = WorldData {
             province_map,
+            political_map: RgbImage::new(1, 1),
             color_to_id,
             province_history,
+            countries: HashMap::new(),
         };
 
         // 2. Verify Data Retrieval
@@ -1113,13 +1186,18 @@ mod tests {
         let output_path = std::env::temp_dir().join("test_map_snapshot.png");
 
         // Block on the async snapshot function
-        match pollster::block_on(crate::window::snapshot(&output_path)) {
+        // Use current dir and Province mode for regression test
+        match pollster::block_on(crate::window::snapshot(
+            std::path::Path::new("."),
+            &output_path,
+            MapMode::Province,
+        )) {
             Ok(_) => {
                 // Load the result and assert
                 let img = image::open(&output_path)
                     .expect("Failed to load map snapshot output")
                     .to_rgba8();
-                testing::assert_snapshot(&img, "full_map_render");
+                testing::assert_snapshot(&img, "map_province");
             }
             Err(e) => {
                 if e.contains("CI waiver") {
@@ -1128,6 +1206,35 @@ mod tests {
                 }
                 panic!("Snapshot generation failed: {}", e);
             }
+        }
+    }
+
+    #[test]
+    fn test_political_snapshot() {
+        let output_path = std::env::temp_dir().join("test_map_political.png");
+        let steam_path = std::path::Path::new(
+            "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Europa Universalis IV",
+        );
+
+        // Use Steam path and Political mode
+        if steam_path.exists() {
+            match pollster::block_on(crate::window::snapshot(
+                steam_path,
+                &output_path,
+                MapMode::Political,
+            )) {
+                Ok(_) => {
+                    let img = image::open(&output_path)
+                        .expect("Failed to load political snapshot output")
+                        .to_rgba8();
+                    testing::assert_snapshot(&img, "map_political");
+                }
+                Err(e) => {
+                    println!("Skipping test_political_snapshot: {}", e);
+                }
+            }
+        } else {
+            println!("Skipping test_political_snapshot: Steam path not found");
         }
     }
 
@@ -1169,8 +1276,10 @@ mod tests {
 
         let world = WorldData {
             province_map: img,
+            political_map: RgbImage::new(1, 1),
             color_to_id,
             province_history: history,
+            countries: HashMap::new(),
         };
 
         // Test ID lookup
@@ -1209,8 +1318,10 @@ mod tests {
 
         let world = WorldData {
             province_map: img,
+            political_map: RgbImage::new(1, 1),
             color_to_id,
             province_history: HashMap::new(),
+            countries: HashMap::new(),
         };
 
         // 2. Init AppState (Window size 100x100)

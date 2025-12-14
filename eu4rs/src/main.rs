@@ -49,9 +49,10 @@ fn run(args: Cli) -> Result<(), String> {
                 pollster::block_on(window::run(*verbose, world_data));
                 return Ok(());
             }
-            Commands::Snapshot { output } => {
+            Commands::Snapshot { output, mode } => {
+                let base = args.eu4_path.parent().unwrap();
                 let path = std::path::Path::new(output);
-                pollster::block_on(window::snapshot(path))?;
+                pollster::block_on(window::snapshot(base, path, *mode))?;
                 return Ok(());
             }
             Commands::Lookup { key } => {

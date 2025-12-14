@@ -40,10 +40,12 @@ cargo run
 - **Zoom**: Scroll Wheel (Up/Down)
 - **Pan**: Middle Mouse Button (Hold & Drag)
 - **Inspect**: Left Click on a province to view details
+- **Toggle Map Mode**: Press `Tab` to switch between Province and Political map modes.
 
 
 # Render map to an image file (Headless)
-cargo run -- snapshot --output my_map.png
+cargo run -- snapshot --output province_map.png --mode province
+cargo run -- snapshot --output political_map.png --mode political
 
 # Parse and pretty-print files (verifies parsing logic)
 cargo run -p eu4rs -- --pretty-print --eu4-path "path/to/specific/file.txt"
@@ -57,6 +59,7 @@ cargo run -p eu4rs -- --pretty-print --eu4-path "path/to/specific/file.txt"
 - **CI/CD**: Automated GitHub Actions pipeline for building, testing, and linting (`fmt`, `clippy`).
 - **Statistics**: The `Filescanner` provides quick statistics on your installation.
 - **Interactive Map**: A hardware-accelerated (Vulkan/wgpu) map viewer that renders the game's `provinces.bmp` with correct aspect ratio and windowing.
+- **Political Map Mode**: Visualizes country ownership with borders and filling based on game data.
 - **Headless Rendering**: Ability to render the map to an image file without opening a window (`--snapshot`), suitable for automated testing in CI.
 - **Serde Support**: `eu4txt` implements `serde::Deserializer`, allowing direct mapping of game files to Rust structs (in `eu4data`).
 

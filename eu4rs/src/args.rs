@@ -25,6 +25,7 @@ pub struct Cli {
 
 #[derive(Clone, Copy, Debug, clap::ValueEnum, PartialEq)]
 pub enum MapMode {
+    Province,
     TradeGoods,
     Political,
     All,
@@ -57,6 +58,10 @@ pub enum Commands {
         /// Output path for the image.
         #[arg(short, long, default_value = "snapshot.png")]
         output: String,
+
+        /// The map mode to render (e.g., TradeGoods, Political).
+        #[arg(long, value_enum, default_value_t = MapMode::Province)]
+        mode: MapMode,
     },
 
     /// Lookup a localisation key.
