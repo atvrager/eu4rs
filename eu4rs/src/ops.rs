@@ -2,7 +2,9 @@ use crate::args::MapMode;
 use crate::window;
 use eu4data::{
     Tradegood,
+    countries::Country,
     cultures::Culture,
+    history::ProvinceHistory,
     map::{DefaultMap, load_definitions},
     religions::Religion,
 };
@@ -229,49 +231,88 @@ pub fn pretty_print_dir(dir: &std::path::Path, pretty_print: bool) -> Result<Sca
     Ok(stats)
 }
 
+#[allow(clippy::type_complexity)]
 pub fn load_world_data(base_path: &Path) -> Result<window::WorldData, String> {
+    let start_time = std::time::Instant::now();
     log::info!("Loading world data...");
 
-    // 1. Definitions
-    let def_path = base_path.join("map/definition.csv");
-    let definitions = load_definitions(&def_path).map_err(|e| e.to_string())?;
-    let mut color_to_id = HashMap::new();
-    for (id, def) in &definitions {
-        color_to_id.insert((def.r, def.g, def.b), *id);
-    }
+    // Task Group 1: Definition CSV & Map Image
+    let task_definitions_and_map =
+        || -> Result<(HashMap<(u8, u8, u8), u32>, image::RgbImage), String> {
+            let (definitions, province_map) = rayon::join(
+                || -> Result<_, String> {
+                    let def_path = base_path.join("map/definition.csv");
+                    let list = load_definitions(&def_path).map_err(|e| e.to_string())?;
+                    let mut map = HashMap::new();
+                    for (id, def) in list {
+                        map.insert((def.r, def.g, def.b), id);
+                    }
+                    Ok(map)
+                },
+                || -> Result<_, String> {
+                    let map_path = base_path.join("map/provinces.bmp");
+                    log::info!("Loading map image from {}", display_path(&map_path));
+                    image::open(map_path)
+                        .map_err(|e| e.to_string())
+                        .map(|img| img.to_rgb8())
+                },
+            );
+            Ok((definitions?, province_map?))
+        };
 
-    // 2. History
-    let (province_history, _) =
-        eu4data::history::load_province_history(base_path).map_err(|e| e.to_string())?;
+    // Task Group 2: History & Countries
+    let task_history_and_countries =
+        || -> Result<(HashMap<u32, ProvinceHistory>, HashMap<String, Country>), String> {
+            let (history_res, countries_res) = rayon::join(
+                || eu4data::history::load_province_history(base_path).map_err(|e| e.to_string()),
+                || -> Result<_, String> {
+                    log::info!("Loading country tags...");
+                    let tags =
+                        eu4data::countries::load_tags(base_path).map_err(|e| e.to_string())?;
+                    log::info!("Loading {} country definitions...", tags.len());
+                    let countries = eu4data::countries::load_country_map(base_path, &tags);
+                    log::info!("Loaded {} countries.", countries.len());
+                    Ok(countries)
+                },
+            );
+            Ok((history_res?.0, countries_res?))
+        };
 
-    // 3. Map Image
-    let map_path = base_path.join("map/provinces.bmp");
-    log::info!("Loading map image from {}", display_path(&map_path));
-    let province_map = image::open(map_path).map_err(|e| e.to_string())?.to_rgb8();
-
-    // 4. Countries
-    log::info!("Loading country tags...");
-    let tags = eu4data::countries::load_tags(base_path).map_err(|e| e.to_string())?;
-    log::info!("Loading {} country definitions...", tags.len());
-    let countries = eu4data::countries::load_country_map(base_path, &tags);
-    log::info!("Loaded {} countries.", countries.len());
-
-    // 4b. Religions & Cultures & Tradegoods
-    log::info!("Loading religions, cultures, and tradegoods...");
-    let religions = eu4data::religions::load_religions(base_path).map_err(|e| e.to_string())?;
-    let cultures = eu4data::cultures::load_cultures(base_path).map_err(|e| e.to_string())?;
-
-    // Load tradegoods implicitly or explicitly?
-    // We need the map for colors.
-    let tg_path = base_path.join("common/tradegoods/00_tradegoods.txt");
-    let tradegoods: HashMap<String, Tradegood> = if tg_path.exists() {
-        let tokens =
-            DefaultEU4Txt::open_txt(tg_path.to_str().unwrap()).map_err(|e| e.to_string())?;
-        let ast = DefaultEU4Txt::parse(tokens).map_err(|e| e.to_string())?;
-        from_node(&ast).unwrap_or_default()
-    } else {
-        HashMap::new()
+    // Task Group 3: Religions, Cultures, Tradegoods
+    let task_common_data = || {
+        rayon::join(
+            || eu4data::religions::load_religions(base_path).map_err(|e| e.to_string()),
+            || {
+                rayon::join(
+                    || eu4data::cultures::load_cultures(base_path).map_err(|e| e.to_string()),
+                    || -> Result<_, String> {
+                        let tg_path = base_path.join("common/tradegoods/00_tradegoods.txt");
+                        if tg_path.exists() {
+                            let tokens = DefaultEU4Txt::open_txt(tg_path.to_str().unwrap())
+                                .map_err(|e| e.to_string())?;
+                            let ast = DefaultEU4Txt::parse(tokens).map_err(|e| e.to_string())?;
+                            from_node::<HashMap<String, Tradegood>>(&ast).map_err(|e| e.to_string())
+                        } else {
+                            Ok(HashMap::new())
+                        }
+                    },
+                )
+            },
+        )
     };
+
+    // 4. Execute Top-Level Tasks
+    let (res_defs_map, (res_hist_countries, (res_religions, (res_cultures, res_tradegoods)))) =
+        rayon::join(task_definitions_and_map, || {
+            rayon::join(task_history_and_countries, task_common_data)
+        });
+
+    let (color_to_id, province_map) = res_defs_map?;
+    let (province_history, countries) = res_hist_countries?;
+    let religions = res_religions?;
+    let cultures = res_cultures?;
+    let tradegoods = res_tradegoods.unwrap_or_default();
+
     log::info!(
         "Loaded {} religions, {} cultures, {} tradegoods.",
         religions.len(),
@@ -295,79 +336,76 @@ pub fn load_world_data(base_path: &Path) -> Result<window::WorldData, String> {
         }
     }
 
-    // 6. Generate All Maps
+    // 6. Generate All Maps (Parallel)
     log::info!("Generating Maps (Political, TradeGoods, Religion, Culture)...");
     let (width, height) = province_map.dimensions();
-    let mut political_map = RgbImage::new(width, height);
-    let mut tradegoods_map = RgbImage::new(width, height);
-    let mut religion_map = RgbImage::new(width, height);
-    let mut culture_map = RgbImage::new(width, height);
 
-    for (x, y, pixel) in province_map.enumerate_pixels() {
-        let (r, g, b) = (pixel[0], pixel[1], pixel[2]);
+    // We need shared references for the closures
+    let ref_province_map = &province_map;
+    let ref_color_to_id = &color_to_id;
+    let ref_province_history = &province_history;
+    let ref_countries = &countries;
+    let ref_religions = &religions;
+    let ref_cultures = &cultures;
+    let ref_tradegoods = &tradegoods;
+    let ref_water_ids = &water_ids;
 
-        // Defaults
-        let mut pol_color = Rgb([100, 100, 100]);
-        let mut tg_color = Rgb([100, 100, 100]);
-        let mut rel_color = Rgb([100, 100, 100]);
-        let mut cul_color = Rgb([100, 100, 100]);
+    let (political_map, (religion_map, (culture_map, tradegoods_map))) = rayon::join(
+        || {
+            draw_map_political(
+                width,
+                height,
+                ref_province_map,
+                ref_color_to_id,
+                ref_province_history,
+                ref_countries,
+                ref_water_ids,
+            )
+        },
+        || {
+            rayon::join(
+                || {
+                    draw_map_religion(
+                        width,
+                        height,
+                        ref_province_map,
+                        ref_color_to_id,
+                        ref_province_history,
+                        ref_religions,
+                        ref_water_ids,
+                    )
+                },
+                || {
+                    rayon::join(
+                        || {
+                            draw_map_culture(
+                                width,
+                                height,
+                                ref_province_map,
+                                ref_color_to_id,
+                                ref_province_history,
+                                ref_cultures,
+                                ref_water_ids,
+                            )
+                        },
+                        || {
+                            draw_map_tradegoods(
+                                width,
+                                height,
+                                ref_province_map,
+                                ref_color_to_id,
+                                ref_province_history,
+                                ref_tradegoods,
+                                ref_water_ids,
+                            )
+                        },
+                    )
+                },
+            )
+        },
+    );
 
-        if let Some(id) = color_to_id.get(&(r, g, b)) {
-            if water_ids.contains(id) {
-                let water = Rgb([64, 164, 223]);
-                pol_color = water;
-                tg_color = water;
-                rel_color = water;
-                cul_color = water;
-            } else if let Some(hist) = province_history.get(id) {
-                // Political
-                if let Some(country) = hist.owner.as_ref().and_then(|tag| countries.get(tag))
-                    && country.color.len() >= 3
-                {
-                    pol_color = Rgb([country.color[0], country.color[1], country.color[2]]);
-                }
-
-                // Trade Goods
-                if let Some(good) = hist
-                    .trade_goods
-                    .as_ref()
-                    .and_then(|key| tradegoods.get(key))
-                    && good.color.len() >= 3
-                {
-                    tg_color = Rgb([
-                        (good.color[0] * 255.0) as u8,
-                        (good.color[1] * 255.0) as u8,
-                        (good.color[2] * 255.0) as u8,
-                    ]);
-                }
-
-                // Religion
-                if let Some(rel) = hist.religion.as_ref().and_then(|key| religions.get(key))
-                    && rel.color.len() >= 3
-                {
-                    rel_color = Rgb([rel.color[0], rel.color[1], rel.color[2]]);
-                }
-
-                // Culture
-                if let Some(cul) = hist.culture.as_ref().and_then(|key| cultures.get(key)) {
-                    cul_color = Rgb(cul.color);
-                }
-            }
-            // else wasteland (defaults)
-        } else {
-            // Unmapped (Black)
-            let black = Rgb([0, 0, 0]);
-            pol_color = black;
-            tg_color = black;
-            rel_color = black;
-            cul_color = black;
-        }
-
-        political_map.put_pixel(x, y, pol_color);
-        tradegoods_map.put_pixel(x, y, tg_color);
-        religion_map.put_pixel(x, y, rel_color);
-        culture_map.put_pixel(x, y, cul_color);
-    }
+    log::info!("Total load time: {:?}", start_time.elapsed());
 
     Ok(window::WorldData {
         province_map,
@@ -375,10 +413,145 @@ pub fn load_world_data(base_path: &Path) -> Result<window::WorldData, String> {
         tradegoods_map,
         religion_map,
         culture_map,
-        color_to_id,
         province_history,
         countries,
+        religions,
+        cultures,
+        tradegoods,
+        water_ids,
+        color_to_id,
     })
+}
+
+fn draw_map_political(
+    width: u32,
+    height: u32,
+    province_map: &RgbImage,
+    color_to_id: &HashMap<(u8, u8, u8), u32>,
+    province_history: &HashMap<u32, ProvinceHistory>,
+    countries: &HashMap<String, Country>,
+    water_ids: &HashSet<u32>,
+) -> RgbImage {
+    let mut map = RgbImage::new(width, height);
+    for (x, y, pixel) in province_map.enumerate_pixels() {
+        let (r, g, b) = (pixel[0], pixel[1], pixel[2]);
+        let mut color = Rgb([100, 100, 100]);
+
+        if let Some(id) = color_to_id.get(&(r, g, b)) {
+            if water_ids.contains(id) {
+                color = Rgb([64, 164, 223]);
+            } else if let Some(hist) = province_history.get(id)
+                && let Some(country) = hist.owner.as_ref().and_then(|tag| countries.get(tag))
+                && country.color.len() >= 3
+            {
+                color = Rgb([country.color[0], country.color[1], country.color[2]]);
+            }
+        } else {
+            color = Rgb([0, 0, 0]);
+        }
+        map.put_pixel(x, y, color);
+    }
+    map
+}
+
+fn draw_map_tradegoods(
+    width: u32,
+    height: u32,
+    province_map: &RgbImage,
+    color_to_id: &HashMap<(u8, u8, u8), u32>,
+    province_history: &HashMap<u32, ProvinceHistory>,
+    tradegoods: &HashMap<String, Tradegood>,
+    water_ids: &HashSet<u32>,
+) -> RgbImage {
+    let mut map = RgbImage::new(width, height);
+    for (x, y, pixel) in province_map.enumerate_pixels() {
+        let (r, g, b) = (pixel[0], pixel[1], pixel[2]);
+        let mut color = Rgb([100, 100, 100]);
+
+        if let Some(id) = color_to_id.get(&(r, g, b)) {
+            if water_ids.contains(id) {
+                color = Rgb([64, 164, 223]);
+            } else if let Some(hist) = province_history.get(id)
+                && let Some(good) = hist
+                    .trade_goods
+                    .as_ref()
+                    .and_then(|key| tradegoods.get(key))
+                && good.color.len() >= 3
+            {
+                color = Rgb([
+                    (good.color[0] * 255.0) as u8,
+                    (good.color[1] * 255.0) as u8,
+                    (good.color[2] * 255.0) as u8,
+                ]);
+            }
+        } else {
+            color = Rgb([0, 0, 0]);
+        }
+        map.put_pixel(x, y, color);
+    }
+    map
+}
+
+fn draw_map_religion(
+    width: u32,
+    height: u32,
+    province_map: &RgbImage,
+    color_to_id: &HashMap<(u8, u8, u8), u32>,
+    province_history: &HashMap<u32, ProvinceHistory>,
+    religions: &HashMap<String, Religion>,
+    water_ids: &HashSet<u32>,
+) -> RgbImage {
+    let mut map = RgbImage::new(width, height);
+    for (x, y, pixel) in province_map.enumerate_pixels() {
+        let (r, g, b) = (pixel[0], pixel[1], pixel[2]);
+        let mut color = Rgb([100, 100, 100]);
+
+        if let Some(id) = color_to_id.get(&(r, g, b)) {
+            if water_ids.contains(id) {
+                color = Rgb([64, 164, 223]);
+            } else if let Some(hist) = province_history.get(id)
+                && let Some(rel) = hist.religion.as_ref().and_then(|key| religions.get(key))
+                && rel.color.len() >= 3
+            {
+                color = Rgb([rel.color[0], rel.color[1], rel.color[2]]);
+            }
+        } else {
+            color = Rgb([0, 0, 0]);
+        }
+        map.put_pixel(x, y, color);
+    }
+    map
+}
+
+fn draw_map_culture(
+    width: u32,
+    height: u32,
+    province_map: &RgbImage,
+    color_to_id: &HashMap<(u8, u8, u8), u32>,
+    province_history: &HashMap<u32, ProvinceHistory>,
+    cultures: &HashMap<String, Culture>,
+    water_ids: &HashSet<u32>,
+) -> RgbImage {
+    let mut map = RgbImage::new(width, height);
+    for (x, y, pixel) in province_map.enumerate_pixels() {
+        let (r, g, b) = (pixel[0], pixel[1], pixel[2]);
+        let mut color = Rgb([100, 100, 100]);
+
+        if let Some(id) = color_to_id.get(&(r, g, b)) {
+            if water_ids.contains(id) {
+                color = Rgb([64, 164, 223]);
+            } else if let Some(hist) = province_history.get(id)
+                && let Some(cul) = hist.culture.as_ref().and_then(|key| cultures.get(key))
+            {
+                // Culture uses [u8; 3] directly
+                color = Rgb(cul.color);
+            }
+        } else {
+            color = Rgb([0, 0, 0]);
+        }
+        map.put_pixel(x, y, color);
+    }
+    map
 }
 
 #[cfg(test)]

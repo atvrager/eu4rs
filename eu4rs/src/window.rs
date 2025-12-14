@@ -783,7 +783,7 @@ mod tests {
     use crate::text::TextRenderer;
     use eu4data::history::ProvinceHistory;
     use image::RgbImage;
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
     use std::path::Path;
 
     #[test]
@@ -822,6 +822,10 @@ mod tests {
             color_to_id,
             province_history,
             countries: HashMap::new(),
+            religions: HashMap::new(),
+            cultures: HashMap::new(),
+            tradegoods: HashMap::new(),
+            water_ids: HashSet::new(),
         };
 
         // 2. Verify Data Retrieval
@@ -1078,6 +1082,10 @@ mod tests {
             color_to_id,
             province_history: history,
             countries: HashMap::new(),
+            religions: HashMap::new(),
+            cultures: HashMap::new(),
+            tradegoods: HashMap::new(),
+            water_ids: HashSet::new(),
         };
 
         // Test ID lookup
@@ -1123,6 +1131,10 @@ mod tests {
             color_to_id,
             province_history: HashMap::new(),
             countries: HashMap::new(),
+            religions: HashMap::new(),
+            cultures: HashMap::new(),
+            tradegoods: HashMap::new(),
+            water_ids: HashSet::new(),
         };
 
         // 2. Init AppState (Window size 100x100)
@@ -1187,6 +1199,10 @@ mod tests {
             color_to_id,
             province_history: history,
             countries: HashMap::new(),
+            religions: HashMap::new(),
+            cultures: HashMap::new(),
+            tradegoods: HashMap::new(),
+            water_ids: HashSet::new(),
         };
 
         let mut app_state = AppState::new(world, 100, 100);

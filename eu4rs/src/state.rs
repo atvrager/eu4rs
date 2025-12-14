@@ -1,9 +1,12 @@
 use crate::args::MapMode;
 use crate::camera::Camera;
+use eu4data::Tradegood;
 use eu4data::countries::Country;
+use eu4data::cultures::Culture;
 use eu4data::history::ProvinceHistory;
+use eu4data::religions::Religion;
 use image::RgbImage;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Holds all static world data loaded from the game files.
 ///
@@ -27,6 +30,18 @@ pub struct WorldData {
     /// Country definitions (tags, colors, names).
     #[allow(dead_code)]
     pub countries: HashMap<String, Country>,
+    /// Religion definitions.
+    #[allow(dead_code)]
+    pub religions: HashMap<String, Religion>,
+    /// Culture definitions.
+    #[allow(dead_code)]
+    pub cultures: HashMap<String, Culture>,
+    /// Tradegood definitions.
+    #[allow(dead_code)]
+    pub tradegoods: HashMap<String, Tradegood>,
+    /// Set of Province IDs considered water (seas/lakes).
+    #[allow(dead_code)]
+    pub water_ids: HashSet<u32>,
 }
 
 impl WorldData {
