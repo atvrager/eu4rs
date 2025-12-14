@@ -21,7 +21,7 @@ pub fn dump_tradegoods(base_path: &std::path::Path) -> Result<(), String> {
     println!("Loading {:?}", path);
 
     let tokens = DefaultEU4Txt::open_txt(path.to_str().unwrap()).map_err(|e| e.to_string())?;
-    let ast = DefaultEU4Txt::parse(tokens)?;
+    let ast = DefaultEU4Txt::parse(tokens).map_err(|e| e.to_string())?;
     let goods: HashMap<String, Tradegood> = from_node(&ast)?;
     println!(
         "{}",
@@ -47,7 +47,7 @@ pub fn draw_map(base_path: &Path, output_path: &Path, mode: MapMode) -> Result<(
     println!("Loading default map from {:?}", default_map_path);
     let dm_tokens =
         DefaultEU4Txt::open_txt(default_map_path.to_str().unwrap()).map_err(|e| e.to_string())?;
-    let dm_ast = DefaultEU4Txt::parse(dm_tokens)?;
+    let dm_ast = DefaultEU4Txt::parse(dm_tokens).map_err(|e| e.to_string())?;
     let default_map: DefaultMap = from_node(&dm_ast)?;
 
     let mut water_ids: HashSet<u32> = HashSet::new();
@@ -71,7 +71,7 @@ pub fn draw_map(base_path: &Path, output_path: &Path, mode: MapMode) -> Result<(
             println!("Loading trade goods from {:?}", goods_path);
             let tokens =
                 DefaultEU4Txt::open_txt(goods_path.to_str().unwrap()).map_err(|e| e.to_string())?;
-            let ast = DefaultEU4Txt::parse(tokens)?;
+            let ast = DefaultEU4Txt::parse(tokens).map_err(|e| e.to_string())?;
             goods = from_node(&ast)?;
         }
         MapMode::Political => {
@@ -213,11 +213,11 @@ pub fn pretty_print_dir(dir: &std::path::Path, pretty_print: bool) -> Result<Sca
                         stats.tokens += tokens.len();
                         stats.nodes += ast.node_count();
                         if pretty_print {
-                            DefaultEU4Txt::pretty_print(&ast, 0)?;
+                            DefaultEU4Txt::pretty_print(&ast, 0).map_err(|e| e.to_string())?;
                         }
                     }
                     Err(e) => {
-                        if e != "NoTokens" {
+                        if !matches!(e, eu4txt::ParseError::EmptyInput) {
                             println!("Parse Fail: {} : {}", path.display(), e);
                             stats.failure += 1;
                         }

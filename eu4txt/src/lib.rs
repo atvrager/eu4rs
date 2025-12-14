@@ -15,6 +15,9 @@ use encoding_rs_io::DecodeReaderBytesBuilder;
 pub mod de;
 pub use de::from_node;
 
+pub mod error;
+pub use error::ParseError;
+
 /// Represents a token scanned from an EU4 text file.
 #[derive(Debug, Clone)]
 pub enum EU4TxtToken {
@@ -193,8 +196,10 @@ pub trait EU4Txt {
     fn parse_terminal(
         tokens: &[EU4TxtToken],
         pos: usize,
-    ) -> Result<(EU4TxtParseNode, usize), String> {
-        let tok: &EU4TxtToken = tokens.get(pos).ok_or("Unexpected EOF")?;
+    ) -> Result<(EU4TxtParseNode, usize), ParseError> {
+        let tok: &EU4TxtToken = tokens
+            .get(pos)
+            .ok_or(ParseError::UnexpectedEof { position: pos })?;
         match tok {
             EU4TxtToken::Identifier(s) => {
                 let mut id = EU4TxtParseNode::new();
@@ -216,14 +221,18 @@ pub trait EU4Txt {
                 string.entry = EU4TxtAstItem::StringValue(s.to_string());
                 Ok((string, pos + 1))
             }
-            _ => Err(format!("Unimplemented {:?} @ {}", tok, pos)),
+            _ => Err(ParseError::UnexpectedToken {
+                position: pos,
+                token: format!("{:?}", tok),
+                expected: "identifier, number, or string".to_string(),
+            }),
         }
     }
 
     fn parse_assignment_list(
         tokens: &[EU4TxtToken],
         pos: usize,
-    ) -> Result<(EU4TxtParseNode, usize), String> {
+    ) -> Result<(EU4TxtParseNode, usize), ParseError> {
         let mut assignment_list = EU4TxtParseNode::new();
         assignment_list.entry = EU4TxtAstItem::AssignmentList;
         let mut loop_pos = pos;
@@ -233,14 +242,31 @@ pub trait EU4Txt {
             }
             let lhs_tok = tokens
                 .get(loop_pos)
-                .ok_or(format!("no lhs tok @ {}", loop_pos))?;
+                .ok_or(ParseError::UnexpectedEof { position: loop_pos })?;
             if let EU4TxtToken::RightBrace = lhs_tok {
                 loop_pos += 1;
                 break;
             }
             let (node_lhs, eq_pos) = Self::parse_terminal(tokens, loop_pos)?;
-            // TODO: what if LHS is }?
-            // TODO: assert lhs is identifier
+
+            // Validate LHS: must be an identifier or string for assignments
+            // EU4 files use both: `key = value` and `"Quoted Key" = value`
+            match &node_lhs.entry {
+                EU4TxtAstItem::Identifier(_) | EU4TxtAstItem::StringValue(_) => {
+                    // Valid LHS
+                }
+                _ => {
+                    // Check if this is part of an assignment (next token is =)
+                    if let Some(EU4TxtToken::Equals) = tokens.get(eq_pos) {
+                        return Err(ParseError::InvalidLhs {
+                            position: loop_pos,
+                            found: format!("{:?}", node_lhs.entry),
+                        });
+                    }
+                    // Otherwise it's a value in a list, which is fine
+                }
+            }
+
             let eq = tokens.get(eq_pos);
             if eq.is_none() {
                 assignment_list.children.push(node_lhs);
@@ -249,7 +275,9 @@ pub trait EU4Txt {
             }
             match eq.unwrap() {
                 EU4TxtToken::Equals => {
-                    let rhs_tok = tokens.get(eq_pos + 1).ok_or("no rhs tok".to_string())?;
+                    let rhs_tok = tokens.get(eq_pos + 1).ok_or(ParseError::MissingRhs {
+                        position: eq_pos + 1,
+                    })?;
                     let node_rhs: EU4TxtParseNode;
                     let next_pos: usize;
                     match rhs_tok {
@@ -280,26 +308,23 @@ pub trait EU4Txt {
         Ok((assignment_list, loop_pos))
     }
 
-    fn parse(tokens: Vec<EU4TxtToken>) -> Result<EU4TxtParseNode, String> {
-        // TODO: define an error type enum, that way this can be an error we can discriminate
+    fn parse(tokens: Vec<EU4TxtToken>) -> Result<EU4TxtParseNode, ParseError> {
         if tokens.is_empty() {
-            return Err("NoTokens".to_string());
+            return Err(ParseError::EmptyInput);
         }
         Self::parse_assignment_list(&tokens, 0).and_then(|(n, i)| {
             if i == tokens.len() {
                 Ok(n)
             } else {
-                Err(format!(
-                    "Parsing failed! {} != {} tok ({:?})",
-                    i,
-                    tokens.len(),
-                    tokens.get(i).unwrap()
-                ))
+                Err(ParseError::UnconsumedTokens {
+                    position: i,
+                    remaining: tokens.len() - i,
+                })
             }
         })
     }
 
-    fn pretty_print(ast: &EU4TxtParseNode, depth: usize) -> Result<(), String> {
+    fn pretty_print(ast: &EU4TxtParseNode, depth: usize) -> Result<(), ParseError> {
         match &ast.entry {
             EU4TxtAstItem::AssignmentList => {
                 if depth > 0 {
@@ -316,7 +341,10 @@ pub trait EU4Txt {
                 }
             }
             EU4TxtAstItem::Assignment => {
-                let id = ast.children.first().ok_or("missing id")?;
+                let id = ast
+                    .children
+                    .first()
+                    .ok_or(ParseError::UnexpectedEof { position: 0 })?;
                 for _ in 0..depth {
                     print!("  ");
                 }
@@ -325,11 +353,17 @@ pub trait EU4Txt {
                         print!("{}", id);
                     }
                     _ => {
-                        return Err("LHS not an identifier".to_string());
+                        return Err(ParseError::InvalidLhs {
+                            position: 0,
+                            found: format!("{:?}", id.entry),
+                        });
                     }
                 }
                 print!(" = ");
-                let val = ast.children.get(1).ok_or("missing val")?;
+                let val = ast
+                    .children
+                    .get(1)
+                    .ok_or(ParseError::MissingRhs { position: 0 })?;
                 Self::pretty_print(val, depth)?;
             }
             EU4TxtAstItem::IntValue(i) => {
@@ -399,5 +433,72 @@ mod tests {
         let r2 = DefaultEU4Txt::parse(r.unwrap());
         assert!(r2.is_ok());
         assert!(DefaultEU4Txt::pretty_print(&r2.unwrap(), 0).is_ok());
+    }
+
+    #[test]
+    fn test_empty_input() {
+        let tokens = vec![];
+        let result = DefaultEU4Txt::parse(tokens);
+        assert!(matches!(result, Err(ParseError::EmptyInput)));
+    }
+
+    #[test]
+    fn test_missing_rhs() {
+        let mut file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+        write!(file, "key =").expect("Failed to write");
+        let path = file.path().to_str().unwrap();
+
+        let tokens = DefaultEU4Txt::open_txt(path).expect("Failed to open");
+        let result = DefaultEU4Txt::parse(tokens);
+        assert!(matches!(result, Err(ParseError::MissingRhs { .. })));
+    }
+
+    #[test]
+    fn test_invalid_lhs() {
+        let mut file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+        write!(file, "123 = value").expect("Failed to write");
+        let path = file.path().to_str().unwrap();
+
+        let tokens = DefaultEU4Txt::open_txt(path).expect("Failed to open");
+        let result = DefaultEU4Txt::parse(tokens);
+        assert!(matches!(result, Err(ParseError::InvalidLhs { .. })));
+    }
+
+    #[test]
+    fn test_unconsumed_tokens() {
+        // Create tokens where a RightBrace ends the list but more tokens follow
+        let tokens = vec![
+            EU4TxtToken::Identifier("key".to_string()),
+            EU4TxtToken::Equals,
+            EU4TxtToken::LeftBrace,
+            EU4TxtToken::Identifier("nested".to_string()),
+            EU4TxtToken::RightBrace, // Closes the nested brace
+            EU4TxtToken::RightBrace, // Closes the top-level implicit list
+            EU4TxtToken::Identifier("extra".to_string()), // This should be unconsumed
+        ];
+        let result = DefaultEU4Txt::parse(tokens);
+        assert!(matches!(
+            result,
+            Err(ParseError::UnconsumedTokens {
+                position: 6,
+                remaining: 1
+            })
+        ));
+    }
+
+    #[test]
+    fn test_error_display() {
+        let err = ParseError::UnexpectedEof { position: 5 };
+        assert_eq!(err.to_string(), "Unexpected end of file at position 5");
+
+        let err = ParseError::InvalidLhs {
+            position: 3,
+            found: "IntValue(123)".to_string(),
+        };
+        assert!(err.to_string().contains("Invalid left-hand side"));
+        assert!(err.to_string().contains("position 3"));
+
+        let err = ParseError::EmptyInput;
+        assert_eq!(err.to_string(), "Cannot parse empty input");
     }
 }
