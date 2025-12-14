@@ -16,7 +16,7 @@ This project is organized as a Cargo Workspace containing:
 
 - **`eu4rs`**: The main command-line application that scans and processes EU4 files.
 - **`eu4data`**: A library containing strong types and logic for EU4 game objects.
-- **`eu4txt`**: A library (`crate`) providing a custom parser/tokenizer for the EU4 text format (Windows-1252 encoded).
+- **`eu4txt`**: A library (`crate`) providing a custom parser/tokenizer for the EU4 text format (Windows-1252 encoded). See [docs/file_formats.md](docs/file_formats.md).
 
 ## Installation
 
