@@ -7,6 +7,8 @@ mod ops;
 mod window;
 
 pub mod logger;
+mod renderer;
+mod state;
 #[cfg(test)]
 mod testing;
 mod text;
@@ -49,7 +51,7 @@ fn run(args: Cli) -> Result<(), String> {
                 let base = args.eu4_path.parent().unwrap();
                 let level =
                     std::str::FromStr::from_str(&args.log_level).unwrap_or(log::LevelFilter::Info);
-                pollster::block_on(window::run(level, base));
+                window::run(level, base);
                 return Ok(());
             }
             Commands::Snapshot { output, mode } => {
@@ -115,7 +117,7 @@ fn run(args: Cli) -> Result<(), String> {
         // Default to Source Port GUI
         let base = args.eu4_path.parent().unwrap();
         let level = std::str::FromStr::from_str(&args.log_level).unwrap_or(log::LevelFilter::Info);
-        pollster::block_on(window::run(level, base));
+        window::run(level, base);
     }
 
     Ok(())

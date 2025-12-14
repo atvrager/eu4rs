@@ -1,4 +1,5 @@
 use crate::args::MapMode;
+use crate::logger::ConsoleLog;
 use crate::text::TextRenderer;
 use image::{Rgba, RgbaImage};
 
@@ -11,6 +12,8 @@ use image::{Rgba, RgbaImage};
 pub struct UIState {
     /// Whether the province details sidebar (right side) is currently open.
     pub sidebar_open: bool,
+    /// Whether the debug console overlay is open.
+    pub console_open: bool,
     /// The currently selected province ID and its detailed text, if any.
     pub selected_province: Option<(u32, String)>,
     /// The text to display in the floating tooltip (bottom-left), if any.
@@ -31,6 +34,7 @@ impl UIState {
     pub fn new() -> Self {
         Self {
             sidebar_open: false,
+            console_open: false,
             selected_province: None,
             hovered_tooltip: None,
             cursor_pos: None,
@@ -40,7 +44,13 @@ impl UIState {
     }
 
     /// Mark the UI as dirty, forcing a redraw on the next frame.
+    #[allow(dead_code)]
     pub fn set_dirty(&mut self) {
+        self.dirty = true;
+    }
+
+    pub fn toggle_console(&mut self) {
+        self.console_open = !self.console_open;
         self.dirty = true;
     }
 
@@ -91,6 +101,7 @@ impl UIState {
     ///
     /// Returns `true` if the click (at `x` coordinate) overlaps a UI element (like the sidebar),
     /// indicating that the event should be consumed and not propagate to the map.
+    #[allow(dead_code)]
     pub fn on_click(&mut self, x: f64, width: f64) -> bool {
         if self.sidebar_open {
             // Check if click is in sidebar (Right 300px)
@@ -101,150 +112,152 @@ impl UIState {
         }
         false
     }
-}
 
-/// Renders the UI state into an RGBA image.
-///
-/// This function generates the complete visual representation of the UI overlay, including:
-/// - The sidebar (if open) with selected province details.
-/// - The bottom-left tooltip path hovering over the map.
-/// - The top-left map mode indicator box.
-///
-/// It uses the provided `TextRenderer` to draw text elements.
-///
-/// # Arguments
-///
-/// * `state` - The current `UIState` snapshot to render.
-/// * `text_renderer` - Renderer for text glyphs.
-/// * `width` - Width of the output image (should match window width).
-/// * `height` - Height of the output image (should match window height).
-pub fn draw_ui(
-    state: &UIState,
-    text_renderer: &TextRenderer,
-    width: u32,
-    height: u32,
-) -> RgbaImage {
-    let mut image = RgbaImage::new(width, height);
+    pub fn render(
+        &self,
+        text_renderer: &TextRenderer,
+        width: u32,
+        height: u32,
+        console_log: &ConsoleLog,
+    ) -> RgbaImage {
+        let mut image = RgbaImage::new(width, height);
 
-    // Clear to transparent (0,0,0,0) logic is default for new image?
-    // Actually image::new creates zeroed pixels, which is transparent for RGBA.
-    // But let's be explicit if we need to. default is 0,0,0,0.
+        // 1. Draw Sidebar if open
+        if self.sidebar_open {
+            let sidebar_w = 300;
+            let sidebar_x = width.saturating_sub(sidebar_w);
 
-    // 1. Draw Sidebar if open
-    if state.sidebar_open {
-        let sidebar_w = 300;
-        let sidebar_x = width.saturating_sub(sidebar_w);
-
-        // Background
-        for y in 0..height {
-            for x in sidebar_x..width {
-                image.put_pixel(x, y, Rgba([30, 30, 30, 240]));
-            }
-        }
-
-        // Text
-        if let Some((id, text)) = &state.selected_province {
-            // Render text into a temp buffer then blit?
-            // Or just use renderer on this image?
-            // TextRenderer currently creates a new image.
-            // Let's modify TextRenderer usage or just blit.
-            let content = format!("Province {}\n\n{}", id, text);
-            let text_img = text_renderer.render(&content, sidebar_w, height);
-
-            // Blit text_img onto image at sidebar_x, 0
-            for (tx, ty, px) in text_img.enumerate_pixels() {
-                if px[3] > 0 {
-                    let target_x = sidebar_x + tx;
-                    if target_x < width {
-                        image.put_pixel(target_x, ty, *px);
-                    }
+            // Background
+            for y in 0..height {
+                for x in sidebar_x..width {
+                    image.put_pixel(x, y, Rgba([30, 30, 30, 240]));
                 }
             }
-        }
-    }
 
-    // 2. Draw Bottom-Left Tooltip if cursor is over map
-    if let Some((cx, _)) = state.cursor_pos {
-        let show_tooltip = if state.sidebar_open {
-            cx < (width as f64 - 300.0)
-        } else {
-            true
-        };
+            // Text
+            if let Some((id, text)) = &self.selected_province {
+                let content = format!("Province {}\n\n{}", id, text);
+                let text_img = text_renderer.render(&content, sidebar_w, height);
 
-        #[allow(clippy::collapsible_if)]
-        if show_tooltip {
-            if let Some(text) = &state.hovered_tooltip {
-                // Determine size
-                // Simple hack: count lines. TextRenderer uses 24px font + 6px padding = 30px line height?
-                // Let's assume a fixed box for now or use TextRenderer to measure (not implemented yet).
-                // We'll just draw a fixed box at bottom left.
-                let box_h = 40;
-                let box_w = 400;
-                let box_x = 10;
-                let box_y = height.saturating_sub(box_h + 10);
-
-                // Background
-                for y in box_y..(box_y + box_h) {
-                    for x in box_x..(box_x + box_w) {
-                        if x < width && y < height {
-                            image.put_pixel(x, y, Rgba([20, 20, 20, 200]));
-                        }
-                    }
-                }
-
-                // Text
-                let text_img = text_renderer.render(text, box_w, box_h);
-                // Blit
+                // Blit text_img onto image at sidebar_x, 0
                 for (tx, ty, px) in text_img.enumerate_pixels() {
                     if px[3] > 0 {
-                        let target_x = box_x + tx;
-                        let target_y = box_y + ty;
-                        if target_x < width && target_y < height {
-                            image.put_pixel(target_x, target_y, *px);
+                        let target_x = sidebar_x + tx;
+                        if target_x < width {
+                            image.put_pixel(target_x, ty, *px);
                         }
                     }
                 }
             }
         }
-    }
 
-    // 3. Draw Top-Left Map Mode Indicator
-    {
-        let mode_text = format!("Map Mode: {:?}", state.map_mode);
-        let box_h = 40;
-        let box_w = 300;
-        let box_x = 10;
-        let box_y = 10;
+        // 2. Draw Bottom-Left Tooltip if cursor is over map
+        if let Some((cx, _)) = self.cursor_pos {
+            let show_tooltip = if self.sidebar_open {
+                cx < (width as f64 - 300.0)
+            } else {
+                true
+            };
 
-        // Background
-        for y in box_y..(box_y + box_h) {
-            for x in box_x..(box_x + box_w) {
-                if x < width && y < height {
-                    image.put_pixel(x, y, Rgba([20, 20, 20, 200]));
+            #[allow(clippy::collapsible_if)]
+            if show_tooltip {
+                if let Some(text) = &self.hovered_tooltip {
+                    let box_h = 40;
+                    let box_w = 400;
+                    let box_x = 10;
+                    let box_y = height.saturating_sub(box_h + 10);
+
+                    // Background
+                    for y in box_y..(box_y + box_h) {
+                        for x in box_x..(box_x + box_w) {
+                            if x < width && y < height {
+                                image.put_pixel(x, y, Rgba([20, 20, 20, 200]));
+                            }
+                        }
+                    }
+
+                    // Text
+                    let text_img = text_renderer.render(text, box_w, box_h);
+                    // Blit
+                    for (tx, ty, px) in text_img.enumerate_pixels() {
+                        if px[3] > 0 {
+                            let target_x = box_x + tx;
+                            let target_y = box_y + ty;
+                            if target_x < width && target_y < height {
+                                image.put_pixel(target_x, target_y, *px);
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        // Text
-        let text_img = text_renderer.render(&mode_text, box_w, box_h);
-        for (tx, ty, px) in text_img.enumerate_pixels() {
-            if px[3] > 0 {
-                let target_x = box_x + tx;
-                let target_y = box_y + ty;
-                if target_x < width && target_y < height {
-                    image.put_pixel(target_x, target_y, *px);
+        // 3. Draw Top-Left Map Mode Indicator
+        {
+            let mode_text = format!("Map Mode: {:?}", self.map_mode);
+            let box_h = 40;
+            let box_w = 300;
+            let box_x = 10;
+            let box_y = 10;
+
+            // Background
+            for y in box_y..(box_y + box_h) {
+                for x in box_x..(box_x + box_w) {
+                    if x < width && y < height {
+                        image.put_pixel(x, y, Rgba([20, 20, 20, 200]));
+                    }
+                }
+            }
+
+            // Text
+            let text_img = text_renderer.render(&mode_text, box_w, box_h);
+            for (tx, ty, px) in text_img.enumerate_pixels() {
+                if px[3] > 0 {
+                    let target_x = box_x + tx;
+                    let target_y = box_y + ty;
+                    if target_x < width && target_y < height {
+                        image.put_pixel(target_x, target_y, *px);
+                    }
                 }
             }
         }
+
+        // 4. Draw Console if Open
+        if self.console_open {
+            let logs = console_log.get_lines();
+            let console_img = draw_console_overlay(&logs, text_renderer, width, height / 2); // Half height console?
+
+            // Blit console at top (overlays map mode)
+            for (tx, ty, px) in console_img.enumerate_pixels() {
+                if px[3] > 0 || px[0] != 0 {
+                    // Simple check for non-empty
+                    if tx < width && ty < height {
+                        image.put_pixel(tx, ty, *px);
+                    }
+                }
+            }
+        }
+
+        image
     }
 
-    image
+    pub fn render_loading_screen(
+        &self,
+        text_renderer: &TextRenderer,
+        width: u32,
+        height: u32,
+        console_log: &ConsoleLog,
+    ) -> RgbaImage {
+        // Just reuse the console logic but full screen and different title?
+        // Or specific loading screen logic.
+        // For now, let's use the draw_console_overlay logic passed for full screen.
+        let logs = console_log.get_lines();
+        draw_console_overlay(&logs, text_renderer, width, height)
+    }
 }
 
-/// Renders the Loading Console.
-///
-/// Displays recent log lines from the bottom up.
-pub fn draw_console(
+/// Helper to render console lines to an image
+fn draw_console_overlay(
     logs: &[(log::Level, String)],
     text_renderer: &TextRenderer,
     width: u32,
@@ -252,19 +265,14 @@ pub fn draw_console(
 ) -> RgbaImage {
     let mut image = RgbaImage::new(width, height);
 
-    // Fill background with black/dark gray (already cleared to 0?)
-    // draw_console is called when Loading, and State::render clears screen to dark bg.
-    // The UI texture is overlay. So transparency allows seeing the cleared color.
-    // But if we want a solid console background, we can paint it here.
-    // Let's keep it transparent or semi-transparent background to look cool?
-    // User requested "Loading screen... console view".
-    // Let's make it fully opaque black or dark so it feels like a console terminal.
+    // Semi-transparent background
+    for p in image.pixels_mut() {
+        *p = Rgba([10, 10, 15, 230]);
+    }
 
-    // Draw logs from bottom up
-    // TextRenderer uses 30px line spacing (text.rs:59), so we need to match
-    let line_height = 36; // 30px + 6px extra spacing for readability
+    let line_height = 30; // Compact
     let start_x = 10;
-    let mut current_y = height as i32 - 40; // Start slightly up
+    let mut current_y = height as i32 - 40;
 
     for (level, msg) in logs.iter().rev() {
         if current_y < 0 {
@@ -280,22 +288,13 @@ pub fn draw_console(
         };
 
         let full_line = format!("{}{}", color_marker, msg);
-
-        // Render text line
-        // We reuse logic from draw_ui, but here we just render one line.
-        // Optimization: TextRenderer::render creates a full buffer.
-        // Ideally we'd modify TextRenderer to render to a target buffer, but for now:
         let text_img = text_renderer.render(&full_line, width - 20, line_height as u32);
 
-        // Blit
         for (tx, ty, px) in text_img.enumerate_pixels() {
             if px[3] > 0 {
                 let target_x = start_x + tx;
                 let target_y = current_y as u32 + ty;
                 if target_x < width && target_y < height {
-                    // Tint based on level?
-                    // TextRenderer outputs white text usually.
-                    // We can multiply color here.
                     let color = match level {
                         log::Level::Error => Rgba([255, 100, 100, px[3]]),
                         log::Level::Warn => Rgba([255, 255, 100, px[3]]),
@@ -307,19 +306,5 @@ pub fn draw_console(
         }
         current_y -= line_height;
     }
-
-    // Draw Loading Title
-    let title = "LOADING EU4 DATA...";
-    let title_img = text_renderer.render(title, width, 40);
-    for (tx, ty, px) in title_img.enumerate_pixels() {
-        if px[3] > 0 {
-            let target_x = tx + 20;
-            let target_y = ty + 20;
-            if target_x < width && target_y < height {
-                image.put_pixel(target_x, target_y, *px);
-            }
-        }
-    }
-
     image
 }

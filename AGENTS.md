@@ -214,7 +214,10 @@ To enable proper symlink support on Windows:
     - Exception: `println!` may be used for interactive CLI prompts if strictly necessary, but prefer logging for status.
 
 ## Code Quality
-- **Clean up comments**: Remove any "thinking comments" (e.g., "Wait, I should...", "Option A:...") from the final code. Comments should explain *why* code exists or *how* it works, not the history of how you wrote it.
+- **Clean up comments**: Remove any "thinking comments" (e.g., "Wait, I should...", "Option A:...", "Now used for...") from the final code. Comments should explain *why* code exists or *how* it works, not the history of how you wrote it.
+- **Preserve comments**: When refactoring, ensure comments are moved along with the code. Proactively add new comments, especially for public APIs, explaining usage and parameters. Limit "what" comments if the code is self-explanatory, focus on "why" and "how".
+- **Remove allows**: When refactoring, check for `#[allow(...)]` attributes (e.g., dead_code, clippy rules) and remove them if they are no longer necessary or if the underlying issue can be fixed easily.
+- **Clippy Fixes**: It is encouraged to use `cargo clippy --fix` (or equivalent) for simple lint resolution.
 
 ## Code Coverage
 - **Goal**: Higher is better. >75% in all categories (lines, functions, branches) is a MUST.
