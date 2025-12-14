@@ -23,7 +23,7 @@ pub struct Cli {
     pub command: Option<Commands>,
 }
 
-#[derive(Clone, Copy, Debug, clap::ValueEnum, PartialEq)]
+#[derive(Clone, Copy, Debug, clap::ValueEnum, PartialEq, Eq, Hash)]
 pub enum MapMode {
     Province,
     TradeGoods,
