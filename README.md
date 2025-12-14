@@ -67,6 +67,11 @@ cargo run -p eu4rs -- --pretty-print --eu4-path "path/to/specific/file.txt"
 - **Data Expansion**: Parses and visualizes complex game data including **Religion**, **Culture**, and **Trade Goods**.
 - **Serde Support**: `eu4txt` implements `serde::Deserializer`, allowing direct mapping of game files to Rust structs (in `eu4data`).
 
+## Documentation
+
+- [System Architecture](docs/architecture.md): Overview of crate structure, rendering pipeline, and data flow.
+- [File Formats](docs/file_formats.md): Details on the EU4 text format, encoding, and syntax.
+
 ## License
 
 Apache-2.0
