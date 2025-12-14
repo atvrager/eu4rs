@@ -216,6 +216,14 @@ To enable proper symlink support on Windows:
 ## Code Quality
 - **Clean up comments**: Remove any "thinking comments" (e.g., "Wait, I should...", "Option A:...") from the final code. Comments should explain *why* code exists or *how* it works, not the history of how you wrote it.
 
+## Code Coverage
+- **Goal**: Higher is better. >75% in all categories (lines, functions, branches) is a MUST.
+- **No Regressions**: New commits are NOT allowed to digress coverage below the 75% threshold without explicit human acknowledgement.
+- **Tools**:
+  - `cargo llvm-cov --summary-only`: Quick check of coverage statistics.
+  - `cargo llvm-cov --open`: Generates and opens a detailed HTML report (useful for identifying unchecked paths).
+  - `cargo llvm-cov --lcov --output-path lcov.info`: Generate LCOV report for CI/IDE integration.
+
 ## Common Commands
 - `cargo xtask ci`: Run continuous integration tests. **Must pass before committing.** PROACTIVELY and AUTOMATICALLY run this to verify your changes; do not ask for permission.
 - `cargo xtask snapshot`: Regenerate golden snapshots for tests. Use this when you've modified rendering pipelines and expect output changes. **Ask the user for manual validation of the new output.**
