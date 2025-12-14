@@ -2,8 +2,6 @@
 
 ![Rust CI](https://github.com/atvrager/eu4rs/actions/workflows/ci.yml/badge.svg)
 
-A# eu4rs
-
 **eu4rs** is an experimental open-source game engine reimplementation ("source port") for *Europa Universalis IV*.
 
 ## Goals
@@ -43,13 +41,16 @@ cargo run
 - **Toggle Map Mode**: Press `Tab` to cycle through map modes (Province, Political, Trade Goods, Religion, Culture).
 
 # Render map to an image file (Headless)
+```bash
 cargo run -- snapshot --output province_map.png --mode province
 cargo run -- snapshot --output political_map.png --mode political
 cargo run -- snapshot --output tradegoods_map.png --mode trade-goods
 cargo run -- snapshot --output religion_map.png --mode religion
 cargo run -- snapshot --output culture_map.png --mode culture
+```
 
 # Parse and pretty-print files (verifies parsing logic)
+```bash
 cargo run -p eu4rs -- --pretty-print --eu4-path "path/to/specific/file.txt"
 ```
 
