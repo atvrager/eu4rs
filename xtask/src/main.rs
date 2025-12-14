@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use reqwest::blocking::Client;
 use std::env;
 use std::process::{Command, Stdio};
 
@@ -17,14 +18,20 @@ enum Commands {
     Ci,
     /// Update snapshot tests: renders images and runs tests
     Snapshot,
+    /// Check API quota availability for Claude and Gemini
+    Quota,
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // Try ensuring .env is loaded if present
+    let _ = dotenvy::dotenv();
+
     match cli.command {
         Commands::Ci => run_ci(),
         Commands::Snapshot => run_snapshot(),
+        Commands::Quota => run_quota(),
     }
 }
 
@@ -79,6 +86,89 @@ fn run_snapshot() -> Result<()> {
 
     println!("Snapshot update complete.");
     Ok(())
+}
+
+fn run_quota() -> Result<()> {
+    println!("Checking Model Quota Status...");
+    let client = Client::new();
+
+    // Check Claude
+    let anthropic_key = env::var("ANTHROPIC_API_KEY").ok();
+    let claude_status = if let Some(key) = anthropic_key {
+        match check_anthropic(&client, &key) {
+            Ok(s) => s,
+            Err(e) => format!("Error: {}", e),
+        }
+    } else {
+        "Skipped (ANTHROPIC_API_KEY not set)".to_string()
+    };
+
+    // Check Gemini
+    let gemini_key = env::var("GEMINI_API_KEY").ok();
+    let gemini_status = if let Some(key) = gemini_key {
+        match check_gemini(&client, &key) {
+            Ok(s) => s,
+            Err(e) => format!("Error: {}", e),
+        }
+    } else {
+        "Skipped (GEMINI_API_KEY not set)".to_string()
+    };
+
+    println!("\n| Model Family | Status | Details |");
+    println!("|---|---|---|");
+    println!("| **Claude** | {} |", claude_status);
+    println!("| **Gemini** | {} |", gemini_status);
+
+    Ok(())
+}
+
+fn check_anthropic(client: &Client, key: &str) -> Result<String> {
+    // Make a minimal request to get headers
+    // Using a dummy message request
+    let resp = client
+        .post("https://api.anthropic.com/v1/messages")
+        .header("x-api-key", key)
+        .header("anthropic-version", "2023-06-01")
+        .header("content-type", "application/json")
+        .json(&serde_json::json!({
+            "model": "claude-3-opus-20240229",
+            "max_tokens": 1,
+            "messages": [{"role": "user", "content": "hi"}]
+        }))
+        .send()?;
+
+    let headers = resp.headers();
+    if let Some(remaining) = headers.get("anthropic-ratelimit-requests-remaining") {
+        let count = remaining.to_str().unwrap_or("?").to_string();
+        Ok(format!("Active (Requests Remaining: {})", count))
+    } else if resp.status().is_success() {
+        Ok("Active (No Rate Limit Headers)".to_string())
+    } else {
+        let status = resp.status();
+        let text = resp.text().unwrap_or_default();
+        if text.contains("credit balance is too low") {
+            Ok("Out of Credits (Balance too low)".to_string())
+        } else {
+            Ok(format!("Failed (HTTP {}): {}", status, text))
+        }
+    }
+}
+
+fn check_gemini(client: &Client, key: &str) -> Result<String> {
+    // Check model validity by listing models (more robust than checking specific model)
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models?key={}&pageSize=1",
+        key
+    );
+    let resp = client.get(&url).send()?;
+
+    if resp.status().is_success() {
+        Ok("Active (API Reachable)".to_string())
+    } else {
+        let status = resp.status();
+        let text = resp.text().unwrap_or_default();
+        Ok(format!("Failed (HTTP {}): {}", status, text))
+    }
 }
 
 fn run_command(cmd: &str, args: &[&str]) -> Result<()> {
