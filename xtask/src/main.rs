@@ -20,6 +20,18 @@ enum Commands {
     Snapshot,
     /// Check API quota availability for Claude and Gemini
     Quota,
+    /// Analyze data coverage (local) or verify docs (CI)
+    Coverage {
+        /// Path to EU4 installation
+        #[arg(
+            long,
+            default_value = r"C:\Program Files (x86)\Steam\steamapps\common\Europa Universalis IV"
+        )]
+        eu4_path: String,
+        /// Generate static docs/supported_fields.md (CI verification)
+        #[arg(long)]
+        doc_gen: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -32,6 +44,7 @@ fn main() -> Result<()> {
         Commands::Ci => run_ci(),
         Commands::Snapshot => run_snapshot(),
         Commands::Quota => run_quota(),
+        Commands::Coverage { eu4_path, doc_gen } => run_coverage(&eu4_path, doc_gen),
     }
 }
 
@@ -49,6 +62,22 @@ fn run_ci() -> Result<()> {
 
     println!("\n[4/4] Building Release...");
     run_command("cargo", &["build", "--release"])?;
+
+    println!("\n[5/5] Verifying Documentation...");
+    // Just run doc-gen in check mode effectively by re-generating and checking git status?
+    // Actually, run_coverage with doc_gen will write the file.
+    // CI should fail if the checked-in file differs.
+    // simpler: run doc-gen, then check if git detects changes.
+    run_coverage("mock", true)?;
+
+    // Check for unstaged changes in docs/
+    let status = Command::new("git")
+        .args(["diff", "--exit-code", "docs/supported_fields.md"])
+        .status()?;
+
+    if !status.success() {
+        anyhow::bail!("docs/supported_fields.md is out of date! Run `cargo xtask coverage --doc-gen` and commit the changes.");
+    }
 
     println!("\nLocal CI Passed! 🚀");
     Ok(())
@@ -152,6 +181,33 @@ fn run_quota() -> Result<()> {
     println!("|--------------|--------|");
     println!("| Claude | {} |", claude_status);
     println!("| Gemini | {} |", gemini_status);
+
+    Ok(())
+}
+
+fn run_coverage(eu4_path: &str, doc_gen: bool) -> Result<()> {
+    if doc_gen {
+        let content = eu4data::coverage::generate_static_docs();
+        let path = std::path::Path::new("docs/supported_fields.md");
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, content)?;
+        println!("✅ Generated docs/supported_fields.md");
+        return Ok(());
+    }
+
+    let path = std::path::Path::new(eu4_path);
+    if !path.exists() {
+        println!("⚠️  EU4 path not found: {}", eu4_path);
+        println!("Please provide a valid path via --eu4-path");
+        return Ok(());
+    }
+
+    let report = eu4data::coverage::analyze_coverage(path).context("Failed to analyze coverage")?;
+
+    // Always print to terminal
+    println!("{}", report.to_terminal());
 
     Ok(())
 }
