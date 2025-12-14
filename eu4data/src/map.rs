@@ -22,14 +22,16 @@ pub struct ProvinceDefinition {
 
 /// Loads province definitions from a CSV file.
 pub fn load_definitions(path: &Path) -> Result<HashMap<u32, ProvinceDefinition>, Box<dyn Error>> {
+    // Read raw bytes
+    let raw_data = std::fs::read(path)?;
+    // Decode from Windows-1252 to UTF-8
+    let (decoded, _, _) = encoding_rs::WINDOWS_1252.decode(&raw_data);
+
     let mut reader = csv::ReaderBuilder::new()
         .delimiter(b';')
-        .has_headers(false) // definitions.csv usually has no headers? Or maybe it does. Let's assume no for now or check.
-        // Actually, many eu4 files have a header line like 'province;red;green;blue;x;x' or similar.
-        // But frequently standard csv parser fails because of 'x' column?
-        // Let's try flexible parsing.
+        .has_headers(false)
         .flexible(true)
-        .from_path(path)?;
+        .from_reader(decoded.as_bytes()); // csv::Reader takes bytes or a file
 
     let mut definitions = HashMap::new();
     for result in reader.deserialize() {
