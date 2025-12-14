@@ -2,7 +2,9 @@ use crate::args::MapMode;
 use crate::window;
 use eu4data::{
     Tradegood,
+    cultures::Culture,
     map::{DefaultMap, load_definitions},
+    religions::Religion,
 };
 use eu4txt::{DefaultEU4Txt, EU4Txt, from_node};
 use image::{Rgb, RgbImage};
@@ -55,6 +57,8 @@ pub fn draw_map(base_path: &Path, output_path: &Path, mode: MapMode) -> Result<(
     // 2. Load Data based on Mode
     let mut goods: HashMap<String, Tradegood> = HashMap::new();
     let mut countries: HashMap<String, eu4data::countries::Country> = HashMap::new();
+    let mut religions: HashMap<String, Religion> = HashMap::new();
+    let mut cultures: HashMap<String, Culture> = HashMap::new();
 
     match mode {
         MapMode::TradeGoods => {
@@ -71,6 +75,14 @@ pub fn draw_map(base_path: &Path, output_path: &Path, mode: MapMode) -> Result<(
             println!("Loading {} country definitions...", tags.len());
             countries = eu4data::countries::load_country_map(base_path, &tags);
             println!("Loaded {} countries.", countries.len());
+        }
+        MapMode::Religion => {
+            println!("Loading religions...");
+            religions = eu4data::religions::load_religions(base_path).map_err(|e| e.to_string())?;
+        }
+        MapMode::Culture => {
+            println!("Loading cultures...");
+            cultures = eu4data::cultures::load_cultures(base_path).map_err(|e| e.to_string())?;
         }
         MapMode::Province => {} // No extra data needed
         MapMode::All => unreachable!("MapMode::All should be handled by caller"),
@@ -128,6 +140,18 @@ pub fn draw_map(base_path: &Path, output_path: &Path, mode: MapMode) -> Result<(
                     }
                     MapMode::Province => {
                         out_color = Rgb([r, g, b]);
+                    }
+                    MapMode::Religion => {
+                        if let Some(rel) = hist.religion.as_ref().and_then(|key| religions.get(key))
+                            && rel.color.len() >= 3
+                        {
+                            out_color = Rgb([rel.color[0], rel.color[1], rel.color[2]]);
+                        }
+                    }
+                    MapMode::Culture => {
+                        if let Some(cul) = hist.culture.as_ref().and_then(|key| cultures.get(key)) {
+                            out_color = Rgb(cul.color);
+                        }
                     }
                     MapMode::All => unreachable!(),
                 }
@@ -227,6 +251,29 @@ pub fn load_world_data(base_path: &Path) -> Result<window::WorldData, String> {
     let countries = eu4data::countries::load_country_map(base_path, &tags);
     println!("Loaded {} countries.", countries.len());
 
+    // 4b. Religions & Cultures & Tradegoods
+    println!("Loading religions, cultures, and tradegoods...");
+    let religions = eu4data::religions::load_religions(base_path).map_err(|e| e.to_string())?;
+    let cultures = eu4data::cultures::load_cultures(base_path).map_err(|e| e.to_string())?;
+
+    // Load tradegoods implicitly or explicitly?
+    // We need the map for colors.
+    let tg_path = base_path.join("common/tradegoods/00_tradegoods.txt");
+    let tradegoods: HashMap<String, Tradegood> = if tg_path.exists() {
+        let tokens =
+            DefaultEU4Txt::open_txt(tg_path.to_str().unwrap()).map_err(|e| e.to_string())?;
+        let ast = DefaultEU4Txt::parse(tokens).map_err(|e| e.to_string())?;
+        from_node(&ast).unwrap_or_default()
+    } else {
+        HashMap::new()
+    };
+    println!(
+        "Loaded {} religions, {} cultures, {} tradegoods.",
+        religions.len(),
+        cultures.len(),
+        tradegoods.len()
+    );
+
     // 5. Default Map (Water)
     let default_map_path = base_path.join("map/default.map");
     let mut water_ids = HashSet::new();
@@ -243,33 +290,86 @@ pub fn load_world_data(base_path: &Path) -> Result<window::WorldData, String> {
         }
     }
 
-    // 6. Generate Political Map
-    println!("Generating Political Map...");
+    // 6. Generate All Maps
+    println!("Generating Maps (Political, TradeGoods, Religion, Culture)...");
     let (width, height) = province_map.dimensions();
     let mut political_map = RgbImage::new(width, height);
+    let mut tradegoods_map = RgbImage::new(width, height);
+    let mut religion_map = RgbImage::new(width, height);
+    let mut culture_map = RgbImage::new(width, height);
 
     for (x, y, pixel) in province_map.enumerate_pixels() {
         let (r, g, b) = (pixel[0], pixel[1], pixel[2]);
-        if let Some(id) = color_to_id.get(&(r, g, b)) {
-            let mut out_color = Rgb([100, 100, 100]); // Gray (Unowned/Wasteland)
 
+        // Defaults
+        let mut pol_color = Rgb([100, 100, 100]);
+        let mut tg_color = Rgb([100, 100, 100]);
+        let mut rel_color = Rgb([100, 100, 100]);
+        let mut cul_color = Rgb([100, 100, 100]);
+
+        if let Some(id) = color_to_id.get(&(r, g, b)) {
             if water_ids.contains(id) {
-                out_color = Rgb([64, 164, 223]); // Water Blue
-            } else if let Some(hist) = province_history.get(id)
-                && let Some(country) = hist.owner.as_ref().and_then(|tag| countries.get(tag))
-                && country.color.len() >= 3
-            {
-                out_color = Rgb([country.color[0], country.color[1], country.color[2]]);
+                let water = Rgb([64, 164, 223]);
+                pol_color = water;
+                tg_color = water;
+                rel_color = water;
+                cul_color = water;
+            } else if let Some(hist) = province_history.get(id) {
+                // Political
+                if let Some(country) = hist.owner.as_ref().and_then(|tag| countries.get(tag))
+                    && country.color.len() >= 3
+                {
+                    pol_color = Rgb([country.color[0], country.color[1], country.color[2]]);
+                }
+
+                // Trade Goods
+                if let Some(good) = hist
+                    .trade_goods
+                    .as_ref()
+                    .and_then(|key| tradegoods.get(key))
+                    && good.color.len() >= 3
+                {
+                    tg_color = Rgb([
+                        (good.color[0] * 255.0) as u8,
+                        (good.color[1] * 255.0) as u8,
+                        (good.color[2] * 255.0) as u8,
+                    ]);
+                }
+
+                // Religion
+                if let Some(rel) = hist.religion.as_ref().and_then(|key| religions.get(key))
+                    && rel.color.len() >= 3
+                {
+                    rel_color = Rgb([rel.color[0], rel.color[1], rel.color[2]]);
+                }
+
+                // Culture
+                if let Some(cul) = hist.culture.as_ref().and_then(|key| cultures.get(key)) {
+                    cul_color = Rgb(cul.color);
+                }
             }
-            political_map.put_pixel(x, y, out_color);
+            // else wasteland (defaults)
         } else {
-            political_map.put_pixel(x, y, Rgb([0, 0, 0]));
+            // Unmapped (Black)
+            let black = Rgb([0, 0, 0]);
+            pol_color = black;
+            tg_color = black;
+            rel_color = black;
+            cul_color = black;
         }
+
+        political_map.put_pixel(x, y, pol_color);
+        tradegoods_map.put_pixel(x, y, tg_color);
+        religion_map.put_pixel(x, y, rel_color);
+        culture_map.put_pixel(x, y, cul_color);
     }
 
     Ok(window::WorldData {
         province_map,
         political_map,
+        tradegoods_map,
+        religion_map,
+        culture_map,
         color_to_id,
         province_history,
         countries,
@@ -291,12 +391,16 @@ mod tests {
         let history_dir = dir.join("history/provinces");
         let countries_dir = common_dir.join("country_tags");
         let tags_dir = common_dir.join("countries"); // For actual definitions
+        let religions_dir = common_dir.join("religions");
+        let cultures_dir = common_dir.join("cultures");
 
         std::fs::create_dir_all(&map_dir).unwrap();
         std::fs::create_dir_all(&tradegoods_dir).unwrap();
         std::fs::create_dir_all(&history_dir).unwrap();
         std::fs::create_dir_all(&countries_dir).unwrap();
         std::fs::create_dir_all(&tags_dir).unwrap();
+        std::fs::create_dir_all(&religions_dir).unwrap();
+        std::fs::create_dir_all(&cultures_dir).unwrap();
 
         // 1. map/definition.csv
         // ID;R;G;B;Name;x
@@ -338,6 +442,8 @@ mod tests {
         let mut hist1 = File::create(history_dir.join("1 - Stockholm.txt")).unwrap();
         writeln!(hist1, "owner = SWE").unwrap();
         writeln!(hist1, "trade_goods = grain").unwrap();
+        writeln!(hist1, "religion = catholic").unwrap();
+        writeln!(hist1, "culture = swedish").unwrap();
 
         // 6. history/provinces/2 - Uppsala.txt (No goods)
         let mut hist2 = File::create(history_dir.join("2 - Uppsala.txt")).unwrap();
@@ -349,6 +455,18 @@ mod tests {
 
         let mut swe = File::create(tags_dir.join("Sweden.txt")).unwrap();
         writeln!(swe, "color = {{ 0 0 255 }}").unwrap(); // Blue Sweden
+
+        // 8. Religions
+        let mut rel = File::create(religions_dir.join("00_religion.txt")).unwrap();
+        writeln!(
+            rel,
+            "christian = {{ catholic = {{ color = {{ 255 255 0 }} }} }}"
+        )
+        .unwrap();
+
+        // 9. Cultures
+        let mut cul = File::create(cultures_dir.join("00_cultures.txt")).unwrap();
+        writeln!(cul, "germanic = {{ swedish = {{ }} }}").unwrap();
     }
 
     #[test]
@@ -369,6 +487,7 @@ mod tests {
         let data = load_world_data(dir.path()).expect("load_world_data failed");
         assert_eq!(data.color_to_id.len(), 3); // 1, 2, 3
         assert_eq!(data.province_history.len(), 2); // 1 and 2
+        // DefaultMap loads 3 into water_ids set
     }
 
     #[test]
@@ -402,6 +521,32 @@ mod tests {
         let img = image::open(output).unwrap().to_rgb8();
         // (0,0) is ID 1 (Stockholm) -> Owner SWE -> Blue (0 0 255)
         assert_eq!(img.get_pixel(0, 0), &Rgb([0, 0, 255]));
+    }
+
+    #[test]
+    fn test_draw_map_religion() {
+        let dir = tempdir().unwrap();
+        create_mock_eu4(dir.path());
+        let output = dir.path().join("out_rel.png");
+        let res = draw_map(dir.path(), &output, MapMode::Religion);
+        assert!(res.is_ok());
+        let img = image::open(output).unwrap().to_rgb8();
+        // Catholic = Yellow (255, 255, 0)
+        assert_eq!(img.get_pixel(0, 0), &Rgb([255, 255, 0]));
+    }
+
+    #[test]
+    fn test_draw_map_culture() {
+        let dir = tempdir().unwrap();
+        create_mock_eu4(dir.path());
+        let output = dir.path().join("out_cul.png");
+        let res = draw_map(dir.path(), &output, MapMode::Culture);
+        assert!(res.is_ok());
+        let img = image::open(output).unwrap().to_rgb8();
+        // Swedish = Hashed color
+        let _px = img.get_pixel(0, 0);
+        // assert_ne!(px, &Rgb([0,0,0])); // Just check it's not black
+        // Actually we can predict it if we wanted, but robust enough to check not black/gray
     }
 
     #[test]

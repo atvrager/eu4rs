@@ -13,6 +13,10 @@ pub struct ProvinceHistory {
     pub base_production: Option<f32>,
     /// The base manpower value of the province.
     pub base_manpower: Option<f32>,
+    /// The religion of the province.
+    pub religion: Option<String>,
+    /// The culture of the province.
+    pub culture: Option<String>,
 }
 
 use eu4txt::DefaultEU4Txt;
@@ -67,6 +71,8 @@ pub fn load_province_history(base_path: &Path) -> Result<HistoryLoadResult, std:
                         base_tax: None,
                         base_production: None,
                         base_manpower: None,
+                        religion: None,
+                        culture: None,
                     },
                 ));
             }
@@ -113,6 +119,8 @@ mod tests {
             owner = SWE
             base_tax = 10.0
             base_production = 5.0
+            religion = catholic
+            culture = swedish
             "#
         )
         .unwrap();
@@ -141,6 +149,8 @@ mod tests {
         assert_eq!(p1.owner.as_deref(), Some("SWE"));
         assert_eq!(p1.base_tax, Some(10.0));
         assert_eq!(p1.trade_goods.as_deref(), Some("grain"));
+        assert_eq!(p1.religion.as_deref(), Some("catholic"));
+        assert_eq!(p1.culture.as_deref(), Some("swedish"));
 
         let p2 = map.get(&2).unwrap();
         assert_eq!(p2.owner.as_deref(), Some("SWE"));

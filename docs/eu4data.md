@@ -15,6 +15,8 @@ The library defines Rust structs that map to game data scopes.
 -   **`Province`**: Represents a single province (ID, tax, manpower, trade good, terrain).
 -   **`Country`**: Represents a tag (e.g., FRA, ENG) with its color, ideas, and history.
 -   **`TradeGood`**: Definitions of trade goods (Grain, Iron, etc.).
+-   **`Religion`**: Definitions of religions and their colors.
+-   **`Culture`**: Definitions of cultures and hashed color generation.
 -   **`Localisation`**: Handling of `.yml` localisation files (UTF-8 with BOM) and language filtering.
 
 ## Mocking and Testing

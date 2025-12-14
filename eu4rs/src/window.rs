@@ -14,6 +14,9 @@ use winit::{
 pub struct WorldData {
     pub province_map: RgbImage,
     pub political_map: RgbImage,
+    pub tradegoods_map: RgbImage,
+    pub religion_map: RgbImage,
+    pub culture_map: RgbImage,
     pub color_to_id: HashMap<(u8, u8, u8), u32>,
     pub province_history: HashMap<u32, ProvinceHistory>,
     #[allow(dead_code)]
@@ -34,7 +37,12 @@ impl WorldData {
         if let Some(hist) = self.province_history.get(&id) {
             let owner = hist.owner.as_deref().unwrap_or("---");
             let goods = hist.trade_goods.as_deref().unwrap_or("---");
-            format!("Province ID: {}\nOwner: {}\nGoods: {}", id, owner, goods)
+            let religion = hist.religion.as_deref().unwrap_or("---");
+            let culture = hist.culture.as_deref().unwrap_or("---");
+            format!(
+                "Province ID: {}\nOwner: {}\nGoods: {}\nReli: {}\nCult: {}",
+                id, owner, goods, religion, culture
+            )
         } else {
             format!("Province ID: {}\n(No History)", id)
         }
@@ -74,7 +82,10 @@ impl AppState {
     pub fn toggle_map_mode(&mut self) -> MapMode {
         self.current_map_mode = match self.current_map_mode {
             MapMode::Province => MapMode::Political,
-            MapMode::Political => MapMode::Province,
+            MapMode::Political => MapMode::TradeGoods,
+            MapMode::TradeGoods => MapMode::Religion,
+            MapMode::Religion => MapMode::Culture,
+            MapMode::Culture => MapMode::Province,
             _ => MapMode::Province,
         };
         self.current_map_mode
@@ -781,6 +792,9 @@ impl<'a> State<'a> {
                 let img = match new_mode {
                     MapMode::Province => &self.app_state.world_data.province_map,
                     MapMode::Political => &self.app_state.world_data.political_map,
+                    MapMode::TradeGoods => &self.app_state.world_data.tradegoods_map,
+                    MapMode::Religion => &self.app_state.world_data.religion_map,
+                    MapMode::Culture => &self.app_state.world_data.culture_map,
                     _ => &self.app_state.world_data.province_map,
                 };
 
@@ -1135,6 +1149,8 @@ mod tests {
                 base_tax: Some(0.0),
                 base_production: Some(0.0),
                 base_manpower: Some(0.0),
+                religion: Some("catholic".to_string()),
+                culture: Some("swedish".to_string()),
                 // events: vec![], // Not in struct
             },
         );
@@ -1142,6 +1158,9 @@ mod tests {
         let world_data = WorldData {
             province_map,
             political_map: RgbImage::new(1, 1),
+            tradegoods_map: RgbImage::new(1, 1),
+            religion_map: RgbImage::new(1, 1),
+            culture_map: RgbImage::new(1, 1),
             color_to_id,
             province_history,
             countries: HashMap::new(),
@@ -1230,11 +1249,109 @@ mod tests {
                     testing::assert_snapshot(&img, "map_political");
                 }
                 Err(e) => {
-                    println!("Skipping test_political_snapshot: {}", e);
+                    if e.contains("CI waiver") {
+                        println!("Skipping test_political_snapshot: {}", e);
+                        return;
+                    }
+                    panic!("Political Snapshot generation failed: {}", e);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_tradegoods_snapshot() {
+        let output_path = std::env::temp_dir().join("test_map_tradegoods.png");
+        let steam_path = std::path::Path::new(
+            "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Europa Universalis IV",
+        );
+
+        if steam_path.exists() {
+            match pollster::block_on(crate::window::snapshot(
+                steam_path,
+                &output_path,
+                MapMode::TradeGoods,
+            )) {
+                Ok(_) => {
+                    let img = image::open(&output_path)
+                        .expect("Failed to load tradegoods snapshot output")
+                        .to_rgba8();
+                    testing::assert_snapshot(&img, "map_tradegoods");
+                }
+                Err(e) => {
+                    if e.contains("CI waiver") {
+                        println!("Skipping test_tradegoods_snapshot: {}", e);
+                        return;
+                    }
+                    panic!("Tradegoods Snapshot generation failed: {}", e);
                 }
             }
         } else {
-            println!("Skipping test_political_snapshot: Steam path not found");
+            println!("Skipping test_tradegoods_snapshot: Steam path not found");
+        }
+    }
+
+    #[test]
+    fn test_religion_snapshot() {
+        let output_path = std::env::temp_dir().join("test_map_religion.png");
+        let steam_path = std::path::Path::new(
+            "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Europa Universalis IV",
+        );
+
+        if steam_path.exists() {
+            match pollster::block_on(crate::window::snapshot(
+                steam_path,
+                &output_path,
+                MapMode::Religion,
+            )) {
+                Ok(_) => {
+                    let img = image::open(&output_path)
+                        .expect("Failed to load religion snapshot output")
+                        .to_rgba8();
+                    testing::assert_snapshot(&img, "map_religion");
+                }
+                Err(e) => {
+                    if e.contains("CI waiver") {
+                        println!("Skipping test_religion_snapshot: {}", e);
+                        return;
+                    }
+                    panic!("Religion Snapshot generation failed: {}", e);
+                }
+            }
+        } else {
+            println!("Skipping test_religion_snapshot: Steam path not found");
+        }
+    }
+
+    #[test]
+    fn test_culture_snapshot() {
+        let output_path = std::env::temp_dir().join("test_map_culture.png");
+        let steam_path = std::path::Path::new(
+            "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Europa Universalis IV",
+        );
+
+        if steam_path.exists() {
+            match pollster::block_on(crate::window::snapshot(
+                steam_path,
+                &output_path,
+                MapMode::Culture,
+            )) {
+                Ok(_) => {
+                    let img = image::open(&output_path)
+                        .expect("Failed to load culture snapshot output")
+                        .to_rgba8();
+                    testing::assert_snapshot(&img, "map_culture");
+                }
+                Err(e) => {
+                    if e.contains("CI waiver") {
+                        println!("Skipping test_culture_snapshot: {}", e);
+                        return;
+                    }
+                    panic!("Culture Snapshot generation failed: {}", e);
+                }
+            }
+        } else {
+            println!("Skipping test_culture_snapshot: Steam path not found");
         }
     }
 
@@ -1271,12 +1388,17 @@ mod tests {
                 base_tax: None,
                 base_production: None,
                 base_manpower: None,
+                religion: Some("catholic".to_string()),
+                culture: Some("swedish".to_string()),
             },
         );
 
         let world = WorldData {
             province_map: img,
             political_map: RgbImage::new(1, 1),
+            tradegoods_map: RgbImage::new(1, 1),
+            religion_map: RgbImage::new(1, 1),
+            culture_map: RgbImage::new(1, 1),
             color_to_id,
             province_history: history,
             countries: HashMap::new(),
@@ -1319,6 +1441,9 @@ mod tests {
         let world = WorldData {
             province_map: img,
             political_map: RgbImage::new(1, 1),
+            tradegoods_map: RgbImage::new(1, 1),
+            religion_map: RgbImage::new(1, 1),
+            culture_map: RgbImage::new(1, 1),
             color_to_id,
             province_history: HashMap::new(),
             countries: HashMap::new(),

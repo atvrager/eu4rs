@@ -30,7 +30,7 @@ We use a custom `Camera` struct to handle 2D navigation:
 ## Province Inspector
 The application includes an "Inspector" window that renders text info for selected provinces.
 - **Picking**: Converts mouse clicks (screen space) to texture space using the Camera's transform to look up Province IDs from the map data.
-- **Rendering**: Uses `wgpu` to render a dynamic text texture containing game data (Province ID, Owner, Trade Goods).
+- **Rendering**: Uses `wgpu` to render a dynamic text texture containing game data (Province ID, Owner, Trade Goods, Religion, Culture).
 
 
 To support automated regression testing, `eu4rs` supports a headless "Snapshot" mode.

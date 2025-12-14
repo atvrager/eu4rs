@@ -28,6 +28,8 @@ pub enum MapMode {
     Province,
     TradeGoods,
     Political,
+    Religion,
+    Culture,
     All,
 }
 
