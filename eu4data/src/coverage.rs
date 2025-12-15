@@ -298,10 +298,18 @@ fn get_manual_annotations(category: DataCategory) -> HashMap<&'static str, Manua
             );
         }
         DataCategory::Tradegoods => {
-            field!("color", true, true, Some("Map color"));
-            field!("modifier", true, false, Some("Production bonuses"));
-            field!("province", true, false, Some("Province scope modifiers"));
-            field!("chance", true, false, Some("Spawn chance (scripted)"));
+            // Auto-load from Struct
+            for f in crate::Tradegood::fields() {
+                map.insert(
+                    f.name,
+                    ManualAnnotation {
+                        parsed: true,
+                        visualized: f.visualized,
+                        simulated: f.simulated,
+                        notes: None,
+                    },
+                );
+            }
         }
         DataCategory::Religions => {
             // Auto-load from Struct

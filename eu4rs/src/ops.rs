@@ -123,15 +123,14 @@ pub fn draw_map(base_path: &Path, output_path: &Path, mode: MapMode) -> Result<(
             } else if let Some(hist) = province_history.get(id) {
                 match mode {
                     MapMode::TradeGoods => {
-                        if let Some(good) = hist
-                            .trade_goods
-                            .as_ref()
-                            .and_then(|name| goods.get(name))
-                            .filter(|g| g.color.len() >= 3)
+                        if let Some(good) =
+                            hist.trade_goods.as_ref().and_then(|name| goods.get(name))
+                            && let Some(color) = &good.color
+                            && color.len() >= 3
                         {
-                            let fr = (good.color[0] * 255.0) as u8;
-                            let fg = (good.color[1] * 255.0) as u8;
-                            let fb = (good.color[2] * 255.0) as u8;
+                            let fr = (color[0] * 255.0) as u8;
+                            let fg = (color[1] * 255.0) as u8;
+                            let fb = (color[2] * 255.0) as u8;
                             out_color = Rgb([fr, fg, fb]);
                         }
                     }
@@ -476,12 +475,13 @@ fn draw_map_tradegoods(
                     .trade_goods
                     .as_ref()
                     .and_then(|key| tradegoods.get(key))
-                && good.color.len() >= 3
+                && let Some(good_color) = &good.color
+                && good_color.len() >= 3
             {
                 color = Rgb([
-                    (good.color[0] * 255.0) as u8,
-                    (good.color[1] * 255.0) as u8,
-                    (good.color[2] * 255.0) as u8,
+                    (good_color[0] * 255.0) as u8,
+                    (good_color[1] * 255.0) as u8,
+                    (good_color[2] * 255.0) as u8,
                 ]);
             }
         } else {
