@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
 use clap::{Parser, Subcommand};
 use reqwest::blocking::Client;
 use std::env;
@@ -267,7 +266,8 @@ fn quota_status_label(percentage: u8) -> &'static str {
 
 /// Formats a reset time as a human-readable relative duration
 #[cfg(target_os = "windows")]
-fn format_refresh_time(reset_time: &DateTime<Utc>) -> String {
+fn format_refresh_time(reset_time: &chrono::DateTime<chrono::Utc>) -> String {
+    use chrono::Utc;
     let now = Utc::now();
 
     if *reset_time <= now {
