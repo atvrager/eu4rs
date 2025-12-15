@@ -31,11 +31,3 @@ jobs:
 
     - name: Run CI Pipeline
       run: cargo xtask ci
-
-    - name: Install cargo-llvm-cov
-      uses: taiki-e/install-action@cargo-llvm-cov
-
-    - name: Generate code coverage
-      run: |
-        cargo clean -p eu4viz -p eu4data -p eu4txt -p xtask -p eu4data_derive
-        cargo llvm-cov --verbose --summary-only

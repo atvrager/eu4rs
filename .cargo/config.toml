@@ -3,6 +3,8 @@ xtask = "run --package xtask --bin xtask --"
 run-viz-debug = "run --package eu4viz --bin eu4viz -- --log-level debug"
 run-viz-info = "run --package eu4viz --bin eu4viz -- --log-level info"
 run-viz-trace = "run --package eu4viz --bin eu4viz -- --log-level trace"
+cov = "llvm-cov --summary-only"
+cov-summary = "llvm-cov --summary-only"
 
 [build]
 incremental = true
