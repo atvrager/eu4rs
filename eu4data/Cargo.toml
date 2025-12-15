@@ -7,6 +7,7 @@ edition = "2024"
 csv = "1.4.0"
 encoding_rs = "0.8.35"
 encoding_rs_io = "0.1.7"
+eu4data_derive = { path = "../eu4data_derive" }
 eu4txt = { version = "0.1.0", path = "../eu4txt" }
 humantime = "2.3.0"
 rayon = "1.8"

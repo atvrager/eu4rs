@@ -1,5 +1,6 @@
 [workspace]
 members = [ "eu4data",
+    "eu4data_derive",
     "eu4rs",
     "eu4txt",
     "xtask",

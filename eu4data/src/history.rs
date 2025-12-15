@@ -1,11 +1,14 @@
+use crate::coverage::SchemaType;
 use serde::Deserialize;
 
 /// Represents the historical data of a province (e.g., in `history/provinces`).
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, SchemaType)]
 pub struct ProvinceHistory {
     /// The trade good produced in the province.
+    #[schema(visualized)]
     pub trade_goods: Option<String>,
     /// The tag of the country that owns the province.
+    #[schema(visualized)]
     pub owner: Option<String>,
     /// The base tax value of the province.
     pub base_tax: Option<f32>,
@@ -14,8 +17,10 @@ pub struct ProvinceHistory {
     /// The base manpower value of the province.
     pub base_manpower: Option<f32>,
     /// The religion of the province.
+    #[schema(visualized)]
     pub religion: Option<String>,
     /// The culture of the province.
+    #[schema(visualized)]
     pub culture: Option<String>,
 }
 

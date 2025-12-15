@@ -826,6 +826,7 @@ dependencies = [
  "csv",
  "encoding_rs",
  "encoding_rs_io",
+ "eu4data_derive",
  "eu4txt",
  "humantime",
  "rayon",
@@ -833,6 +834,15 @@ dependencies = [
  "serde_json",
  "tempfile",
  "walkdir",
+]
+
+[[package]]
+name = "eu4data_derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
 ]
 
 [[package]]
