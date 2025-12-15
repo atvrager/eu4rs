@@ -101,31 +101,13 @@ fn run_snapshot() -> Result<()> {
     // Set environment variable for the process
     env::set_var("UPDATE_SNAPSHOTS", "1");
 
-    println!("1. Rendering new snapshots...");
+    println!("Running snapshot tests with UPDATE_SNAPSHOTS=1...");
+    println!("This will load world data once and generate all 5 maps.");
 
-    // Generate images
-    let modes = [
-        ("map_province.png", "province"),
-        ("map_political.png", "political"),
-        ("map_tradegoods.png", "trade-goods"),
-        ("map_religion.png", "religion"),
-        ("map_culture.png", "culture"),
-    ];
+    // Run the snapshot tests directly - they will generate and save the images
+    run_command("cargo", &["test", "-p", "eu4rs", "window::tests"])?;
 
-    for (output, mode) in modes {
-        println!("  Rendering {}...", output);
-        run_command(
-            "cargo",
-            &[
-                "run", "--bin", "eu4rs", "--", "snapshot", "--output", output, "--mode", mode,
-            ],
-        )?;
-    }
-
-    println!("Snapshots rendered. Running tests to verify and commit...");
-    run_command("cargo", &["test", "--bin", "eu4rs"])?;
-
-    println!("Snapshot update complete.");
+    println!("\nSnapshot update complete.");
     Ok(())
 }
 

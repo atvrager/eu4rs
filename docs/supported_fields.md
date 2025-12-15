@@ -3641,7 +3641,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs`.
 ## Provinces History
 
 - **Total Known Fields:** 36
-- **Parsed:** 23 (63.9%)
+- **Parsed:** 35 (97.2%)
 - **Visualized:** 4 (11.1%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
@@ -3650,38 +3650,38 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs`.
 | `owner` | ✅ | ✅ | - |  |
 | `religion` | ✅ | ✅ | - |  |
 | `trade_goods` | ✅ | ✅ | - |  |
+| `add_brahmins_or_church_effect` | ✅ | - | - |  |
+| `add_claim` | ✅ | - | - |  |
+| `add_core` | ✅ | - | - |  |
+| `add_jains_or_burghers_effect` | ✅ | - | - |  |
 | `add_local_autonomy` | ✅ | - | - |  |
 | `add_nationalism` | ✅ | - | - |  |
+| `add_permanent_province_modifier` | ✅ | - | - |  |
+| `add_province_triggered_modifier` | ✅ | - | - |  |
+| `add_rajputs_or_marathas_or_nobles_effect` | ✅ | - | - |  |
+| `add_trade_modifier` | ✅ | - | - |  |
+| `add_vaisyas_or_burghers_effect` | ✅ | - | - |  |
 | `base_manpower` | ✅ | - | - |  |
 | `base_production` | ✅ | - | - |  |
 | `base_tax` | ✅ | - | - |  |
 | `capital` | ✅ | - | - |  |
 | `center_of_trade` | ✅ | - | - |  |
 | `controller` | ✅ | - | - |  |
+| `discovered_by` | ✅ | - | - |  |
 | `extra_cost` | ✅ | - | - |  |
 | `fort_15th` | ✅ | - | - |  |
 | `hre` | ✅ | - | - |  |
 | `is_city` | ✅ | - | - |  |
+| `latent_trade_goods` | ✅ | - | - |  |
 | `native_ferocity` | ✅ | - | - |  |
 | `native_hostileness` | ✅ | - | - |  |
 | `native_size` | ✅ | - | - |  |
 | `revolt_risk` | ✅ | - | - |  |
 | `seat_in_parliament` | ✅ | - | - |  |
 | `shipyard` | ✅ | - | - |  |
+| `tribal_owner` | ✅ | - | - |  |
 | `unrest` | ✅ | - | - |  |
 | `<date>` | ❌ | - | - | Time-dependent properties (not yet parsed) |
-| `add_brahmins_or_church_effect` | ❌ | - | - |  |
-| `add_claim` | ❌ | - | - |  |
-| `add_core` | ❌ | - | - |  |
-| `add_jains_or_burghers_effect` | ❌ | - | - |  |
-| `add_permanent_province_modifier` | ❌ | - | - |  |
-| `add_province_triggered_modifier` | ❌ | - | - |  |
-| `add_rajputs_or_marathas_or_nobles_effect` | ❌ | - | - |  |
-| `add_trade_modifier` | ❌ | - | - |  |
-| `add_vaisyas_or_burghers_effect` | ❌ | - | - |  |
-| `discovered_by` | ❌ | - | - |  |
-| `latent_trade_goods` | ❌ | - | - |  |
-| `tribal_owner` | ❌ | - | - |  |
 
 ## Rebel Types
 
@@ -3736,65 +3736,66 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs`.
 
 ## Religions
 
-- **Total Known Fields:** 53
-- **Parsed:** 2 (3.8%)
+- **Total Known Fields:** 54
+- **Parsed:** 54 (100.0%)
 - **Visualized:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
-| `color` | ✅ | - | - |  |
-| `icon` | ✅ | - | - |  |
-| `allow_female_defenders_of_the_faith` | ❌ | - | - |  |
-| `allowed_center_conversion` | ❌ | - | - |  |
-| `allowed_conversion` | ❌ | - | - |  |
-| `ancestors` | ❌ | - | - |  |
-| `aspects` | ❌ | - | - |  |
-| `aspects_name` | ❌ | - | - |  |
-| `authority` | ❌ | - | - |  |
-| `blessings` | ❌ | - | - |  |
-| `can_have_secondary_religion` | ❌ | - | - |  |
-| `celebrate` | ❌ | - | - |  |
-| `country` | ❌ | - | - |  |
-| `country_as_secondary` | ❌ | - | - |  |
-| `date` | ❌ | - | - |  |
-| `declare_war_in_regency` | ❌ | - | - |  |
-| `doom` | ❌ | - | - |  |
-| `fervor` | ❌ | - | - |  |
-| `fetishist_cult` | ❌ | - | - |  |
-| `flag_emblem_index_range` | ❌ | - | - |  |
-| `flags_with_emblem_percentage` | ❌ | - | - |  |
-| `gurus` | ❌ | - | - |  |
-| `hanafi_school` | ❌ | - | - |  |
-| `hanbali_school` | ❌ | - | - |  |
-| `harmonized_modifier` | ❌ | - | - |  |
-| `has_patriarchs` | ❌ | - | - |  |
-| `heretic` | ❌ | - | - |  |
-| `holy_sites` | ❌ | - | - |  |
-| `hre_heretic_religion` | ❌ | - | - |  |
-| `hre_religion` | ❌ | - | - |  |
-| `ismaili_school` | ❌ | - | - |  |
-| `jafari_school` | ❌ | - | - |  |
-| `maliki_school` | ❌ | - | - |  |
-| `misguided_heretic` | ❌ | - | - |  |
-| `on_convert` | ❌ | - | - |  |
-| `orthodox_icons` | ❌ | - | - |  |
-| `papacy` | ❌ | - | - |  |
-| `personal_deity` | ❌ | - | - |  |
-| `province` | ❌ | - | - |  |
-| `reform_tooltip` | ❌ | - | - |  |
-| `religious_reforms` | ❌ | - | - |  |
-| `require_reformed_for_institution_development` | ❌ | - | - |  |
-| `shafii_school` | ❌ | - | - |  |
-| `uses_anglican_power` | ❌ | - | - |  |
-| `uses_church_power` | ❌ | - | - |  |
-| `uses_harmony` | ❌ | - | - |  |
-| `uses_hussite_power` | ❌ | - | - |  |
-| `uses_isolationism` | ❌ | - | - |  |
-| `uses_judaism_power` | ❌ | - | - |  |
-| `uses_karma` | ❌ | - | - |  |
-| `uses_piety` | ❌ | - | - |  |
-| `will_get_center` | ❌ | - | - |  |
-| `zaidi_school` | ❌ | - | - |  |
+| `*` | ✅ | - | - |  |
+| `allow_female_defenders_of_the_faith` | ✅ | - | - | via catch-all |
+| `allowed_center_conversion` | ✅ | - | - | via catch-all |
+| `allowed_conversion` | ✅ | - | - | via catch-all |
+| `ancestors` | ✅ | - | - | via catch-all |
+| `aspects` | ✅ | - | - | via catch-all |
+| `aspects_name` | ✅ | - | - | via catch-all |
+| `authority` | ✅ | - | - | via catch-all |
+| `blessings` | ✅ | - | - | via catch-all |
+| `can_have_secondary_religion` | ✅ | - | - | via catch-all |
+| `celebrate` | ✅ | - | - | via catch-all |
+| `color` | ✅ | - | - | via catch-all |
+| `country` | ✅ | - | - | via catch-all |
+| `country_as_secondary` | ✅ | - | - | via catch-all |
+| `date` | ✅ | - | - | via catch-all |
+| `declare_war_in_regency` | ✅ | - | - | via catch-all |
+| `doom` | ✅ | - | - | via catch-all |
+| `fervor` | ✅ | - | - | via catch-all |
+| `fetishist_cult` | ✅ | - | - | via catch-all |
+| `flag_emblem_index_range` | ✅ | - | - | via catch-all |
+| `flags_with_emblem_percentage` | ✅ | - | - | via catch-all |
+| `gurus` | ✅ | - | - | via catch-all |
+| `hanafi_school` | ✅ | - | - | via catch-all |
+| `hanbali_school` | ✅ | - | - | via catch-all |
+| `harmonized_modifier` | ✅ | - | - | via catch-all |
+| `has_patriarchs` | ✅ | - | - | via catch-all |
+| `heretic` | ✅ | - | - | via catch-all |
+| `holy_sites` | ✅ | - | - | via catch-all |
+| `hre_heretic_religion` | ✅ | - | - | via catch-all |
+| `hre_religion` | ✅ | - | - | via catch-all |
+| `icon` | ✅ | - | - | via catch-all |
+| `ismaili_school` | ✅ | - | - | via catch-all |
+| `jafari_school` | ✅ | - | - | via catch-all |
+| `maliki_school` | ✅ | - | - | via catch-all |
+| `misguided_heretic` | ✅ | - | - | via catch-all |
+| `on_convert` | ✅ | - | - | via catch-all |
+| `orthodox_icons` | ✅ | - | - | via catch-all |
+| `papacy` | ✅ | - | - | via catch-all |
+| `personal_deity` | ✅ | - | - | via catch-all |
+| `province` | ✅ | - | - | via catch-all |
+| `reform_tooltip` | ✅ | - | - | via catch-all |
+| `religious_reforms` | ✅ | - | - | via catch-all |
+| `require_reformed_for_institution_development` | ✅ | - | - | via catch-all |
+| `shafii_school` | ✅ | - | - | via catch-all |
+| `uses_anglican_power` | ✅ | - | - | via catch-all |
+| `uses_church_power` | ✅ | - | - | via catch-all |
+| `uses_harmony` | ✅ | - | - | via catch-all |
+| `uses_hussite_power` | ✅ | - | - | via catch-all |
+| `uses_isolationism` | ✅ | - | - | via catch-all |
+| `uses_judaism_power` | ✅ | - | - | via catch-all |
+| `uses_karma` | ✅ | - | - | via catch-all |
+| `uses_piety` | ✅ | - | - | via catch-all |
+| `will_get_center` | ✅ | - | - | via catch-all |
+| `zaidi_school` | ✅ | - | - | via catch-all |
 
 ## Religious Conversions
 

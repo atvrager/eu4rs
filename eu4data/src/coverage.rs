@@ -180,15 +180,23 @@ pub fn get_gold_standard_registry() -> HashMap<DataCategory, Vec<FieldCoverage>>
         let manual_annotations = get_manual_annotations(cat);
         let mut fields = Vec::new();
 
+        // Check if we have a catch-all marker ("*")
+        let has_catch_all = manual_annotations.iter().any(|(k, _)| *k == "*");
+
         // 1. Add all discovered fields
+
         for d in discovered {
             let annotation = manual_annotations.get(d.name);
             fields.push(FieldCoverage {
                 name: d.name,
-                parsed: annotation.map(|a| a.parsed).unwrap_or(false),
+                parsed: annotation.map(|a| a.parsed).unwrap_or(has_catch_all),
                 visualized: annotation.map(|a| a.visualized).unwrap_or(false),
                 simulated: annotation.map(|a| a.simulated).unwrap_or(false),
-                notes: annotation.and_then(|a| a.notes),
+                notes: annotation.and_then(|a| a.notes).or(if has_catch_all {
+                    Some("via catch-all")
+                } else {
+                    None
+                }),
             });
         }
 

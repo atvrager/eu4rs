@@ -1,8 +1,10 @@
 use crate::coverage::SchemaType;
-use serde::Deserialize;
+use eu4data_derive::TolerantDeserialize;
+use serde::de::IgnoredAny;
+use std::collections::HashMap;
 
 /// Represents the historical data of a province (e.g., in `history/provinces`).
-#[derive(Debug, Default, Deserialize, SchemaType)]
+#[derive(Debug, Default, TolerantDeserialize, SchemaType)]
 pub struct ProvinceHistory {
     /// The trade good produced in the province.
     #[schema(visualized)]
@@ -48,7 +50,7 @@ pub struct ProvinceHistory {
     pub center_of_trade: Option<u8>,
 
     // Remaining Fields for 100% Coverage
-    // pub tribal_owner: Option<String>,
+    pub tribal_owner: Option<String>,
     pub revolt_risk: Option<f32>,
     pub unrest: Option<f32>,
     pub extra_cost: Option<f32>,
@@ -57,17 +59,22 @@ pub struct ProvinceHistory {
     pub seat_in_parliament: Option<bool>,
     pub shipyard: Option<bool>,
     pub fort_15th: Option<bool>,
-    // pub latent_trade_goods: Option<Vec<String>>,
 
-    // Complex/Scripted Effects (Ignored but parsed)
-    // IgnoredAny accepts any value shape (single, array, object)
-    // pub add_permanent_province_modifier: Option<IgnoredAny>,
-    // pub add_province_triggered_modifier: Option<IgnoredAny>,
-    // pub add_trade_modifier: Option<IgnoredAny>,
-    // pub add_brahmins_or_church_effect: Option<IgnoredAny>,
-    // pub add_jains_or_burghers_effect: Option<IgnoredAny>,
-    // pub add_rajputs_or_marathas_or_nobles_effect: Option<IgnoredAny>,
-    // pub add_vaisyas_or_burghers_effect: Option<IgnoredAny>,
+    // Latent trade goods might be repeated or list, use Vec<IgnoredAny> to be safe for now
+    pub latent_trade_goods: Option<Vec<IgnoredAny>>,
+
+    pub discovered_by: Option<Vec<IgnoredAny>>,
+    pub add_core: Option<Vec<IgnoredAny>>,
+    pub add_claim: Option<Vec<IgnoredAny>>,
+
+    // Explicitly ignored complex fields
+    pub add_permanent_province_modifier: Option<Vec<IgnoredAny>>,
+    pub add_province_triggered_modifier: Option<Vec<IgnoredAny>>,
+    pub add_trade_modifier: Option<Vec<IgnoredAny>>,
+    pub add_brahmins_or_church_effect: Option<Vec<IgnoredAny>>,
+    pub add_jains_or_burghers_effect: Option<Vec<IgnoredAny>>,
+    pub add_rajputs_or_marathas_or_nobles_effect: Option<Vec<IgnoredAny>>,
+    pub add_vaisyas_or_burghers_effect: Option<Vec<IgnoredAny>>,
     // Note: Date-keyed entries (e.g. "1444.1.1 = { ... }") are silently ignored.
     // Unknown fields are not errors in serde - they're just skipped.
 }
@@ -76,7 +83,7 @@ use eu4txt::DefaultEU4Txt;
 use eu4txt::EU4Txt;
 use eu4txt::from_node;
 use rayon::prelude::*;
-use std::collections::HashMap;
+
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -182,6 +189,21 @@ mod tests {
         let mut file = fs::File::create(file_path).unwrap();
         writeln!(file, "this is not legitimate eu4 script").unwrap();
 
+        let (map, (success, fail)) = load_province_history(dir.path()).unwrap();
+
+        assert_eq!(success, 2);
+        assert_eq!(fail, 2); // "invalid_name.txt" fails ID parse, "3 - Kalmar" fails content parse
+
+        let p1 = map.get(&1).unwrap();
+        assert_eq!(p1.owner.as_deref(), Some("SWE"));
+        assert_eq!(p1.base_tax, Some(10.0));
+        assert_eq!(p1.trade_goods.as_deref(), Some("grain"));
+        assert_eq!(p1.religion.as_deref(), Some("catholic"));
+        assert_eq!(p1.culture.as_deref(), Some("swedish"));
+
+        let p2 = map.get(&2).unwrap();
+        assert_eq!(p2.owner.as_deref(), Some("SWE"));
+        assert_eq!(p2.base_tax, None);
         let (map, (success, fail)) = load_province_history(dir.path()).unwrap();
 
         assert_eq!(success, 2);

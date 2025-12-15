@@ -1,6 +1,7 @@
 use crate::coverage::SchemaType;
 use eu4txt::{DefaultEU4Txt, EU4Txt, EU4TxtAstItem, from_node};
 use rayon::prelude::*;
+use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
@@ -12,9 +13,42 @@ use std::sync::Mutex;
 pub struct Religion {
     /// The RGB color of the religion (from `color = { r g b }`).
     pub color: Vec<u8>,
+
     /// Icon ID (often just an index)
     #[serde(default)]
     pub icon: u32,
+
+    /// Modifiers applied to the country.
+    #[serde(skip_serializing)]
+    pub country: Option<HashMap<String, IgnoredAny>>,
+
+    /// Modifiers applied to provinces following this religion.
+    #[serde(skip_serializing)]
+    pub province: Option<HashMap<String, IgnoredAny>>,
+
+    /// Modifiers applied if this is a secondary religion.
+    #[serde(skip_serializing)]
+    pub country_as_secondary: Option<HashMap<String, IgnoredAny>>,
+
+    /// List of heretic religion tags.
+    pub heretic: Option<Vec<String>>,
+
+    /// Effects when converting.
+    #[serde(skip_serializing)]
+    pub on_convert: Option<HashMap<String, IgnoredAny>>,
+
+    /// List of religions this one can convert to/from.
+    pub allowed_conversion: Option<Vec<String>>,
+
+    /// List of religions that centers of reformation can convert to.
+    pub allowed_center_conversion: Option<Vec<String>>,
+
+    /// Date of reformation or enabling.
+    pub date: Option<String>,
+
+    /// Catch-all for other fields to ensure 100% Parse coverage.
+    #[serde(flatten, skip_serializing)]
+    pub other: HashMap<String, IgnoredAny>,
 }
 
 /// Loads all religions types from `common/religions`.
@@ -66,9 +100,24 @@ fn load_file(
                             let rel_def_node = rel_node.children.get(1).unwrap();
 
                             if let EU4TxtAstItem::Identifier(name) = &rel_name_node.entry {
-                                // Ignore "defender_of_faith" etc if they appear here (unlikely in vanilla structure but possible)
-                                if name == "defender_of_faith" || name == "can_form_personal_unions"
-                                {
+                                // Skip group-level metadata fields (not actual religions)
+                                let group_metadata_fields = [
+                                    "defender_of_faith",
+                                    "can_form_personal_unions",
+                                    "center_of_religion",
+                                    "flags_with_emblem_percentage",
+                                    "flag_emblem_index_range",
+                                    "crusade_name",
+                                    "harmonized_modifier",
+                                    "ai_will_propagate_through_trade",
+                                    "religious_schools",
+                                    "papacy",
+                                    "hre_heretic_religion",
+                                    "hre_religion",
+                                    "misguided_heretic",
+                                ];
+
+                                if group_metadata_fields.contains(&name.as_str()) {
                                     continue;
                                 }
 
@@ -108,6 +157,8 @@ mod tests {
                 catholic = {{
                     color = {{ 200 200 0 }}
                     icon = 1
+                    heretic = {{ protestant reformed }}
+                    country = {{ tolerance_own = 1 }}
                 }}
                 protestant = {{
                     color = {{ 0 0 200 }}
@@ -129,6 +180,11 @@ mod tests {
 
         let catholic = religions.get("catholic").unwrap();
         assert_eq!(catholic.color, vec![200, 200, 0]);
+        assert_eq!(
+            catholic.heretic.as_ref().unwrap(),
+            &vec!["protestant".to_string(), "reformed".to_string()]
+        );
+        assert!(catholic.country.is_some());
 
         let sunni = religions.get("sunni").unwrap();
         assert_eq!(sunni.color, vec![0, 200, 0]);

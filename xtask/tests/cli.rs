@@ -98,7 +98,7 @@ fn test_coverage_discover_updates() {
     fs::create_dir_all(&src_generated).unwrap();
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_xtask"));
-    cmd.current_dir(&project_root)
+    cmd.current_dir(project_root)
         .arg("coverage")
         .arg("--eu4-path")
         .arg(eu4_path.to_str().unwrap())

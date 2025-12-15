@@ -191,6 +191,6 @@ mod tests {
         let eng = countries.get("ENG").unwrap();
         assert_eq!(eng.color, vec![200, 10, 10]);
 
-        assert!(countries.get("FRA").is_none());
+        assert!(!countries.contains_key("FRA"));
     }
 }
