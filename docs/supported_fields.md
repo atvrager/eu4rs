@@ -4271,74 +4271,73 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs`.
 
 ## Tradegoods
 
-- **Total Known Fields:** 62
-- **Parsed:** 4 (6.5%)
-- **Visualized:** 1 (1.6%)
+- **Total Known Fields:** 61
+- **Parsed:** 61 (100.0%)
+- **Visualized:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
-| `color` | ✅ | ✅ | - | Map color |
-| `chance` | ✅ | - | - | Spawn chance (scripted) |
-| `modifier` | ✅ | - | - | Production bonuses |
-| `province` | ✅ | - | - | Province scope modifiers |
-| `adm_tech_cost_modifier` | ❌ | - | - |  |
-| `advisor_cost` | ❌ | - | - |  |
-| `cavalry_cost` | ❌ | - | - |  |
-| `development_cost` | ❌ | - | - |  |
-| `devotion` | ❌ | - | - |  |
-| `dip_tech_cost_modifier` | ❌ | - | - |  |
-| `diplomatic_reputation` | ❌ | - | - |  |
-| `factor` | ❌ | - | - |  |
-| `garrison_growth` | ❌ | - | - |  |
-| `global_colonial_growth` | ❌ | - | - |  |
-| `global_institution_spread` | ❌ | - | - |  |
-| `global_regiment_cost` | ❌ | - | - |  |
-| `global_regiment_recruit_speed` | ❌ | - | - |  |
-| `global_sailors_modifier` | ❌ | - | - |  |
-| `global_ship_cost` | ❌ | - | - |  |
-| `global_spy_defence` | ❌ | - | - |  |
-| `global_tariffs` | ❌ | - | - |  |
-| `global_trade_goods_size_modifier` | ❌ | - | - |  |
-| `global_unrest` | ❌ | - | - |  |
-| `heir_chance` | ❌ | - | - |  |
-| `horde_unity` | ❌ | - | - |  |
-| `inflation_reduction` | ❌ | - | - |  |
-| `land_forcelimit` | ❌ | - | - |  |
-| `land_forcelimit_modifier` | ❌ | - | - |  |
-| `land_maintenance_modifier` | ❌ | - | - |  |
-| `legitimacy` | ❌ | - | - |  |
-| `local_autonomy` | ❌ | - | - |  |
-| `local_build_cost` | ❌ | - | - |  |
-| `local_build_time` | ❌ | - | - |  |
-| `local_defensiveness` | ❌ | - | - |  |
-| `local_development_cost` | ❌ | - | - |  |
-| `local_friendly_movement_speed` | ❌ | - | - |  |
-| `local_institution_spread` | ❌ | - | - |  |
-| `local_manpower_modifier` | ❌ | - | - |  |
-| `local_missionary_strength` | ❌ | - | - |  |
-| `local_monthly_devastation` | ❌ | - | - |  |
-| `local_production_efficiency` | ❌ | - | - |  |
-| `local_sailors_modifier` | ❌ | - | - |  |
-| `local_state_maintenance_modifier` | ❌ | - | - |  |
-| `local_tax_modifier` | ❌ | - | - |  |
-| `local_unrest` | ❌ | - | - |  |
-| `manpower_recovery_speed` | ❌ | - | - |  |
-| `merc_maintenance_modifier` | ❌ | - | - |  |
-| `meritocracy` | ❌ | - | - |  |
-| `naval_forcelimit` | ❌ | - | - |  |
-| `naval_forcelimit_modifier` | ❌ | - | - |  |
-| `num_accepted_cultures` | ❌ | - | - |  |
-| `prestige` | ❌ | - | - |  |
-| `province_trade_power_modifier` | ❌ | - | - |  |
-| `province_trade_power_value` | ❌ | - | - |  |
-| `regiment_recruit_speed` | ❌ | - | - |  |
-| `republican_tradition` | ❌ | - | - |  |
-| `spy_offence` | ❌ | - | - |  |
-| `supply_limit_modifier` | ❌ | - | - |  |
-| `tolerance_own` | ❌ | - | - |  |
-| `trade_efficiency` | ❌ | - | - |  |
-| `trade_value_modifier` | ❌ | - | - |  |
-| `war_exhaustion_cost` | ❌ | - | - |  |
+| `adm_tech_cost_modifier` | ✅ | - | - |  |
+| `advisor_cost` | ✅ | - | - |  |
+| `cavalry_cost` | ✅ | - | - |  |
+| `chance` | ✅ | - | - |  |
+| `color` | ✅ | - | - |  |
+| `development_cost` | ✅ | - | - |  |
+| `devotion` | ✅ | - | - |  |
+| `dip_tech_cost_modifier` | ✅ | - | - |  |
+| `diplomatic_reputation` | ✅ | - | - |  |
+| `factor` | ✅ | - | - |  |
+| `garrison_growth` | ✅ | - | - |  |
+| `global_colonial_growth` | ✅ | - | - |  |
+| `global_institution_spread` | ✅ | - | - |  |
+| `global_regiment_cost` | ✅ | - | - |  |
+| `global_regiment_recruit_speed` | ✅ | - | - |  |
+| `global_sailors_modifier` | ✅ | - | - |  |
+| `global_ship_cost` | ✅ | - | - |  |
+| `global_spy_defence` | ✅ | - | - |  |
+| `global_tariffs` | ✅ | - | - |  |
+| `global_trade_goods_size_modifier` | ✅ | - | - |  |
+| `global_unrest` | ✅ | - | - |  |
+| `heir_chance` | ✅ | - | - |  |
+| `horde_unity` | ✅ | - | - |  |
+| `inflation_reduction` | ✅ | - | - |  |
+| `land_forcelimit` | ✅ | - | - |  |
+| `land_forcelimit_modifier` | ✅ | - | - |  |
+| `land_maintenance_modifier` | ✅ | - | - |  |
+| `legitimacy` | ✅ | - | - |  |
+| `local_autonomy` | ✅ | - | - |  |
+| `local_build_cost` | ✅ | - | - |  |
+| `local_build_time` | ✅ | - | - |  |
+| `local_defensiveness` | ✅ | - | - |  |
+| `local_development_cost` | ✅ | - | - |  |
+| `local_friendly_movement_speed` | ✅ | - | - |  |
+| `local_institution_spread` | ✅ | - | - |  |
+| `local_manpower_modifier` | ✅ | - | - |  |
+| `local_missionary_strength` | ✅ | - | - |  |
+| `local_monthly_devastation` | ✅ | - | - |  |
+| `local_production_efficiency` | ✅ | - | - |  |
+| `local_sailors_modifier` | ✅ | - | - |  |
+| `local_state_maintenance_modifier` | ✅ | - | - |  |
+| `local_tax_modifier` | ✅ | - | - |  |
+| `local_unrest` | ✅ | - | - |  |
+| `manpower_recovery_speed` | ✅ | - | - |  |
+| `merc_maintenance_modifier` | ✅ | - | - |  |
+| `meritocracy` | ✅ | - | - |  |
+| `modifier` | ✅ | - | - |  |
+| `naval_forcelimit` | ✅ | - | - |  |
+| `naval_forcelimit_modifier` | ✅ | - | - |  |
+| `num_accepted_cultures` | ✅ | - | - |  |
+| `prestige` | ✅ | - | - |  |
+| `province_trade_power_modifier` | ✅ | - | - |  |
+| `province_trade_power_value` | ✅ | - | - |  |
+| `regiment_recruit_speed` | ✅ | - | - |  |
+| `republican_tradition` | ✅ | - | - |  |
+| `spy_offence` | ✅ | - | - |  |
+| `supply_limit_modifier` | ✅ | - | - |  |
+| `tolerance_own` | ✅ | - | - |  |
+| `trade_efficiency` | ✅ | - | - |  |
+| `trade_value_modifier` | ✅ | - | - |  |
+| `war_exhaustion_cost` | ✅ | - | - |  |
 
 ## Tradenodes
 
