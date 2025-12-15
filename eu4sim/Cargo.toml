@@ -1,0 +1,12 @@
+[package]
+name = "eu4sim"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eu4sim-core = { path = "../eu4sim-core" }
+eu4data = { path = "../eu4data" }
+clap = { version = "4.0", features = ["derive"] }
+anyhow = "1.0"
+log = "0.4"
+env_logger = "0.10"

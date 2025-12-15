@@ -4,6 +4,8 @@ members = [ "eu4data",
     "eu4viz",
     "eu4txt",
     "xtask",
+    "eu4sim",
+    "eu4sim-core",
 ]
 resolver = "2"
 
