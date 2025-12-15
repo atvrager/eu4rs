@@ -225,14 +225,22 @@ fn run_coverage(eu4_path: &str, doc_gen: bool, discover: bool, update: bool) -> 
     if discover || update {
         println!("🔎 Discovery mode enabled. This may take a minute...");
         if update {
-            println!("💾 Will update eu4data/src/generated/schema.rs");
+            println!("💾 Will update eu4data/src/generated/categories.rs and schema.rs");
         }
     }
 
     if update {
-        let content =
+        // Generate categories first (schema depends on this)
+        let categories_content = eu4data::discovery::generate_categories_file(path)
+            .context("Failed to generate categories")?;
+        std::fs::write("eu4data/src/generated/categories.rs", categories_content)
+            .context("Failed to write categories file")?;
+        println!("✅ Updated eu4data/src/generated/categories.rs");
+
+        // Then generate schema (uses the discovered categories)
+        let schema_content =
             eu4data::discovery::generate_schema_file(path).context("Failed to generate schema")?;
-        std::fs::write("eu4data/src/generated/schema.rs", content)
+        std::fs::write("eu4data/src/generated/schema.rs", schema_content)
             .context("Failed to write schema file")?;
         println!("✅ Updated eu4data/src/generated/schema.rs");
     }

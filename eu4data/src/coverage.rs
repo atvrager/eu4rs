@@ -1,40 +1,8 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-/// Categories of EU4 game data we track
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum DataCategory {
-    Countries,       // common/countries/, common/country_tags/
-    Religions,       // common/religions/
-    Cultures,        // common/cultures/
-    TradeGoods,      // common/tradegoods/
-    ProvinceHistory, // history/provinces/
-    Map,             // map/ (definitions, default, terrain)
-}
-
-impl DataCategory {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            DataCategory::Countries => "Countries",
-            DataCategory::Religions => "Religions",
-            DataCategory::Cultures => "Cultures",
-            DataCategory::TradeGoods => "Trade Goods",
-            DataCategory::ProvinceHistory => "Province History",
-            DataCategory::Map => "Map Data",
-        }
-    }
-
-    pub fn path_suffix(&self) -> &'static str {
-        match self {
-            DataCategory::Countries => "common/countries",
-            DataCategory::Religions => "common/religions",
-            DataCategory::Cultures => "common/cultures",
-            DataCategory::TradeGoods => "common/tradegoods",
-            DataCategory::ProvinceHistory => "history/provinces",
-            DataCategory::Map => "map",
-        }
-    }
-}
+// DataCategory is now generated from game files
+pub use crate::generated::categories::{ALL_CATEGORIES, DataCategory};
 
 /// Coverage status for a single field within a struct
 #[derive(Debug, Clone)]
@@ -175,15 +143,8 @@ pub fn generate_static_docs() -> String {
 /// Returns the registry of fields for each category, combining empirical discovery with manual annotations.
 pub fn get_gold_standard_registry() -> HashMap<DataCategory, Vec<FieldCoverage>> {
     let mut registry = HashMap::new();
-    let categories = vec![
-        DataCategory::Countries,
-        DataCategory::ProvinceHistory,
-        DataCategory::TradeGoods,
-        DataCategory::Religions,
-        DataCategory::Cultures,
-    ];
 
-    for cat in categories {
+    for &cat in ALL_CATEGORIES {
         let discovered = crate::generated::schema::get_discovered_fields(cat);
         let manual_annotations = get_manual_annotations(cat);
         let mut fields = Vec::new();
@@ -276,7 +237,7 @@ fn get_manual_annotations(category: DataCategory) -> HashMap<&'static str, Manua
             field!("fleet_names", false, false);
             field!("<date>", false, false, Some("Time-dependent properties"));
         }
-        DataCategory::ProvinceHistory => {
+        DataCategory::HistoryProvinces => {
             field!("owner", true, true, Some("Political map ownership"));
             field!("controller", false, false, Some("Wartime occupation"));
             field!("add_core", false, false);
@@ -297,7 +258,7 @@ fn get_manual_annotations(category: DataCategory) -> HashMap<&'static str, Manua
             field!("discovered_by", false, false);
             field!("<date>", false, false, Some("Time-dependent properties"));
         }
-        DataCategory::TradeGoods => {
+        DataCategory::Tradegoods => {
             field!("color", true, true, Some("Map color"));
             field!("modifier", true, false, Some("Production bonuses"));
             field!("province", true, false, Some("Province scope modifiers"));
@@ -336,16 +297,8 @@ pub fn analyze_coverage(eu4_path: &Path, discover: bool) -> Result<CoverageRepor
     let now = std::time::SystemTime::now();
     let timestamp = humantime::format_rfc3339(now).to_string();
 
-    // Iterate over our defined categories
-    let cats = vec![
-        DataCategory::Countries,
-        DataCategory::ProvinceHistory,
-        DataCategory::TradeGoods,
-        DataCategory::Religions,
-        DataCategory::Cultures,
-    ];
-
-    for cat in cats {
+    // Iterate over all discovered categories
+    for &cat in ALL_CATEGORIES {
         let fields = registry.get(&cat).cloned().unwrap_or_default();
         let our_fields = fields.iter().filter(|f| f.parsed).count();
         let used_fields = fields.iter().filter(|f| f.used).count();
@@ -356,7 +309,11 @@ pub fn analyze_coverage(eu4_path: &Path, discover: bool) -> Result<CoverageRepor
         let parsed_files = count_parsable_files(&dir_path);
 
         let discovered_fields = if discover {
-            Some(crate::discovery::discover_schema(eu4_path, cat)?)
+            Some(crate::discovery::discover_schema_at_path(
+                eu4_path,
+                cat.path_suffix(),
+                cat.is_nested(),
+            )?)
         } else {
             None
         };
@@ -460,11 +417,11 @@ mod tests {
         assert_eq!(country_cat.game_files, 2);
         assert_eq!(country_cat.parsed_files, 2); // Both valid (empty is valid)
 
-        // Find ProvinceHistory category
+        // Find HistoryProvinces category
         let hist_cat = report
             .categories
             .iter()
-            .find(|c| c.category == DataCategory::ProvinceHistory)
+            .find(|c| c.category == DataCategory::HistoryProvinces)
             .unwrap();
         assert_eq!(hist_cat.game_files, 2);
         assert_eq!(hist_cat.parsed_files, 1);
