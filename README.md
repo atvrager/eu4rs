@@ -71,6 +71,8 @@ cargo run -p eu4rs -- --pretty-print --eu4-path "path/to/specific/file.txt"
 
 - [System Architecture](docs/architecture.md): Overview of crate structure, rendering pipeline, and data flow.
 - [File Formats](docs/file_formats.md): Details on the EU4 text format, encoding, and syntax.
+- [Data Coverage](docs/coverage.md): How we track Parse/Visualize/Simulate progress across game data.
+- [Supported Fields](docs/supported_fields.md): Auto-generated matrix of every known EU4 data field.
 
 ## License
 

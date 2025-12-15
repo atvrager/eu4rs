@@ -809,7 +809,7 @@ mod tests {
                 base_manpower: Some(0.0),
                 religion: Some("catholic".to_string()),
                 culture: Some("swedish".to_string()),
-                // events: vec![], // Not in struct
+                ..Default::default()
             },
         );
 
@@ -1065,11 +1065,9 @@ mod tests {
             ProvinceHistory {
                 owner: Some("SWE".to_string()),
                 trade_goods: Some("grain".to_string()),
-                base_tax: None,
-                base_production: None,
-                base_manpower: None,
                 religion: Some("catholic".to_string()),
                 culture: Some("swedish".to_string()),
+                ..Default::default()
             },
         );
 
@@ -1181,12 +1179,7 @@ mod tests {
             1,
             ProvinceHistory {
                 owner: Some("SWE".to_string()),
-                trade_goods: None,
-                base_tax: None,
-                base_production: None,
-                base_manpower: None,
-                religion: None,
-                culture: None,
+                ..Default::default()
             },
         );
 

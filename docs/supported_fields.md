@@ -534,12 +534,13 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs`.
 
 ## Cultures
 
-- **Total Known Fields:** 11
-- **Parsed:** 0 (0.0%)
+- **Total Known Fields:** 12
+- **Parsed:** 1 (8.3%)
 - **Visualized:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
+| `color` | ✅ | - | - |  |
 | `country` | ❌ | - | - |  |
 | `dynasty_names` | ❌ | - | - |  |
 | `female_names` | ❌ | - | - |  |
@@ -548,7 +549,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs`.
 | `local_has_samurai` | ❌ | - | - |  |
 | `local_has_tercio` | ❌ | - | - |  |
 | `male_names` | ❌ | - | - |  |
-| `primary` | ❌ | - | - | Tag of primary nation |
+| `primary` | ❌ | - | - |  |
 | `province` | ❌ | - | - |  |
 | `second_graphical_culture` | ❌ | - | - |  |
 
@@ -3640,47 +3641,47 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs`.
 ## Provinces History
 
 - **Total Known Fields:** 36
-- **Parsed:** 7 (19.4%)
+- **Parsed:** 23 (63.9%)
 - **Visualized:** 4 (11.1%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
-| `culture` | ✅ | ✅ | - | Culture map mode |
-| `owner` | ✅ | ✅ | - | Political map ownership |
-| `religion` | ✅ | ✅ | - | Religion map mode |
-| `trade_goods` | ✅ | ✅ | - | Trade goods map mode |
+| `culture` | ✅ | ✅ | - |  |
+| `owner` | ✅ | ✅ | - |  |
+| `religion` | ✅ | ✅ | - |  |
+| `trade_goods` | ✅ | ✅ | - |  |
+| `add_local_autonomy` | ✅ | - | - |  |
+| `add_nationalism` | ✅ | - | - |  |
 | `base_manpower` | ✅ | - | - |  |
 | `base_production` | ✅ | - | - |  |
-| `base_tax` | ✅ | - | - | Parsed but not visualized yet |
-| `<date>` | ❌ | - | - | Time-dependent properties |
+| `base_tax` | ✅ | - | - |  |
+| `capital` | ✅ | - | - |  |
+| `center_of_trade` | ✅ | - | - |  |
+| `controller` | ✅ | - | - |  |
+| `extra_cost` | ✅ | - | - |  |
+| `fort_15th` | ✅ | - | - |  |
+| `hre` | ✅ | - | - |  |
+| `is_city` | ✅ | - | - |  |
+| `native_ferocity` | ✅ | - | - |  |
+| `native_hostileness` | ✅ | - | - |  |
+| `native_size` | ✅ | - | - |  |
+| `revolt_risk` | ✅ | - | - |  |
+| `seat_in_parliament` | ✅ | - | - |  |
+| `shipyard` | ✅ | - | - |  |
+| `unrest` | ✅ | - | - |  |
+| `<date>` | ❌ | - | - | Time-dependent properties (not yet parsed) |
 | `add_brahmins_or_church_effect` | ❌ | - | - |  |
 | `add_claim` | ❌ | - | - |  |
 | `add_core` | ❌ | - | - |  |
 | `add_jains_or_burghers_effect` | ❌ | - | - |  |
-| `add_local_autonomy` | ❌ | - | - |  |
-| `add_nationalism` | ❌ | - | - |  |
 | `add_permanent_province_modifier` | ❌ | - | - |  |
 | `add_province_triggered_modifier` | ❌ | - | - |  |
 | `add_rajputs_or_marathas_or_nobles_effect` | ❌ | - | - |  |
 | `add_trade_modifier` | ❌ | - | - |  |
 | `add_vaisyas_or_burghers_effect` | ❌ | - | - |  |
-| `capital` | ❌ | - | - | Province capital name |
-| `center_of_trade` | ❌ | - | - |  |
-| `controller` | ❌ | - | - | Wartime occupation |
 | `discovered_by` | ❌ | - | - |  |
-| `extra_cost` | ❌ | - | - |  |
-| `fort_15th` | ❌ | - | - |  |
-| `hre` | ❌ | - | - |  |
-| `is_city` | ❌ | - | - |  |
 | `latent_trade_goods` | ❌ | - | - |  |
-| `native_ferocity` | ❌ | - | - |  |
-| `native_hostileness` | ❌ | - | - |  |
-| `native_size` | ❌ | - | - |  |
-| `revolt_risk` | ❌ | - | - |  |
-| `seat_in_parliament` | ❌ | - | - |  |
-| `shipyard` | ❌ | - | - |  |
 | `tribal_owner` | ❌ | - | - |  |
-| `unrest` | ❌ | - | - |  |
 
 ## Rebel Types
 
@@ -3737,11 +3738,11 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs`.
 
 - **Total Known Fields:** 53
 - **Parsed:** 2 (3.8%)
-- **Visualized:** 1 (1.9%)
+- **Visualized:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
-| `color` | ✅ | ✅ | - | Map color |
+| `color` | ✅ | - | - |  |
 | `icon` | ✅ | - | - |  |
 | `allow_female_defenders_of_the_faith` | ❌ | - | - |  |
 | `allowed_center_conversion` | ❌ | - | - |  |
@@ -3753,7 +3754,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs`.
 | `blessings` | ❌ | - | - |  |
 | `can_have_secondary_religion` | ❌ | - | - |  |
 | `celebrate` | ❌ | - | - |  |
-| `country` | ❌ | - | - | Country modifiers |
+| `country` | ❌ | - | - |  |
 | `country_as_secondary` | ❌ | - | - |  |
 | `date` | ❌ | - | - |  |
 | `declare_war_in_regency` | ❌ | - | - |  |
@@ -3779,7 +3780,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs`.
 | `orthodox_icons` | ❌ | - | - |  |
 | `papacy` | ❌ | - | - |  |
 | `personal_deity` | ❌ | - | - |  |
-| `province` | ❌ | - | - | Province modifiers |
+| `province` | ❌ | - | - |  |
 | `reform_tooltip` | ❌ | - | - |  |
 | `religious_reforms` | ❌ | - | - |  |
 | `require_reformed_for_institution_development` | ❌ | - | - |  |
@@ -4269,8 +4270,8 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs`.
 
 ## Tradegoods
 
-- **Total Known Fields:** 64
-- **Parsed:** 4 (6.2%)
+- **Total Known Fields:** 62
+- **Parsed:** 4 (6.5%)
 - **Visualized:** 1 (1.6%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
@@ -4281,7 +4282,6 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs`.
 | `province` | ✅ | - | - | Province scope modifiers |
 | `adm_tech_cost_modifier` | ❌ | - | - |  |
 | `advisor_cost` | ❌ | - | - |  |
-| `base_price` | ❌ | - | - |  |
 | `cavalry_cost` | ❌ | - | - |  |
 | `development_cost` | ❌ | - | - |  |
 | `devotion` | ❌ | - | - |  |
@@ -4299,7 +4299,6 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs`.
 | `global_tariffs` | ❌ | - | - |  |
 | `global_trade_goods_size_modifier` | ❌ | - | - |  |
 | `global_unrest` | ❌ | - | - |  |
-| `gold_type` | ❌ | - | - |  |
 | `heir_chance` | ❌ | - | - |  |
 | `horde_unity` | ❌ | - | - |  |
 | `inflation_reduction` | ❌ | - | - |  |

@@ -1,3 +1,4 @@
+use crate::coverage::SchemaType;
 use eu4txt::{DefaultEU4Txt, EU4Txt, EU4TxtAstItem};
 use rayon::prelude::*;
 use std::collections::HashMap;
@@ -8,7 +9,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 /// Represents a culture definition.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, SchemaType)]
 pub struct Culture {
     /// The RGB color. Often generated.
     pub color: [u8; 3],

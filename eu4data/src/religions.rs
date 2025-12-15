@@ -1,3 +1,4 @@
+use crate::coverage::SchemaType;
 use eu4txt::{DefaultEU4Txt, EU4Txt, EU4TxtAstItem, from_node};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -7,7 +8,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 /// Represents a religion definition.
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, SchemaType)]
 pub struct Religion {
     /// The RGB color of the religion (from `color = { r g b }`).
     pub color: Vec<u8>,

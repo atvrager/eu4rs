@@ -266,57 +266,62 @@ fn get_manual_annotations(category: DataCategory) -> HashMap<&'static str, Manua
                 false,
                 Some("For unit models and city graphics")
             );
-            field!("historical_idea_groups", false, false);
-            field!("historical_units", false, false);
-            field!("monarch_names", false, false);
-            field!("leader_names", false, false);
-            field!("ship_names", false, false);
-            field!("army_names", false, false);
-            field!("fleet_names", false, false);
             field!("<date>", false, false, Some("Time-dependent properties"));
         }
         DataCategory::HistoryProvinces => {
-            field!("owner", true, true, Some("Political map ownership"));
-            field!("controller", false, false, Some("Wartime occupation"));
-            field!("add_core", false, false);
-            field!("culture", true, true, Some("Culture map mode"));
-            field!("religion", true, true, Some("Religion map mode"));
+            // Auto-load from Struct
+            for f in crate::history::ProvinceHistory::fields() {
+                map.insert(
+                    f.name,
+                    ManualAnnotation {
+                        parsed: true,
+                        visualized: f.visualized,
+                        simulated: f.simulated,
+                        notes: None,
+                    },
+                );
+            }
+            // Manual Additions (non-struct fields)
             field!(
-                "base_tax",
-                true,
+                "<date>",
                 false,
-                Some("Parsed but not visualized yet")
+                false,
+                Some("Time-dependent properties (not yet parsed)")
             );
-            field!("base_production", true, false);
-            field!("base_manpower", true, false);
-            field!("trade_goods", true, true, Some("Trade goods map mode"));
-            field!("capital", false, false, Some("Province capital name"));
-            field!("is_city", false, false);
-            field!("hre", false, false);
-            field!("discovered_by", false, false);
-            field!("<date>", false, false, Some("Time-dependent properties"));
         }
         DataCategory::Tradegoods => {
             field!("color", true, true, Some("Map color"));
             field!("modifier", true, false, Some("Production bonuses"));
             field!("province", true, false, Some("Province scope modifiers"));
             field!("chance", true, false, Some("Spawn chance (scripted)"));
-            field!("base_price", false, false);
-            field!("gold_type", false, false);
         }
         DataCategory::Religions => {
-            field!("color", true, true, Some("Map color"));
-            field!("icon", true, false);
-            field!("allowed_conversion", false, false);
-            field!("country", false, false, Some("Country modifiers"));
-            field!("province", false, false, Some("Province modifiers"));
-            field!("heretic", false, false);
+            // Auto-load from Struct
+            for f in crate::religions::Religion::fields() {
+                map.insert(
+                    f.name,
+                    ManualAnnotation {
+                        parsed: true,
+                        visualized: f.visualized,
+                        simulated: f.simulated,
+                        notes: None,
+                    },
+                );
+            }
         }
         DataCategory::Cultures => {
-            field!("primary", false, false, Some("Tag of primary nation"));
-            field!("dynasty_names", false, false);
-            field!("male_names", false, false);
-            field!("female_names", false, false);
+            // Auto-load from Struct
+            for f in crate::cultures::Culture::fields() {
+                map.insert(
+                    f.name,
+                    ManualAnnotation {
+                        parsed: true,
+                        visualized: f.visualized,
+                        simulated: f.simulated,
+                        notes: None,
+                    },
+                );
+            }
         }
         _ => {}
     }

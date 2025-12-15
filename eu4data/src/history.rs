@@ -2,7 +2,7 @@ use crate::coverage::SchemaType;
 use serde::Deserialize;
 
 /// Represents the historical data of a province (e.g., in `history/provinces`).
-#[derive(Debug, Deserialize, SchemaType)]
+#[derive(Debug, Default, Deserialize, SchemaType)]
 pub struct ProvinceHistory {
     /// The trade good produced in the province.
     #[schema(visualized)]
@@ -22,6 +22,54 @@ pub struct ProvinceHistory {
     /// The culture of the province.
     #[schema(visualized)]
     pub culture: Option<String>,
+
+    // New Fields
+    /// Whether the province is a city (fully colonized).
+    pub is_city: Option<bool>,
+    /// Whether the province is part of the HRE.
+    pub hre: Option<bool>,
+    /// The name of the capital city/provincial capital.
+    pub capital: Option<String>,
+    /// The tag of the country that controls the province (e.g. in war).
+    pub controller: Option<String>,
+    /// Cores held on this province.
+    // pub add_core: Option<Vec<String>>,
+    /// Claims held on this province.
+    // pub add_claim: Option<Vec<String>>,
+    /// Which tech groups have discovered this province.
+    // pub discovered_by: Option<Vec<String>>,
+    /// Native population size.
+    pub native_size: Option<u32>,
+    /// Native ferocity.
+    pub native_ferocity: Option<u32>,
+    /// Native hostileness.
+    pub native_hostileness: Option<u32>,
+    /// Level of Center of Trade (1, 2, 3).
+    pub center_of_trade: Option<u8>,
+
+    // Remaining Fields for 100% Coverage
+    // pub tribal_owner: Option<String>,
+    pub revolt_risk: Option<f32>,
+    pub unrest: Option<f32>,
+    pub extra_cost: Option<f32>,
+    pub add_local_autonomy: Option<f32>,
+    pub add_nationalism: Option<f32>,
+    pub seat_in_parliament: Option<bool>,
+    pub shipyard: Option<bool>,
+    pub fort_15th: Option<bool>,
+    // pub latent_trade_goods: Option<Vec<String>>,
+
+    // Complex/Scripted Effects (Ignored but parsed)
+    // IgnoredAny accepts any value shape (single, array, object)
+    // pub add_permanent_province_modifier: Option<IgnoredAny>,
+    // pub add_province_triggered_modifier: Option<IgnoredAny>,
+    // pub add_trade_modifier: Option<IgnoredAny>,
+    // pub add_brahmins_or_church_effect: Option<IgnoredAny>,
+    // pub add_jains_or_burghers_effect: Option<IgnoredAny>,
+    // pub add_rajputs_or_marathas_or_nobles_effect: Option<IgnoredAny>,
+    // pub add_vaisyas_or_burghers_effect: Option<IgnoredAny>,
+    // Note: Date-keyed entries (e.g. "1444.1.1 = { ... }") are silently ignored.
+    // Unknown fields are not errors in serde - they're just skipped.
 }
 
 use eu4txt::DefaultEU4Txt;
@@ -68,18 +116,7 @@ pub fn load_province_history(base_path: &Path) -> Result<HistoryLoadResult, std:
             let tokens = DefaultEU4Txt::open_txt(path.to_str()?).ok()?;
 
             if tokens.is_empty() {
-                return Some((
-                    id,
-                    ProvinceHistory {
-                        trade_goods: None,
-                        owner: None,
-                        base_tax: None,
-                        base_production: None,
-                        base_manpower: None,
-                        religion: None,
-                        culture: None,
-                    },
-                ));
+                return Some((id, ProvinceHistory::default()));
             }
 
             let ast = DefaultEU4Txt::parse(tokens).ok()?;
