@@ -3,3 +3,6 @@ xtask = "run --package xtask --bin xtask --"
 run-debug = "run --package eu4rs --bin eu4rs -- --log-level debug"
 run-info = "run --package eu4rs --bin eu4rs -- --log-level info"
 run-trace = "run --package eu4rs --bin eu4rs -- --log-level trace"
+
+[build]
+incremental = true

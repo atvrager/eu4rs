@@ -6,3 +6,23 @@ members = [ "eu4data",
     "xtask",
 ]
 resolver = "2"
+
+# === Build Profile Optimizations ===
+
+# Dev builds: fast compile, no optimization
+[profile.dev]
+opt-level = 0
+debug = true
+
+# Test builds: slight optimization for faster test execution
+[profile.test]
+opt-level = 1
+
+# Optimize all dependencies even in dev/test builds
+# This is a big win: dependencies compile once with optimizations,
+# while your code stays fast to compile
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.test.package."*"]
+opt-level = 2

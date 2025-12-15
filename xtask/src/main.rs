@@ -69,8 +69,12 @@ fn run_ci() -> Result<()> {
     run_command("cargo", &["clippy", "--", "-D", "warnings"])?;
 
     println!("\n[3/4] Running Tests...");
+    // Use nextest for faster parallel test execution
     // Exclude xtask to avoid Windows file lock (xtask.exe is running)
-    run_command("cargo", &["test", "--workspace", "--exclude", "xtask"])?;
+    run_command(
+        "cargo",
+        &["nextest", "run", "--workspace", "--exclude", "xtask"],
+    )?;
 
     println!("\n[4/4] Building Release...");
     run_command("cargo", &["build", "--release"])?;

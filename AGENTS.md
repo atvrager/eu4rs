@@ -224,6 +224,34 @@ To enable proper symlink support on Windows:
 3. For Git Bash, create symlinks with: `MSYS=winsymlinks:nativestrict ln -s target linkname`
 4. Re-checkout broken symlinks: `rm file.md && git checkout -- file.md`
 
+## Build Performance (Optional)
+These tools significantly speed up local builds. They're optional but recommended:
+
+### sccache (Compiler Cache)
+Caches compiled crates across projects. Survives `cargo clean`. Like GitHub CI's cache layer.
+
+```powershell
+# Install
+cargo install sccache
+
+# Enable globally (add to PowerShell profile or run once per session)
+$env:RUSTC_WRAPPER = "sccache"
+
+# Or add to your local .cargo/config.toml (NOT checked in):
+# [build]
+# rustc-wrapper = "sccache"
+```
+
+> **Note**: Don't add `rustc-wrapper` to the checked-in config.toml — it breaks builds for devs without sccache.
+
+### cargo-nextest (Faster Test Runner)
+~3x faster than `cargo test` due to better parallelism. Drop-in replacement.
+
+```powershell
+cargo install cargo-nextest
+cargo nextest run   # instead of cargo test
+```
+
 ## Line Endings
 - **Enforce LF**: This project prefers Unix-style line endings (`\n`), even on Windows.
 - **Git Config**: Ensure `core.autocrlf` is set to `input` or `false` locally.

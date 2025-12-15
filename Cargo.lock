@@ -882,6 +882,7 @@ name = "eu4rs"
 version = "0.1.0"
 dependencies = [
  "ab_glyph",
+ "assert_cmd",
  "bytemuck",
  "clap",
  "env_logger",
@@ -890,6 +891,7 @@ dependencies = [
  "image",
  "log",
  "pollster",
+ "predicates",
  "rayon",
  "serde",
  "serde_json",
