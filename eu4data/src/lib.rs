@@ -4,6 +4,8 @@ use std::collections::HashMap;
 pub mod countries;
 pub mod coverage;
 pub mod cultures;
+pub mod discovery;
+pub mod generated;
 pub mod history;
 pub mod localisation;
 pub mod map;

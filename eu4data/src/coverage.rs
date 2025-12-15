@@ -55,6 +55,7 @@ pub struct CategoryCoverage {
     pub our_fields: usize,   // Fields we define in structs
     pub used_fields: usize,  // Fields actually referenced in code
     pub details: Vec<FieldCoverage>,
+    pub discovered_fields: Option<HashMap<String, crate::discovery::FieldDiscovery>>,
 }
 
 /// The complete coverage report
@@ -88,6 +89,32 @@ impl CoverageReport {
                 cat.our_fields,
                 cat.total_fields
             ));
+
+            if let Some(discovered) = &cat.discovered_fields {
+                output.push_str(&format!(
+                    "    🔎 Discovered {} unique fields\n",
+                    discovered.len()
+                ));
+                // Show top 5 most frequent fields
+                let mut fields: Vec<_> = discovered.values().collect();
+                fields.sort_by_key(|f| std::cmp::Reverse(f.frequency));
+
+                for f in fields.iter().take(5) {
+                    let status = if cat.details.iter().any(|d| d.name == f.name && d.parsed) {
+                        "✅"
+                    } else {
+                        "❌"
+                    };
+                    output.push_str(&format!(
+                        "      - {} {:<25} (freq: {})\n",
+                        status, f.name, f.frequency
+                    ));
+                }
+                if fields.len() > 5 {
+                    output.push_str("      ...\n");
+                }
+                output.push('\n');
+            }
         }
 
         output
@@ -145,276 +172,157 @@ pub fn generate_static_docs() -> String {
     output
 }
 
-/// Returns the "Gold Standard" registry of fields for each category.
-/// This includes what we *should* have support for.
+/// Returns the registry of fields for each category, combining empirical discovery with manual annotations.
 pub fn get_gold_standard_registry() -> HashMap<DataCategory, Vec<FieldCoverage>> {
     let mut registry = HashMap::new();
-
-    // 1. Countries (common/countries/xxx.txt)
-    registry.insert(
+    let categories = vec![
         DataCategory::Countries,
-        vec![
-            FieldCoverage {
-                name: "color",
-                parsed: true,
-                used: true,
-                notes: Some("Essential for political map"),
-            },
-            FieldCoverage {
-                name: "graphical_culture",
-                parsed: false,
-                used: false,
-                notes: Some("For unit models and city graphics"),
-            },
-            FieldCoverage {
-                name: "historical_idea_groups",
-                parsed: false,
-                used: false,
-                notes: None,
-            },
-            FieldCoverage {
-                name: "historical_units",
-                parsed: false,
-                used: false,
-                notes: None,
-            },
-            FieldCoverage {
-                name: "monarch_names",
-                parsed: false,
-                used: false,
-                notes: None,
-            },
-            FieldCoverage {
-                name: "leader_names",
-                parsed: false,
-                used: false,
-                notes: None,
-            },
-            FieldCoverage {
-                name: "ship_names",
-                parsed: false,
-                used: false,
-                notes: None,
-            },
-            FieldCoverage {
-                name: "army_names",
-                parsed: false,
-                used: false,
-                notes: None,
-            },
-            FieldCoverage {
-                name: "fleet_names",
-                parsed: false,
-                used: false,
-                notes: None,
-            },
-        ],
-    );
-
-    // 2. Province History (history/provinces/xxx.txt)
-    registry.insert(
         DataCategory::ProvinceHistory,
-        vec![
-            FieldCoverage {
-                name: "owner",
-                parsed: true,
-                used: true,
-                notes: Some("Political map ownership"),
-            },
-            FieldCoverage {
-                name: "controller",
-                parsed: false,
-                used: false,
-                notes: Some("Wartime occupation"),
-            },
-            FieldCoverage {
-                name: "add_core",
-                parsed: false,
-                used: false,
-                notes: None,
-            },
-            FieldCoverage {
-                name: "culture",
-                parsed: true,
-                used: true,
-                notes: Some("Culture map mode"),
-            },
-            FieldCoverage {
-                name: "religion",
-                parsed: true,
-                used: true,
-                notes: Some("Religion map mode"),
-            },
-            FieldCoverage {
-                name: "base_tax",
-                parsed: true,
-                used: false,
-                notes: Some("Parsed but not visualized yet"),
-            },
-            FieldCoverage {
-                name: "base_production",
-                parsed: true,
-                used: false,
-                notes: None,
-            },
-            FieldCoverage {
-                name: "base_manpower",
-                parsed: true,
-                used: false,
-                notes: None,
-            },
-            FieldCoverage {
-                name: "trade_goods",
-                parsed: true,
-                used: true,
-                notes: Some("Trade goods map mode"),
-            },
-            FieldCoverage {
-                name: "capital",
-                parsed: false,
-                used: false,
-                notes: Some("Province capital name"),
-            },
-            FieldCoverage {
-                name: "is_city",
-                parsed: false,
-                used: false,
-                notes: None,
-            },
-            FieldCoverage {
-                name: "hre", // HRE membership
-                parsed: false,
-                used: false,
-                notes: None,
-            },
-            FieldCoverage {
-                name: "discovered_by",
-                parsed: false,
-                used: false,
-                notes: None,
-            },
-        ],
-    );
-
-    // 3. Trade Goods (common/tradegoods/xxx.txt)
-    registry.insert(
         DataCategory::TradeGoods,
-        vec![
-            FieldCoverage {
-                name: "color",
-                parsed: true,
-                used: true,
-                notes: Some("Map color"),
-            },
-            FieldCoverage {
-                name: "modifier",
-                parsed: true,
-                used: false,
-                notes: Some("Production bonuses"),
-            },
-            FieldCoverage {
-                name: "province",
-                parsed: true,
-                used: false,
-                notes: Some("Province scope modifiers"),
-            },
-            FieldCoverage {
-                name: "chance",
-                parsed: true,
-                used: false,
-                notes: Some("Spawn chance (scripted)"),
-            },
-            FieldCoverage {
-                name: "base_price",
-                parsed: false,
-                used: false,
-                notes: None,
-            },
-            FieldCoverage {
-                name: "gold_type", // boolean
-                parsed: false,
-                used: false,
-                notes: None,
-            },
-        ],
-    );
-
-    // 4. Religions (common/religions/xxx.txt)
-    // Note: Religions are nested in groups, but individual religions have fields
-    registry.insert(
         DataCategory::Religions,
-        vec![
-            FieldCoverage {
-                name: "color",
-                parsed: true, // Indirectly via RGBA
-                used: true,
-                notes: Some("Map color"),
-            },
-            FieldCoverage {
-                name: "icon",
-                parsed: true,
-                used: false,
-                notes: None,
-            },
-            FieldCoverage {
-                name: "allowed_conversion",
-                parsed: false,
-                used: false,
-                notes: None,
-            },
-            FieldCoverage {
-                name: "country",
-                parsed: false,
-                used: false,
-                notes: Some("Country modifiers"),
-            },
-            FieldCoverage {
-                name: "province",
-                parsed: false,
-                used: false,
-                notes: Some("Province modifiers"),
-            },
-            FieldCoverage {
-                name: "heretic",
-                parsed: false, // List of heretic religions
-                used: false,
-                notes: None,
-            },
-        ],
-    );
-
-    // 5. Cultures (common/cultures/xxx.txt)
-    registry.insert(
         DataCategory::Cultures,
-        vec![
-            FieldCoverage {
-                name: "primary",
-                parsed: false, // Tag of primary nation
-                used: false,
-                notes: None,
-            },
-            FieldCoverage {
-                name: "dynasty_names",
-                parsed: false,
-                used: false,
-                notes: None,
-            },
-            FieldCoverage {
-                name: "male_names",
-                parsed: false,
-                used: false,
-                notes: None,
-            },
-            FieldCoverage {
-                name: "female_names",
-                parsed: false,
-                used: false,
-                notes: None,
-            },
-        ],
-    );
+    ];
+
+    for cat in categories {
+        let discovered = crate::generated::schema::get_discovered_fields(cat);
+        let manual_annotations = get_manual_annotations(cat);
+        let mut fields = Vec::new();
+
+        // 1. Add all discovered fields
+        for d in discovered {
+            let annotation = manual_annotations.get(d.name);
+            fields.push(FieldCoverage {
+                name: d.name,
+                parsed: annotation.map(|a| a.parsed).unwrap_or(false),
+                used: annotation.map(|a| a.used).unwrap_or(false),
+                notes: annotation.and_then(|a| a.notes),
+            });
+        }
+
+        // 2. Add manual fields that might NOT be in the snapshot (rare case, or if snapshot is outdated)
+        // This ensures if we manually define something we expect, it shows up even if not found in current files.
+        for (name, annotation) in &manual_annotations {
+            if !fields.iter().any(|f| f.name == *name) {
+                fields.push(FieldCoverage {
+                    name,
+                    parsed: annotation.parsed,
+                    used: annotation.used,
+                    notes: annotation.notes,
+                });
+            }
+        }
+
+        // Sort: Parsed/Used first, then by frequency (implicit in discovery order), then name
+        fields.sort_by(|a, b| {
+            let a_score = (if a.parsed { 2 } else { 0 }) + (if a.used { 1 } else { 0 });
+            let b_score = (if b.parsed { 2 } else { 0 }) + (if b.used { 1 } else { 0 });
+            b_score.cmp(&a_score).then(a.name.cmp(b.name))
+        });
+
+        registry.insert(cat, fields);
+    }
 
     registry
+}
+
+struct ManualAnnotation {
+    parsed: bool,
+    used: bool,
+    notes: Option<&'static str>,
+}
+
+fn get_manual_annotations(category: DataCategory) -> HashMap<&'static str, ManualAnnotation> {
+    let mut map = HashMap::new();
+
+    // Helper macro to reduce boilerplate
+    macro_rules! field {
+        ($name:expr, $parsed:expr, $used:expr, $notes:expr) => {
+            map.insert(
+                $name,
+                ManualAnnotation {
+                    parsed: $parsed,
+                    used: $used,
+                    notes: $notes,
+                },
+            );
+        };
+        ($name:expr, $parsed:expr, $used:expr) => {
+            map.insert(
+                $name,
+                ManualAnnotation {
+                    parsed: $parsed,
+                    used: $used,
+                    notes: None,
+                },
+            );
+        };
+    }
+
+    match category {
+        DataCategory::Countries => {
+            field!("color", true, true, Some("Essential for political map"));
+            field!(
+                "graphical_culture",
+                false,
+                false,
+                Some("For unit models and city graphics")
+            );
+            field!("historical_idea_groups", false, false);
+            field!("historical_units", false, false);
+            field!("monarch_names", false, false);
+            field!("leader_names", false, false);
+            field!("ship_names", false, false);
+            field!("army_names", false, false);
+            field!("fleet_names", false, false);
+            field!("<date>", false, false, Some("Time-dependent properties"));
+        }
+        DataCategory::ProvinceHistory => {
+            field!("owner", true, true, Some("Political map ownership"));
+            field!("controller", false, false, Some("Wartime occupation"));
+            field!("add_core", false, false);
+            field!("culture", true, true, Some("Culture map mode"));
+            field!("religion", true, true, Some("Religion map mode"));
+            field!(
+                "base_tax",
+                true,
+                false,
+                Some("Parsed but not visualized yet")
+            );
+            field!("base_production", true, false);
+            field!("base_manpower", true, false);
+            field!("trade_goods", true, true, Some("Trade goods map mode"));
+            field!("capital", false, false, Some("Province capital name"));
+            field!("is_city", false, false);
+            field!("hre", false, false);
+            field!("discovered_by", false, false);
+            field!("<date>", false, false, Some("Time-dependent properties"));
+        }
+        DataCategory::TradeGoods => {
+            field!("color", true, true, Some("Map color"));
+            field!("modifier", true, false, Some("Production bonuses"));
+            field!("province", true, false, Some("Province scope modifiers"));
+            field!("chance", true, false, Some("Spawn chance (scripted)"));
+            field!("base_price", false, false);
+            field!("gold_type", false, false);
+        }
+        DataCategory::Religions => {
+            field!("color", true, true, Some("Map color"));
+            field!("icon", true, false);
+            field!("allowed_conversion", false, false);
+            field!("country", false, false, Some("Country modifiers"));
+            field!("province", false, false, Some("Province modifiers"));
+            field!("heretic", false, false);
+        }
+        DataCategory::Cultures => {
+            field!("primary", false, false, Some("Tag of primary nation"));
+            field!("dynasty_names", false, false);
+            field!("male_names", false, false);
+            field!("female_names", false, false);
+        }
+        _ => {}
+    }
+
+    map
 }
 
 use eu4txt::{DefaultEU4Txt, EU4Txt};
@@ -422,7 +330,7 @@ use rayon::prelude::*;
 use walkdir::WalkDir;
 
 /// Main entry point: scan EU4 directory and produce coverage report
-pub fn analyze_coverage(eu4_path: &Path) -> Result<CoverageReport, std::io::Error> {
+pub fn analyze_coverage(eu4_path: &Path, discover: bool) -> Result<CoverageReport, std::io::Error> {
     let mut categories = Vec::new();
     let registry = get_gold_standard_registry();
     let now = std::time::SystemTime::now();
@@ -447,6 +355,12 @@ pub fn analyze_coverage(eu4_path: &Path) -> Result<CoverageReport, std::io::Erro
         let game_files = count_txt_files(&dir_path);
         let parsed_files = count_parsable_files(&dir_path);
 
+        let discovered_fields = if discover {
+            Some(crate::discovery::discover_schema(eu4_path, cat)?)
+        } else {
+            None
+        };
+
         categories.push(CategoryCoverage {
             category: cat,
             game_files,
@@ -455,6 +369,7 @@ pub fn analyze_coverage(eu4_path: &Path) -> Result<CoverageReport, std::io::Erro
             our_fields,
             used_fields,
             details: fields,
+            discovered_fields,
         });
     }
 
@@ -534,7 +449,7 @@ mod tests {
         // This fails tokenization or parsing (Missing RHS)
         fs::write(&p2, "key =").unwrap();
 
-        let report = analyze_coverage(dir.path()).unwrap();
+        let report = analyze_coverage(dir.path(), false).unwrap();
 
         // Find Countries category
         let country_cat = report

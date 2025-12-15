@@ -31,6 +31,12 @@ enum Commands {
         /// Generate static docs/supported_fields.md (CI verification)
         #[arg(long)]
         doc_gen: bool,
+        /// Discover schema from real game files
+        #[arg(long)]
+        discover: bool,
+        /// Update eu4data/src/gen_schema.rs with discovered fields
+        #[arg(long)]
+        update: bool,
     },
 }
 
@@ -44,7 +50,12 @@ fn main() -> Result<()> {
         Commands::Ci => run_ci(),
         Commands::Snapshot => run_snapshot(),
         Commands::Quota => run_quota(),
-        Commands::Coverage { eu4_path, doc_gen } => run_coverage(&eu4_path, doc_gen),
+        Commands::Coverage {
+            eu4_path,
+            doc_gen,
+            discover,
+            update,
+        } => run_coverage(&eu4_path, doc_gen, discover, update),
     }
 }
 
@@ -68,7 +79,7 @@ fn run_ci() -> Result<()> {
     // Actually, run_coverage with doc_gen will write the file.
     // CI should fail if the checked-in file differs.
     // simpler: run doc-gen, then check if git detects changes.
-    run_coverage("mock", true)?;
+    run_coverage("mock", true, false, false)?;
 
     // Check for unstaged changes in docs/
     let status = Command::new("git")
@@ -185,7 +196,7 @@ fn run_quota() -> Result<()> {
     Ok(())
 }
 
-fn run_coverage(eu4_path: &str, doc_gen: bool) -> Result<()> {
+fn run_coverage(eu4_path: &str, doc_gen: bool, discover: bool, update: bool) -> Result<()> {
     if doc_gen {
         let content = eu4data::coverage::generate_static_docs();
         let path = std::path::Path::new("docs/supported_fields.md");
@@ -204,7 +215,23 @@ fn run_coverage(eu4_path: &str, doc_gen: bool) -> Result<()> {
         return Ok(());
     }
 
-    let report = eu4data::coverage::analyze_coverage(path).context("Failed to analyze coverage")?;
+    if discover || update {
+        println!("🔎 Discovery mode enabled. This may take a minute...");
+        if update {
+            println!("💾 Will update eu4data/src/generated/schema.rs");
+        }
+    }
+
+    if update {
+        let content =
+            eu4data::discovery::generate_schema_file(path).context("Failed to generate schema")?;
+        std::fs::write("eu4data/src/generated/schema.rs", content)
+            .context("Failed to write schema file")?;
+        println!("✅ Updated eu4data/src/generated/schema.rs");
+    }
+
+    let report = eu4data::coverage::analyze_coverage(path, discover && !update)
+        .context("Failed to analyze coverage")?;
 
     // Always print to terminal
     println!("{}", report.to_terminal());
