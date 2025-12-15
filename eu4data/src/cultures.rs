@@ -1,6 +1,8 @@
 use crate::coverage::SchemaType;
-use eu4txt::{DefaultEU4Txt, EU4Txt, EU4TxtAstItem};
+use eu4data_derive::TolerantDeserialize;
+use eu4txt::{DefaultEU4Txt, EU4Txt, EU4TxtAstItem, from_node};
 use rayon::prelude::*;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::error::Error;
@@ -9,10 +11,33 @@ use std::path::Path;
 use std::sync::Mutex;
 
 /// Represents a culture definition.
-#[derive(Debug, Clone, SchemaType)]
+#[derive(Debug, Clone, Default, Serialize, TolerantDeserialize, SchemaType)]
 pub struct Culture {
     /// The RGB color. Often generated.
+    #[serde(skip)]
     pub color: [u8; 3],
+
+    pub primary: Option<String>,
+    pub graphical_culture: Option<String>,
+    pub second_graphical_culture: Option<String>,
+
+    pub male_names: Option<Vec<String>>,
+    pub female_names: Option<Vec<String>>,
+    pub dynasty_names: Option<Vec<String>>,
+
+    #[serde(skip_serializing)]
+    pub country: Option<HashMap<String, serde::de::IgnoredAny>>,
+    #[serde(skip_serializing)]
+    pub province: Option<HashMap<String, serde::de::IgnoredAny>>,
+
+    // Mechanics
+    pub has_samurai: Option<bool>,
+    pub local_has_samurai: Option<bool>,
+    pub local_has_tercio: Option<bool>,
+
+    // Catch all
+    #[serde(flatten, skip_serializing)]
+    pub other: std::collections::HashMap<String, serde::de::IgnoredAny>,
 }
 
 /// Generates a deterministic color from a string.
@@ -86,8 +111,25 @@ fn load_file(path: &Path, results: &Mutex<HashMap<String, Culture>>) -> Result<(
                                 } // non-culture keys
 
                                 let color = hash_color(name);
+
+                                // Parse the body
+                                let body_node = cult_node.children.get(1).unwrap();
+                                let mut culture = match from_node::<Culture>(body_node) {
+                                    Ok(c) => c,
+                                    Err(e) => {
+                                        log::warn!(
+                                            "Failed to parse culture '{}' in {}: {}",
+                                            name,
+                                            path.display(),
+                                            e
+                                        );
+                                        Culture::default()
+                                    }
+                                };
+
+                                culture.color = color; // Inject generated color
                                 let mut lock = results.lock().unwrap();
-                                lock.insert(name.clone(), Culture { color });
+                                lock.insert(name.clone(), culture);
                             }
                         }
                     }
@@ -136,5 +178,6 @@ mod tests {
         let swedish = cultures.get("swedish").unwrap();
         let expected = hash_color("swedish");
         assert_eq!(swedish.color, expected);
+        assert_eq!(swedish.primary.as_deref(), Some("SWE"));
     }
 }

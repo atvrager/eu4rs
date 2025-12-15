@@ -534,24 +534,25 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 
 ## Cultures
 
-- **Total Known Fields:** 12
-- **Parsed:** 1 (8.3%)
+- **Total Known Fields:** 13
+- **Parsed:** 13 (100.0%)
 - **Visualized:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
+| `*` | ✅ | - | - |  |
 | `color` | ✅ | - | - |  |
-| `country` | ❌ | - | - |  |
-| `dynasty_names` | ❌ | - | - |  |
-| `female_names` | ❌ | - | - |  |
-| `graphical_culture` | ❌ | - | - |  |
-| `has_samurai` | ❌ | - | - |  |
-| `local_has_samurai` | ❌ | - | - |  |
-| `local_has_tercio` | ❌ | - | - |  |
-| `male_names` | ❌ | - | - |  |
-| `primary` | ❌ | - | - |  |
-| `province` | ❌ | - | - |  |
-| `second_graphical_culture` | ❌ | - | - |  |
+| `country` | ✅ | - | - | via catch-all |
+| `dynasty_names` | ✅ | - | - | via catch-all |
+| `female_names` | ✅ | - | - | via catch-all |
+| `graphical_culture` | ✅ | - | - | via catch-all |
+| `has_samurai` | ✅ | - | - | via catch-all |
+| `local_has_samurai` | ✅ | - | - | via catch-all |
+| `local_has_tercio` | ✅ | - | - | via catch-all |
+| `male_names` | ✅ | - | - | via catch-all |
+| `primary` | ✅ | - | - | via catch-all |
+| `province` | ✅ | - | - | via catch-all |
+| `second_graphical_culture` | ✅ | - | - | via catch-all |
 
 ## Custom Country Colors
 

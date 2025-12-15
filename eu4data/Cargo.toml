@@ -10,6 +10,7 @@ encoding_rs_io = "0.1.7"
 eu4data_derive = { path = "../eu4data_derive" }
 eu4txt = { version = "0.1.0", path = "../eu4txt" }
 humantime = "2.3.0"
+log = "0.4.29"
 rayon = "1.8"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"

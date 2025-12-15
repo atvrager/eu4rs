@@ -874,6 +874,7 @@ dependencies = [
  "eu4data_derive",
  "eu4txt",
  "humantime",
+ "log",
  "rayon",
  "serde",
  "serde_json",
