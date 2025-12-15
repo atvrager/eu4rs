@@ -1,6 +1,6 @@
-# eu4rs (Binary)
+# eu4viz (Binary)
 
-The `eu4rs` crate is the main entry point for the application. It brings together the windowing system, renderer, and game data logic to create the interactive application.
+The `eu4viz` crate is the main visual entry point for the application. It brings together the windowing system, renderer, and game data logic to create the interactive map viewer.
 
 ## Architecture
 
@@ -33,7 +33,7 @@ The application includes an "Inspector" window that renders text info for select
 - **Rendering**: Uses `wgpu` to render a dynamic text texture containing game data (Province ID, Owner, Trade Goods, Religion, Culture).
 
 
-To support automated regression testing, `eu4rs` supports a headless "Snapshot" mode.
+To support automated regression testing, `eu4viz` supports a headless "Snapshot" mode.
 
 -   **Command**: `cargo run -- snapshot --output <path>`
 -   **Mechanism**:

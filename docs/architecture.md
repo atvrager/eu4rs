@@ -1,6 +1,6 @@
 # System Architecture
 
-This document provides a high-level overview of the `eu4rs` architecture, including its crate structure, rendering pipeline, and data flow.
+This document provides a high-level overview of the `eu4rs` workspace architecture, including its crate structure, rendering pipeline, and data flow.
 
 ## 1. High-Level Structure
 
@@ -9,7 +9,7 @@ The project is organized as a Cargo workspace with three primary crates, ensurin
 ```mermaid
 graph TD
     subgraph "Application Layer"
-        EU4RS["eu4rs (Binary)"]
+        EU4VIZ["eu4viz (Binary)"]
     end
 
     subgraph "Game Logic Layer"
@@ -20,18 +20,18 @@ graph TD
         TXT["eu4txt (Library)"]
     end
 
-    EU4RS --> DATA
+    EU4VIZ --> DATA
     DATA --> TXT
-    EU4RS --> TXT
+    EU4VIZ --> TXT
 ```
 
 *   **`eu4txt`**: The foundation. A fault-tolerant tokenizer and parser for the specific Windows-1252 text format used by Clausewitz engine games.
 *   **`eu4data`**: The semantics. Defines Rust structs (`Country`, `Province`, `TradeGood`) and logic for loading them from directories. Uses `eu4txt` for deserialization.
-*   **`eu4rs`**: The runtime. Handles the windowing (`winit`), rendering (`wgpu`), user input, and UI orchestration.
+*   **`eu4viz`**: The runtime. Handles the windowing (`winit`), rendering (`wgpu`), user input, and UI orchestration.
 
-## 2. Application Loop (`eu4rs`)
+## 2. Application Loop (`eu4viz`)
 
-The `eu4rs` application follows a typical game loop architecture, driven by `winit` events.
+The `eu4viz` application follows a typical game loop architecture, driven by `winit` events.
 
 ```mermaid
 sequenceDiagram

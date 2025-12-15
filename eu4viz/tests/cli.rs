@@ -1,6 +1,6 @@
 //! CLI integration tests using pre-built binaries
 //!
-//! Uses `assert_cmd` with `CARGO_BIN_EXE_eu4rs` to run the pre-built binary,
+//! Uses `assert_cmd` with `CARGO_BIN_EXE_eu4viz` to run the pre-built binary,
 //! avoiding the `cargo run` approach which caused test hangs from parallel
 //! compile lock contention.
 
@@ -12,13 +12,13 @@ use tempfile::tempdir;
 
 #[test]
 fn test_cli_help() {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_eu4rs"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_eu4viz"));
     cmd.arg("--help").assert().success();
 }
 
 #[test]
 fn test_cli_version() {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_eu4rs"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_eu4viz"));
     cmd.arg("--version").assert().success();
 }
 
@@ -31,7 +31,7 @@ fn test_cli_pretty_print() {
 
     let path = dir.path().to_str().unwrap();
 
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_eu4rs"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_eu4viz"));
     cmd.args(["--eu4-path", path, "--pretty-print"])
         .assert()
         .success()
@@ -58,7 +58,7 @@ fn test_dump_tradegoods() {
 
     let path = dir.path().to_str().unwrap();
 
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_eu4rs"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_eu4viz"));
     cmd.args(["--eu4-path", path, "dump-tradegoods"])
         .assert()
         .success()

@@ -878,7 +878,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "eu4rs"
+name = "eu4txt"
+version = "0.1.0"
+dependencies = [
+ "encoding_rs",
+ "encoding_rs_io",
+ "serde",
+ "tempfile",
+]
+
+[[package]]
+name = "eu4viz"
 version = "0.1.0"
 dependencies = [
  "ab_glyph",
@@ -898,16 +908,6 @@ dependencies = [
  "tempfile",
  "wgpu",
  "winit",
-]
-
-[[package]]
-name = "eu4txt"
-version = "0.1.0"
-dependencies = [
- "encoding_rs",
- "encoding_rs_io",
- "serde",
- "tempfile",
 ]
 
 [[package]]

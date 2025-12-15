@@ -1,7 +1,7 @@
 # EU4 Data Support Matrix
 
 This document is auto-generated from `eu4data/src/coverage.rs`. **Do not edit manually.**
-It defines which EU4 data fields are currently parsed and used by `eu4rs`.
+It defines which EU4 data fields are currently parsed and used by `eu4rs` project.
 
 ## Advisors History
 

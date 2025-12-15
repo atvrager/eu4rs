@@ -125,8 +125,9 @@ pub fn generate_static_docs() -> String {
     let mut output = String::new();
     output.push_str("# EU4 Data Support Matrix\n\n");
     output.push_str("This document is auto-generated from `eu4data/src/coverage.rs`. **Do not edit manually.**\n");
-    output
-        .push_str("It defines which EU4 data fields are currently parsed and used by `eu4rs`.\n\n");
+    output.push_str(
+        "It defines which EU4 data fields are currently parsed and used by `eu4rs` project.\n\n",
+    );
 
     let registry = get_gold_standard_registry();
     let mut categories: Vec<_> = registry.keys().collect();

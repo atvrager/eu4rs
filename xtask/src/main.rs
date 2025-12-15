@@ -109,7 +109,7 @@ fn run_snapshot() -> Result<()> {
     println!("This will load world data once and generate all 5 maps.");
 
     // Run the snapshot tests directly - they will generate and save the images
-    run_command("cargo", &["test", "-p", "eu4rs", "window::tests"])?;
+    run_command("cargo", &["test", "-p", "eu4viz", "window::tests"])?;
 
     println!("\nSnapshot update complete.");
     Ok(())

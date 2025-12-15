@@ -1,8 +1,8 @@
 [alias]
 xtask = "run --package xtask --bin xtask --"
-run-debug = "run --package eu4rs --bin eu4rs -- --log-level debug"
-run-info = "run --package eu4rs --bin eu4rs -- --log-level info"
-run-trace = "run --package eu4rs --bin eu4rs -- --log-level trace"
+run-viz-debug = "run --package eu4viz --bin eu4viz -- --log-level debug"
+run-viz-info = "run --package eu4viz --bin eu4viz -- --log-level info"
+run-viz-trace = "run --package eu4viz --bin eu4viz -- --log-level trace"
 
 [build]
 incremental = true

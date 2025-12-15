@@ -28,11 +28,11 @@ graph TB
 
     subgraph "External"
         eu4data[eu4data]
-        eu4rs[eu4rs visualizer]
+        eu4viz[eu4viz visualizer]
     end
 
     data --> eu4data
-    eu4rs -.-> |future: shares state| state
+    eu4viz -.-> |future: shares state| state
 ```
 
 ## Core Interface
@@ -192,7 +192,7 @@ eu4rs/
 │           └── mod.rs
 │
 ├── eu4data/                 # Existing: Game data loading
-├── eu4rs/                   # Existing: Visualizer
+├── eu4viz/                  # Existing: Visualizer
 └── eu4txt/                  # Existing: Parser
 ```
 
@@ -243,7 +243,7 @@ fn main() -> Result<()> {
 
 ## Connecting to the Visualizer (Future)
 
-The visualizer (`eu4rs`) could consume simulation state in several ways:
+The visualizer (`eu4viz`) could consume simulation state in several ways:
 
 1. **Shared state file**: Simulation writes, visualizer reads
 2. **IPC/socket**: Real-time state streaming
@@ -256,7 +256,7 @@ The key is that `eu4sim-core` remains pure—it doesn't know how its output is c
 ```mermaid
 sequenceDiagram
     participant User
-    participant UI as eu4rs (Visualizer)
+    participant UI as eu4viz (Visualizer)
     participant Sim as eu4sim-core
     participant State as WorldState
 

@@ -1,10 +1,10 @@
 # User Interface System
 
-The `eu4rs` UI is an immediate-mode-like overlay system integrated directly into the `wgpu` rendering pipeline. This document details its architecture, state management, and rendering strategy.
+The `eu4viz` UI is an immediate-mode-like overlay system integrated directly into the `wgpu` rendering pipeline. This document details its architecture, state management, and rendering strategy.
 
 ## Architecture
 
-The UI is managed by the `UIState` struct in `eu4rs/src/ui.rs`. It operates independently of the core game logic (`AppState`), handling transient visual elements such as tooltips, sidebars, and map mode indicators.
+The UI is managed by the `UIState` struct in `eu4viz/src/ui.rs`. It operates independently of the core game logic (`AppState`), handling transient visual elements such as tooltips, sidebars, and map mode indicators.
 
 ### Key Components
 

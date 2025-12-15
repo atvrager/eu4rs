@@ -293,13 +293,13 @@ cargo nextest run   # instead of cargo test
 - `cargo xtask snapshot`: Regenerate golden snapshots for tests. Use this when you've modified rendering pipelines and expect output changes. **Ask the user for manual validation of the new output.**
 
 ## Testing GUI Applications
-- **Visual verification required**: GUI applications (like the main eu4rs app) cannot be effectively tested via automated command execution. Ask the user to run the program manually for visual verification.
+- **Visual verification required**: GUI applications (like the main eu4viz app) cannot be effectively tested via automated command execution. Ask the user to run the program manually for visual verification.
 - **Batch questions**: You can ask up to 3 questions at once when requesting testing feedback.
 
 ## Snapshot Testing
 - **When to use**: Visual output (UI, Map rendering) or complex deterministic data structures where manual assertion is tedious.
 - **How to use**: Use `crate::testing::assert_snapshot(&image, "snapshot_name")`.
-- **Location**: Snapshots are stored in [`eu4rs/tests/goldens/`](eu4rs/tests/goldens/README.md).
+- **Location**: Snapshots are stored in [`eu4viz/tests/goldens/`](eu4viz/tests/goldens/README.md).
 - **Updating**:
     - **One-off**: Delete the `.png` file and run the test.
     - **Batch**: Run `cargo xtask snapshot` to regenerate all golden snapshots.

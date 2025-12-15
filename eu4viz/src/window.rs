@@ -519,7 +519,7 @@ impl<'a> State<'a> {
 pub fn run(log_level: log::LevelFilter, eu4_path: &std::path::Path) {
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new()
-        .with_title("eu4rs - Map Viewer")
+        .with_title("eu4viz - Map Viewer")
         .with_inner_size(winit::dpi::PhysicalSize::new(1920, 1080)) // Request 1080p
         .build(&event_loop)
         .unwrap();
