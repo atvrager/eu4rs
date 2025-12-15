@@ -128,7 +128,10 @@ impl<'de> de::Deserializer<'de> for &mut Deserializer<'de> {
     {
         match &self.input.entry {
             EU4TxtAstItem::Identifier(s) | EU4TxtAstItem::StringValue(s) => visitor.visit_str(s),
-            _ => Err(Error("Not a string".to_string())),
+            _ => Err(Error(format!(
+                "Expected string, got {:?}",
+                self.input.entry
+            ))),
         }
     }
 
@@ -143,7 +146,13 @@ impl<'de> de::Deserializer<'de> for &mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        visitor.visit_seq(CommaSeparated::new(&mut self.child_iter))
+        // println!("deserialize_seq called on {:?}", self.input.entry);
+        match self.input.entry {
+            EU4TxtAstItem::AssignmentList => {
+                visitor.visit_seq(CommaSeparated::new(&mut self.child_iter))
+            }
+            _ => visitor.visit_seq(SingleItemSeqAccess { parser: Some(self) }),
+        }
     }
 
     fn deserialize_struct<V>(
@@ -268,5 +277,24 @@ impl<'de> MapAccess<'de> for CommaSeparated<'_, 'de> {
         ))?;
         let mut de = Deserializer::from_node(val_node);
         seed.deserialize(&mut de)
+    }
+}
+
+struct SingleItemSeqAccess<'a, 'de> {
+    parser: Option<&'a mut Deserializer<'de>>,
+}
+
+impl<'a, 'de> SeqAccess<'de> for SingleItemSeqAccess<'a, 'de> {
+    type Error = Error;
+
+    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
+    where
+        T: DeserializeSeed<'de>,
+    {
+        if let Some(parser) = self.parser.take() {
+            seed.deserialize(&mut *parser).map(Some)
+        } else {
+            Ok(None)
+        }
     }
 }

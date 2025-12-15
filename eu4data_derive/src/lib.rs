@@ -123,12 +123,17 @@ pub fn derive_tolerant_deserialize(input: TokenStream) -> TokenStream {
     // Generate match arms for field assignment
     let match_arms: Vec<_> = field_info
         .iter()
-        .map(|(name, name_str, _, is_vec)| {
+        .map(|(name, name_str, ty, is_vec)| {
             if *is_vec {
+                let inner_type = extract_vec_inner_type(ty);
                 quote! {
                     #name_str => {
                         // Accumulate into vec
-                        self.#name.push(map.next_value()?);
+                        // We attempt to deserialize as a Vec<inner_type>.
+                        // Our eu4txt deserializer now handles scalar -> vec of 1.
+                        // And seq -> vec of N.
+                        let vals: Vec<#inner_type> = map.next_value()?;
+                        self.#name.extend(vals);
                     }
                 }
             } else {
