@@ -160,6 +160,12 @@ Monitor model quota levels and adjust routing strategy accordingly:
 - If Claude quota is critical: Gemini handles all tasks (requires extra review for production code)
 - If both are critical: Notify user and request guidance on priority tasks
 
+**Refresh-Aware Routing:**
+Use `cargo xtask quota` to see when quotas refresh. Factor this into routing decisions:
+- **Refreshes in <15m**: Consider waiting if task is low priority and preferred model is critical
+- **Refreshes in <1h**: Queue larger tasks for after refresh if current work can use alternate model
+- **Near-exhausted quota, soon to refresh**: "Run out the clock" on lower-tier work to maximize value
+
 ## Agent Testing & Calibration
 
 ### 1. Routing Calibration Suite

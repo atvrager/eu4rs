@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
 use clap::{Parser, Subcommand};
 use reqwest::blocking::Client;
 use std::env;
@@ -137,14 +138,20 @@ fn run_quota() -> Result<()> {
         match check_antigravity_quota() {
             Ok(quotas) if !quotas.is_empty() => {
                 println!("📊 **Antigravity Model Quotas**\n");
-                println!("| Model | Quota | Status |");
-                println!("|-------|-------|--------|");
+                println!("| Model | Quota | Status | Refreshes |");
+                println!("|-------|-------|--------|----------|");
                 for q in &quotas {
+                    let refresh_str = q
+                        .reset_time
+                        .as_ref()
+                        .map(format_refresh_time)
+                        .unwrap_or_else(|| "Unknown".to_string());
                     println!(
-                        "| {} | {}% | {} |",
+                        "| {} | {}% | {} | {} |",
                         q.label,
                         q.percentage,
-                        quota_status_label(q.percentage)
+                        quota_status_label(q.percentage),
+                        refresh_str
                     );
                 }
                 return Ok(());
@@ -250,6 +257,31 @@ fn quota_status_label(percentage: u8) -> &'static str {
     }
 }
 
+/// Formats a reset time as a human-readable relative duration
+#[cfg(target_os = "windows")]
+fn format_refresh_time(reset_time: &DateTime<Utc>) -> String {
+    let now = Utc::now();
+
+    if *reset_time <= now {
+        return "Refreshed ✓".to_string();
+    }
+
+    let duration = *reset_time - now;
+    let hours = duration.num_hours();
+    let mins = duration.num_minutes() % 60;
+
+    if hours > 24 {
+        let days = hours / 24;
+        format!("in {}d {}h", days, hours % 24)
+    } else if hours > 0 {
+        format!("in {}h {}m", hours, mins)
+    } else if mins > 0 {
+        format!("in {}m", mins)
+    } else {
+        "in <1m".to_string()
+    }
+}
+
 // ============================================================================
 // Windows-only Antigravity Detection
 // ============================================================================
@@ -257,6 +289,7 @@ fn quota_status_label(percentage: u8) -> &'static str {
 #[cfg(target_os = "windows")]
 mod antigravity {
     use anyhow::{anyhow, Result};
+    use chrono::{DateTime, Utc};
     use regex::Regex;
     use reqwest::blocking::Client;
     use serde::Deserialize;
@@ -267,6 +300,7 @@ mod antigravity {
     pub struct ModelQuota {
         pub label: String,
         pub percentage: u8,
+        pub reset_time: Option<DateTime<Utc>>,
     }
 
     /// Detect Antigravity language server and fetch quota data
@@ -422,12 +456,18 @@ mod antigravity {
             for config in configs {
                 if let Some(quota_info) = &config.quota_info {
                     let percentage = (quota_info.remaining_fraction.unwrap_or(0.0) * 100.0) as u8;
+                    let reset_time = quota_info
+                        .reset_time
+                        .as_ref()
+                        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                        .map(|dt| dt.with_timezone(&Utc));
                     quotas.push(ModelQuota {
                         label: config
                             .label
                             .clone()
                             .unwrap_or_else(|| "Unknown".to_string()),
                         percentage,
+                        reset_time,
                     });
                 }
             }
@@ -466,6 +506,7 @@ mod antigravity {
     #[serde(rename_all = "camelCase")]
     struct QuotaInfo {
         remaining_fraction: Option<f64>,
+        reset_time: Option<String>,
     }
 }
 

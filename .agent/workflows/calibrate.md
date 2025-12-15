@@ -23,12 +23,16 @@ Use this command when the agent seems confused about routing, project convention
    | "Draft trade goods comparison table" | **Tier 1** | Documentation |
    | "Analyze map mode glitch screenshot" | **Tier 3** | Multimodal input required |
 
-4. **Confirm quota status**: Run `cargo xtask quota` to check API quota levels for Claude and Gemini. Report results as Healthy (>50%), Low (<50%), or Critical (<10%).
+4. **Confirm quota status**: Run `cargo xtask quota` to check API quota levels and refresh times. Report:
+   - Quota percentages as Healthy (>50%), Low (<50%), or Critical (<10%)
+   - **Refresh times** for each model (e.g., "in 49m", "in 2h 15m")
+   - **Refresh-aware routing**: If a critical model refreshes soon (<15m), note it as a factor in routing decisions
 
 ## Expected Output
 
 After running `/calibrate`, the agent should respond with:
 - Model identity and role
 - One routing self-test with reasoning
-- Quota status acknowledgment
+- Quota status with refresh times
+- Refresh-aware routing recommendation (if applicable)
 - Confirmation that AGENTS.md has been re-read
