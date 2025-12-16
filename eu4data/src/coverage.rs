@@ -354,6 +354,20 @@ fn get_manual_annotations(category: DataCategory) -> HashMap<&'static str, Manua
                 );
             }
         }
+        DataCategory::TimedModifiers => {
+            // Auto-load from Struct
+            for f in crate::timed_modifiers::TimedModifier::fields() {
+                map.insert(
+                    f.name,
+                    ManualAnnotation {
+                        parsed: true,
+                        visualized: f.visualized,
+                        simulated: f.simulated,
+                        notes: None,
+                    },
+                );
+            }
+        }
         _ => {}
     }
 
