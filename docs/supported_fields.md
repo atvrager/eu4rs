@@ -16,13 +16,13 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 ## Advisortypes
 
 - **Total Known Fields:** 2
-- **Parsed:** 0 (0.0%)
+- **Parsed:** 2 (100.0%)
 - **Visualized:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
-| `factor` | ❌ | - | - |  |
-| `modifier` | ❌ | - | - |  |
+| `factor` | ✅ | - | - |  |
+| `modifier` | ✅ | - | - |  |
 
 ## Ages
 

@@ -267,6 +267,20 @@ fn get_manual_annotations(category: DataCategory) -> HashMap<&'static str, Manua
     }
 
     match category {
+        DataCategory::Advisortypes => {
+            // Auto-load from Struct
+            for f in crate::advisortypes::AdvisorType::fields() {
+                map.insert(
+                    f.name,
+                    ManualAnnotation {
+                        parsed: true,
+                        visualized: f.visualized,
+                        simulated: f.simulated,
+                        notes: None,
+                    },
+                );
+            }
+        }
         DataCategory::Countries => {
             field!("color", true, true, Some("Essential for political map"));
             field!(

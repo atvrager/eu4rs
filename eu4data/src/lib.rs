@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+pub mod advisortypes;
 pub mod countries;
 pub mod coverage;
 pub mod cultures;
