@@ -14,6 +14,7 @@ pub mod path;
 pub mod religions;
 pub mod technologies;
 pub mod timed_modifiers;
+pub mod tradenodes;
 
 /// Represents a trade good in EU4, determining the value and bonuses of a province's production.
 #[derive(Debug, Deserialize, Serialize, coverage::SchemaType)]

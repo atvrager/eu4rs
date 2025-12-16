@@ -382,6 +382,20 @@ fn get_manual_annotations(category: DataCategory) -> HashMap<&'static str, Manua
                 );
             }
         }
+        DataCategory::Tradenodes => {
+            // Auto-load from Struct
+            for f in crate::tradenodes::TradeNode::fields() {
+                map.insert(
+                    f.name,
+                    ManualAnnotation {
+                        parsed: true,
+                        visualized: f.visualized,
+                        simulated: f.simulated,
+                        notes: None,
+                    },
+                );
+            }
+        }
         _ => {}
     }
 

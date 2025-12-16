@@ -4343,14 +4343,14 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 ## Tradenodes
 
 - **Total Known Fields:** 3
-- **Parsed:** 0 (0.0%)
+- **Parsed:** 3 (100.0%)
 - **Visualized:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
-| `control` | ❌ | - | - |  |
-| `name` | ❌ | - | - |  |
-| `path` | ❌ | - | - |  |
+| `control` | ✅ | - | - |  |
+| `name` | ✅ | - | - |  |
+| `path` | ✅ | - | - |  |
 
 ## Trading Policies
 
