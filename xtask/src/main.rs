@@ -20,6 +20,9 @@ enum Commands {
     Snapshot,
     /// Check API quota availability for Claude and Gemini
     Quota,
+    /// Clean auto-generated type files (preserves mod.rs)
+    Clean,
+
     /// Analyze data coverage (local) or verify docs (CI)
     Coverage {
         /// Path to EU4 installation (auto-detected if not provided)
@@ -47,6 +50,8 @@ fn main() -> Result<()> {
         Commands::Ci => run_ci(),
         Commands::Snapshot => run_snapshot(),
         Commands::Quota => run_quota(),
+        Commands::Clean => run_clean(),
+
         Commands::Coverage {
             eu4_path,
             doc_gen,
@@ -112,12 +117,77 @@ fn run_snapshot() -> Result<()> {
     Ok(())
 }
 
+fn run_clean() -> Result<()> {
+    println!("Cleaning generated files...");
+    let types_dir = std::path::Path::new("eu4data/src/generated/types");
+    let module_list_path = types_dir.join("module_list.rs");
+
+    // 1. Identify valid generated files from module_list.rs
+    let mut known_files = std::collections::HashSet::new();
+    known_files.insert("mod.rs".to_string());
+    known_files.insert("module_list.rs".to_string());
+
+    if module_list_path.exists() {
+        let content = std::fs::read_to_string(&module_list_path)?;
+        for line in content.lines() {
+            if let Some(rest) = line.trim().strip_prefix("pub mod ") {
+                if let Some(mod_name) = rest.strip_suffix(";") {
+                    known_files.insert(format!("{}.rs", mod_name.trim()));
+                }
+            }
+        }
+    } else {
+        println!("⚠️  module_list.rs not found. Assuming all files are unknown/safe to delete? No, strictly conservative.");
+        // If module_list doesn't exist, we can't be sure what is generated.
+        // But if mod.rs exists, maybe we can assume?
+        // For safety, warn and exit? Or maybe just rely on the user having built once?
+        // Let's proceed but warn.
+    }
+
+    if types_dir.exists() {
+        let mut deleted_count = 0;
+        for entry in std::fs::read_dir(types_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if known_files.contains(name) {
+                        // It's a known generated file (or mod.rs/module_list.rs)
+                        // Clean matching generated files, but preserve the metadata files
+                        if name != "mod.rs" && name != "module_list.rs" {
+                            std::fs::remove_file(&path)
+                                .context(format!("Failed to remove {:?}", path))?;
+                            deleted_count += 1;
+                        }
+                    } else {
+                        // Unknown file!
+                        println!("⚠️  Skipping unknown file: {:?}", name);
+                    }
+                }
+            }
+        }
+        if deleted_count > 0 {
+            println!(
+                "✅ Removed {} generated type files (preserved mod.rs)",
+                deleted_count
+            );
+            println!("Build script will detect changes in types/ directory and regenerate on next build.");
+        } else {
+            println!("Nothing to clean (or all files were unknown).");
+        }
+    } else {
+        println!("Nothing to clean.");
+    }
+
+    Ok(())
+}
+
 fn run_quota() -> Result<()> {
     println!("Checking Model Quota Status...\n");
 
     // Try Antigravity detection first (Windows only)
     #[cfg(target_os = "windows")]
-    {
+    let antigravity_success = {
         match check_antigravity_quota() {
             Ok(quotas) if !quotas.is_empty() => {
                 println!("📊 **Antigravity Model Quotas**\n");
@@ -137,51 +207,108 @@ fn run_quota() -> Result<()> {
                         refresh_str
                     );
                 }
-                return Ok(());
+                true
             }
             Ok(_) => {
                 println!("⚠️  Antigravity detected but no quota data available.\n");
+                false
             }
             Err(e) => {
                 println!("ℹ️  Antigravity not detected: {}\n", e);
+                false
             }
         }
-        println!("Falling back to API key validation...\n");
-    }
+    };
 
     #[cfg(not(target_os = "windows"))]
-    {
+    let antigravity_success = {
         println!("ℹ️  Antigravity detection not available on this platform.\n");
+        false
+    };
+
+    // Fallback to API key validation if Antigravity failed
+    if !antigravity_success {
+        println!("Falling back to API key validation...\n");
+
+        let client = Client::new();
+
+        let anthropic_key = env::var("ANTHROPIC_API_KEY").ok();
+        let claude_status = if let Some(key) = anthropic_key {
+            match check_anthropic(&client, &key) {
+                Ok(s) => s,
+                Err(e) => format!("Error: {}", e),
+            }
+        } else {
+            "Skipped (ANTHROPIC_API_KEY not set)".to_string()
+        };
+
+        let gemini_key = env::var("GEMINI_API_KEY").ok();
+        let gemini_status = if let Some(key) = gemini_key {
+            match check_gemini(&client, &key) {
+                Ok(s) => s,
+                Err(e) => format!("Error: {}", e),
+            }
+        } else {
+            "Skipped (GEMINI_API_KEY not set)".to_string()
+        };
+
+        println!("📊 **API Key Validation** (no quota levels available)\n");
+        println!("| Model Family | Status |");
+        println!("|--------------|--------|");
+        println!("| Claude | {} |", claude_status);
+        println!("| Gemini | {} |", gemini_status);
     }
 
-    // Fallback to API key validation
-    let client = Client::new();
+    // Add geolocation triangulation (Windows only)
+    #[cfg(target_os = "windows")]
+    {
+        println!("\n🌍 **Geolocation (Experimental)**\n");
 
-    let anthropic_key = env::var("ANTHROPIC_API_KEY").ok();
-    let claude_status = if let Some(key) = anthropic_key {
-        match check_anthropic(&client, &key) {
-            Ok(s) => s,
-            Err(e) => format!("Error: {}", e),
+        // Get timezone info
+        if let Some(tz) = geolocation::get_timezone_info() {
+            let offset_sign = if tz.utc_offset_hours >= 0 { "+" } else { "" };
+            println!(
+                "Timezone: {} (UTC{}{})",
+                tz.name, offset_sign, tz.utc_offset_hours
+            );
+        } else {
+            println!("Timezone: Could not detect");
         }
-    } else {
-        "Skipped (ANTHROPIC_API_KEY not set)".to_string()
-    };
 
-    let gemini_key = env::var("GEMINI_API_KEY").ok();
-    let gemini_status = if let Some(key) = gemini_key {
-        match check_gemini(&client, &key) {
-            Ok(s) => s,
-            Err(e) => format!("Error: {}", e),
+        // Get local time using chrono
+        let now = chrono::Local::now();
+        println!("Local time: {}\n", now.format("%Y-%m-%d %H:%M:%S"));
+
+        // Ping triangulation
+        println!("Ping triangulation (this may take a few seconds)...");
+        let ping_results = geolocation::ping_targets();
+        println!("{}", geolocation::format_ping_results(&ping_results));
+
+        // Triangulate position
+        let location = geolocation::triangulate(&ping_results);
+        println!("Estimated location: {}", location.description);
+        println!("Confidence: {}\n", location.confidence);
+
+        // Sleep prediction
+        let local_hour = now.format("%H").to_string().parse::<u32>().unwrap_or(12);
+        let day_of_week = now.format("%w").to_string().parse::<u32>().unwrap_or(1);
+        let month = now.format("%m").to_string().parse::<u32>().unwrap_or(1);
+
+        let sleep_pred = geolocation::predict_sleep(
+            geolocation::get_timezone_info().as_ref(),
+            &location,
+            local_hour,
+            day_of_week,
+            month,
+        );
+
+        if sleep_pred.should_burn_quota {
+            println!("💤 **Sleep Prediction**: {}", sleep_pred.reason);
+            println!("   → Consider burning through remaining quota before bed!");
+        } else {
+            println!("☀️  **Sleep Prediction**: {}", sleep_pred.reason);
         }
-    } else {
-        "Skipped (GEMINI_API_KEY not set)".to_string()
-    };
-
-    println!("📊 **API Key Validation** (no quota levels available)\n");
-    println!("| Model Family | Status |");
-    println!("|--------------|--------|");
-    println!("| Claude | {} |", claude_status);
-    println!("| Gemini | {} |", gemini_status);
+    }
 
     Ok(())
 }
@@ -586,4 +713,347 @@ fn run_command(cmd: &str, args: &[&str]) -> Result<()> {
         anyhow::bail!("Command failed: {} {}", cmd, args.join(" "));
     }
     Ok(())
+}
+
+// ============================================================================
+// Geolocation Triangulation (Windows-only, for fun!)
+// TODO: Map estimated lat/lon to nearest EU4 province for cheeky output like
+//       "You appear to be in Province 224 (San Francisco)" or similar.
+// ============================================================================
+
+#[cfg(target_os = "windows")]
+mod geolocation {
+    use std::process::Command;
+
+    /// Ping target with known location
+    pub struct PingTarget {
+        pub name: &'static str,
+        pub host: &'static str,
+        pub lat: f64,
+        pub lon: f64,
+    }
+
+    /// Result of pinging a target
+    pub struct PingResult {
+        pub target: &'static PingTarget,
+        pub rtt_ms: Option<f64>,
+    }
+
+    /// Guessed location
+    #[allow(dead_code)]
+    pub struct LocationGuess {
+        pub description: String,
+        pub lat: f64,
+        pub lon: f64,
+        pub confidence: &'static str,
+    }
+
+    /// Timezone information from the system
+    #[allow(dead_code)]
+    pub struct TimezoneInfo {
+        pub name: String,
+        pub utc_offset_hours: i32,
+        pub utc_offset_minutes: i32,
+    }
+
+    /// Sleep prediction result
+    pub struct SleepPrediction {
+        pub should_burn_quota: bool,
+        pub reason: String,
+    }
+
+    // Three reference points forming a nice global triangle:
+    // Using AWS EC2 regional endpoints - they're unicast (fixed location),
+    // respond reliably to ICMP, and have well-known geographic positions.
+    // - Ireland (Europe)
+    // - N. California (West Coast USA)
+    // - Mumbai (South Asia)
+    pub static PING_TARGETS: [PingTarget; 3] = [
+        PingTarget {
+            name: "Ireland",
+            host: "ec2.eu-west-1.amazonaws.com", // AWS Dublin
+            lat: 53.35,
+            lon: -6.26,
+        },
+        PingTarget {
+            name: "N. California",
+            host: "ec2.us-west-1.amazonaws.com", // AWS N. California
+            lat: 37.77,
+            lon: -122.42,
+        },
+        PingTarget {
+            name: "Singapore",
+            host: "ec2.ap-southeast-1.amazonaws.com", // AWS Singapore
+            lat: 1.35,
+            lon: 103.82,
+        },
+    ];
+
+    /// Get timezone info from Windows
+    pub fn get_timezone_info() -> Option<TimezoneInfo> {
+        // PowerShell: Get-TimeZone returns detailed timezone info
+        let output = Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                r#"$tz = Get-TimeZone; @{Name=$tz.DisplayName; Offset=$tz.BaseUtcOffset.TotalMinutes} | ConvertTo-Json"#,
+            ])
+            .output()
+            .ok()?;
+
+        if !output.status.success() {
+            return None;
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let json: serde_json::Value = serde_json::from_str(stdout.trim()).ok()?;
+
+        let name = json["Name"].as_str()?.to_string();
+        let offset_minutes = json["Offset"].as_f64()? as i32;
+
+        Some(TimezoneInfo {
+            name,
+            utc_offset_hours: offset_minutes / 60,
+            utc_offset_minutes: offset_minutes % 60,
+        })
+    }
+
+    /// Ping a single host and get RTT in milliseconds
+    fn ping_host(host: &str) -> Option<f64> {
+        // Windows ping: ping -n 1 host
+        // 1000ms timeout is plenty - even antipodal routes are under 400ms
+        let output = Command::new("ping")
+            .args(["-n", "1", "-w", "1000", host])
+            .output()
+            .ok()?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        // Parse "time=XXms" or "time<1ms" from ping output
+        // Windows format: "Reply from ... time=12ms TTL=..."
+        for line in stdout.lines() {
+            if line.contains("time=") || line.contains("time<") {
+                // Extract time value
+                if let Some(time_start) = line.find("time") {
+                    let rest = &line[time_start..];
+                    // Handle "time<1ms" case
+                    if rest.starts_with("time<") {
+                        return Some(0.5); // Estimate <1ms as 0.5ms
+                    }
+                    // Handle "time=XXms" case
+                    if let Some(eq_pos) = rest.find('=') {
+                        let after_eq = &rest[eq_pos + 1..];
+                        let num_str: String = after_eq
+                            .chars()
+                            .take_while(|c| c.is_ascii_digit() || *c == '.')
+                            .collect();
+                        if let Ok(ms) = num_str.parse::<f64>() {
+                            return Some(ms);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Ping all targets and collect results
+    pub fn ping_targets() -> Vec<PingResult> {
+        PING_TARGETS
+            .iter()
+            .map(|target| PingResult {
+                target,
+                rtt_ms: ping_host(target.host),
+            })
+            .collect()
+    }
+
+    /// Estimate distance from RTT using rough fiber speed-of-light
+    /// Very rough: ~200km per ms RTT (accounting for routing overhead)
+    fn rtt_to_km(rtt_ms: f64) -> f64 {
+        // Round-trip, so divide by 2 for one-way, then apply speed factor
+        // Speed of light in fiber: ~200,000 km/s = 200 km/ms
+        // But real-world routing adds ~40% overhead, so ~140 km/ms effective
+        // For round-trip: ~70 km per ms RTT
+        rtt_ms * 70.0
+    }
+
+    /// Haversine distance between two lat/lon points in km
+    #[allow(dead_code)]
+    fn haversine(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+        let r = 6371.0; // Earth radius in km
+        let d_lat = (lat2 - lat1).to_radians();
+        let d_lon = (lon2 - lon1).to_radians();
+        let lat1_rad = lat1.to_radians();
+        let lat2_rad = lat2.to_radians();
+
+        let a = (d_lat / 2.0).sin().powi(2)
+            + lat1_rad.cos() * lat2_rad.cos() * (d_lon / 2.0).sin().powi(2);
+        let c = 2.0 * a.sqrt().asin();
+
+        r * c
+    }
+
+    /// Triangulate position from ping results using inverse-distance weighting
+    pub fn triangulate(results: &[PingResult]) -> LocationGuess {
+        // Collect successful pings
+        let valid: Vec<_> = results
+            .iter()
+            .filter_map(|r| r.rtt_ms.map(|rtt| (r.target, rtt)))
+            .collect();
+
+        if valid.is_empty() {
+            return LocationGuess {
+                description: "Unknown (no ping responses)".to_string(),
+                lat: 0.0,
+                lon: 0.0,
+                confidence: "None",
+            };
+        }
+
+        // Find the closest target (minimum RTT)
+        let (closest, min_rtt) = valid
+            .iter()
+            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+            .unwrap();
+
+        // If one target is MUCH closer (<50ms), we're probably near it
+        if *min_rtt < 50.0 {
+            let region = match closest.name {
+                "N. California" => "Near San Francisco Bay Area, California",
+                "Ireland" => "Near Dublin, Ireland",
+                "Singapore" => "Near Singapore, Southeast Asia",
+                _ => "Unknown region",
+            };
+            return LocationGuess {
+                description: region.to_string(),
+                lat: closest.lat,
+                lon: closest.lon,
+                confidence: "High (very low latency to one target)",
+            };
+        }
+
+        // Use inverse-RTT weighting for position estimation
+        let total_inv_rtt: f64 = valid.iter().map(|(_, rtt)| 1.0 / rtt).sum();
+        let estimated_lat: f64 = valid
+            .iter()
+            .map(|(t, rtt)| t.lat * (1.0 / rtt) / total_inv_rtt)
+            .sum();
+        let estimated_lon: f64 = valid
+            .iter()
+            .map(|(t, rtt)| t.lon * (1.0 / rtt) / total_inv_rtt)
+            .sum();
+
+        // Describe the region based on weighted center
+        let description = describe_location(estimated_lat, estimated_lon);
+
+        // Confidence based on how spread the RTTs are
+        let max_rtt = valid.iter().map(|(_, rtt)| *rtt).fold(0.0f64, f64::max);
+        let confidence = if max_rtt / min_rtt > 10.0 {
+            "Medium (clear closest target)"
+        } else {
+            "Low (similar latencies, rough estimate)"
+        };
+
+        LocationGuess {
+            description,
+            lat: estimated_lat,
+            lon: estimated_lon,
+            confidence,
+        }
+    }
+
+    /// Generate a human-readable location description from lat/lon
+    fn describe_location(lat: f64, lon: f64) -> String {
+        // Very rough geographic regions
+        match (lat, lon) {
+            // North America
+            (l, lo) if l > 25.0 && l < 50.0 && lo < -60.0 && lo > -130.0 => {
+                if lo < -100.0 {
+                    "Western North America".to_string()
+                } else {
+                    "Eastern North America".to_string()
+                }
+            }
+            // Europe
+            (l, lo) if l > 35.0 && l < 70.0 && lo > -10.0 && lo < 40.0 => "Europe".to_string(),
+            // South Asia
+            (l, lo) if l > 5.0 && l < 40.0 && lo > 60.0 && lo < 100.0 => {
+                "South Asia / India region".to_string()
+            }
+            // East Asia
+            (l, lo) if l > 20.0 && l < 50.0 && lo > 100.0 && lo < 145.0 => "East Asia".to_string(),
+            // Australia
+            (l, lo) if l < -10.0 && l > -45.0 && lo > 110.0 && lo < 160.0 => {
+                "Australia / Oceania".to_string()
+            }
+            // South America
+            (l, lo) if l < 15.0 && l > -60.0 && lo < -30.0 && lo > -85.0 => {
+                "South America".to_string()
+            }
+            _ => format!("Somewhere on Earth ({:.1}°, {:.1}°)", lat, lon),
+        }
+    }
+
+    /// Predict if user should burn quota (going to sleep soon?)
+    pub fn predict_sleep(
+        _tz_info: Option<&TimezoneInfo>,
+        _location: &LocationGuess,
+        local_hour: u32,
+        day_of_week: u32, // 0=Sunday, 6=Saturday
+        month: u32,
+    ) -> SleepPrediction {
+        let is_weekend = day_of_week == 0 || day_of_week == 6;
+        let is_winter = month == 12 || month == 1 || month == 2;
+
+        // Base sleep threshold: 22:00 on weekdays, 23:30 on weekends
+        let sleep_threshold = if is_weekend { 23 } else { 22 };
+        let wake_threshold = 6;
+
+        let reason = if local_hour >= sleep_threshold || local_hour < wake_threshold {
+            let day_type = if is_weekend { "weekend" } else { "weekday" };
+            let season = if is_winter { " in winter" } else { "" };
+            format!(
+                "Late {} ({:02}:00) on a {}{} — you're probably heading to bed soon!",
+                if local_hour >= sleep_threshold {
+                    "evening"
+                } else {
+                    "night"
+                },
+                local_hour,
+                day_type,
+                season
+            )
+        } else if local_hour >= 20 {
+            "Evening hours — quota might not get used before bed.".to_string()
+        } else {
+            "Plenty of daytime left — no rush to burn quota.".to_string()
+        };
+
+        let should_burn = local_hour >= sleep_threshold || local_hour < wake_threshold;
+
+        SleepPrediction {
+            should_burn_quota: should_burn,
+            reason,
+        }
+    }
+
+    /// Format ping results as a nice table
+    pub fn format_ping_results(results: &[PingResult]) -> String {
+        let mut out = String::new();
+        for r in results {
+            let rtt_str = match r.rtt_ms {
+                Some(ms) => {
+                    let est_km = rtt_to_km(ms);
+                    format!("~{:.0}ms (est. {:.0}km)", ms, est_km)
+                }
+                None => "timeout".to_string(),
+            };
+            out.push_str(&format!(
+                "  {} ({}): {}\n",
+                r.target.name, r.target.host, rtt_str
+            ));
+        }
+        out
+    }
 }

@@ -266,10 +266,36 @@ fn get_manual_annotations(category: DataCategory) -> HashMap<&'static str, Manua
         };
     }
 
+    // Auto-loading strategy for generated types:
+    // When `cargo xtask coverage --generate` creates types in `generated/types/`,
+    // they will automatically be registered here via the SchemaType trait.
+    if let Some(generated_fields) = crate::generated::types::match_category_fields(category) {
+        for f in generated_fields {
+            map.insert(
+                f.name,
+                ManualAnnotation {
+                    parsed: true,
+                    visualized: f.visualized,
+                    simulated: f.simulated,
+                    notes: None,
+                },
+            );
+        }
+    }
+
+    // Manual Types: Override or augment the auto-generated ones.
+    // Pattern for auto-generated types:
+    //   for f in crate::generated::types::foo::Foo::fields() {
+    //       map.insert(f.name, ManualAnnotation { parsed: true, ... });
+    //   }
+    //
+    // Manual types (below) follow the same pattern but live in top-level modules.
+    // To override a generated type, create a manual implementation and add it here.
+
     match category {
         DataCategory::Advisortypes => {
             // Auto-load from Struct
-            for f in crate::advisortypes::AdvisorType::fields() {
+            for f in crate::types::AdvisorType::fields() {
                 map.insert(
                     f.name,
                     ManualAnnotation {
@@ -314,7 +340,7 @@ fn get_manual_annotations(category: DataCategory) -> HashMap<&'static str, Manua
         }
         DataCategory::Tradegoods => {
             // Auto-load from Struct
-            for f in crate::Tradegood::fields() {
+            for f in crate::types::Tradegood::fields() {
                 map.insert(
                     f.name,
                     ManualAnnotation {
@@ -356,7 +382,7 @@ fn get_manual_annotations(category: DataCategory) -> HashMap<&'static str, Manua
         }
         DataCategory::Technologies => {
             // Auto-load from Struct
-            for f in crate::technologies::Technology::fields() {
+            for f in crate::types::Technology::fields() {
                 map.insert(
                     f.name,
                     ManualAnnotation {
@@ -370,7 +396,7 @@ fn get_manual_annotations(category: DataCategory) -> HashMap<&'static str, Manua
         }
         DataCategory::TimedModifiers => {
             // Auto-load from Struct
-            for f in crate::timed_modifiers::TimedModifier::fields() {
+            for f in crate::types::TimedModifier::fields() {
                 map.insert(
                     f.name,
                     ManualAnnotation {
@@ -384,7 +410,7 @@ fn get_manual_annotations(category: DataCategory) -> HashMap<&'static str, Manua
         }
         DataCategory::Tradenodes => {
             // Auto-load from Struct
-            for f in crate::tradenodes::TradeNode::fields() {
+            for f in crate::types::TradeNode::fields() {
                 map.insert(
                     f.name,
                     ManualAnnotation {

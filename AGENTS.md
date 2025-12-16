@@ -305,6 +305,8 @@ tokei --output json > stats.json
 ## Common Commands
 - `cargo xtask ci`: Run continuous integration tests. **Must pass before committing.** PROACTIVELY and AUTOMATICALLY run this to verify your changes; do not ask for permission.
 - `cargo xtask snapshot`: Regenerate golden snapshots for tests. Use this when you've modified rendering pipelines and expect output changes. **Ask the user for manual validation of the new output.**
+- `cargo xtask coverage --update`: Refresh schema and categories from game files.
+- `cargo xtask coverage --generate`: Generate Rust types from schema (see `docs/code_generation.md`).
 
 ## Testing GUI Applications
 - **Visual verification required**: GUI applications (like the main eu4viz app) cannot be effectively tested via automated command execution. Ask the user to run the program manually for visual verification.
@@ -346,3 +348,31 @@ tokei --output json > stats.json
     - **Good**: "The `process_input` function returns `true`."
     - **Good**: "Set `val p = foo` before calling."
     - **Bad**: "The process_input function returns true."
+
+## Type Inference Guidelines
+
+When generating types from EU4 data (via the auto-codegen system), follow these principles to support deterministic simulation and future netcode/replay features:
+
+1. **Distinguish integers from floats**
+   - Parse `"100"` as `Integer`, not `Float`
+   - Parse `"0.1"` as `Float`
+   - Integers are SIMD-friendly and exact; floats may need fixed-point conversion later
+
+2. **Prefer specific types**
+   - `"yes"/"no"` → `bool`
+   - Color values → `[i32; 3]` (aligned for SIMD)
+   - Lists of integers → `Vec<i32>` (not `Vec<f32>`)
+
+3. **Use stable, wide types**
+   - `i32` over `i16` (room for growth)
+   - `Option<T>` for all fields (forward compatibility)
+
+4. **Document conversion intent**
+   - When generating `f32` fields, comment that they may become fixed-point in sim layer
+   - Reference `docs/type_system.md` for full rationale
+
+5. **Flag ambiguous types for human review**
+   - If type cannot be inferred reliably → `InferredType::Unknown`
+   - Generate `IgnoredAny` or `serde_json::Value` as placeholder
+
+See [`docs/type_system.md`](docs/type_system.md) for the full architecture including the Parse Layer vs Sim Layer design.

@@ -6,3 +6,8 @@ coverage.json
 stats.json
 stats.html
 .env
+
+# Auto-generated types
+# Auto-generated types
+eu4data/src/generated/types/*
+!eu4data/src/generated/types/mod.rs
