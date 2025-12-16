@@ -22,19 +22,16 @@ enum Commands {
     Quota,
     /// Analyze data coverage (local) or verify docs (CI)
     Coverage {
-        /// Path to EU4 installation
-        #[arg(
-            long,
-            default_value = r"C:\Program Files (x86)\Steam\steamapps\common\Europa Universalis IV"
-        )]
-        eu4_path: String,
+        /// Path to EU4 installation (auto-detected if not provided)
+        #[arg(long)]
+        eu4_path: Option<String>,
         /// Generate static docs/supported_fields.md (CI verification)
         #[arg(long)]
         doc_gen: bool,
         /// Discover schema from real game files
         #[arg(long)]
         discover: bool,
-        /// Update eu4data/src/gen_schema.rs with discovered fields
+        /// Update eu4data/src/generated/categories.rs and schema.rs
         #[arg(long)]
         update: bool,
     },
@@ -55,7 +52,7 @@ fn main() -> Result<()> {
             doc_gen,
             discover,
             update,
-        } => run_coverage(&eu4_path, doc_gen, discover, update),
+        } => run_coverage(eu4_path, doc_gen, discover, update),
     }
 }
 
@@ -84,7 +81,7 @@ fn run_ci() -> Result<()> {
     // Actually, run_coverage with doc_gen will write the file.
     // CI should fail if the checked-in file differs.
     // simpler: run doc-gen, then check if git detects changes.
-    run_coverage("mock", true, false, false)?;
+    run_coverage(Some("mock".to_string()), true, false, false)?;
 
     // Check for unstaged changes in docs/
     let status = Command::new("git")
@@ -189,7 +186,12 @@ fn run_quota() -> Result<()> {
     Ok(())
 }
 
-fn run_coverage(eu4_path: &str, doc_gen: bool, discover: bool, update: bool) -> Result<()> {
+fn run_coverage(
+    eu4_path: Option<String>,
+    doc_gen: bool,
+    discover: bool,
+    update: bool,
+) -> Result<()> {
     if doc_gen {
         let content = eu4data::coverage::generate_static_docs();
         let path = std::path::Path::new("docs/supported_fields.md");
@@ -201,9 +203,31 @@ fn run_coverage(eu4_path: &str, doc_gen: bool, discover: bool, update: bool) -> 
         return Ok(());
     }
 
-    let path = std::path::Path::new(eu4_path);
+    let buf;
+    let path = match eu4_path {
+        Some(p) => {
+            buf = std::path::PathBuf::from(p);
+            buf.as_path()
+        }
+        None => {
+            // Auto-detect
+            match eu4data::path::detect_game_path() {
+                Some(p) => {
+                    println!("🔎 Auto-detected EU4 path: {:?}", p);
+                    buf = p;
+                    buf.as_path()
+                }
+                None => {
+                    println!("⚠️  Could not detect EU4 installation.");
+                    println!("Please provide a path via --eu4-path <PATH>");
+                    return Ok(());
+                }
+            }
+        }
+    };
+
     if !path.exists() {
-        println!("⚠️  EU4 path not found: {}", eu4_path);
+        println!("⚠️  EU4 path not found: {:?}", path);
         println!("Please provide a valid path via --eu4-path");
         return Ok(());
     }

@@ -41,7 +41,7 @@ fn test_cli_pretty_print() {
 #[test]
 fn test_dump_tradegoods() {
     let dir = tempdir().unwrap();
-    let goods_dir = dir.path().join("tradegoods");
+    let goods_dir = dir.path().join("common/tradegoods");
     std::fs::create_dir_all(&goods_dir).unwrap();
 
     let file_path = goods_dir.join("00_tradegoods.txt");

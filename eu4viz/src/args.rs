@@ -1,15 +1,12 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-const PATH: &str =
-    "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Europa Universalis IV\\common";
-
 #[derive(Parser, Debug, PartialEq)]
 #[command(version, about, long_about = None)]
 pub struct Cli {
     /// Path to EU4 installation or directory to scan
-    #[arg(long, default_value = PATH)]
-    pub eu4_path: PathBuf,
+    #[arg(long)]
+    pub eu4_path: Option<PathBuf>,
 
     /// Pretty print parsed files
     #[arg(long)]
