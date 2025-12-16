@@ -9,6 +9,7 @@ pub mod generated;
 pub mod history;
 pub mod localisation;
 pub mod map;
+pub mod path;
 pub mod religions;
 
 /// Represents a trade good in EU4, determining the value and bonuses of a province's production.

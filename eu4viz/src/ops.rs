@@ -19,7 +19,7 @@ fn display_path(path: &Path) -> String {
 }
 
 pub fn dump_tradegoods(base_path: &std::path::Path) -> Result<(), String> {
-    let path = base_path.join("tradegoods/00_tradegoods.txt");
+    let path = base_path.join("common/tradegoods/00_tradegoods.txt");
     println!("Loading {:?}", path);
 
     let tokens = DefaultEU4Txt::open_txt(path.to_str().unwrap()).map_err(|e| e.to_string())?;
@@ -652,7 +652,7 @@ mod tests {
         let dir = tempdir().unwrap();
         create_mock_eu4(dir.path());
 
-        let res = dump_tradegoods(&dir.path().join("common"));
+        let res = dump_tradegoods(dir.path());
         assert!(res.is_ok());
     }
 
