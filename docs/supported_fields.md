@@ -4316,8 +4316,8 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 
 ## Tradegoods
 
-- **Total Known Fields:** 61
-- **Parsed:** 61 (100.0%)
+- **Total Known Fields:** 59
+- **Parsed:** 59 (100.0%)
 - **Visualized:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
@@ -4325,8 +4325,6 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 | `adm_tech_cost_modifier` | ✅ | - | - |  |
 | `advisor_cost` | ✅ | - | - |  |
 | `cavalry_cost` | ✅ | - | - |  |
-| `chance` | ✅ | - | - |  |
-| `color` | ✅ | - | - |  |
 | `development_cost` | ✅ | - | - |  |
 | `devotion` | ✅ | - | - |  |
 | `dip_tech_cost_modifier` | ✅ | - | - |  |

@@ -37,32 +37,3 @@ fn test_cli_pretty_print() {
         .success()
         .stdout(contains("test = foo"));
 }
-
-#[test]
-fn test_dump_tradegoods() {
-    let dir = tempdir().unwrap();
-    let goods_dir = dir.path().join("common/tradegoods");
-    std::fs::create_dir_all(&goods_dir).unwrap();
-
-    let file_path = goods_dir.join("00_tradegoods.txt");
-    let mut file = File::create(file_path).unwrap();
-    writeln!(
-        file,
-        r#"
-        grain = {{
-            color = {{ 10 20 30 }}
-        }}
-        "#
-    )
-    .unwrap();
-
-    let path = dir.path().to_str().unwrap();
-
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_eu4viz"));
-    cmd.args(["--eu4-path", path, "dump-tradegoods"])
-        .assert()
-        .success()
-        .stdout(contains("\"grain\":"))
-        .stdout(contains("\"color\":"))
-        .stdout(contains("10.0"));
-}

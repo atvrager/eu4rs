@@ -11,10 +11,6 @@ pub mod map;
 pub mod path;
 pub mod religions;
 pub mod types;
+pub use types::*;
 
 // Re-export common types for backward compatibility
-pub use types::AdvisorType;
-pub use types::Technology;
-pub use types::TimedModifier;
-pub use types::TradeNode;
-pub use types::Tradegood;

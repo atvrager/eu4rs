@@ -1,6 +1,6 @@
 use crate::args::MapMode;
 use crate::camera::Camera;
-use eu4data::Tradegood;
+use eu4data::Tradegoods;
 use eu4data::countries::Country;
 use eu4data::cultures::Culture;
 use eu4data::history::ProvinceHistory;
@@ -38,7 +38,7 @@ pub struct WorldData {
     pub cultures: HashMap<String, Culture>,
     /// Tradegood definitions.
     #[allow(dead_code)]
-    pub tradegoods: HashMap<String, Tradegood>,
+    pub tradegoods: HashMap<String, Tradegoods>,
     /// Set of Province IDs considered water (seas/lakes).
     #[allow(dead_code)]
     pub water_ids: HashSet<u32>,

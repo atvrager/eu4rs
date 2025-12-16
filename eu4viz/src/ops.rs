@@ -1,7 +1,7 @@
 use crate::args::MapMode;
 use crate::window;
 use eu4data::{
-    Tradegood,
+    Tradegoods,
     countries::Country,
     cultures::Culture,
     history::ProvinceHistory,
@@ -24,7 +24,7 @@ pub fn dump_tradegoods(base_path: &std::path::Path) -> Result<(), String> {
 
     let tokens = DefaultEU4Txt::open_txt(path.to_str().unwrap()).map_err(|e| e.to_string())?;
     let ast = DefaultEU4Txt::parse(tokens).map_err(|e| e.to_string())?;
-    let goods: HashMap<String, Tradegood> = from_node(&ast)?;
+    let goods: HashMap<String, Tradegoods> = from_node(&ast)?;
     println!(
         "{}",
         serde_json::to_string_pretty(&goods).map_err(|e| e.to_string())?
@@ -62,20 +62,12 @@ pub fn draw_map(base_path: &Path, output_path: &Path, mode: MapMode) -> Result<(
     println!("Loaded {} water provinces (sea+lakes).", water_ids.len());
 
     // 2. Load Data based on Mode
-    let mut goods: HashMap<String, Tradegood> = HashMap::new();
     let mut countries: HashMap<String, eu4data::countries::Country> = HashMap::new();
     let mut religions: HashMap<String, Religion> = HashMap::new();
     let mut cultures: HashMap<String, Culture> = HashMap::new();
 
     match mode {
-        MapMode::TradeGoods => {
-            let goods_path = base_path.join("common/tradegoods/00_tradegoods.txt");
-            println!("Loading trade goods from {:?}", goods_path);
-            let tokens =
-                DefaultEU4Txt::open_txt(goods_path.to_str().unwrap()).map_err(|e| e.to_string())?;
-            let ast = DefaultEU4Txt::parse(tokens).map_err(|e| e.to_string())?;
-            goods = from_node(&ast)?;
-        }
+        MapMode::TradeGoods => {} // No extra data needed
         MapMode::Political => {
             println!("Loading country tags...");
             let tags = eu4data::countries::load_tags(base_path).map_err(|e| e.to_string())?;
@@ -123,15 +115,14 @@ pub fn draw_map(base_path: &Path, output_path: &Path, mode: MapMode) -> Result<(
             } else if let Some(hist) = province_history.get(id) {
                 match mode {
                     MapMode::TradeGoods => {
-                        if let Some(good) =
-                            hist.trade_goods.as_ref().and_then(|name| goods.get(name))
-                            && let Some(color) = &good.color
-                            && color.len() >= 3
-                        {
-                            let fr = (color[0] * 255.0) as u8;
-                            let fg = (color[1] * 255.0) as u8;
-                            let fb = (color[2] * 255.0) as u8;
-                            out_color = Rgb([fr, fg, fb]);
+                        if let Some(good_name) = hist.trade_goods.as_ref() {
+                            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                            std::hash::Hash::hash(good_name, &mut hasher);
+                            let hash = std::hash::Hasher::finish(&hasher);
+                            let r = (hash & 0xFF) as u8;
+                            let g = ((hash >> 8) & 0xFF) as u8;
+                            let b = ((hash >> 16) & 0xFF) as u8;
+                            out_color = Rgb([r, g, b]);
                         }
                     }
                     MapMode::Political => {
@@ -277,31 +268,16 @@ pub fn load_world_data(base_path: &Path) -> Result<window::WorldData, String> {
             Ok((history_res?.0, countries_res?))
         };
 
-    // Task Group 3: Religions, Cultures, Tradegoods
+    // Task Group 3: Religions, Cultures
     let task_common_data = || {
         rayon::join(
             || eu4data::religions::load_religions(base_path).map_err(|e| e.to_string()),
-            || {
-                rayon::join(
-                    || eu4data::cultures::load_cultures(base_path).map_err(|e| e.to_string()),
-                    || -> Result<_, String> {
-                        let tg_path = base_path.join("common/tradegoods/00_tradegoods.txt");
-                        if tg_path.exists() {
-                            let tokens = DefaultEU4Txt::open_txt(tg_path.to_str().unwrap())
-                                .map_err(|e| e.to_string())?;
-                            let ast = DefaultEU4Txt::parse(tokens).map_err(|e| e.to_string())?;
-                            from_node::<HashMap<String, Tradegood>>(&ast).map_err(|e| e.to_string())
-                        } else {
-                            Ok(HashMap::new())
-                        }
-                    },
-                )
-            },
+            || eu4data::cultures::load_cultures(base_path).map_err(|e| e.to_string()),
         )
     };
 
     // 4. Execute Top-Level Tasks
-    let (res_defs_map, (res_hist_countries, (res_religions, (res_cultures, res_tradegoods)))) =
+    let (res_defs_map, (res_hist_countries, (res_religions, res_cultures))) =
         rayon::join(task_definitions_and_map, || {
             rayon::join(task_history_and_countries, task_common_data)
         });
@@ -310,13 +286,11 @@ pub fn load_world_data(base_path: &Path) -> Result<window::WorldData, String> {
     let (province_history, countries) = res_hist_countries?;
     let religions = res_religions?;
     let cultures = res_cultures?;
-    let tradegoods = res_tradegoods.unwrap_or_default();
 
     log::info!(
-        "Loaded {} religions, {} cultures, {} tradegoods.",
+        "Loaded {} religions, {} cultures.",
         religions.len(),
         cultures.len(),
-        tradegoods.len()
     );
 
     // 5. Default Map (Water)
@@ -346,7 +320,6 @@ pub fn load_world_data(base_path: &Path) -> Result<window::WorldData, String> {
     let ref_countries = &countries;
     let ref_religions = &religions;
     let ref_cultures = &cultures;
-    let ref_tradegoods = &tradegoods;
     let ref_water_ids = &water_ids;
 
     let (political_map, (religion_map, (culture_map, tradegoods_map))) = rayon::join(
@@ -394,7 +367,6 @@ pub fn load_world_data(base_path: &Path) -> Result<window::WorldData, String> {
                                 ref_province_map,
                                 ref_color_to_id,
                                 ref_province_history,
-                                ref_tradegoods,
                                 ref_water_ids,
                             )
                         },
@@ -416,7 +388,7 @@ pub fn load_world_data(base_path: &Path) -> Result<window::WorldData, String> {
         countries,
         religions,
         cultures,
-        tradegoods,
+        tradegoods: HashMap::new(),
         water_ids,
         color_to_id,
     })
@@ -459,7 +431,6 @@ fn draw_map_tradegoods(
     province_map: &RgbImage,
     color_to_id: &HashMap<(u8, u8, u8), u32>,
     province_history: &HashMap<u32, ProvinceHistory>,
-    tradegoods: &HashMap<String, Tradegood>,
     water_ids: &HashSet<u32>,
 ) -> RgbImage {
     let mut map = RgbImage::new(width, height);
@@ -471,18 +442,15 @@ fn draw_map_tradegoods(
             if water_ids.contains(id) {
                 color = Rgb([64, 164, 223]);
             } else if let Some(hist) = province_history.get(id)
-                && let Some(good) = hist
-                    .trade_goods
-                    .as_ref()
-                    .and_then(|key| tradegoods.get(key))
-                && let Some(good_color) = &good.color
-                && good_color.len() >= 3
+                && let Some(good_name) = hist.trade_goods.as_ref()
             {
-                color = Rgb([
-                    (good_color[0] * 255.0) as u8,
-                    (good_color[1] * 255.0) as u8,
-                    (good_color[2] * 255.0) as u8,
-                ]);
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                std::hash::Hash::hash(good_name, &mut hasher);
+                let hash = std::hash::Hasher::finish(&hasher);
+                let r = (hash & 0xFF) as u8;
+                let g = ((hash >> 8) & 0xFF) as u8;
+                let b = ((hash >> 16) & 0xFF) as u8;
+                color = Rgb([r, g, b]);
             }
         } else {
             color = Rgb([0, 0, 0]);
@@ -610,7 +578,7 @@ mod tests {
             tg,
             r#"
             grain = {{
-                color = {{ 1.0 0.0 0.0 }}
+                modifier = {{ }}
             }}
         "#
         )
@@ -648,15 +616,6 @@ mod tests {
     }
 
     #[test]
-    fn test_dump_tradegoods() {
-        let dir = tempdir().unwrap();
-        create_mock_eu4(dir.path());
-
-        let res = dump_tradegoods(dir.path());
-        assert!(res.is_ok());
-    }
-
-    #[test]
     fn test_load_world_data() {
         let dir = tempdir().unwrap();
         create_mock_eu4(dir.path());
@@ -679,8 +638,14 @@ mod tests {
         assert!(output.exists());
 
         let img = image::open(output).unwrap().to_rgb8();
-        // (0,0) is ID 1 (Stockholm) -> Grain -> Red (1.0 0.0 0.0) -> 255, 0, 0
-        assert_eq!(img.get_pixel(0, 0), &Rgb([255, 0, 0]));
+        // (0,0) is ID 1 (Stockholm) -> Grain -> Deterministic Hash Color
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        std::hash::Hash::hash("grain", &mut hasher);
+        let hash = std::hash::Hasher::finish(&hasher);
+        let r = (hash & 0xFF) as u8;
+        let g = ((hash >> 8) & 0xFF) as u8;
+        let b = ((hash >> 16) & 0xFF) as u8;
+        assert_eq!(img.get_pixel(0, 0), &Rgb([r, g, b]));
         // (0,1) is ID 3 (Sea) -> Water Blue -> 64, 164, 223
         assert_eq!(img.get_pixel(0, 1), &Rgb([64, 164, 223]));
     }

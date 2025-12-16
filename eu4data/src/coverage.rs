@@ -293,20 +293,6 @@ fn get_manual_annotations(category: DataCategory) -> HashMap<&'static str, Manua
     // To override a generated type, create a manual implementation and add it here.
 
     match category {
-        DataCategory::Advisortypes => {
-            // Auto-load from Struct
-            for f in crate::types::AdvisorType::fields() {
-                map.insert(
-                    f.name,
-                    ManualAnnotation {
-                        parsed: true,
-                        visualized: f.visualized,
-                        simulated: f.simulated,
-                        notes: None,
-                    },
-                );
-            }
-        }
         DataCategory::Countries => {
             field!("color", true, true, Some("Essential for political map"));
             field!(
@@ -338,20 +324,6 @@ fn get_manual_annotations(category: DataCategory) -> HashMap<&'static str, Manua
                 Some("Time-dependent properties (not yet parsed)")
             );
         }
-        DataCategory::Tradegoods => {
-            // Auto-load from Struct
-            for f in crate::types::Tradegood::fields() {
-                map.insert(
-                    f.name,
-                    ManualAnnotation {
-                        parsed: true,
-                        visualized: f.visualized,
-                        simulated: f.simulated,
-                        notes: None,
-                    },
-                );
-            }
-        }
         DataCategory::Religions => {
             // Auto-load from Struct
             for f in crate::religions::Religion::fields() {
@@ -369,48 +341,6 @@ fn get_manual_annotations(category: DataCategory) -> HashMap<&'static str, Manua
         DataCategory::Cultures => {
             // Auto-load from Struct
             for f in crate::cultures::Culture::fields() {
-                map.insert(
-                    f.name,
-                    ManualAnnotation {
-                        parsed: true,
-                        visualized: f.visualized,
-                        simulated: f.simulated,
-                        notes: None,
-                    },
-                );
-            }
-        }
-        DataCategory::Technologies => {
-            // Auto-load from Struct
-            for f in crate::types::Technology::fields() {
-                map.insert(
-                    f.name,
-                    ManualAnnotation {
-                        parsed: true,
-                        visualized: f.visualized,
-                        simulated: f.simulated,
-                        notes: None,
-                    },
-                );
-            }
-        }
-        DataCategory::TimedModifiers => {
-            // Auto-load from Struct
-            for f in crate::types::TimedModifier::fields() {
-                map.insert(
-                    f.name,
-                    ManualAnnotation {
-                        parsed: true,
-                        visualized: f.visualized,
-                        simulated: f.simulated,
-                        notes: None,
-                    },
-                );
-            }
-        }
-        DataCategory::Tradenodes => {
-            // Auto-load from Struct
-            for f in crate::types::TradeNode::fields() {
                 map.insert(
                     f.name,
                     ManualAnnotation {
