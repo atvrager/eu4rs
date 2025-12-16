@@ -252,6 +252,20 @@ cargo install cargo-nextest
 cargo nextest run   # instead of cargo test
 ```
 
+### tokei (Code Statistics)
+Fast, accurate lines-of-code counter written in Rust. Pair with `tera-cli` for HTML reports. See [`docs/code_statistics.md`](docs/code_statistics.md) for detailed usage.
+
+```powershell
+# Install
+cargo install tokei tera-cli
+
+# Quick stats (console)
+tokei
+
+# JSON output for HTML generation
+tokei --output json > stats.json
+```
+
 ## Line Endings
 - **Enforce LF**: This project prefers Unix-style line endings (`\n`), even on Windows.
 - **Git Config**: Ensure `core.autocrlf` is set to `input` or `false` locally.

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>eu4rs Code Statistics</title>
+    <style>
+        :root {
+            --bg: #1a1a2e;
+            --card: #16213e;
+            --accent: #e94560;
+            --text: #eaeaea;
+            --muted: #8b8b8b;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            padding: 2rem;
+            min-height: 100vh;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 2rem;
+            font-weight: 300;
+            font-size: 2rem;
+        }
+        h1 span { color: var(--accent); font-weight: 600; }
+        table {
+            width: 100%;
+            max-width: 900px;
+            margin: 0 auto;
+            border-collapse: collapse;
+            background: var(--card);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        th, td { padding: 1rem 1.5rem; text-align: right; }
+        th {
+            background: var(--accent);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.05em;
+        }
+        th:first-child, td:first-child { text-align: left; }
+        tr:nth-child(even) { background: rgba(255,255,255,0.03); }
+        tr:hover { background: rgba(233,69,96,0.1); }
+        .lang { font-weight: 600; }
+        .total-row { 
+            background: rgba(233,69,96,0.2) !important;
+            font-weight: 600;
+        }
+        footer {
+            text-align: center;
+            margin-top: 2rem;
+            color: var(--muted);
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+    <h1><span>eu4rs</span> Code Statistics</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>Language</th>
+                <th>Files</th>
+                <th>Code</th>
+                <th>Comments</th>
+                <th>Blanks</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="lang">Rust</td>
+                <td>{{ Rust.reports | length }}</td>
+                <td>{{ Rust.code }}</td>
+                <td>{{ Rust.comments }}</td>
+                <td>{{ Rust.blanks }}</td>
+                <td>{{ Rust.code + Rust.comments + Rust.blanks }}</td>
+            </tr>
+            <tr>
+                <td class="lang">Markdown</td>
+                <td>{{ Markdown.reports | length }}</td>
+                <td>{{ Markdown.code }}</td>
+                <td>{{ Markdown.comments }}</td>
+                <td>{{ Markdown.blanks }}</td>
+                <td>{{ Markdown.code + Markdown.comments + Markdown.blanks }}</td>
+            </tr>
+            <tr>
+                <td class="lang">TOML</td>
+                <td>{{ TOML.reports | length }}</td>
+                <td>{{ TOML.code }}</td>
+                <td>{{ TOML.comments }}</td>
+                <td>{{ TOML.blanks }}</td>
+                <td>{{ TOML.code + TOML.comments + TOML.blanks }}</td>
+            </tr>
+            <tr class="total-row">
+                <td>Total</td>
+                <td>-</td>
+                <td>{{ Total.code }}</td>
+                <td>{{ Total.comments }}</td>
+                <td>{{ Total.blanks }}</td>
+                <td>{{ Total.code + Total.comments + Total.blanks }}</td>
+            </tr>
+        </tbody>
+    </table>
+    <footer>Generated with tokei + tera-cli</footer>
+</body>
+</html>

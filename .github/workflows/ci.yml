@@ -31,3 +31,20 @@ jobs:
 
     - name: Run CI Pipeline
       run: cargo xtask ci
+
+    - name: Generate Code Statistics
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        cargo install tokei tera-cli
+        tokei --output json > stats.json
+        tera -f .github/stats_template.html --json stats.json > stats.html
+
+    - name: Upload Stats Artifact
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      uses: actions/upload-artifact@v4
+      with:
+        name: code-statistics
+        path: |
+          stats.json
+          stats.html
+        retention-days: 90
