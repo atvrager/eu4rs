@@ -11,6 +11,7 @@ pub mod localisation;
 pub mod map;
 pub mod path;
 pub mod religions;
+pub mod technologies;
 
 /// Represents a trade good in EU4, determining the value and bonuses of a province's production.
 #[derive(Debug, Deserialize, Serialize, coverage::SchemaType)]

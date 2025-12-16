@@ -4208,19 +4208,19 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 ## Technologies
 
 - **Total Known Fields:** 8
-- **Parsed:** 0 (0.0%)
+- **Parsed:** 8 (100.0%)
 - **Visualized:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
-| `enlightenment` | ❌ | - | - |  |
-| `feudalism` | ❌ | - | - |  |
-| `global_trade` | ❌ | - | - |  |
-| `industrialization` | ❌ | - | - |  |
-| `manufactories` | ❌ | - | - |  |
-| `new_world_i` | ❌ | - | - |  |
-| `printing_press` | ❌ | - | - |  |
-| `renaissance` | ❌ | - | - |  |
+| `enlightenment` | ✅ | - | - |  |
+| `feudalism` | ✅ | - | - |  |
+| `global_trade` | ✅ | - | - |  |
+| `industrialization` | ✅ | - | - |  |
+| `manufactories` | ✅ | - | - |  |
+| `new_world_i` | ✅ | - | - |  |
+| `printing_press` | ✅ | - | - |  |
+| `renaissance` | ✅ | - | - |  |
 
 ## Timed Modifiers
 
