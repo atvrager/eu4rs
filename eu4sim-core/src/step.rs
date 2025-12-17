@@ -35,6 +35,7 @@ pub fn step_world(state: &WorldState, inputs: &[PlayerInputs]) -> WorldState {
         crate::systems::run_production_tick(&mut new_state, &economy_config);
         crate::systems::run_taxation_tick(&mut new_state);
         crate::systems::run_manpower_tick(&mut new_state);
+        crate::systems::run_expenses_tick(&mut new_state);
     }
 
     new_state

@@ -69,7 +69,7 @@ impl Fixed {
     pub fn to_f32(self) -> f32 {
         self.0 as f32 / Self::SCALE as f32
     }
-    
+
     /// Convert to f64 (display only, higher precision)
     #[inline]
     pub fn to_f64(self) -> f64 {

@@ -22,17 +22,22 @@ pub fn run_manpower_tick(state: &mut WorldState) {
                 .get(&id)
                 .copied()
                 .unwrap_or(Fixed::ZERO);
-            
+
             let factor = Fixed::ONE - autonomy;
             let prov_max = province.base_manpower.mul(men_per_dev).mul(factor);
 
-            *country_max_manpower.entry(owner.clone()).or_insert(Fixed::ZERO) += prov_max;
+            *country_max_manpower
+                .entry(owner.clone())
+                .or_insert(Fixed::ZERO) += prov_max;
         }
     }
 
     // 2. Apply Recovery
     for (tag, country) in state.countries.iter_mut() {
-        let province_sum = country_max_manpower.get(tag).copied().unwrap_or(Fixed::ZERO);
+        let province_sum = country_max_manpower
+            .get(tag)
+            .copied()
+            .unwrap_or(Fixed::ZERO);
         let max = base_country_manpower + province_sum;
 
         // Recovery: Max / 120 (120 months = 10 years)
@@ -93,7 +98,7 @@ mod tests {
             .with_country("SWE")
             .with_province_state(1, province)
             .build();
-        
+
         // Max is 11000. Set current to 20000.
         state.countries.get_mut("SWE").unwrap().manpower = Fixed::from_int(20000);
 

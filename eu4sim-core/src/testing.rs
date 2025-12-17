@@ -20,6 +20,8 @@ impl WorldStateBuilder {
                 modifiers: GameModifiers::default(),
                 diplomacy: Default::default(),
                 global: Default::default(),
+                armies: HashMap::new(),
+                next_army_id: 1,
             },
         }
     }
@@ -58,6 +60,7 @@ impl WorldStateBuilder {
                 base_production: Fixed::ONE,
                 base_tax: Fixed::ONE,
                 base_manpower: Fixed::ONE,
+                has_fort: false,
             },
         );
         self
@@ -81,6 +84,7 @@ impl WorldStateBuilder {
                 base_production,
                 base_tax: Fixed::ONE,
                 base_manpower: Fixed::ONE,
+                has_fort: false,
             },
         );
         self

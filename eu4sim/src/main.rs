@@ -58,16 +58,74 @@ fn main() -> Result<()> {
             commands: vec![], // No commands for now
         }];
 
+        let prev_swe = state.countries.get("SWE").cloned();
+
         // Step
         state = step_world(&state, &inputs);
 
         if let Some(swe) = state.countries.get("SWE") {
-            log::info!(
-                "Tick: {} | SWE Treasury: {:.4} | Manpower: {:.0}",
-                state.date,
-                swe.treasury.to_f32(),
-                swe.manpower.to_f32()
-            );
+            use eu4sim_core::Fixed; // Import Fixed here or at top
+            let prev_treasury = prev_swe.as_ref().map(|c| c.treasury).unwrap_or(Fixed::ZERO);
+            let prev_manpower = prev_swe.as_ref().map(|c| c.manpower).unwrap_or(Fixed::ZERO);
+
+            let delta_treasury = (swe.treasury - prev_treasury).to_f32();
+            let delta_manpower = (swe.manpower - prev_manpower).to_f32();
+
+            // Army composition
+            let mut inf = 0;
+            let mut cav = 0;
+            let mut art = 0;
+
+            for army in state.armies.values() {
+                if army.owner == "SWE" {
+                    for reg in &army.regiments {
+                        match reg.type_ {
+                            eu4sim_core::state::RegimentType::Infantry => inf += 1,
+                            eu4sim_core::state::RegimentType::Cavalry => cav += 1,
+                            eu4sim_core::state::RegimentType::Artillery => art += 1,
+                        }
+                    }
+                }
+            }
+
+            // Fort count
+            let mut forts = 0;
+            for p in state.provinces.values() {
+                if p.owner.as_deref() == Some("SWE") && p.has_fort {
+                    forts += 1;
+                }
+            }
+
+            // Colors
+            let color_t = if delta_treasury > 0.0 {
+                "\x1b[32m+"
+            } else if delta_treasury < 0.0 {
+                "\x1b[31m"
+            } else {
+                "\x1b[90m"
+            };
+            let color_m = if delta_manpower > 0.0 {
+                "\x1b[32m+"
+            } else if delta_manpower < 0.0 {
+                "\x1b[31m"
+            } else {
+                "\x1b[90m"
+            };
+            let reset = "\x1b[0m";
+
+            // Only log if something changed
+            if delta_treasury.abs() > 0.001 || delta_manpower.abs() > 0.001 {
+                log::info!(
+                    "Tick: {} | SWE Treasury: {:.4} ({}{:.2}{}) | Manpower: {:.0} ({}{:.0}{}) | Army: I:{} C:{} A:{} | Forts: {}",
+                    state.date,
+                    swe.treasury.to_f32(),
+                    color_t, delta_treasury, reset,
+                    swe.manpower.to_f32(),
+                    color_m, delta_manpower, reset,
+                    inf, cav, art,
+                    forts
+                );
+            }
         } else {
             log::info!("Tick: {}", state.date);
         }

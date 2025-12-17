@@ -58,6 +58,30 @@ impl std::fmt::Display for Date {
 
 pub type Tag = String;
 pub type ProvinceId = u32;
+pub type ArmyId = u32;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum RegimentType {
+    Infantry,
+    Cavalry,
+    Artillery,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Regiment {
+    pub type_: RegimentType,
+    /// Number of men (e.g. 1000.0)
+    pub strength: Fixed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Army {
+    pub id: ArmyId,
+    pub name: String,
+    pub owner: Tag,
+    pub location: ProvinceId,
+    pub regiments: Vec<Regiment>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct WorldState {
@@ -71,6 +95,8 @@ pub struct WorldState {
     pub modifiers: GameModifiers,
     pub diplomacy: DiplomacyState,
     pub global: GlobalState,
+    pub armies: HashMap<ArmyId, Army>,
+    pub next_army_id: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -86,6 +112,8 @@ pub struct ProvinceState {
     pub base_tax: Fixed,
     /// Base manpower development
     pub base_manpower: Fixed,
+    /// Has a level 2 fort (Castle)
+    pub has_fort: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

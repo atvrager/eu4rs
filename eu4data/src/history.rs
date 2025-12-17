@@ -13,10 +13,13 @@ pub struct ProvinceHistory {
     #[schema(visualized)]
     pub owner: Option<String>,
     /// The base tax value of the province.
+    #[schema(simulated)]
     pub base_tax: Option<f32>,
     /// The base production value of the province.
+    #[schema(simulated)]
     pub base_production: Option<f32>,
     /// The base manpower value of the province.
+    #[schema(simulated)]
     pub base_manpower: Option<f32>,
     /// The religion of the province.
     #[schema(visualized)]
@@ -58,6 +61,7 @@ pub struct ProvinceHistory {
     pub add_nationalism: Option<f32>,
     pub seat_in_parliament: Option<bool>,
     pub shipyard: Option<bool>,
+    #[schema(simulated)]
     pub fort_15th: Option<bool>,
 
     // Latent trade goods might be repeated or list, use Vec<IgnoredAny> to be safe for now

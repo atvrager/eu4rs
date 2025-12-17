@@ -38,6 +38,14 @@ pub struct GameModifiers {
     /// Province-level tax modifier.
     /// Applied to base tax.
     pub province_tax_modifier: HashMap<ProvinceId, Fixed>,
+
+    /// Country-level land maintenance modifier.
+    /// Applied as: (1 + modifier) multiplier for army cost.
+    pub land_maintenance_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level fort maintenance modifier.
+    /// Applied as: (1 + modifier) multiplier for fort cost.
+    pub fort_maintenance_modifier: HashMap<Tag, Fixed>,
 }
 
 impl GameModifiers {

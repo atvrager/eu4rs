@@ -1,6 +1,6 @@
 use anyhow::Result;
 use eu4sim_core::modifiers::TradegoodId;
-use eu4sim_core::state::{CountryState, Date, ProvinceState};
+use eu4sim_core::state::{Army, CountryState, Date, ProvinceState, Regiment, RegimentType};
 use eu4sim_core::{Fixed, WorldState};
 use std::collections::HashMap;
 use std::path::Path;
@@ -37,6 +37,8 @@ pub fn load_initial_state(
 
     let mut provinces = HashMap::new();
     let mut countries = HashMap::new();
+    let mut country_total_manpower: HashMap<String, f32> = HashMap::new();
+    let mut country_capitals: HashMap<String, u32> = HashMap::new();
 
     // First pass: Create provinces and identify countries
     for (id, hist) in province_history {
@@ -45,6 +47,14 @@ pub fn load_initial_state(
             .trade_goods
             .and_then(|name| name_to_id.get(&name))
             .copied();
+
+        // Accumulate manpower logic
+        if let Some(tag) = &hist.owner {
+            let mp = hist.base_manpower.unwrap_or(0.0);
+            *country_total_manpower.entry(tag.clone()).or_default() += mp;
+            // Naive capital: First owned province
+            country_capitals.entry(tag.clone()).or_insert(id);
+        }
 
         // Create ProvinceState
         let p = ProvinceState {
@@ -55,6 +65,7 @@ pub fn load_initial_state(
             base_tax: Fixed::from_f32(hist.base_tax.unwrap_or(0.0)),
             base_production: Fixed::from_f32(hist.base_production.unwrap_or(0.0)),
             base_manpower: Fixed::from_f32(hist.base_manpower.unwrap_or(0.0)),
+            has_fort: hist.fort_15th.unwrap_or(false),
         };
         provinces.insert(id, p.clone());
 
@@ -75,6 +86,45 @@ pub fn load_initial_state(
         countries.len()
     );
 
+    // 2b. Initialize Armies
+    // Rule: 1 Infantry per 5 Manpower Dev
+    let mut armies = HashMap::new();
+    let mut next_army_id = 1;
+    let reg_strength = Fixed::from_int(1000); // 1000 men
+
+    for (tag, &total_mp) in &country_total_manpower {
+        let reg_count = (total_mp / 5.0).floor() as usize;
+        if reg_count == 0 {
+            continue;
+        }
+
+        if let Some(&location) = country_capitals.get(tag) {
+            let mut regiments = Vec::with_capacity(reg_count);
+            for _ in 0..reg_count {
+                regiments.push(Regiment {
+                    type_: RegimentType::Infantry,
+                    strength: reg_strength,
+                });
+            }
+
+            let army_id = next_army_id;
+            next_army_id += 1;
+
+            armies.insert(
+                army_id,
+                Army {
+                    id: army_id,
+                    name: format!("{} Army", tag),
+                    owner: tag.clone(),
+                    location,
+                    regiments,
+                },
+            );
+        }
+    }
+
+    log::info!("Initialized {} armies", armies.len());
+
     // 3. Assemble State
     Ok(WorldState {
         date: start_date,
@@ -85,5 +135,7 @@ pub fn load_initial_state(
         modifiers: Default::default(),
         diplomacy: Default::default(),
         global: Default::default(),
+        armies,
+        next_army_id,
     })
 }
