@@ -118,6 +118,8 @@ pub fn load_initial_state(
                     owner: tag.clone(),
                     location,
                     regiments,
+                    movement_path: None,
+                    embarked_on: None,
                 },
             );
         }
@@ -137,5 +139,7 @@ pub fn load_initial_state(
         global: Default::default(),
         armies,
         next_army_id,
+        fleets: Default::default(),
+        next_fleet_id: 1,
     })
 }

@@ -12,10 +12,22 @@ pub enum ActionError {
     AlreadyAtWar { target: String },
     #[error("Cannot declare war on self")]
     CannotDeclareWarOnSelf,
+    #[error("Army not found: {army_id}")]
+    ArmyNotFound { army_id: u32 },
+    #[error("Army {army_id} is not owned by {tag}")]
+    ArmyNotOwned { army_id: u32, tag: String },
+    #[error("Province {destination} is not adjacent to {current}")]
+    NotAdjacent { current: u32, destination: u32 },
+    #[error("No military access to {province} (owned by {owner})")]
+    NoMilitaryAccess { province: u32, owner: String },
 }
 
 /// Advance the world by one tick.
-pub fn step_world(state: &WorldState, inputs: &[PlayerInputs]) -> WorldState {
+pub fn step_world(
+    state: &WorldState,
+    inputs: &[PlayerInputs],
+    adjacency: Option<&eu4data::adjacency::AdjacencyGraph>,
+) -> WorldState {
     let mut new_state = state.clone();
 
     // 1. Advance Date
@@ -24,7 +36,7 @@ pub fn step_world(state: &WorldState, inputs: &[PlayerInputs]) -> WorldState {
     // 2. Process Inputs
     for player_input in inputs {
         for cmd in &player_input.commands {
-            if let Err(e) = execute_command(&mut new_state, &player_input.country, cmd) {
+            if let Err(e) = execute_command(&mut new_state, &player_input.country, cmd, adjacency) {
                 log::warn!(
                     "Failed to execute command for {}: {}",
                     player_input.country,
@@ -35,6 +47,9 @@ pub fn step_world(state: &WorldState, inputs: &[PlayerInputs]) -> WorldState {
     }
 
     // 3. Run Systems
+    // Movement runs daily (advances armies along their paths)
+    crate::systems::run_movement_tick(&mut new_state);
+
     // Combat runs daily (whenever armies are engaged)
     crate::systems::run_combat_tick(&mut new_state);
 
@@ -54,6 +69,7 @@ fn execute_command(
     state: &mut WorldState,
     country_tag: &str,
     cmd: &Command,
+    adjacency: Option<&eu4data::adjacency::AdjacencyGraph>,
 ) -> Result<(), ActionError> {
     match cmd {
         Command::BuildInProvince {
@@ -74,6 +90,67 @@ fn execute_command(
 
             // Apply Effect
             log::info!("Player {} building something (stub)", country_tag);
+
+            Ok(())
+        }
+        Command::Move {
+            army_id,
+            destination,
+        } => {
+            // Validate army exists
+            let army = state
+                .armies
+                .get(army_id)
+                .ok_or(ActionError::ArmyNotFound { army_id: *army_id })?;
+
+            // Validate ownership
+            if army.owner != country_tag {
+                return Err(ActionError::ArmyNotOwned {
+                    army_id: *army_id,
+                    tag: country_tag.to_string(),
+                });
+            }
+
+            let current_location = army.location;
+
+            // Validate adjacency (if adjacency graph is available)
+            if let Some(graph) = adjacency {
+                if !graph.are_adjacent(current_location, *destination) {
+                    return Err(ActionError::NotAdjacent {
+                        current: current_location,
+                        destination: *destination,
+                    });
+                }
+            }
+
+            // Check military access if destination is owned by another country
+            if let Some(province) = state.provinces.get(destination) {
+                if let Some(owner) = &province.owner {
+                    if owner != country_tag {
+                        // Need military access to move through another country's territory
+                        if !state.diplomacy.has_military_access(country_tag, owner) {
+                            // Exception: can move if at war (TODO: should check if destination is hostile in the war)
+                            if !state.diplomacy.are_at_war(country_tag, owner) {
+                                return Err(ActionError::NoMilitaryAccess {
+                                    province: *destination,
+                                    owner: owner.clone(),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Set movement path
+            if let Some(army) = state.armies.get_mut(army_id) {
+                army.movement_path = Some(vec![*destination]);
+                log::info!(
+                    "Army {} moving from {} to {}",
+                    army_id,
+                    current_location,
+                    destination
+                );
+            }
 
             Ok(())
         }
@@ -137,7 +214,7 @@ mod tests {
         let state = WorldStateBuilder::new().date(1444, 11, 11).build();
 
         let inputs = vec![];
-        let new_state = step_world(&state, &inputs);
+        let new_state = step_world(&state, &inputs, None);
 
         assert_eq!(new_state.date, Date::new(1444, 11, 12));
     }
@@ -159,7 +236,7 @@ mod tests {
 
         // This should log (we can't easily assert logs without a capture, but we know it runs)
         // Ideally we'd inspect side effects on state, but the stub does nothing yet.
-        let _new_state = step_world(&state, &inputs);
+        let _new_state = step_world(&state, &inputs, None);
 
         // Assert no crash and logic ran
     }
@@ -173,8 +250,8 @@ mod tests {
 
         let inputs = vec![];
 
-        let state_a = step_world(&state, &inputs);
-        let state_b = step_world(&state, &inputs);
+        let state_a = step_world(&state, &inputs, None);
+        let state_b = step_world(&state, &inputs, None);
 
         // Serialize to compare fully or just debug format
         let json_a = serde_json::to_string(&state_a).unwrap();
@@ -198,7 +275,7 @@ mod tests {
             }],
         }];
 
-        let new_state = step_world(&state, &inputs);
+        let new_state = step_world(&state, &inputs, None);
 
         // War should be created
         assert_eq!(new_state.diplomacy.wars.len(), 1);
@@ -221,7 +298,7 @@ mod tests {
             }],
         }];
 
-        let new_state = step_world(&state, &inputs);
+        let new_state = step_world(&state, &inputs, None);
 
         // No war should be created
         assert_eq!(new_state.diplomacy.wars.len(), 0);
@@ -243,7 +320,7 @@ mod tests {
             }],
         }];
 
-        state = step_world(&state, &inputs1);
+        state = step_world(&state, &inputs1, None);
         assert_eq!(state.diplomacy.wars.len(), 1);
 
         // Second war declaration (should fail)
@@ -254,7 +331,7 @@ mod tests {
             }],
         }];
 
-        let new_state = step_world(&state, &inputs2);
+        let new_state = step_world(&state, &inputs2, None);
 
         // Still only one war
         assert_eq!(new_state.diplomacy.wars.len(), 1);
@@ -274,7 +351,7 @@ mod tests {
             }],
         }];
 
-        let new_state = step_world(&state, &inputs);
+        let new_state = step_world(&state, &inputs, None);
 
         // No war should be created
         assert_eq!(new_state.diplomacy.wars.len(), 0);

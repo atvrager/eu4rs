@@ -61,7 +61,7 @@ fn main() -> Result<()> {
         let prev_swe = state.countries.get("SWE").cloned();
 
         // Step
-        state = step_world(&state, &inputs);
+        state = step_world(&state, &inputs, None);
 
         if let Some(swe) = state.countries.get("SWE") {
             use eu4sim_core::Fixed; // Import Fixed here or at top

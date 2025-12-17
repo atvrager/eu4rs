@@ -167,6 +167,8 @@ mod tests {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
             }],
+            movement_path: None,
+            embarked_on: None,
         };
 
         let army2 = Army {
@@ -178,6 +180,8 @@ mod tests {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
             }],
+            movement_path: None,
+            embarked_on: None,
         };
 
         state.armies.insert(1, army1);
@@ -222,6 +226,8 @@ mod tests {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
             }],
+            movement_path: None,
+            embarked_on: None,
         };
 
         let army2 = Army {
@@ -233,6 +239,8 @@ mod tests {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
             }],
+            movement_path: None,
+            embarked_on: None,
         };
 
         state.armies.insert(1, army1);
@@ -267,6 +275,8 @@ mod tests {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(5000),
             }],
+            movement_path: None,
+            embarked_on: None,
         };
 
         let army2 = Army {
@@ -278,6 +288,8 @@ mod tests {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
             }],
+            movement_path: None,
+            embarked_on: None,
         };
 
         state.armies.insert(1, army1);

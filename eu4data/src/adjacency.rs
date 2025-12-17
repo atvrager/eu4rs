@@ -85,13 +85,12 @@ pub fn load_adjacencies_csv(path: &Path) -> Result<Vec<StraitEntry>, CacheError>
         .delimiter(b';')
         .comment(Some(b'#'))
         .from_path(path)
-        .map_err(|e| CacheError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+        .map_err(|e| CacheError::Io(std::io::Error::other(e)))?;
 
     let mut entries = Vec::new();
 
     for result in reader.records() {
-        let record = result
-            .map_err(|e| CacheError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+        let record = result.map_err(|e| CacheError::Io(std::io::Error::other(e)))?;
 
         // Parse fields
         let from: ProvinceId = record
@@ -103,9 +102,13 @@ pub fn load_adjacencies_csv(path: &Path) -> Result<Vec<StraitEntry>, CacheError>
             .and_then(|s| s.trim().parse().ok())
             .unwrap_or(0);
         let strait_type = record.get(2).unwrap_or("").trim().to_string();
-        let through = record
-            .get(3)
-            .and_then(|s| if s.trim() == "-1" { None } else { s.trim().parse().ok() });
+        let through = record.get(3).and_then(|s| {
+            if s.trim() == "-1" {
+                None
+            } else {
+                s.trim().parse().ok()
+            }
+        });
         let start_x = record
             .get(4)
             .and_then(|s| s.trim().parse().ok())
@@ -150,13 +153,12 @@ pub fn load_definition_csv(path: &Path) -> Result<HashMap<Color, ProvinceId>, Ca
         .delimiter(b';')
         .comment(Some(b'#'))
         .from_path(path)
-        .map_err(|e| CacheError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+        .map_err(|e| CacheError::Io(std::io::Error::other(e)))?;
 
     let mut color_map = HashMap::new();
 
     for result in reader.records() {
-        let record = result
-            .map_err(|e| CacheError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+        let record = result.map_err(|e| CacheError::Io(std::io::Error::other(e)))?;
 
         // Format: province;red;green;blue;x;x
         let province_id: ProvinceId = record
@@ -250,13 +252,13 @@ fn generate_adjacency_from_bmp(
 
     // Decode BMP
     let decoder = image::codecs::bmp::BmpDecoder::new(reader)
-        .map_err(|e| CacheError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+        .map_err(|e| CacheError::Io(std::io::Error::other(e)))?;
 
     let (width, height) = decoder.dimensions();
     log::info!("BMP dimensions: {}x{}", width, height);
 
     let image = image::DynamicImage::from_decoder(decoder)
-        .map_err(|e| CacheError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+        .map_err(|e| CacheError::Io(std::io::Error::other(e)))?
         .to_rgb8();
 
     log::info!("Scanning pixels for adjacencies...");
@@ -284,15 +286,15 @@ fn generate_adjacency_from_bmp(
                         b: neighbor_pixel[2],
                     };
 
-                    if let Some(&neighbor_id) = color_map.get(&neighbor_color) {
-                        if province_id != neighbor_id {
-                            let pair = if province_id < neighbor_id {
-                                (province_id, neighbor_id)
-                            } else {
-                                (neighbor_id, province_id)
-                            };
-                            adjacency_set.insert(pair);
-                        }
+                    if let Some(&neighbor_id) = color_map.get(&neighbor_color)
+                        && province_id != neighbor_id
+                    {
+                        let pair = if province_id < neighbor_id {
+                            (province_id, neighbor_id)
+                        } else {
+                            (neighbor_id, province_id)
+                        };
+                        adjacency_set.insert(pair);
                     }
                 }
 
@@ -303,17 +305,17 @@ fn generate_adjacency_from_bmp(
                         r: neighbor_pixel[0],
                         g: neighbor_pixel[1],
                         b: neighbor_pixel[2],
-                            };
+                    };
 
-                    if let Some(&neighbor_id) = color_map.get(&neighbor_color) {
-                        if province_id != neighbor_id {
-                            let pair = if province_id < neighbor_id {
-                                (province_id, neighbor_id)
-                            } else {
-                                (neighbor_id, province_id)
-                            };
-                            adjacency_set.insert(pair);
-                        }
+                    if let Some(&neighbor_id) = color_map.get(&neighbor_color)
+                        && province_id != neighbor_id
+                    {
+                        let pair = if province_id < neighbor_id {
+                            (province_id, neighbor_id)
+                        } else {
+                            (neighbor_id, province_id)
+                        };
+                        adjacency_set.insert(pair);
                     }
                 }
             }

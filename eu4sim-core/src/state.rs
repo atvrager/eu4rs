@@ -60,6 +60,7 @@ pub type Tag = String;
 pub type ProvinceId = u32;
 pub type ArmyId = u32;
 pub type WarId = u32;
+pub type FleetId = u32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum RegimentType {
@@ -82,6 +83,23 @@ pub struct Army {
     pub owner: Tag,
     pub location: ProvinceId,
     pub regiments: Vec<Regiment>,
+    /// Queued movement path (None if not moving)
+    pub movement_path: Option<Vec<ProvinceId>>,
+    /// Fleet this army is embarked on (None if on land)
+    pub embarked_on: Option<FleetId>,
+}
+
+/// Naval transport fleet.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Fleet {
+    pub id: FleetId,
+    pub name: String,
+    pub owner: Tag,
+    pub location: ProvinceId, // Sea province
+    /// Transport capacity: 1 ship = 1 regiment
+    pub transport_capacity: u32,
+    /// Armies currently embarked on this fleet
+    pub embarked_armies: Vec<ArmyId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -98,6 +116,8 @@ pub struct WorldState {
     pub global: GlobalState,
     pub armies: HashMap<ArmyId, Army>,
     pub next_army_id: u32,
+    pub fleets: HashMap<FleetId, Fleet>,
+    pub next_fleet_id: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -155,6 +175,9 @@ pub struct DiplomacyState {
     /// Active wars by ID
     pub wars: HashMap<WarId, War>,
     pub next_war_id: u32,
+    /// Military access: (Grantor, Receiver) -> bool
+    /// If true, Receiver can move armies through Grantor's territory
+    pub military_access: HashMap<(Tag, Tag), bool>,
 }
 
 impl DiplomacyState {
@@ -175,6 +198,14 @@ impl DiplomacyState {
                 war.attackers.contains(&tag.to_string()) || war.defenders.contains(&tag.to_string())
             })
             .collect()
+    }
+
+    /// Check if a country has military access to another country's territory.
+    pub fn has_military_access(&self, receiver: &str, grantor: &str) -> bool {
+        self.military_access
+            .get(&(grantor.to_string(), receiver.to_string()))
+            .copied()
+            .unwrap_or(false)
     }
 }
 

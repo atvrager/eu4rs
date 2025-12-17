@@ -22,6 +22,8 @@ impl WorldStateBuilder {
                 global: Default::default(),
                 armies: HashMap::new(),
                 next_army_id: 1,
+                fleets: HashMap::new(),
+                next_fleet_id: 1,
             },
         }
     }

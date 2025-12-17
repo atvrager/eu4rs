@@ -1,4 +1,4 @@
-use crate::state::{ProvinceId, Tag};
+use crate::state::{ArmyId, ProvinceId, Tag};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,7 +19,10 @@ pub enum Command {
 
     // Military
     // RecruitUnit { province: ProvinceId, unit_type: UnitType },
-    // MoveArmy { army_id: ArmyId, destination: ProvinceId },
+    Move {
+        army_id: ArmyId,
+        destination: ProvinceId,
+    },
 
     // Diplomatic
     DeclareWar {

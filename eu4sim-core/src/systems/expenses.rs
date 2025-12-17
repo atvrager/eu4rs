@@ -98,6 +98,8 @@ mod tests {
                     strength: Fixed::from_int(1000),
                 },
             ],
+            movement_path: None,
+            embarked_on: None,
         };
         state.armies.insert(1, army);
 

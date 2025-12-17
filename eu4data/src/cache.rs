@@ -187,7 +187,6 @@ fn compute_file_hash(path: &Path) -> Result<String, CacheError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
     use tempfile::TempDir;
 
     #[test]
