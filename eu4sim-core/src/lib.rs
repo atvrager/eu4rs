@@ -1,3 +1,4 @@
+pub mod config;
 pub mod fixed;
 pub mod input;
 pub mod modifiers;
@@ -6,6 +7,7 @@ pub mod step;
 pub mod systems;
 pub mod testing;
 
+pub use config::SimConfig;
 pub use fixed::Fixed;
 pub use input::{Command, PlayerInputs};
 pub use modifiers::{GameModifiers, TradegoodId};

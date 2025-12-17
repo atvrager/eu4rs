@@ -132,6 +132,7 @@ pub fn load_initial_state(
     Ok(WorldState {
         date: start_date,
         rng_seed: _rng_seed,
+        rng_state: 0, // Initialize RNG state
         provinces,
         countries,
         base_goods_prices: base_prices,

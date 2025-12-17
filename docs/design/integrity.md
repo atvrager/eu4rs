@@ -1,12 +1,31 @@
 # Simulation Integrity System
 
-> **Status**: Design Phase  
+> **Status**: Phase 1 Complete (Runtime Checksums)  
 > **Author**: eu4rs Team  
 > **Date**: 2025-12-17
 
 ## Overview
 
 This document describes the integrity system for `eu4rs`, ensuring deterministic simulation across multiple clients and protecting against data corruption in multiplayer scenarios.
+
+## Unified Single-Player/Multiplayer Architecture
+
+**Core Principle**: Single-player and multiplayer are the same system.
+
+- **Single-player** = Lobby with 1 human player + N AI players
+- **Multiplayer** = Lobby with M human players + N AI players
+
+**AI Load Balancing**: AI computation can be distributed across clients based on available resources:
+- Beefier PCs handle more AI players
+- Load balancing negotiated during lobby setup
+- Each client runs `step_world()` for their assigned countries (human + AI)
+- Deterministic checksums ensure all clients stay in sync
+
+**Benefits**:
+- No separate code paths for single-player vs multiplayer
+- AI can be offloaded from weaker clients
+- Replay system works identically for both modes
+- Testing multiplayer = testing single-player
 
 ---
 

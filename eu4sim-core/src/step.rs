@@ -44,6 +44,7 @@ pub fn step_world(
     state: &WorldState,
     inputs: &[PlayerInputs],
     adjacency: Option<&eu4data::adjacency::AdjacencyGraph>,
+    config: &crate::config::SimConfig,
 ) -> WorldState {
     let mut new_state = state.clone();
 
@@ -77,6 +78,21 @@ pub fn step_world(
         crate::systems::run_taxation_tick(&mut new_state);
         crate::systems::run_manpower_tick(&mut new_state);
         crate::systems::run_expenses_tick(&mut new_state);
+    }
+
+    // 4. Compute checksum (if enabled)
+    if config.checksum_frequency > 0 {
+        // Calculate tick number (days since start date)
+        // For simplicity, we'll use a simple counter based on date
+        // In production, WorldState should track tick count explicitly
+        let tick = ((new_state.date.year - 1444) * 365
+            + (new_state.date.month as i32 - 1) * 30
+            + (new_state.date.day as i32 - 1)) as u64;
+
+        if tick.is_multiple_of(config.checksum_frequency as u64) {
+            let checksum = new_state.checksum();
+            log::debug!("Tick {}: checksum={:016x}", tick, checksum);
+        }
     }
 
     new_state
@@ -403,7 +419,7 @@ mod tests {
         let state = WorldStateBuilder::new().date(1444, 11, 11).build();
 
         let inputs = vec![];
-        let new_state = step_world(&state, &inputs, None);
+        let new_state = step_world(&state, &inputs, None, &crate::config::SimConfig::default());
 
         assert_eq!(new_state.date, Date::new(1444, 11, 12));
     }
@@ -425,7 +441,7 @@ mod tests {
 
         // This should log (we can't easily assert logs without a capture, but we know it runs)
         // Ideally we'd inspect side effects on state, but the stub does nothing yet.
-        let _new_state = step_world(&state, &inputs, None);
+        let _new_state = step_world(&state, &inputs, None, &crate::config::SimConfig::default());
 
         // Assert no crash and logic ran
     }
@@ -439,8 +455,8 @@ mod tests {
 
         let inputs = vec![];
 
-        let state_a = step_world(&state, &inputs, None);
-        let state_b = step_world(&state, &inputs, None);
+        let state_a = step_world(&state, &inputs, None, &crate::config::SimConfig::default());
+        let state_b = step_world(&state, &inputs, None, &crate::config::SimConfig::default());
 
         // Serialize to compare fully or just debug format
         let json_a = serde_json::to_string(&state_a).unwrap();
@@ -464,7 +480,7 @@ mod tests {
             }],
         }];
 
-        let new_state = step_world(&state, &inputs, None);
+        let new_state = step_world(&state, &inputs, None, &crate::config::SimConfig::default());
 
         // War should be created
         assert_eq!(new_state.diplomacy.wars.len(), 1);
@@ -487,7 +503,7 @@ mod tests {
             }],
         }];
 
-        let new_state = step_world(&state, &inputs, None);
+        let new_state = step_world(&state, &inputs, None, &crate::config::SimConfig::default());
 
         // No war should be created
         assert_eq!(new_state.diplomacy.wars.len(), 0);
@@ -509,7 +525,7 @@ mod tests {
             }],
         }];
 
-        state = step_world(&state, &inputs1, None);
+        state = step_world(&state, &inputs1, None, &crate::config::SimConfig::default());
         assert_eq!(state.diplomacy.wars.len(), 1);
 
         // Second war declaration (should fail)
@@ -520,7 +536,7 @@ mod tests {
             }],
         }];
 
-        let new_state = step_world(&state, &inputs2, None);
+        let new_state = step_world(&state, &inputs2, None, &crate::config::SimConfig::default());
 
         // Still only one war
         assert_eq!(new_state.diplomacy.wars.len(), 1);
@@ -540,7 +556,7 @@ mod tests {
             }],
         }];
 
-        let new_state = step_world(&state, &inputs, None);
+        let new_state = step_world(&state, &inputs, None, &crate::config::SimConfig::default());
 
         // No war should be created
         assert_eq!(new_state.diplomacy.wars.len(), 0);

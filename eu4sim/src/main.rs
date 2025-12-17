@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use eu4sim_core::state::Date;
-use eu4sim_core::{step_world, PlayerInputs};
+use eu4sim_core::{step_world, PlayerInputs, SimConfig};
 use std::path::PathBuf;
 
 mod loader;
@@ -50,6 +50,9 @@ fn main() -> Result<()> {
 
     log::info!("Initial State Date: {}", state.date);
 
+    // Simulation config (monthly checksums)
+    let config = SimConfig::default();
+
     // Game Loop
     for _ in 0..args.ticks {
         // Collect inputs (stub)
@@ -61,7 +64,7 @@ fn main() -> Result<()> {
         let prev_swe = state.countries.get("SWE").cloned();
 
         // Step
-        state = step_world(&state, &inputs, None);
+        state = step_world(&state, &inputs, None, &config);
 
         if let Some(swe) = state.countries.get("SWE") {
             use eu4sim_core::Fixed; // Import Fixed here or at top

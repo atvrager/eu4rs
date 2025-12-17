@@ -108,6 +108,8 @@ pub struct Fleet {
 pub struct WorldState {
     pub date: Date,
     pub rng_seed: u64,
+    /// Current RNG state (must be deterministic for replay)
+    pub rng_state: u64,
     pub provinces: HashMap<ProvinceId, ProvinceState>,
     pub countries: HashMap<Tag, CountryState>,
     /// Base prices for trade goods (loaded from data model).
@@ -218,6 +220,120 @@ pub struct GlobalState {
     // HRE, Curia, etc.
 }
 
+impl WorldState {
+    /// Compute a deterministic checksum of the world state.
+    ///
+    /// This checksum is used for:
+    /// - Desync detection in multiplayer
+    /// - Replay validation
+    /// - Debugging state divergence
+    ///
+    /// The checksum is deterministic: identical states produce identical checksums.
+    pub fn checksum(&self) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+
+        // Date
+        self.date.hash(&mut hasher);
+
+        // RNG state (not seed, as seed is constant)
+        self.rng_state.hash(&mut hasher);
+
+        // Countries (sorted by tag for determinism)
+        let mut tags: Vec<_> = self.countries.keys().collect();
+        tags.sort();
+        for tag in tags {
+            let c = &self.countries[tag];
+            tag.hash(&mut hasher);
+            c.treasury.0.hash(&mut hasher);
+            c.manpower.0.hash(&mut hasher);
+            c.stability.hash(&mut hasher);
+            c.prestige.0.hash(&mut hasher);
+        }
+
+        // Provinces (sorted by ID)
+        let mut province_ids: Vec<_> = self.provinces.keys().collect();
+        province_ids.sort();
+        for &id in province_ids {
+            let p = &self.provinces[&id];
+            id.hash(&mut hasher);
+            p.owner.hash(&mut hasher);
+            p.religion.hash(&mut hasher);
+            p.culture.hash(&mut hasher);
+            p.trade_goods_id.hash(&mut hasher);
+            p.base_production.0.hash(&mut hasher);
+            p.base_tax.0.hash(&mut hasher);
+            p.base_manpower.0.hash(&mut hasher);
+            p.has_fort.hash(&mut hasher);
+            p.is_sea.hash(&mut hasher);
+        }
+
+        // Armies (sorted by ID)
+        let mut army_ids: Vec<_> = self.armies.keys().collect();
+        army_ids.sort();
+        for &id in army_ids {
+            let a = &self.armies[&id];
+            id.hash(&mut hasher);
+            a.name.hash(&mut hasher);
+            a.owner.hash(&mut hasher);
+            a.location.hash(&mut hasher);
+            a.movement_path.hash(&mut hasher);
+            a.embarked_on.hash(&mut hasher);
+            for reg in &a.regiments {
+                reg.type_.hash(&mut hasher);
+                reg.strength.0.hash(&mut hasher);
+            }
+        }
+
+        // Fleets (sorted by ID)
+        let mut fleet_ids: Vec<_> = self.fleets.keys().collect();
+        fleet_ids.sort();
+        for &id in fleet_ids {
+            let f = &self.fleets[&id];
+            id.hash(&mut hasher);
+            f.name.hash(&mut hasher);
+            f.owner.hash(&mut hasher);
+            f.location.hash(&mut hasher);
+            f.transport_capacity.hash(&mut hasher);
+            f.embarked_armies.hash(&mut hasher);
+            f.movement_path.hash(&mut hasher);
+        }
+
+        // Diplomacy
+        // Relations (sorted by key)
+        let mut relation_keys: Vec<_> = self.diplomacy.relations.keys().collect();
+        relation_keys.sort();
+        for key in relation_keys {
+            key.hash(&mut hasher);
+            self.diplomacy.relations[key].hash(&mut hasher);
+        }
+
+        // Wars (sorted by ID)
+        let mut war_ids: Vec<_> = self.diplomacy.wars.keys().collect();
+        war_ids.sort();
+        for &id in war_ids {
+            let w = &self.diplomacy.wars[&id];
+            id.hash(&mut hasher);
+            w.name.hash(&mut hasher);
+            w.attackers.hash(&mut hasher);
+            w.defenders.hash(&mut hasher);
+            w.start_date.hash(&mut hasher);
+        }
+
+        // Military access (sorted by key)
+        let mut access_keys: Vec<_> = self.diplomacy.military_access.keys().collect();
+        access_keys.sort();
+        for key in access_keys {
+            key.hash(&mut hasher);
+            self.diplomacy.military_access[key].hash(&mut hasher);
+        }
+
+        hasher.finish()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,5 +370,49 @@ mod tests {
                                  // 36 - 30 = 6 (m=3)
                                  // Result: 1444.3.6
         assert_eq!(d2, Date::new(1444, 3, 6));
+    }
+
+    #[test]
+    fn test_checksum_determinism() {
+        use crate::testing::WorldStateBuilder;
+
+        // Same state should produce same checksum
+        let state = WorldStateBuilder::new()
+            .date(1444, 11, 11)
+            .with_country("SWE")
+            .with_province(1, Some("SWE"))
+            .build();
+
+        let checksum1 = state.checksum();
+        let checksum2 = state.checksum();
+
+        assert_eq!(
+            checksum1, checksum2,
+            "Identical states must produce identical checksums"
+        );
+    }
+
+    #[test]
+    fn test_checksum_sensitivity() {
+        use crate::testing::WorldStateBuilder;
+
+        // Different states should produce different checksums
+        let state1 = WorldStateBuilder::new()
+            .date(1444, 11, 11)
+            .with_country("SWE")
+            .build();
+
+        let state2 = WorldStateBuilder::new()
+            .date(1444, 11, 12) // Different date
+            .with_country("SWE")
+            .build();
+
+        let checksum1 = state1.checksum();
+        let checksum2 = state2.checksum();
+
+        assert_ne!(
+            checksum1, checksum2,
+            "Different states must produce different checksums"
+        );
     }
 }

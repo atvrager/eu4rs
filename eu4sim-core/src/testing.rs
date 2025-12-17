@@ -14,6 +14,7 @@ impl WorldStateBuilder {
             state: WorldState {
                 date: Date::new(1444, 11, 11),
                 rng_seed: 0,
+                rng_state: 0,
                 provinces: HashMap::new(),
                 countries: HashMap::new(),
                 base_goods_prices: HashMap::new(),
