@@ -1,5 +1,7 @@
 // Imports removed as they were unused after Tradegood refactor
 
+pub mod adjacency;
+pub mod cache;
 pub mod countries;
 pub mod coverage;
 pub mod cultures;
