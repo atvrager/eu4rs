@@ -28,7 +28,17 @@ Pick ONE task from this calibration suite and explain how you would route it:
 | "Refactor parser to support new format" | Tier 3 (Opus) | Core engine, architectural |
 | "Write unit tests for existing function" | Tier 2 (Sonnet) | Standard test work |
 
-## 3. Confirm Ready
+## 3. Antigravity Escalation Check
+
+Some tasks are better suited for Antigravity:
+- Complex multi-step planning (Antigravity Opus)
+- Browser-based testing or visual verification
+- Tasks requiring UI screenshots or visual artifacts
+- Very large context analysis (>200K tokens, Gemini)
+
+If a task matches these criteria, suggest: "This might be better for Antigravity."
+
+## 4. Confirm Ready
 
 State: "Calibrated and ready for autonomous work."
 
@@ -50,6 +60,8 @@ State: "Calibrated and ready for autonomous work."
 **Self-Test**: [Task description]
 → Route to: Tier X ([Model])
 → Reason: [Brief explanation]
+
+**Antigravity Escalation**: [Note if complex/visual tasks should go to Antigravity]
 
 **Status**: Calibrated and ready for autonomous work.
 ```

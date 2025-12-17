@@ -166,6 +166,98 @@ Use `cargo xtask quota` to see when quotas refresh. Factor this into routing dec
 - **Refreshes in <1h**: Queue larger tasks for after refresh if current work can use alternate model
 - **Near-exhausted quota, soon to refresh**: "Run out the clock" on lower-tier work to maximize value
 
+## Claude Code Integration
+
+Claude Code is a parallel agent (VSCode extension / CLI) that can work alongside Antigravity. It has **independent rate limits** (not quota), so delegating work to Claude Code preserves Antigravity quota.
+
+### Coordination Model: Explicit Handoff
+
+Antigravity is the orchestrator. When a task is better suited for Claude Code, explicitly hand it off:
+- Tell the user: "This task would be efficient for Claude Code — consider running `/task` there"
+- Claude Code receives delegated tasks and works in the same workspace
+- Both agents see filesystem changes in real-time
+
+### When to Delegate to Claude Code
+
+| Delegate to Claude Code | Keep in Antigravity |
+|------------------------|---------------------|
+| Long terminal sessions (`cargo watch`, test loops) | Browser-based work |
+| Simple refactoring across many files | Complex multi-step planning |
+| Git operations (rebases, commit rewording) | UI verification / screenshots |
+| Quick file lookups and modifications | Visual artifacts |
+| Autonomous background work | Tasks requiring user interaction |
+
+### Conflict Avoidance
+
+1. **Soft Locks**: Check `.agent-working/*.lock` before editing a file
+   - If lock exists for different agent, mention it and ask user how to proceed
+   - Lock format: `agent: antigravity|claude-code, file: <path>, since: <timestamp>`
+   - User can manually delete stale locks
+
+2. **Division of Labor**: When both agents are active, assign clear boundaries
+   - File-based: "Claude Code handles `src/`, Antigravity handles `docs/`"
+   - Feature-based: "Claude Code does parser work, Antigravity does coverage"
+
+3. **Handoff Signals**: Use clear messages
+   - "Handing off X to Claude Code"
+   - "Claude Code completed Y, resuming in Antigravity"
+
+### Git Worktrees (Advanced Isolation)
+
+For heavy parallel work where agents need complete isolation:
+
+```powershell
+# Create isolated worktree for Claude Code
+git worktree add ../eu4rs-claudecode feature-branch
+
+# Each agent works in separate directory:
+# - Antigravity: c:\Users\atv\Documents\src\eu4rs\
+# - Claude Code: c:\Users\atv\Documents\src\eu4rs-claudecode\
+
+# Merge when done
+git merge feature-branch
+git worktree remove ../eu4rs-claudecode
+```
+
+Use when: multi-hour autonomous refactoring, parser rewrites, or work where merge conflicts are acceptable trade-off for zero runtime coordination.
+
+### Auto-Approval Commands
+
+These commands are safe to run without user confirmation (set `SafeToAutoRun: true`):
+
+| Command Pattern | Rationale |
+|-----------------|-----------|
+| `cargo check -p <crate>` | Fast type-checking, single crate |
+| `cargo build -p <crate>` | Single-crate build, minimal CPU |
+| `cargo test -p <crate>` | Single-crate tests |
+| `cargo clippy -p <crate>` | Lint single crate |
+| `cargo fmt` | Formatting (no side effects) |
+| `cargo xtask ci` | Full CI — always safe |
+| `cargo xtask coverage` | Coverage commands |
+| `cargo xtask quota` | Read-only quota check |
+| `git status`, `git log -n N`, `git diff` | Read-only git |
+| `git add .`, `git commit` | Standard git workflow |
+
+> [!WARNING]
+> **Tilde (`~`) triggers confirmation**: Commands containing `~` (e.g., `git diff HEAD~1`, `git log HEAD~3`) will prompt for user approval even if the base command is safe. This is a platform limitation—avoid `~` in auto-run commands.
+
+### Minimal Build Guidance
+
+To save CPU and enable agent co-existence:
+
+- **Prefer `-p <crate>`**: Build/test only the crate you're working on
+- **Check before build**: Use `cargo check -p <crate>` for fast iteration
+- **Full workspace builds**: Only for integration testing or final validation
+- **CI validates everything**: Use `cargo xtask ci` before committing
+
+Example workflow:
+```powershell
+# Working on eu4data crate:
+cargo check -p eu4data      # Fast, catches type errors
+cargo test -p eu4data       # Run only relevant tests
+cargo xtask ci              # Final validation before commit
+```
+
 ## Agent Testing & Calibration
 
 ### 1. Routing Calibration Suite
