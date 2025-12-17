@@ -1,3 +1,5 @@
+use crate::fixed::Fixed;
+use crate::modifiers::{GameModifiers, TradegoodId};
 use crate::state::{CountryState, Date, ProvinceId, ProvinceState, WorldState};
 use std::collections::HashMap;
 
@@ -6,6 +8,7 @@ pub struct WorldStateBuilder {
 }
 
 impl WorldStateBuilder {
+    #[allow(clippy::should_implement_trait)]
     pub fn new() -> Self {
         Self {
             state: WorldState {
@@ -13,6 +16,8 @@ impl WorldStateBuilder {
                 rng_seed: 0,
                 provinces: HashMap::new(),
                 countries: HashMap::new(),
+                base_goods_prices: HashMap::new(),
+                modifiers: GameModifiers::default(),
                 diplomacy: Default::default(),
                 global: Default::default(),
             },
@@ -28,12 +33,17 @@ impl WorldStateBuilder {
         self.state.countries.insert(
             tag.to_string(),
             CountryState {
-                treasury: 100.0, // Default generous treasury for testing
-                manpower: 50000.0,
+                treasury: Fixed::from_int(100), // Default generous treasury
+                manpower: Fixed::from_int(50000),
                 stability: 0,
-                prestige: 0.0,
+                prestige: Fixed::ZERO,
             },
         );
+        self
+    }
+
+    pub fn with_province_state(mut self, id: ProvinceId, province: ProvinceState) -> Self {
+        self.state.provinces.insert(id, province);
         self
     }
 
@@ -44,11 +54,41 @@ impl WorldStateBuilder {
                 owner: owner_tag.map(|s| s.to_string()),
                 religion: None,
                 culture: None,
-                tax: 1.0,
-                production: 1.0,
-                manpower: 1.0,
+                trade_goods_id: None,
+                base_production: Fixed::ONE,
+                base_tax: Fixed::ONE,
+                base_manpower: Fixed::ONE,
             },
         );
+        self
+    }
+
+    /// Add a province with trade goods and production value.
+    pub fn with_province_full(
+        mut self,
+        id: ProvinceId,
+        owner_tag: Option<&str>,
+        trade_goods_id: Option<TradegoodId>,
+        base_production: Fixed,
+    ) -> Self {
+        self.state.provinces.insert(
+            id,
+            ProvinceState {
+                owner: owner_tag.map(|s| s.to_string()),
+                religion: None,
+                culture: None,
+                trade_goods_id,
+                base_production,
+                base_tax: Fixed::ONE,
+                base_manpower: Fixed::ONE,
+            },
+        );
+        self
+    }
+
+    /// Add a base goods price.
+    pub fn with_goods_price(mut self, goods_id: TradegoodId, price: Fixed) -> Self {
+        self.state.base_goods_prices.insert(goods_id, price);
         self
     }
 
@@ -81,5 +121,18 @@ mod tests {
             Some("SWE")
         );
         assert!(state.provinces.get(&2).unwrap().owner.is_none());
+    }
+
+    #[test]
+    fn test_with_province_full() {
+        let grain = TradegoodId(0);
+        let state = WorldStateBuilder::default()
+            .with_province_full(1, Some("SWE"), Some(grain), Fixed::from_int(5))
+            .with_goods_price(grain, Fixed::from_f32(2.5))
+            .build();
+
+        assert_eq!(state.provinces[&1].base_production, Fixed::from_int(5));
+        assert_eq!(state.provinces[&1].trade_goods_id, Some(grain));
+        assert_eq!(state.base_goods_prices[&grain], Fixed::from_f32(2.5));
     }
 }

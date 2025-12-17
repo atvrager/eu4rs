@@ -29,8 +29,13 @@ pub fn step_world(state: &WorldState, inputs: &[PlayerInputs]) -> WorldState {
         }
     }
 
-    // 3. Run Systems (Economy, Pop growth, etc.)
-    // run_economy_tick(&mut new_state);
+    // 3. Run Systems (monthly tick on 1st of each month)
+    if new_state.date.day == 1 {
+        let economy_config = crate::systems::EconomyConfig::default();
+        crate::systems::run_production_tick(&mut new_state, &economy_config);
+        crate::systems::run_taxation_tick(&mut new_state);
+        crate::systems::run_manpower_tick(&mut new_state);
+    }
 
     new_state
 }

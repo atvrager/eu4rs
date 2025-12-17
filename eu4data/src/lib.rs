@@ -10,6 +10,7 @@ pub mod localisation;
 pub mod map;
 pub mod path;
 pub mod religions;
+pub mod tradegoods;
 pub mod types;
 pub use types::*;
 

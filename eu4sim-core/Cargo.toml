@@ -9,3 +9,4 @@ log = "0.4"
 thiserror = "1.0"
 eu4data = { path = "../eu4data" }
 serde_json = "1.0"
+multiversion = "0.7"

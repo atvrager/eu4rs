@@ -1,3 +1,5 @@
+use crate::fixed::Fixed;
+use crate::modifiers::{GameModifiers, TradegoodId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -63,6 +65,10 @@ pub struct WorldState {
     pub rng_seed: u64,
     pub provinces: HashMap<ProvinceId, ProvinceState>,
     pub countries: HashMap<Tag, CountryState>,
+    /// Base prices for trade goods (loaded from data model).
+    pub base_goods_prices: HashMap<TradegoodId, Fixed>,
+    /// Dynamic modifiers (mutated by events).
+    pub modifiers: GameModifiers,
     pub diplomacy: DiplomacyState,
     pub global: GlobalState,
 }
@@ -72,18 +78,24 @@ pub struct ProvinceState {
     pub owner: Option<Tag>,
     pub religion: Option<String>,
     pub culture: Option<String>,
-    // Resource values
-    pub tax: f32,
-    pub production: f32,
-    pub manpower: f32,
+    /// Trade good produced by this province
+    pub trade_goods_id: Option<TradegoodId>,
+    /// Base production development (Fixed for determinism)
+    pub base_production: Fixed,
+    /// Base tax development
+    pub base_tax: Fixed,
+    /// Base manpower development
+    pub base_manpower: Fixed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CountryState {
-    pub treasury: f32,
-    pub manpower: f32,
+    /// Treasury balance (Fixed for determinism)
+    pub treasury: Fixed,
+    /// Available manpower pool
+    pub manpower: Fixed,
     pub stability: i8,
-    pub prestige: f32,
+    pub prestige: Fixed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
