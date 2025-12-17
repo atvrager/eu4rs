@@ -9,6 +9,7 @@ pub mod discovery;
 pub mod generated;
 pub mod history;
 pub mod localisation;
+pub mod manifest;
 pub mod map;
 pub mod path;
 pub mod religions;

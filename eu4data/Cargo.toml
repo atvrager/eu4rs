@@ -21,6 +21,10 @@ sha2 = "0.10"
 thiserror = "2.0"
 walkdir = "2.5.0"
 
+[build-dependencies]
+sha2 = "0.10"
+walkdir = "2.5.0"
+
 [dev-dependencies]
 eu4txt = { path = "../eu4txt" }
 tempfile = "3.23.0"

@@ -15,6 +15,7 @@ fn main() {
     println!("cargo:rerun-if-changed=src/generated/categories.rs");
     println!("cargo:rerun-if-changed=src/generated/types"); // Re-run if files are deleted/added
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed=EU4_GAME_PATH");
 
     let cwd = env::current_dir().unwrap();
     let schema_path = cwd.join("src/generated/schema.rs");
@@ -35,6 +36,8 @@ fn main() {
         if !mod_rs.exists() {
             fs::write(&mod_rs, "//! Placeholder\n").unwrap();
         }
+        // Still generate manifest even if schema is missing
+        generate_manifest();
         return;
     }
 
@@ -91,6 +94,9 @@ fn main() {
         let path = types_dir.join(format!("{}.rs", category.to_lowercase()));
         fs::write(&path, code).expect("Failed to write generated file");
     }
+
+    // Generate manifest (Phase 2 integrity system)
+    generate_manifest();
 }
 
 #[derive(Debug)]
@@ -294,4 +300,187 @@ fn to_pascal_case(s: &str) -> String {
         }
     }
     result
+}
+
+// ============================================================================
+// Phase 2: Game Data Manifest Generation
+// ============================================================================
+
+fn generate_manifest() {
+    // Try to get game path from environment
+    let game_path = env::var("EU4_GAME_PATH").ok().map(std::path::PathBuf::from);
+
+    if let Some(ref path) = game_path {
+        if !path.exists() {
+            eprintln!(
+                "Warning: EU4_GAME_PATH set but path does not exist: {}",
+                path.display()
+            );
+        } else {
+            println!(
+                "cargo:warning=Building with game data from: {}",
+                path.display()
+            );
+        }
+    } else {
+        println!("cargo:warning=EU4_GAME_PATH not set, manifest will be empty");
+        println!("cargo:warning=Set EU4_GAME_PATH to enable build-time manifest generation");
+    }
+
+    // Get git commit hash
+    let git_commit = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()
+        .and_then(|output| {
+            if output.status.success() {
+                String::from_utf8(output.stdout).ok()
+            } else {
+                None
+            }
+        })
+        .map(|s| s.trim().to_string());
+
+    // Generate manifest code
+    let manifest_code = if let Some(game_path) = game_path {
+        generate_manifest_with_data(&game_path, git_commit.as_deref())
+    } else {
+        generate_empty_manifest_code(git_commit.as_deref())
+    };
+
+    // Write to src/generated/manifest_generated.rs
+    let cwd = env::current_dir().unwrap();
+    let manifest_dir = cwd.join("src/generated");
+    fs::create_dir_all(&manifest_dir).expect("Failed to create generated directory");
+
+    let manifest_path = manifest_dir.join("manifest_generated.rs");
+    fs::write(&manifest_path, manifest_code).expect("Failed to write manifest");
+
+    println!("cargo:rerun-if-changed={}", manifest_path.display());
+}
+
+fn generate_manifest_with_data(game_path: &std::path::Path, git_commit: Option<&str>) -> String {
+    use sha2::{Digest, Sha256};
+    use walkdir::WalkDir;
+
+    let mut file_hashes = Vec::new();
+
+    // Scan important game data files
+    let patterns = [
+        ("definition.csv", false),
+        ("provinces.bmp", false),
+        ("common", true),
+        ("history", true),
+    ];
+
+    for (pattern, is_dir) in &patterns {
+        if *is_dir {
+            // Recursive scan for .txt files
+            let full_path = game_path.join(pattern);
+            if full_path.exists() {
+                for entry in WalkDir::new(&full_path)
+                    .follow_links(true)
+                    .into_iter()
+                    .filter_map(|e| e.ok())
+                {
+                    if entry.file_type().is_file()
+                        && entry.path().extension().is_some_and(|ext| ext == "txt")
+                    {
+                        if let Some(hash) = hash_file(entry.path()) {
+                            let rel_path = entry
+                                .path()
+                                .strip_prefix(game_path)
+                                .unwrap()
+                                .to_string_lossy()
+                                .replace('\\', "/");
+                            file_hashes.push((rel_path, hash));
+                        }
+                    }
+                }
+            }
+        } else {
+            // Single file
+            let file_path = game_path.join(pattern);
+            if file_path.exists() {
+                if let Some(hash) = hash_file(&file_path) {
+                    file_hashes.push((pattern.to_string(), hash));
+                }
+            }
+        }
+    }
+
+    // Sort by path for determinism
+    file_hashes.sort_by(|a, b| a.0.cmp(&b.0));
+
+    // Compute combined manifest hash
+    let mut hasher = Sha256::new();
+    for (path, hash) in &file_hashes {
+        hasher.update(path.as_bytes());
+        hasher.update(hash);
+    }
+    let manifest_hash = hasher.finalize();
+
+    // Generate Rust code
+    let mut code = String::new();
+    code.push_str("// Auto-generated by build.rs - DO NOT EDIT\n\n");
+
+    // File hashes array
+    code.push_str("const FILE_HASHES: &[FileHash] = &[\n");
+    for (path, hash) in &file_hashes {
+        code.push_str(&format!(
+            "    FileHash {{ path: \"{}\", sha256: {:?} }},\n",
+            path, hash
+        ));
+    }
+    code.push_str("];\n\n");
+
+    // Manifest constant
+    code.push_str("pub const GAME_MANIFEST: GameDataManifest = GameDataManifest {\n");
+    code.push_str(&format!(
+        "    sim_version: \"{}\",\n",
+        env::var("CARGO_PKG_VERSION").unwrap()
+    ));
+    if let Some(commit) = git_commit {
+        code.push_str(&format!("    git_commit: Some(\"{}\"),\n", commit));
+    } else {
+        code.push_str("    git_commit: None,\n");
+    }
+    code.push_str("    file_hashes: FILE_HASHES,\n");
+    code.push_str(&format!(
+        "    manifest_hash: {:?},\n",
+        manifest_hash.as_slice()
+    ));
+    code.push_str("};\n");
+
+    code
+}
+
+fn generate_empty_manifest_code(git_commit: Option<&str>) -> String {
+    let mut code = String::new();
+    code.push_str("// Auto-generated by build.rs - NO GAME DATA\n\n");
+    code.push_str("pub const GAME_MANIFEST: GameDataManifest = GameDataManifest {\n");
+    code.push_str(&format!(
+        "    sim_version: \"{}\",\n",
+        env::var("CARGO_PKG_VERSION").unwrap()
+    ));
+    if let Some(commit) = git_commit {
+        code.push_str(&format!("    git_commit: Some(\"{}\"),\n", commit));
+    } else {
+        code.push_str("    git_commit: None,\n");
+    }
+    code.push_str("    file_hashes: &[],\n");
+    code.push_str("    manifest_hash: [0; 32],\n");
+    code.push_str("};\n");
+
+    code
+}
+
+fn hash_file(path: &std::path::Path) -> Option<[u8; 32]> {
+    use sha2::{Digest, Sha256};
+
+    let contents = fs::read(path).ok()?;
+    let mut hasher = Sha256::new();
+    hasher.update(&contents);
+    let result = hasher.finalize();
+    Some(result.into())
 }
