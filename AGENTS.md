@@ -170,12 +170,58 @@ Use `cargo xtask quota` to see when quotas refresh. Factor this into routing dec
 
 Claude Code is a parallel agent (VSCode extension / CLI) that can work alongside Antigravity. It has **independent rate limits** (not quota), so delegating work to Claude Code preserves Antigravity quota.
 
-### Coordination Model: Explicit Handoff
+### VS Code Extension Configuration (Required)
+
+**Enable "Edit Automatically" for batch workflows:**
+
+1. Open VS Code Command Palette (`Ctrl+Shift+P`)
+2. Search: "Claude Code: Settings" or "Preferences: Open Settings (UI)"
+3. Find: `Claude Code > Edit Automatically`
+4. **Enable** the toggle
+
+**Why this matters:**
+- Allows agent to make multiple edits without per-file approval prompts
+- You review all changes at once via `git diff` instead of individually
+- Enables efficient multi-file refactoring (like the modifiers.rs implementation)
+
+**Review workflow with this enabled:**
+```powershell
+# After agent completes work
+git diff --stat              # See which files changed
+git diff eu4sim-core/src     # Review changes in context
+git add -p                   # Selectively stage if needed
+```
+
+### Coordination Model: Explicit Handoff with Commits
 
 Antigravity is the orchestrator. When a task is better suited for Claude Code, explicitly hand it off:
 - Tell the user: "This task would be efficient for Claude Code — consider running `/task` there"
 - Claude Code receives delegated tasks and works in the same workspace
 - Both agents see filesystem changes in real-time
+
+**MANDATORY: Commit before handoff**
+
+Before handing work between agents (Antigravity ↔ Claude Code):
+
+1. **Antigravity → Claude Code:**
+   ```
+   Antigravity: "I've completed the planning phase. Creating checkpoint commit before handing off implementation to Claude Code."
+   *Creates commit: "feat(plan): design production income system"*
+   Antigravity: "Handoff complete. User: run implementation in Claude Code."
+   ```
+
+2. **Claude Code → Antigravity:**
+   ```
+   Claude Code: "Implementation complete. Creating checkpoint commit."
+   *Creates commit: "feat(sim): implement production income calculation"*
+   Claude Code: "Ready for review. Handoff to Antigravity for next phase."
+   ```
+
+**Benefits:**
+- Clean rollback points if agent makes mistakes
+- Git becomes the review mechanism (`git diff HEAD~1`)
+- Clear responsibility boundaries in git history
+- Easy to cherry-pick or revert specific agent work
 
 ### When to Delegate to Claude Code
 
@@ -239,7 +285,17 @@ These commands are safe to run without user confirmation (set `SafeToAutoRun: tr
 | `git add .`, `git commit` | Standard git workflow |
 
 > [!WARNING]
-> **Tilde (`~`) triggers confirmation**: Commands containing `~` (e.g., `git diff HEAD~1`, `git log HEAD~3`) will prompt for user approval even if the base command is safe. This is a platform limitation—avoid `~` in auto-run commands.
+> **Special characters trigger confirmation**: The following patterns cause user approval prompts even for otherwise safe commands:
+> - `~` (tilde): `git diff HEAD~1`, `git log HEAD~3`
+> - `^` (caret): `git diff HEAD^`
+> - `@{N}` (reflog): `git diff HEAD@{1}`
+> - `2>&1`, `>`, `>>` (shell redirection)
+>
+> **Workaround for git history**: Use explicit commit IDs instead:
+> ```powershell
+> git log --oneline -n 2   # Get commit IDs (auto-safe)
+> git diff abc123          # Diff against specific commit (auto-safe)
+> ```
 
 ### Minimal Build Guidance
 
@@ -257,6 +313,35 @@ cargo check -p eu4data      # Fast, catches type errors
 cargo test -p eu4data       # Run only relevant tests
 cargo xtask ci              # Final validation before commit
 ```
+
+## Batch Editing Protocol
+
+**Default behavior: Make all edits autonomously, user reviews via git diff.**
+
+When implementing multi-file changes:
+1. **Announce the plan** upfront with file list
+2. **Execute all changes** without stopping for per-edit approval
+3. **Verify compilation** with `cargo check -p <crate>`
+4. **Show summary** of changes at the end
+
+**Example workflow:**
+```
+Agent: "I'm going to modify 4 files:
+1. Create modifiers.rs (TradegoodId, GameModifiers)
+2. Update state.rs (add base_goods_prices, modifiers fields)
+3. Update step.rs (add monthly tick check)
+4. Update lib.rs (module declaration)
+
+*[Executes all 4 changes]*
+
+Done. All changes compile cleanly (cargo check passed).
+Review with: git diff --stat"
+```
+
+**Exception - Ask before changes to:**
+- Existing public APIs (breaking changes)
+- Security-sensitive code (auth, secrets, credentials)
+- Large refactors (>5 files or >200 lines changed)
 
 ## Agent Testing & Calibration
 
