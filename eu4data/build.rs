@@ -305,6 +305,22 @@ fn to_pascal_case(s: &str) -> String {
 // ============================================================================
 // Phase 2: Game Data Manifest Generation
 // ============================================================================
+//
+// Generates a manifest of all game data files with SHA256 hashes at build time.
+// This ensures clients can verify they're using compatible game data.
+//
+// CACHING BEHAVIOR:
+// The manifest is only regenerated when:
+// - build.rs itself changes
+// - EU4_GAME_PATH environment variable changes
+// - The generated manifest file is deleted
+//
+// IMPORTANT: The build script does NOT watch individual game data files.
+// If game files change (e.g., EU4 patch), you must manually trigger a rebuild:
+//   cargo clean && cargo build
+//
+// This is intentional to avoid expensive file scanning on every incremental build.
+// Watching thousands of game files would slow down all builds significantly.
 
 fn generate_manifest() {
     // Try to get game path from environment
