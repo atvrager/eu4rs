@@ -6,7 +6,12 @@ use thiserror::Error;
 pub enum ActionError {
     #[error("Insufficient funds: required {required}, available {available}")]
     InsufficientFunds { required: f32, available: f32 },
-    // Add other errors
+    #[error("Country not found: {tag}")]
+    CountryNotFound { tag: String },
+    #[error("Already at war with {target}")]
+    AlreadyAtWar { target: String },
+    #[error("Cannot declare war on self")]
+    CannotDeclareWarOnSelf,
 }
 
 /// Advance the world by one tick.
@@ -29,7 +34,11 @@ pub fn step_world(state: &WorldState, inputs: &[PlayerInputs]) -> WorldState {
         }
     }
 
-    // 3. Run Systems (monthly tick on 1st of each month)
+    // 3. Run Systems
+    // Combat runs daily (whenever armies are engaged)
+    crate::systems::run_combat_tick(&mut new_state);
+
+    // Economic systems run monthly (on 1st of each month)
     if new_state.date.day == 1 {
         let economy_config = crate::systems::EconomyConfig::default();
         crate::systems::run_production_tick(&mut new_state, &economy_config);
@@ -56,16 +65,60 @@ fn execute_command(
                 state
                     .countries
                     .get(country_tag)
-                    .ok_or(ActionError::InsufficientFunds {
-                        required: 0.0,
-                        available: 0.0,
-                    })?; // Better error needed
+                    .ok_or(ActionError::CountryNotFound {
+                        tag: country_tag.to_string(),
+                    })?;
 
             // Validate Logic (Check cost vs treasury)
             // if country.treasury < cost ...
 
             // Apply Effect
             log::info!("Player {} building something (stub)", country_tag);
+
+            Ok(())
+        }
+        Command::DeclareWar { target } => {
+            // Validate attacker exists
+            if !state.countries.contains_key(country_tag) {
+                return Err(ActionError::CountryNotFound {
+                    tag: country_tag.to_string(),
+                });
+            }
+
+            // Validate target exists
+            if !state.countries.contains_key(target) {
+                return Err(ActionError::CountryNotFound {
+                    tag: target.clone(),
+                });
+            }
+
+            // Cannot declare war on self
+            if country_tag == target {
+                return Err(ActionError::CannotDeclareWarOnSelf);
+            }
+
+            // Check if already at war
+            if state.diplomacy.are_at_war(country_tag, target) {
+                return Err(ActionError::AlreadyAtWar {
+                    target: target.clone(),
+                });
+            }
+
+            // Create war
+            let war_id = state.diplomacy.next_war_id;
+            state.diplomacy.next_war_id += 1;
+
+            let war = crate::state::War {
+                id: war_id,
+                name: format!("{} vs {}", country_tag, target),
+                attackers: vec![country_tag.to_string()],
+                defenders: vec![target.clone()],
+                start_date: state.date,
+            };
+
+            state.diplomacy.wars.insert(war_id, war);
+
+            log::info!("{} declared war on {}", country_tag, target);
 
             Ok(())
         }
@@ -128,5 +181,102 @@ mod tests {
         let json_b = serde_json::to_string(&state_b).unwrap();
 
         assert_eq!(json_a, json_b);
+    }
+
+    #[test]
+    fn test_declare_war_success() {
+        let state = WorldStateBuilder::new()
+            .date(1444, 11, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        let inputs = vec![PlayerInputs {
+            country: "SWE".to_string(),
+            commands: vec![Command::DeclareWar {
+                target: "DEN".to_string(),
+            }],
+        }];
+
+        let new_state = step_world(&state, &inputs);
+
+        // War should be created
+        assert_eq!(new_state.diplomacy.wars.len(), 1);
+
+        // Countries should be at war
+        assert!(new_state.diplomacy.are_at_war("SWE", "DEN"));
+    }
+
+    #[test]
+    fn test_declare_war_on_self_fails() {
+        let state = WorldStateBuilder::new()
+            .date(1444, 11, 11)
+            .with_country("SWE")
+            .build();
+
+        let inputs = vec![PlayerInputs {
+            country: "SWE".to_string(),
+            commands: vec![Command::DeclareWar {
+                target: "SWE".to_string(),
+            }],
+        }];
+
+        let new_state = step_world(&state, &inputs);
+
+        // No war should be created
+        assert_eq!(new_state.diplomacy.wars.len(), 0);
+    }
+
+    #[test]
+    fn test_declare_war_twice_fails() {
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 11, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        // First war declaration
+        let inputs1 = vec![PlayerInputs {
+            country: "SWE".to_string(),
+            commands: vec![Command::DeclareWar {
+                target: "DEN".to_string(),
+            }],
+        }];
+
+        state = step_world(&state, &inputs1);
+        assert_eq!(state.diplomacy.wars.len(), 1);
+
+        // Second war declaration (should fail)
+        let inputs2 = vec![PlayerInputs {
+            country: "SWE".to_string(),
+            commands: vec![Command::DeclareWar {
+                target: "DEN".to_string(),
+            }],
+        }];
+
+        let new_state = step_world(&state, &inputs2);
+
+        // Still only one war
+        assert_eq!(new_state.diplomacy.wars.len(), 1);
+    }
+
+    #[test]
+    fn test_declare_war_nonexistent_country() {
+        let state = WorldStateBuilder::new()
+            .date(1444, 11, 11)
+            .with_country("SWE")
+            .build();
+
+        let inputs = vec![PlayerInputs {
+            country: "SWE".to_string(),
+            commands: vec![Command::DeclareWar {
+                target: "XXX".to_string(),
+            }],
+        }];
+
+        let new_state = step_world(&state, &inputs);
+
+        // No war should be created
+        assert_eq!(new_state.diplomacy.wars.len(), 0);
     }
 }

@@ -59,6 +59,7 @@ impl std::fmt::Display for Date {
 pub type Tag = String;
 pub type ProvinceId = u32;
 pub type ArmyId = u32;
+pub type WarId = u32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum RegimentType {
@@ -126,9 +127,55 @@ pub struct CountryState {
     pub prestige: Fixed,
 }
 
+/// Type of diplomatic relationship between two countries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum RelationType {
+    Alliance,
+    Rival,
+}
+
+/// Active war between countries.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct War {
+    pub id: WarId,
+    pub name: String,
+    /// Countries on the attacker's side
+    pub attackers: Vec<Tag>,
+    /// Countries on the defender's side
+    pub defenders: Vec<Tag>,
+    /// War start date
+    pub start_date: Date,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DiplomacyState {
-    // Relationships, wars, alliances
+    /// Bilateral relationships: (Tag1, Tag2) -> RelationType
+    /// Stored in sorted order (smaller tag first) to avoid duplication
+    pub relations: HashMap<(Tag, Tag), RelationType>,
+    /// Active wars by ID
+    pub wars: HashMap<WarId, War>,
+    pub next_war_id: u32,
+}
+
+impl DiplomacyState {
+    /// Check if two countries are at war with each other.
+    pub fn are_at_war(&self, tag1: &str, tag2: &str) -> bool {
+        self.wars.values().any(|war| {
+            (war.attackers.contains(&tag1.to_string()) && war.defenders.contains(&tag2.to_string()))
+                || (war.attackers.contains(&tag2.to_string())
+                    && war.defenders.contains(&tag1.to_string()))
+        })
+    }
+
+    /// Get all wars involving a specific country.
+    pub fn get_wars_for_country(&self, tag: &str) -> Vec<&War> {
+        self.wars
+            .values()
+            .filter(|war| {
+                war.attackers.contains(&tag.to_string()) || war.defenders.contains(&tag.to_string())
+            })
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

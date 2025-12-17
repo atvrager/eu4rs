@@ -13,16 +13,18 @@ pub enum Command {
     BuildInProvince {
         province: ProvinceId,
         building: String,
-    }, // Simplified: building is String
+    },
     // SetMerchant { trade_node: TradeNodeId, action: MerchantAction },
     // RaiseTaxes { province: ProvinceId },
 
     // Military
     // RecruitUnit { province: ProvinceId, unit_type: UnitType },
     // MoveArmy { army_id: ArmyId, destination: ProvinceId },
-    // DeclareWar { target: Tag, casus_belli: CasusBelli },
 
     // Diplomatic
+    DeclareWar {
+        target: Tag,
+    },
     // SendDiplomat { target: Tag, action: DiplomaticAction },
     // AcceptPeace { war_id: WarId },
 
