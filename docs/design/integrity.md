@@ -150,6 +150,16 @@ impl WorldState {
         hasher.finish()
     }
 }
+
+**Optimization**: For large states, sorting HashMaps every tick is expensive. Consider:
+- Use `BTreeMap` instead of `HashMap` for deterministic iteration without sorting
+- Cache checksums with state versioning to skip recomputation
+- Compute checksums incrementally (only hash changed fields)
+
+**Floating-Point Determinism**: The `Fixed` type ensures deterministic arithmetic, but watch for:
+- Division operations (ensure rounding mode is consistent)
+- Avoid transcendental functions (sin/cos/sqrt) or use lookup tables
+- Document `Fixed` precision guarantees (currently i64 with 16 fractional bits)
 ```
 
 **Checksum Frequency**: Configurable via `SimConfig`:
@@ -164,6 +174,18 @@ pub struct SimConfig {
 - `1`: Every tick (safest, ~0.5ms overhead per tick)
 - `30`: Every month (~1 tick/day for 30 days)
 - `365`: Every year (lowest overhead, slowest detection)
+
+**RNG State Management**:
+```rust
+pub struct WorldState {
+    pub rng_seed: u64,
+    /// Current RNG state (must be deterministic)
+    pub rng_state: u64,
+}
+```
+
+> [!IMPORTANT]
+> All randomness MUST go through `WorldState`'s RNG, never `thread_rng()` or `rand::random()`. This ensures replay determinism.
 
 ---
 
@@ -230,6 +252,16 @@ pub struct TickInputs {
 3. Load initial state, verify hash
 4. Apply all inputs sequentially
 5. Final state should be reproducible
+
+**Replay Checkpoints** (optimization for long games):
+```rust
+pub struct Replay {
+    // ...
+    /// Periodic state snapshots for fast-forward (every 365 ticks)
+    pub checkpoints: Vec<(u64, WorldState)>,
+}
+```
+Allows seeking to year 1500 without replaying from 1444.
 ```
 
 ---
@@ -250,6 +282,7 @@ pub struct TickInputs {
 - [ ] Enhance cache loader to verify `manifest_hash`
 - [ ] Add `data_hash` field for integrity check
 - [ ] Implement auto-regeneration on mismatch
+- [ ] Use mtimes for fast-path, hashes for multiplayer validation
 
 ### Phase 4: Multiplayer Integration
 - [ ] Define handshake protocol
@@ -260,6 +293,7 @@ pub struct TickInputs {
 - [ ] Define replay format
 - [ ] Implement replay recording
 - [ ] Implement replay playback with validation
+- [ ] Add periodic checkpoints for fast-forward
 
 ---
 
