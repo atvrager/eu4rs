@@ -339,14 +339,15 @@ fn generate_manifest() {
             }
             #[cfg(target_os = "linux")]
             {
-                dirs::home_dir().map(|home| {
-                    home.join(".steam/steam/steamapps/common/Europa Universalis IV")
-                })
+                dirs::home_dir()
+                    .map(|home| home.join(".steam/steam/steamapps/common/Europa Universalis IV"))
             }
             #[cfg(target_os = "macos")]
             {
                 dirs::home_dir().map(|home| {
-                    home.join("Library/Application Support/Steam/steamapps/common/Europa Universalis IV")
+                    home.join(
+                        "Library/Application Support/Steam/steamapps/common/Europa Universalis IV",
+                    )
                 })
             }
             #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
@@ -363,7 +364,10 @@ fn generate_manifest() {
             );
             println!("cargo:warning=Manifest will be empty. Set EU4_GAME_PATH to override.");
         } else {
-            println!("cargo:warning=Building with game data from: {}", path.display());
+            println!(
+                "cargo:warning=Building with game data from: {}",
+                path.display()
+            );
         }
     } else {
         println!("cargo:warning=Could not determine game data path");

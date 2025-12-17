@@ -7122,7 +7122,7 @@ const FILE_HASHES: &[FileHash] = &[
 
 pub const GAME_MANIFEST: GameDataManifest = GameDataManifest {
     sim_version: "0.1.0",
-    git_commit: Some("cb79fefde7ba5f64f7d07072fc5939fc1c0029fc"),
+    git_commit: Some("cd44d1efac74a5d70178047e45261d81691e81ec"),
     file_hashes: FILE_HASHES,
     manifest_hash: [226, 32, 55, 208, 235, 235, 255, 223, 149, 14, 206, 208, 53, 206, 193, 14, 164, 5, 104, 214, 61, 103, 74, 70, 36, 1, 229, 33, 3, 45, 52, 220],
 };
