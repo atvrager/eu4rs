@@ -63,6 +63,7 @@ impl WorldStateBuilder {
                 base_tax: Fixed::ONE,
                 base_manpower: Fixed::ONE,
                 has_fort: false,
+                is_sea: false,
             },
         );
         self
@@ -87,6 +88,7 @@ impl WorldStateBuilder {
                 base_tax: Fixed::ONE,
                 base_manpower: Fixed::ONE,
                 has_fort: false,
+                is_sea: false,
             },
         );
         self

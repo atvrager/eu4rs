@@ -54,6 +54,58 @@ impl AdjacencyGraph {
     pub fn province_count(&self) -> usize {
         self.adjacencies.len()
     }
+
+    /// Find a path from start to end province using BFS.
+    ///
+    /// Returns the full path including the destination, but excluding the start.
+    /// Returns None if no path exists.
+    pub fn find_path(&self, start: ProvinceId, end: ProvinceId) -> Option<Vec<ProvinceId>> {
+        use std::collections::VecDeque;
+
+        // Early exit if start equals end
+        if start == end {
+            return Some(Vec::new());
+        }
+
+        // BFS to find shortest path
+        let mut queue: VecDeque<ProvinceId> = VecDeque::new();
+        let mut visited: HashSet<ProvinceId> = HashSet::new();
+        let mut parent: HashMap<ProvinceId, ProvinceId> = HashMap::new();
+
+        queue.push_back(start);
+        visited.insert(start);
+
+        while let Some(current) = queue.pop_front() {
+            // Found the destination
+            if current == end {
+                // Reconstruct path
+                let mut path = Vec::new();
+                let mut node = end;
+
+                while node != start {
+                    path.push(node);
+                    node = *parent.get(&node)?;
+                }
+
+                path.reverse();
+                return Some(path);
+            }
+
+            // Explore neighbors
+            if let Some(neighbors) = self.adjacencies.get(&current) {
+                for &neighbor in neighbors {
+                    if !visited.contains(&neighbor) {
+                        visited.insert(neighbor);
+                        parent.insert(neighbor, current);
+                        queue.push_back(neighbor);
+                    }
+                }
+            }
+        }
+
+        // No path found
+        None
+    }
 }
 
 impl Default for AdjacencyGraph {
@@ -367,5 +419,62 @@ mod tests {
 
         assert_eq!(c1, c2);
         assert_ne!(c1, c3);
+    }
+
+    #[test]
+    fn test_find_path_adjacent() {
+        let mut graph = AdjacencyGraph::new();
+        graph.add_adjacency(1, 2);
+
+        let path = graph.find_path(1, 2);
+        assert_eq!(path, Some(vec![2]));
+    }
+
+    #[test]
+    fn test_find_path_multi_province() {
+        let mut graph = AdjacencyGraph::new();
+        // Create path: 1 -> 2 -> 3 -> 4
+        graph.add_adjacency(1, 2);
+        graph.add_adjacency(2, 3);
+        graph.add_adjacency(3, 4);
+
+        let path = graph.find_path(1, 4);
+        assert_eq!(path, Some(vec![2, 3, 4]));
+    }
+
+    #[test]
+    fn test_find_path_same_province() {
+        let mut graph = AdjacencyGraph::new();
+        graph.add_adjacency(1, 2);
+
+        let path = graph.find_path(1, 1);
+        assert_eq!(path, Some(vec![]));
+    }
+
+    #[test]
+    fn test_find_path_no_connection() {
+        let mut graph = AdjacencyGraph::new();
+        graph.add_adjacency(1, 2);
+        graph.add_adjacency(3, 4);
+
+        let path = graph.find_path(1, 4);
+        assert_eq!(path, None);
+    }
+
+    #[test]
+    fn test_find_path_multiple_routes_finds_shortest() {
+        let mut graph = AdjacencyGraph::new();
+        // Create a graph with multiple paths:
+        // 1 -> 2 -> 5
+        // 1 -> 3 -> 4 -> 5
+        graph.add_adjacency(1, 2);
+        graph.add_adjacency(2, 5);
+        graph.add_adjacency(1, 3);
+        graph.add_adjacency(3, 4);
+        graph.add_adjacency(4, 5);
+
+        let path = graph.find_path(1, 5);
+        // BFS should find shortest path: 1 -> 2 -> 5
+        assert_eq!(path, Some(vec![2, 5]));
     }
 }

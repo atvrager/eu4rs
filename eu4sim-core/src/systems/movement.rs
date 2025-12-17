@@ -6,11 +6,45 @@ use crate::state::WorldState;
 /// - Advances 1 province per day
 /// - Free movement (no movement cost for MVP)
 /// - Triggers combat on arrival if enemies present
+/// - Fleets move and carry embarked armies with them
 pub fn run_movement_tick(state: &mut WorldState) {
-    let mut completed_movements: Vec<u32> = Vec::new();
+    let mut completed_army_movements: Vec<u32> = Vec::new();
+    let mut completed_fleet_movements: Vec<u32> = Vec::new();
 
-    // Process all armies with movement paths
+    // Process all fleets with movement paths (fleets move first)
+    for (&fleet_id, fleet) in state.fleets.iter_mut() {
+        if let Some(path) = &mut fleet.movement_path {
+            if !path.is_empty() {
+                // Move to next province in path
+                let next_province = path.remove(0);
+                fleet.location = next_province;
+
+                log::info!("Fleet {} moved to province {}", fleet_id, next_province);
+
+                // If path is complete, clear it
+                if path.is_empty() {
+                    completed_fleet_movements.push(fleet_id);
+                }
+            }
+        }
+    }
+
+    // Update embarked army locations to match their fleet
+    for army in state.armies.values_mut() {
+        if let Some(fleet_id) = army.embarked_on {
+            if let Some(fleet) = state.fleets.get(&fleet_id) {
+                army.location = fleet.location;
+            }
+        }
+    }
+
+    // Process all armies with movement paths (only non-embarked armies move independently)
     for (&army_id, army) in state.armies.iter_mut() {
+        // Skip embarked armies (they move with their fleet)
+        if army.embarked_on.is_some() {
+            continue;
+        }
+
         if let Some(path) = &mut army.movement_path {
             if !path.is_empty() {
                 // Move to next province in path
@@ -21,16 +55,22 @@ pub fn run_movement_tick(state: &mut WorldState) {
 
                 // If path is complete, clear it
                 if path.is_empty() {
-                    completed_movements.push(army_id);
+                    completed_army_movements.push(army_id);
                 }
             }
         }
     }
 
     // Clear completed movement paths
-    for army_id in completed_movements {
+    for army_id in completed_army_movements {
         if let Some(army) = state.armies.get_mut(&army_id) {
             army.movement_path = None;
+        }
+    }
+
+    for fleet_id in completed_fleet_movements {
+        if let Some(fleet) = state.fleets.get_mut(&fleet_id) {
+            fleet.movement_path = None;
         }
     }
 

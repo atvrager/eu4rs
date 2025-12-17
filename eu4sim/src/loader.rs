@@ -66,6 +66,7 @@ pub fn load_initial_state(
             base_production: Fixed::from_f32(hist.base_production.unwrap_or(0.0)),
             base_manpower: Fixed::from_f32(hist.base_manpower.unwrap_or(0.0)),
             has_fort: hist.fort_15th.unwrap_or(false),
+            is_sea: false, // TODO: Load from terrain data
         };
         provinces.insert(id, p.clone());
 

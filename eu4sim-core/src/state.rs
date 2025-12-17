@@ -100,6 +100,8 @@ pub struct Fleet {
     pub transport_capacity: u32,
     /// Armies currently embarked on this fleet
     pub embarked_armies: Vec<ArmyId>,
+    /// Queued movement path (None if not moving)
+    pub movement_path: Option<Vec<ProvinceId>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -135,6 +137,8 @@ pub struct ProvinceState {
     pub base_manpower: Fixed,
     /// Has a level 2 fort (Castle)
     pub has_fort: bool,
+    /// Whether this province is a sea province (for naval movement)
+    pub is_sea: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
