@@ -323,23 +323,50 @@ fn to_pascal_case(s: &str) -> String {
 // Watching thousands of game files would slow down all builds significantly.
 
 fn generate_manifest() {
-    // Try to get game path from environment
-    let game_path = env::var("EU4_GAME_PATH").ok().map(std::path::PathBuf::from);
+    // Try to get game path using the same cascade as runtime:
+    // 1. EU4_GAME_PATH env var
+    // 2. Default Steam path for the platform
+    let game_path = env::var("EU4_GAME_PATH")
+        .ok()
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            // Use default Steam paths per platform
+            #[cfg(target_os = "windows")]
+            {
+                Some(std::path::PathBuf::from(
+                    "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Europa Universalis IV",
+                ))
+            }
+            #[cfg(target_os = "linux")]
+            {
+                dirs::home_dir().map(|home| {
+                    home.join(".steam/steam/steamapps/common/Europa Universalis IV")
+                })
+            }
+            #[cfg(target_os = "macos")]
+            {
+                dirs::home_dir().map(|home| {
+                    home.join("Library/Application Support/Steam/steamapps/common/Europa Universalis IV")
+                })
+            }
+            #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+            {
+                None
+            }
+        });
 
     if let Some(ref path) = game_path {
         if !path.exists() {
-            eprintln!(
-                "Warning: EU4_GAME_PATH set but path does not exist: {}",
-                path.display()
-            );
-        } else {
             println!(
-                "cargo:warning=Building with game data from: {}",
+                "cargo:warning=Game data path does not exist: {}",
                 path.display()
             );
+            println!("cargo:warning=Manifest will be empty. Set EU4_GAME_PATH to override.");
+        } else {
+            println!("cargo:warning=Building with game data from: {}", path.display());
         }
     } else {
-        println!("cargo:warning=EU4_GAME_PATH not set, manifest will be empty");
+        println!("cargo:warning=Could not determine game data path");
         println!("cargo:warning=Set EU4_GAME_PATH to enable build-time manifest generation");
     }
 
