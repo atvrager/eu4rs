@@ -318,4 +318,53 @@ mod tests {
         let mv = a.movement.as_ref().unwrap();
         assert_eq!(mv.required_progress, Fixed::from_int(10));
     }
+
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn prop_movement_progress_monotonic(
+            cost in 10..100i32,
+            ticks in 1..50usize
+        ) {
+            let mut state = WorldState::default();
+            let cost_fixed = Fixed::from_f32(cost as f32);
+            
+            // Setup army at 1, moving to 2
+            let army = Army {
+                id: 1,
+                name: "Prop Army".into(),
+                owner: "SWE".into(),
+                location: 1,
+                regiments: vec![],
+                movement: Some(MovementState {
+                    path: VecDeque::from(vec![2]),
+                    progress: Fixed::ZERO,
+                    required_progress: cost_fixed,
+                }),
+                embarked_on: None,
+            };
+            state.armies.insert(1, army);
+            
+            // Standard country setup
+            state.countries.insert("SWE".into(), crate::state::CountryState::default());
+
+            let mut prev_progress = Fixed::ZERO;
+            
+            for _ in 0..ticks {
+                run_movement_tick(&mut state, None);
+                
+                if let Some(army) = state.armies.get(&1) {
+                    if army.location == 2 {
+                        break;
+                    }
+                    
+                    if let Some(mv) = &army.movement {
+                        prop_assert!(mv.progress >= prev_progress, "Progress decreased: {} -> {}", prev_progress, mv.progress);
+                        prev_progress = mv.progress;
+                    }
+                }
+            }
+        }
+    }
 }
