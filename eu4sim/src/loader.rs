@@ -127,7 +127,7 @@ pub fn load_initial_state(
                     owner: tag.clone(),
                     location,
                     regiments,
-                    movement_path: None,
+                    movement: None,
                     embarked_on: None,
                 },
             );

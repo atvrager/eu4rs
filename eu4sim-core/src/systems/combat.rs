@@ -169,7 +169,7 @@ mod tests {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
             }],
-            movement_path: None,
+            movement: None,
             embarked_on: None,
         };
 
@@ -182,7 +182,7 @@ mod tests {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
             }],
-            movement_path: None,
+            movement: None,
             embarked_on: None,
         };
 
@@ -228,7 +228,7 @@ mod tests {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
             }],
-            movement_path: None,
+            movement: None,
             embarked_on: None,
         };
 
@@ -241,7 +241,7 @@ mod tests {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
             }],
-            movement_path: None,
+            movement: None,
             embarked_on: None,
         };
 
@@ -277,7 +277,7 @@ mod tests {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(5000),
             }],
-            movement_path: None,
+            movement: None,
             embarked_on: None,
         };
 
@@ -290,7 +290,7 @@ mod tests {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
             }],
-            movement_path: None,
+            movement: None,
             embarked_on: None,
         };
 

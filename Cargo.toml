@@ -5,7 +5,7 @@ members = [ "eu4data",
     "eu4txt",
     "xtask",
     "eu4sim",
-    "eu4sim-core",
+    "eu4sim-core", "game_pathfinding",
 ]
 resolver = "2"
 

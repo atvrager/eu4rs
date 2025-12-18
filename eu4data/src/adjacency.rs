@@ -1,4 +1,5 @@
 use crate::cache::{CacheError, CacheableResource};
+use game_pathfinding::Graph;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -111,6 +112,32 @@ impl AdjacencyGraph {
 impl Default for AdjacencyGraph {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Trait for calculating movement costs between provinces.
+/// Implement this for your game state or map mode context.
+pub trait CostCalculator {
+    fn calculate_cost(&self, from: ProvinceId, to: ProvinceId) -> u32;
+    fn calculate_heuristic(&self, from: ProvinceId, to: ProvinceId) -> u32;
+}
+
+/// Implement the generic Graph trait for AdjacencyGraph.
+/// This allows us to use game_pathfinding algorithms on our map.
+impl<C> Graph<ProvinceId, C> for AdjacencyGraph
+where
+    C: CostCalculator,
+{
+    fn neighbors(&self, node: ProvinceId, _context: &C) -> Vec<ProvinceId> {
+        self.neighbors(node)
+    }
+
+    fn cost(&self, from: ProvinceId, to: ProvinceId, context: &C) -> u32 {
+        context.calculate_cost(from, to)
+    }
+
+    fn heuristic(&self, from: ProvinceId, target: ProvinceId, context: &C) -> u32 {
+        context.calculate_heuristic(from, target)
     }
 }
 
@@ -542,5 +569,33 @@ mod tests {
         let straits = load_adjacencies_csv(&adj_path).unwrap();
         assert_eq!(straits.len(), 1);
         assert_eq!(straits[0].comment.as_deref(), Some("Sk\u{e5}ne-Sjaelland"));
+    }
+
+    // Mock cost calculator for testing A* integration
+    struct MockCost;
+    impl CostCalculator for MockCost {
+        fn calculate_cost(&self, _from: ProvinceId, _to: ProvinceId) -> u32 {
+            10 // High movement cost
+        }
+        fn calculate_heuristic(&self, _from: ProvinceId, _to: ProvinceId) -> u32 {
+            0 // Dijkstra
+        }
+    }
+
+    #[test]
+    fn test_astar_integration() {
+        let mut graph = AdjacencyGraph::new();
+        graph.add_adjacency(1, 2);
+        graph.add_adjacency(2, 3);
+
+        let ctx = MockCost;
+
+        use game_pathfinding::AStar;
+        let result = AStar::find_path(&graph, 1, 3, &ctx);
+
+        assert!(result.is_some());
+        let (path, cost) = result.unwrap();
+        assert_eq!(path, vec![1, 2, 3]);
+        assert_eq!(cost, 20); // 10 + 10
     }
 }

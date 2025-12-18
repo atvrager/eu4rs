@@ -2,6 +2,7 @@ use crate::fixed::Fixed;
 use crate::modifiers::{GameModifiers, TradegoodId};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
+use std::hash::{Hash, Hasher};
 
 /// A specific date in history.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -77,14 +78,33 @@ pub struct Regiment {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MovementState {
+    /// Provinces left to visit. Front is next destination.
+    pub path: VecDeque<ProvinceId>,
+    /// Accumulated movement progress towards the next province (0.0 to 1.0 or similar).
+    /// Typically maps to days traveled.
+    pub progress: Fixed,
+    /// Total cost (in days/points) required to enter the next province using current speed.
+    pub required_progress: Fixed,
+}
+
+impl Hash for MovementState {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.path.hash(state);
+        self.progress.0.hash(state);
+        self.required_progress.0.hash(state);
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Army {
     pub id: ArmyId,
     pub name: String,
     pub owner: Tag,
     pub location: ProvinceId,
     pub regiments: Vec<Regiment>,
-    /// Queued movement path (None if not moving). VecDeque allows O(1) pop_front().
-    pub movement_path: Option<VecDeque<ProvinceId>>,
+    /// Active movement state (None if stationary).
+    pub movement: Option<MovementState>,
     /// Fleet this army is embarked on (None if on land)
     pub embarked_on: Option<FleetId>,
 }
@@ -100,8 +120,8 @@ pub struct Fleet {
     pub transport_capacity: u32,
     /// Armies currently embarked on this fleet
     pub embarked_armies: Vec<ArmyId>,
-    /// Queued movement path (None if not moving). VecDeque allows O(1) pop_front().
-    pub movement_path: Option<VecDeque<ProvinceId>>,
+    /// Active movement state (None if stationary).
+    pub movement: Option<MovementState>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -220,6 +240,19 @@ pub struct GlobalState {
     // HRE, Curia, etc.
 }
 
+impl eu4data::adjacency::CostCalculator for WorldState {
+    fn calculate_cost(&self, _from: ProvinceId, _to: ProvinceId) -> u32 {
+        // Base cost is 10 days.
+        // TODO: Add terrain multipliers, military access penalties, etc.
+        10
+    }
+
+    fn calculate_heuristic(&self, _from: ProvinceId, _to: ProvinceId) -> u32 {
+        // Dijkstra (0 heuristic) until we load province centroids for Euclidean distance.
+        0
+    }
+}
+
 impl WorldState {
     /// Compute a deterministic checksum of the world state.
     ///
@@ -279,7 +312,7 @@ impl WorldState {
             a.name.hash(&mut hasher);
             a.owner.hash(&mut hasher);
             a.location.hash(&mut hasher);
-            a.movement_path.hash(&mut hasher);
+            a.movement.hash(&mut hasher);
             a.embarked_on.hash(&mut hasher);
             for reg in &a.regiments {
                 reg.type_.hash(&mut hasher);
@@ -298,7 +331,7 @@ impl WorldState {
             f.location.hash(&mut hasher);
             f.transport_capacity.hash(&mut hasher);
             f.embarked_armies.hash(&mut hasher);
-            f.movement_path.hash(&mut hasher);
+            f.movement.hash(&mut hasher);
         }
 
         // Diplomacy

@@ -11,6 +11,7 @@ encoding_rs = "0.8.35"
 encoding_rs_io = "0.1.7"
 eu4data_derive = { path = "../eu4data_derive" }
 eu4txt = { version = "0.1.0", path = "../eu4txt" }
+game_pathfinding = { version = "0.1.0", path = "../game_pathfinding" }
 humantime = "2.3.0"
 image = "0.25"
 log = "0.4.29"

@@ -1,5 +1,6 @@
+use crate::fixed::Fixed;
 use crate::input::{Command, PlayerInputs};
-use crate::state::WorldState;
+use crate::state::{MovementState, WorldState};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -66,7 +67,7 @@ pub fn step_world(
 
     // 3. Run Systems
     // Movement runs daily (advances armies along their paths)
-    crate::systems::run_movement_tick(&mut new_state);
+    crate::systems::run_movement_tick(&mut new_state, adjacency);
 
     // Combat runs daily (whenever armies are engaged)
     crate::systems::run_combat_tick(&mut new_state);
@@ -148,12 +149,18 @@ fn execute_command(
 
             // Find path using adjacency graph (if available)
             let path = if let Some(graph) = adjacency {
-                graph.find_path(current_location, *destination).ok_or(
-                    ActionError::NoPathExists {
+                use game_pathfinding::AStar;
+                let (path_vec, _) = AStar::find_path(graph, current_location, *destination, state)
+                    .ok_or(ActionError::NoPathExists {
                         start: current_location,
                         destination: *destination,
-                    },
-                )?
+                    })?;
+                // A* returns [start, p1, p2, end]. We just want [p1, p2, end].
+                let mut p = std::collections::VecDeque::from(path_vec);
+                if p.front() == Some(&current_location) {
+                    p.pop_front();
+                }
+                p.into()
             } else {
                 // Fallback: assume direct adjacency if no graph available
                 vec![*destination]
@@ -178,8 +185,14 @@ fn execute_command(
             }
 
             // Set movement path
+            // TODO: Handle edge case where start == destination (empty path).
+            // Currently wastes 10 ticks doing nothing. Should skip movement initialization.
             if let Some(army) = state.armies.get_mut(army_id) {
-                army.movement_path = Some(path.clone().into());
+                army.movement = Some(MovementState {
+                    path: path.clone().into(),
+                    progress: Fixed::ZERO,
+                    required_progress: Fixed::from_int(10), // BASE_MOVE_COST
+                });
                 log::info!(
                     "Army {} pathing from {} to {} via {:?}",
                     army_id,
@@ -260,12 +273,17 @@ fn execute_command(
 
             // Find path using adjacency graph (if available)
             let path = if let Some(graph) = adjacency {
-                graph.find_path(current_location, *destination).ok_or(
-                    ActionError::NoPathExists {
+                use game_pathfinding::AStar;
+                let (path_vec, _) = AStar::find_path(graph, current_location, *destination, state)
+                    .ok_or(ActionError::NoPathExists {
                         start: current_location,
                         destination: *destination,
-                    },
-                )?
+                    })?;
+                let mut p = std::collections::VecDeque::from(path_vec);
+                if p.front() == Some(&current_location) {
+                    p.pop_front();
+                }
+                p.into()
             } else {
                 // Fallback: assume direct adjacency if no graph available
                 vec![*destination]
@@ -273,7 +291,11 @@ fn execute_command(
 
             // Set movement path (fleets use same movement_path pattern as armies)
             if let Some(fleet) = state.fleets.get_mut(fleet_id) {
-                fleet.movement_path = Some(path.clone().into());
+                fleet.movement = Some(MovementState {
+                    path: path.clone().into(),
+                    progress: Fixed::ZERO,
+                    required_progress: Fixed::from_int(10), // BASE_MOVE_COST
+                });
                 log::info!(
                     "Fleet {} pathing from {} to {} via {:?}",
                     fleet_id,
