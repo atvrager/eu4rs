@@ -24,10 +24,19 @@ struct Args {
     /// Log level (error, warn, info, debug, trace)
     #[arg(long, default_value = "info")]
     log_level: String,
+
+    /// Dump game data manifest and exit
+    #[arg(long)]
+    manifest: bool,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
+
+    if args.manifest {
+        println!("{}", eu4data::manifest::GAME_MANIFEST.dump());
+        return Ok(());
+    }
 
     let level = std::str::FromStr::from_str(&args.log_level).unwrap_or(log::LevelFilter::Info);
     env_logger::Builder::new()

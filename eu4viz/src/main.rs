@@ -42,6 +42,10 @@ fn run(mut args: Cli) -> Result<(), String> {
                 ops::dump_tradegoods(&eu4_path)?;
                 return Ok(());
             }
+            Commands::Manifest => {
+                println!("{}", eu4data::manifest::GAME_MANIFEST.dump());
+                return Ok(());
+            }
             Commands::DrawMap { output, mode } => {
                 let base = eu4_path;
                 match mode {

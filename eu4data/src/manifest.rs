@@ -19,6 +19,31 @@ pub struct GameDataManifest {
     pub manifest_hash: [u8; 32],
 }
 
+impl GameDataManifest {
+    /// Print a diagnostic summary of the manifest.
+    pub fn dump(&self) -> String {
+        let commit = self.git_commit.unwrap_or("unknown");
+        let hash_hex: String = self
+            .manifest_hash
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
+
+        format!(
+            "eu4rs Simulation Manifest\n\
+             -------------------------\n\
+             Version: {}\n\
+             Git Commit: {}\n\
+             Manifest Hash: {}\n\
+             Files Scanned: {}\n",
+            self.sim_version,
+            commit,
+            hash_hex,
+            self.file_hashes.len()
+        )
+    }
+}
+
 /// Hash of a single game data file.
 #[derive(Debug, Clone, Serialize)]
 pub struct FileHash {

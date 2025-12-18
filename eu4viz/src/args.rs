@@ -39,6 +39,9 @@ pub enum Commands {
     /// Dump `tradegoods.txt` to JSON format.
     DumpTradegoods,
 
+    /// Dump build-time game data manifest.
+    Manifest,
+
     /// Render a map of the world.
     DrawMap {
         /// Output path for the image (default: "map_out.png").
