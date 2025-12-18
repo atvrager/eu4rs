@@ -284,8 +284,8 @@ sequenceDiagram
 
 ## Sub-Systems
 
-- [Military & Movement](simulation/military.md)
-- [Economy](simulation/economic_model.md)
+- [Military & Movement](military.md)
+- [Economy](economic-model.md)
 
 ## Implementation Roadmap
 

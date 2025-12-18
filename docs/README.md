@@ -1,28 +1,86 @@
 # eu4rs Documentation
 
-Welcome to the architectural documentation for `eu4rs`. This project is a Rust-based source port and toolset for *Europa Universalis IV*.
+Welcome to the comprehensive documentation for **eu4rs**, a Rust-based source port and toolset for *Europa Universalis IV*.
 
-## Overview
+## Table of Contents
 
-The project is divided into three main components:
+### 📐 Design Documents
+High-level system architecture and design decisions.
 
-1.  **[eu4viz](./eu4viz.md)**: The visualizer binary. It handles the windowing, event loop, and rendering (Vulkan/WGPU) to display the game map.
-2.  **[eu4data](./eu4data.md)**: A library for defining existing game data structures (Provinces, Countries, Trade Goods, etc.) and loading them from game files.
-3.  **[eu4txt](./eu4txt.md)**: A library for parsing the custom text format used by EU4 data files.
+- **[Architecture](design/architecture.md)** - System overview, crate structure, rendering pipeline
+- **[Data Model](design/data-model.md)** - Data structures, storage layout, and relationships
+- **[Type System](design/type-system.md)** - Type inference, fixed-point arithmetic, determinism
+- **[UI/UX Design](design/ui.md)** - User interface and visualization design
 
-## High-Level Architecture
+#### Simulation Subsystems
+- **[Simulation Overview](design/simulation/overview.md)** - Core simulation architecture and pure functional model
+- **[Integrity System](design/simulation/integrity.md)** - Determinism, checksums, multiplayer validation
+- **[Economic Model](design/simulation/economic-model.md)** - Production, taxation, trade mechanics
+- **[Military System](design/simulation/military.md)** - Combat, movement, pathfinding, naval transport
 
-```mermaid
-graph TD
-    User[User / Player] --> |Run| Binary[eu4viz Binary]
-    Binary --> |Uses| winit[winit Window]
-    Binary --> |Uses| wgpu[wgpu Renderer]
-    Binary --> |Parses Data| DataLib[eu4data Library]
-    DataLib --> |Parses Text| Parser[eu4txt Library]
-    Parser --> |Reads| GameFiles[EU4 Game Files]
-```
+---
 
-## Quick Links
+### 📚 Technical Reference
+Detailed technical specifications and API documentation.
 
--   [Installation and Usage](../README.md#installation)
--   [Project Roadmap](./roadmap.md)
+#### Crate Documentation
+- **[eu4data](reference/crates/eu4data.md)** - Game data loading library
+- **[eu4txt](reference/crates/eu4txt.md)** - EU4 text format parser
+- **[eu4viz](reference/crates/eu4viz.md)** - Visualization and rendering binary
+
+#### Game Data Formats
+- **[File Formats](reference/file-formats.md)** - EU4 file format specifications
+- **[Supported Fields](reference/supported-fields.md)** - Coverage matrix for EU4 data structures
+- **[Tolerant Deserialization](reference/tolerant-deserialize.md)** - Parsing strategy for partial/evolving data
+
+---
+
+### 🛠️ Development Guides
+Tools, workflows, and best practices for contributors.
+
+#### Testing
+- **[Property-Based Testing](development/testing/property-based-testing.md)** - Simulation verification philosophy (SVA analogy)
+- **[Code Coverage](development/testing/coverage.md)** - Coverage targets, tools, and metrics
+
+#### Tools & Automation
+- **[Code Generation](development/code-generation.md)** - Auto-codegen from EU4 data schemas
+- **[Code Statistics](development/code-statistics.md)** - Metrics, reporting, and visualization
+
+---
+
+### 📋 Planning & Roadmap
+Project status, upcoming features, and backlog.
+
+- **[Roadmap](planning/roadmap.md)** - Implementation phases and current status
+- **[Future Features](planning/future-features.md)** - Deferred features and ideas
+
+---
+
+## Quick Start
+
+New to the project? Start here:
+
+1. **[Architecture](design/architecture.md)** - Understand the overall system
+2. **[Simulation Overview](design/simulation/overview.md)** - Learn how the simulation works
+3. **[Roadmap](planning/roadmap.md)** - See what's implemented and what's next
+
+## Contributing
+
+Before implementing a new feature:
+
+1. Check **[Roadmap](planning/roadmap.md)** for current phase priorities
+2. Review **[Property-Based Testing](development/testing/property-based-testing.md)** for testing philosophy
+3. Follow the **Design by Invariants** workflow for simulation systems
+
+## Philosophy
+
+This project prioritizes:
+
+- **Determinism**: Lockstep simulation for multiplayer/replay
+- **Verification**: Property-based testing as continuous assertion monitoring
+- **Simplicity**: Avoid over-engineering; solve the current problem
+- **Documentation**: Explain *why*, not just *what*
+
+---
+
+*Last updated: 2025-12-17*
