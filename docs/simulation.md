@@ -282,10 +282,18 @@ sequenceDiagram
 4. **Parallelism**: Can province updates run in parallel?
 5. **Event system**: How do events/decisions integrate with `Command`?
 
+## Sub-Systems
+
+- [Military & Movement](simulation/military.md)
+- [Economy](simulation/economic_model.md)
+
 ## Next Steps
 
-1. [ ] Create `eu4sim-core` crate with stub types
-2. [ ] Implement `WorldState` with minimal fields
-3. [ ] Implement one system (e.g., basic economy tick)
-4. [ ] Create `eu4sim` binary with headless game loop
-5. [ ] Add integration test: run 10 ticks, verify determinism
+1. [x] Create `eu4sim-core` crate with stub types
+2. [x] Implement `WorldState` with minimal fields
+3. [x] Implement one system (e.g., basic economy tick)
+4. [x] Create `eu4sim` binary with headless game loop
+5. [x] Add integration test: run 10 ticks, verify determinism
+6. [x] Implement Movement System (Phase 4)
+7. [ ] Implement Combat System
+8. [ ] Implement Naval Transport

@@ -1,6 +1,6 @@
 # Simulation Integrity System
 
-> **Status**: Phase 1 Complete (Runtime Checksums)  
+> **Status**: Phase 3 Complete (Cache Validation)  
 > **Author**: eu4rs Team  
 > **Date**: 2025-12-17
 
@@ -305,18 +305,20 @@ Allows seeking to year 1500 without replaying from 1444.
 - [ ] Integrate checksum logging in simulation loop
 
 ### Phase 2: Build-Time Manifest
-- [ ] Create `build.rs` in `eu4data` to hash source files
-- [ ] Generate `GAME_MANIFEST` constant
-- [ ] Add `manifest_hash` to `CacheMetadata`
+- [x] Create `build.rs` in `eu4data` to hash source files
+- [x] Generate `GAME_MANIFEST` constant
+- [x] Add `manifest_hash` to `CacheMetadata`
 
 ### Phase 3: Cache Validation
-- [ ] Enhance cache loader to verify `manifest_hash`
-- [ ] Add `data_hash` field for integrity check
-- [ ] Implement auto-regeneration on mismatch
-- [ ] Use mtimes for fast-path, hashes for multiplayer validation
+- [x] Enhance cache loader to verify `manifest_hash`
+- [x] Add `data_hash` field for integrity check
+- [x] Implement auto-regeneration on mismatch
+- [x] Use mtimes for fast-path, hashes for multiplayer validation
 
 ### Phase 4: Multiplayer Integration
+*(Note: Distinct from "Phase 4: Movement" in `military.md`)*
 - [ ] Define handshake protocol
+
 - [ ] Implement checksum comparison per tick
 - [ ] Add desync detection and logging
 
