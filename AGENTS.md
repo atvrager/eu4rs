@@ -32,8 +32,8 @@ When opening Antigravity, select **Claude Opus 4.5 (Thinking)** as your primary 
 
 **In practice:**
 1. **Select Claude Opus 4.5 (Thinking)** in Antigravity's model dropdown
-2. The router model will read this AGENTS.md and follow the 5-tier routing strategy below
-3. The router will delegate to cheaper models (Gemini 3 Low, Sonnet 4.5) for appropriate tasks
+2. The router model will read this AGENTS.md and follow the 6-tier routing strategy below
+3. The router will delegate to cheaper models (Gemini 3 Low, Gemini 3 Flash, Sonnet 4.5) for appropriate tasks
 4. You get optimal cost-effectiveness: Deep strategic planning + cheaper models for execution
 
 **Fallback model selection (when primary quota is exhausted):**
@@ -49,10 +49,16 @@ When opening Antigravity, select **Claude Opus 4.5 (Thinking)** as your primary 
 - **Claude Sonnet 4.5** (`CLAUDE_4_5_SONNET`): Balanced performance, cost-efficient (SWE-bench: 77.2%, fast execution)
 - **Gemini 3 Pro (High)** (`M8`): Complex reasoning, multimodal (SWE-bench: 76.2%, 1M token context, ARC-AGI: 31.1%)
 - **Gemini 3 Pro (Low)** (`M7`): Rapid prototyping, most cost-efficient (`thinking_level: low`)
+- **Gemini 3 Flash**: Fast, independent quota, strong coding (SWE-bench: 78%, 1M context, $0.50/M input)
 
 > **Note**: The `M#` codes are internal Antigravity placeholder IDs visible in `USER_SETTINGS_CHANGE` metadata. Use these to confirm model identity.
+>
+> **Note**: Gemini 3 Flash supports `thinking_level` parameter (`minimal`, `low`, `medium`, `high`) in the API, but Antigravity's UI does not expose this setting. Assume default behavior.
 
-**5-Tier Routing Strategy (Optimized for Cost-Effectiveness):**
+**6-Tier Routing Strategy (Optimized for Cost-Effectiveness):**
+
+> [!IMPORTANT]
+> **Re-evaluate Gemini 3 Flash by December 24, 2025**: Flash launched December 17, 2025. After one week of usage, revisit this routing strategy to assess real-world performance, quota consumption patterns, and whether Tier 1.5 placement is correct.
 
 **Tier 1: Gemini 3 Pro (Low) - Default for Speed & Cost**
 - **Rapid prototyping** and initial exploration
@@ -65,6 +71,17 @@ When opening Antigravity, select **Claude Opus 4.5 (Thinking)** as your primary 
 - **Test scaffolding**: writing test boilerplate
 - **Research tasks**: web searches, reading docs
 - **Cost**: Lowest, fastest iteration. **Prefer this tier to balance quota.**
+
+**Tier 1.5: Gemini 3 Flash - Quality Coding with Separate Quota** *(NEW)*
+- **CI fixes** and quick debugging (SWE-bench: 78%, beats Sonnet's 77.2%)
+- **Multi-file refactoring** with higher quality than Tier 1
+- **Feature implementation** (well-defined requirements)
+- **Documentation** that needs polish
+- **Quota strategy**: Has **independent quota pool** — use to offload work when Claude/Gemini Pro quotas are low
+- **Cost**: $0.50/M input, $3/M output (67% more than 2.5 Flash, 75% less than 3 Pro)
+- **Caution**: Observed ~20% quota consumption for moderate CI fix work — monitor usage
+
+> **Sources (Dec 17, 2025)**: [Google Blog](https://blog.google/technology/developers/build-with-gemini-3-flash/) (marketing), [Simon Willison](https://simonwillison.net/2025/Dec/17/gemini-3-flash/) (independent review), Hacker News discussion. Benchmarks: SWE-bench 78%, GPQA Diamond 90.4%, MMMU Pro 81.2%. Limitation: image segmentation removed vs 2.5 Flash.
 
 **Tier 2: Claude Sonnet 4.5 - Balanced Production Work**
 - **Standard feature implementation**
@@ -104,10 +121,11 @@ When opening Antigravity, select **Claude Opus 4.5 (Thinking)** as your primary 
 **Workflow Guidelines:**
 1. **Start with planning** using deep reasoning (adopt an "Opus-like" strategic mindset, regardless of your active model identity)
 2. **Delegate down the tiers**: Default to lowest tier that can handle the task
-3. **Escalate when needed**: If Gemini 3 (Low) struggles → Sonnet 4.5 → Gemini 3 Pro (High) → Sonnet 4.5 (Thinking) → Opus 4.5 (Thinking)
+3. **Escalate when needed**: Gemini 3 (Low) → **Gemini 3 Flash** → Sonnet 4.5 → Gemini 3 Pro (High) → Sonnet 4.5 (Thinking) → Opus 4.5 (Thinking)
 4. **Review delegated output**: Always critically review cheaper model output before integration
 5. **Use parallel delegation**: Independent subtasks can run concurrently on different models
 6. **Think step-by-step**: Explain routing decision and reasoning before delegating
+7. **Leverage Flash quota**: When Claude or Gemini Pro quota is low, check if Gemini 3 Flash quota is healthy
 
 **Proactive Model Switching (MANDATORY):**
 
