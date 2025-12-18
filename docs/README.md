@@ -18,6 +18,8 @@ High-level system architecture and design decisions.
 - **[Integrity System](design/simulation/integrity.md)** - Determinism, checksums, multiplayer validation
 - **[Economic Model](design/simulation/economic-model.md)** - Production, taxation, trade mechanics
 - **[Military System](design/simulation/military.md)** - Combat, movement, pathfinding, naval transport
+- **[Calendar System](design/simulation/calendar.md)** - Temporal logic and non-Gregorian extensions
+- **[CLI Pipeline](design/cli-pipeline.md)** - Argument parsing, profiles, and runner configuration
 
 ---
 
