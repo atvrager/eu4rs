@@ -10,7 +10,9 @@ mod loader;
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Path to game data
-    #[arg(long, default_value = ".")]
+    #[arg(long, default_value_t = eu4data::path::detect_game_path()
+        .and_then(|p| p.to_str().map(String::from))
+        .unwrap_or_else(|| ".".to_string()))]
     game_path: String,
 
     /// Start year
@@ -47,11 +49,7 @@ fn main() -> Result<()> {
     log::info!("Starting eu4sim...");
 
     // Resolve game path
-    let game_path = if args.game_path == "." {
-        eu4data::path::detect_game_path().unwrap_or_else(|| PathBuf::from("."))
-    } else {
-        PathBuf::from(args.game_path)
-    };
+    let game_path = PathBuf::from(args.game_path);
 
     // Initialize State
     let (mut state, adjacency) =

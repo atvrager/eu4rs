@@ -960,11 +960,13 @@ name = "eu4sim"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "assert_cmd",
  "clap",
  "env_logger 0.10.2",
  "eu4data",
  "eu4sim-core",
  "log",
+ "predicates",
 ]
 
 [[package]]
