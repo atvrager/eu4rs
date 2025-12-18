@@ -287,13 +287,22 @@ sequenceDiagram
 - [Military & Movement](simulation/military.md)
 - [Economy](simulation/economic_model.md)
 
-## Next Steps
+## Implementation Roadmap
 
-1. [x] Create `eu4sim-core` crate with stub types
-2. [x] Implement `WorldState` with minimal fields
-3. [x] Implement one system (e.g., basic economy tick)
-4. [x] Create `eu4sim` binary with headless game loop
-5. [x] Add integration test: run 10 ticks, verify determinism
-6. [x] Implement Movement System (Phase 4)
-7. [ ] Implement Combat System
-8. [ ] Implement Naval Transport
+### Phase 1-3: Foundation (Completed)
+- [x] Create `eu4sim-core` crate with world state structures
+- [x] Implement basic economy system
+- [x] Create `eu4sim` binary and game loop
+- [x] Add deterministic simulation integration tests
+
+### Phase 4: Military & Movement (In Progress)
+- [x] **Movement System**: A* pathfinding, movement commands, state updates
+- [ ] **Naval Transport**: Boarding mechanics, fleet movement with cargo
+- [ ] **Zone of Control**: Fort logic, movement restrictions
+- [ ] **Combat System**: Battle initiation, dice rolls, casualties
+- [ ] **Attrition**: Supply limits, monthly losses
+
+### Phase 5: Diplomacy & AI (Planned)
+- [ ] Diplomatic actions (War, Alliance, Royal Marriage)
+- [ ] Basic AI decision making
+- [ ] Peace treaties and land transfer
