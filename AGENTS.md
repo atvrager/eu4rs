@@ -294,6 +294,8 @@ These commands are safe to run without user confirmation (set `SafeToAutoRun: tr
 | `cargo check -p <crate>` | Fast type-checking, single crate |
 | `cargo build -p <crate>` | Single-crate build, minimal CPU |
 | `cargo test -p <crate>` | Single-crate tests |
+| `cargo nextest run -p <crate>` | Fast single-crate tests |
+| `cargo nextest run` | Fast workspace tests |
 | `cargo clippy -p <crate>` | Lint single crate |
 | `cargo fmt` | Formatting (no side effects) |
 | `cargo xtask ci` | Full CI — always safe |
@@ -301,6 +303,14 @@ These commands are safe to run without user confirmation (set `SafeToAutoRun: tr
 | `cargo xtask quota` | Read-only quota check |
 | `git status`, `git log -n N`, `git diff` | Read-only git |
 | `git add .`, `git commit` | Standard git workflow |
+
+### Command Structure Guidelines
+
+To ensure maximum reliability across different shells (especially PowerShell) and to maintain auto-approval compatibility:
+
+- **Atomic Operations**: Run only one command at a time. Avoid chaining with `&&` or `;`.
+- **Avoid Redirection**: Do not use pipes (`|`) or output redirections (`>`, `>>`) in standard commands. Chaining and redirection often trigger manual approval prompts or behave unpredictably on Windows.
+- **Prefer Tools over Pipes**: If a task requires complex data manipulation (e.g., filtering a log), consider using specialized tools or script tasks (like `cargo xtask`) instead of shell piping.
 
 > [!WARNING]
 > **Special characters trigger confirmation**: The following patterns cause user approval prompts even for otherwise safe commands:
