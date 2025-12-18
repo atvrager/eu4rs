@@ -179,7 +179,7 @@ fn execute_command(
 
             // Set movement path
             if let Some(army) = state.armies.get_mut(army_id) {
-                army.movement_path = Some(path.clone());
+                army.movement_path = Some(path.clone().into());
                 log::info!(
                     "Army {} pathing from {} to {} via {:?}",
                     army_id,
@@ -273,7 +273,7 @@ fn execute_command(
 
             // Set movement path (fleets use same movement_path pattern as armies)
             if let Some(fleet) = state.fleets.get_mut(fleet_id) {
-                fleet.movement_path = Some(path.clone());
+                fleet.movement_path = Some(path.clone().into());
                 log::info!(
                     "Fleet {} pathing from {} to {} via {:?}",
                     fleet_id,

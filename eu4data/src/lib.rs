@@ -5,6 +5,7 @@ pub mod cache;
 pub mod countries;
 pub mod coverage;
 pub mod cultures;
+pub mod defines;
 pub mod discovery;
 pub mod generated;
 pub mod history;

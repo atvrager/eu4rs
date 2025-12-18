@@ -14,9 +14,7 @@ pub fn run_movement_tick(state: &mut WorldState) {
     // Process all fleets with movement paths (fleets move first)
     for (&fleet_id, fleet) in state.fleets.iter_mut() {
         if let Some(path) = &mut fleet.movement_path {
-            if !path.is_empty() {
-                // Move to next province in path
-                let next_province = path.remove(0);
+            if let Some(next_province) = path.pop_front() {
                 fleet.location = next_province;
 
                 log::info!("Fleet {} moved to province {}", fleet_id, next_province);
@@ -46,9 +44,7 @@ pub fn run_movement_tick(state: &mut WorldState) {
         }
 
         if let Some(path) = &mut army.movement_path {
-            if !path.is_empty() {
-                // Move to next province in path
-                let next_province = path.remove(0);
+            if let Some(next_province) = path.pop_front() {
                 army.location = next_province;
 
                 log::info!("Army {} moved to province {}", army_id, next_province);
@@ -84,6 +80,7 @@ mod tests {
     use crate::fixed::Fixed;
     use crate::state::{Army, Regiment, RegimentType};
     use crate::testing::WorldStateBuilder;
+    use std::collections::VecDeque;
 
     #[test]
     fn test_movement_basic() {
@@ -103,7 +100,7 @@ mod tests {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
             }],
-            movement_path: Some(vec![2]),
+            movement_path: Some(VecDeque::from(vec![2])),
             embarked_on: None,
         };
 
@@ -137,7 +134,7 @@ mod tests {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
             }],
-            movement_path: Some(vec![2, 3]),
+            movement_path: Some(VecDeque::from(vec![2, 3])),
             embarked_on: None,
         };
 
@@ -147,7 +144,7 @@ mod tests {
         run_movement_tick(&mut state);
         let army = state.armies.get(&1).unwrap();
         assert_eq!(army.location, 2);
-        assert_eq!(army.movement_path, Some(vec![3])); // Still has path
+        assert_eq!(army.movement_path, Some(VecDeque::from(vec![3]))); // Still has path
 
         // Second tick: move to province 3
         run_movement_tick(&mut state);

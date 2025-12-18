@@ -18,7 +18,9 @@ pub struct EconomyConfig {
 impl Default for EconomyConfig {
     fn default() -> Self {
         Self {
-            base_production_multiplier: Fixed::POINT_TWO, // 0.2
+            base_production_multiplier: Fixed::from_f32(
+                eu4data::defines::economy::BASE_PRODUCTION_MULTIPLIER,
+            ),
         }
     }
 }
@@ -52,6 +54,7 @@ pub fn run_production_tick(state: &mut WorldState, config: &EconomyConfig) {
             .mul(config.base_production_multiplier);
 
         // Effective price (base + event modifier)
+        // TODO(review): Log warning when price is missing to catch data integrity bugs
         let base_price = state
             .base_goods_prices
             .get(&goods_id)
@@ -69,6 +72,7 @@ pub fn run_production_tick(state: &mut WorldState, config: &EconomyConfig) {
         let efficiency_factor = Fixed::ONE + efficiency;
 
         // Autonomy: (1 - autonomy)
+        // TODO(review): Validate that autonomy ∈ [0, 1] to prevent negative income
         let autonomy = state
             .modifiers
             .province_autonomy

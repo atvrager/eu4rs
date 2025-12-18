@@ -1,7 +1,7 @@
 use crate::fixed::Fixed;
 use crate::modifiers::{GameModifiers, TradegoodId};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 /// A specific date in history.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -83,8 +83,8 @@ pub struct Army {
     pub owner: Tag,
     pub location: ProvinceId,
     pub regiments: Vec<Regiment>,
-    /// Queued movement path (None if not moving)
-    pub movement_path: Option<Vec<ProvinceId>>,
+    /// Queued movement path (None if not moving). VecDeque allows O(1) pop_front().
+    pub movement_path: Option<VecDeque<ProvinceId>>,
     /// Fleet this army is embarked on (None if on land)
     pub embarked_on: Option<FleetId>,
 }
@@ -100,8 +100,8 @@ pub struct Fleet {
     pub transport_capacity: u32,
     /// Armies currently embarked on this fleet
     pub embarked_armies: Vec<ArmyId>,
-    /// Queued movement path (None if not moving)
-    pub movement_path: Option<Vec<ProvinceId>>,
+    /// Queued movement path (None if not moving). VecDeque allows O(1) pop_front().
+    pub movement_path: Option<VecDeque<ProvinceId>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

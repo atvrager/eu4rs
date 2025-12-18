@@ -1,12 +1,6 @@
 use crate::fixed::Fixed;
 use crate::state::WorldState;
-
-/// Base cost per regiment per month (ducats).
-/// EU4 ~0.2-0.25 depending on tech. We'll start with 0.2.
-const BASE_ARMY_COST: Fixed = Fixed::from_raw(2000); // 0.2
-
-/// Base cost per fort per month.
-const BASE_FORT_COST: Fixed = Fixed::ONE; // 1.0
+use eu4data::defines::economy as defines;
 
 /// Runs monthly expense calculations.
 ///
@@ -21,7 +15,7 @@ pub fn run_expenses_tick(state: &mut WorldState) {
         for _reg in &army.regiments {
             // Simplified: All regiments cost BASE for now
             // Future: Modifiers by type (Cav expensive)
-            cost += BASE_ARMY_COST;
+            cost += Fixed::from_f32(defines::BASE_ARMY_COST);
         }
         *army_costs.entry(army.owner.clone()).or_insert(Fixed::ZERO) += cost;
     }
@@ -49,7 +43,8 @@ pub fn run_expenses_tick(state: &mut WorldState) {
     for province in state.provinces.values() {
         if province.has_fort {
             if let Some(owner) = &province.owner {
-                *fort_costs.entry(owner.clone()).or_insert(Fixed::ZERO) += BASE_FORT_COST;
+                *fort_costs.entry(owner.clone()).or_insert(Fixed::ZERO) +=
+                    Fixed::from_f32(defines::BASE_FORT_COST);
             }
         }
     }
@@ -139,4 +134,6 @@ mod tests {
         let swe = state.countries.get("SWE").unwrap();
         assert_eq!(swe.treasury, Fixed::from_f32(99.0));
     }
+
+    // TODO(review): Add determinism test (run twice, compare results)
 }

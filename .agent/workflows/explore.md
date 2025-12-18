@@ -8,7 +8,12 @@ description: Explore the codebase, documentation, and history to propose interes
 
 2.  **Analyze Codebase Structure and TODOs**:
     *   List the files in key directories (e.g., `eu4rs`, `eu4data`, `eu4txt`) to map the project structure.
-    *   Search for "TODO", "FIXME", or "unimplemented!" comments using `grep_search` to find low-hanging fruit.
+    *   Search for actionable comments using `grep_search`:
+        *   `TODO` - pending work items
+        *   `TODO(review)` - items flagged during code review
+        *   `FIXME` - known bugs or issues
+        *   `unimplemented!` - placeholder code
+        *   `HACK` - temporary workarounds that need proper solutions
     
 3.  **Analyze Documentation and Rules**:
     *   Briefly check `AGENTS.md` or `README.md` for any high-level goals or roadmap items that haven't been touched recently.

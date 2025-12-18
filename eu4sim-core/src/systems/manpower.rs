@@ -1,5 +1,6 @@
 use crate::fixed::Fixed;
 use crate::state::WorldState;
+use eu4data::defines::manpower as defines;
 use std::collections::HashMap;
 
 /// Runs monthly manpower recovery.
@@ -10,12 +11,11 @@ use std::collections::HashMap;
 /// 3. Cap at Max.
 pub fn run_manpower_tick(state: &mut WorldState) {
     let mut country_max_manpower: HashMap<String, Fixed> = HashMap::new();
-    let men_per_dev = Fixed::from_int(1000);
-    let base_country_manpower = Fixed::from_int(10000);
 
     // 1. Calculate Max Manpower from Provinces
     for (&id, province) in &state.provinces {
         if let Some(owner) = &province.owner {
+            // TODO(review): Validate that autonomy ∈ [0, 1] to prevent negative manpower
             let autonomy = state
                 .modifiers
                 .province_autonomy
@@ -24,7 +24,10 @@ pub fn run_manpower_tick(state: &mut WorldState) {
                 .unwrap_or(Fixed::ZERO);
 
             let factor = Fixed::ONE - autonomy;
-            let prov_max = province.base_manpower.mul(men_per_dev).mul(factor);
+            let prov_max = province
+                .base_manpower
+                .mul(Fixed::from_int(defines::MEN_PER_DEV))
+                .mul(factor);
 
             *country_max_manpower
                 .entry(owner.clone())
@@ -38,14 +41,17 @@ pub fn run_manpower_tick(state: &mut WorldState) {
             .get(tag)
             .copied()
             .unwrap_or(Fixed::ZERO);
-        let max = base_country_manpower + province_sum;
+        let max = Fixed::from_int(defines::BASE_MANPOWER) + province_sum;
 
         // Recovery: Max / 120 (120 months = 10 years)
-        let recovery = max.div(Fixed::from_int(120));
+        let recovery = max.div(Fixed::from_int(defines::RECOVERY_MONTHS));
 
-        country.manpower += recovery;
-        if country.manpower > max {
-            country.manpower = max;
+        // Only grant recovery if below max (don't recover while overcapped)
+        if country.manpower < max {
+            country.manpower += recovery;
+            if country.manpower > max {
+                country.manpower = max;
+            }
         }
     }
 }
@@ -105,13 +111,9 @@ mod tests {
         run_manpower_tick(&mut state);
 
         let swe = state.countries.get("SWE").unwrap();
-        // Should be capped at 11000 + recovery?
-        // Logic: country.manpower += recovery; if > max { = max }
-        // So 20000 + rec > 11000 -> set to 11000.
-        // Wait, if it's ALREADY above max, it should probably decrease or stay?
-        // EU4 usually caps immediately if Rec > 0.
-        // My logic: `country.manpower += recovery; if country.manpower > max`.
-        // So it will snap to max.
-        assert_eq!(swe.manpower, Fixed::from_int(11000));
+        // Should remain at 20000 (no recovery granted when overcapped)
+        assert_eq!(swe.manpower, Fixed::from_int(20000));
     }
+
+    // TODO(review): Add determinism test (run twice, compare results)
 }

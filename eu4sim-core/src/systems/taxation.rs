@@ -1,5 +1,6 @@
 use crate::fixed::Fixed;
 use crate::state::{Tag, WorldState};
+use eu4data::defines::economy as defines;
 use std::collections::HashMap;
 
 /// Runs monthly taxation calculations.
@@ -26,6 +27,7 @@ pub fn run_taxation_tick(state: &mut WorldState) {
                 .copied()
                 .unwrap_or(Fixed::ZERO);
 
+            // TODO(review): Validate that autonomy ∈ [0, 1] to prevent negative income
             let autonomy = state
                 .modifiers
                 .province_autonomy
@@ -41,7 +43,7 @@ pub fn run_taxation_tick(state: &mut WorldState) {
             let yearly_income = province.base_tax.mul(efficiency).mul(autonomy_factor);
 
             // Monthly Income = Yearly / 12
-            let monthly_income = yearly_income.div(Fixed::from_int(12));
+            let monthly_income = yearly_income.div(Fixed::from_int(defines::MONTHS_PER_YEAR));
 
             *income_deltas.entry(owner.clone()).or_insert(Fixed::ZERO) += monthly_income;
         }
@@ -119,4 +121,6 @@ mod tests {
         let swe = state.countries.get("SWE").unwrap();
         assert_eq!(swe.treasury, Fixed::from_f32(0.75));
     }
+
+    // TODO(review): Add determinism test (run twice, compare results)
 }

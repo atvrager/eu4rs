@@ -1,14 +1,7 @@
 use crate::fixed::Fixed;
 use crate::state::{RegimentType, WorldState};
+use eu4data::defines::combat as defines;
 use std::collections::HashMap;
-
-/// Base combat power for each regiment type.
-const INFANTRY_POWER: Fixed = Fixed::from_raw(10000); // 1.0
-const CAVALRY_POWER: Fixed = Fixed::from_raw(15000); // 1.5
-const ARTILLERY_POWER: Fixed = Fixed::from_raw(12000); // 1.2
-
-/// Daily casualties rate during combat (percentage of strength).
-const DAILY_CASUALTY_RATE: Fixed = Fixed::from_raw(100); // 0.01 = 1% per day
 
 /// Runs daily combat resolution for all active wars.
 ///
@@ -75,13 +68,14 @@ fn resolve_combat(
     // Calculate casualties based on power ratio
     // Side with more power deals proportionally more damage
     let total_power = power1 + power2;
+    let daily_casualty_rate = Fixed::from_f32(defines::DAILY_CASUALTY_RATE);
     let side1_casualties_rate = if power2 > Fixed::ZERO {
-        DAILY_CASUALTY_RATE.mul(power2.div(total_power))
+        daily_casualty_rate.mul(power2.div(total_power))
     } else {
         Fixed::ZERO
     };
     let side2_casualties_rate = if power1 > Fixed::ZERO {
-        DAILY_CASUALTY_RATE.mul(power1.div(total_power))
+        daily_casualty_rate.mul(power1.div(total_power))
     } else {
         Fixed::ZERO
     };
@@ -106,13 +100,19 @@ fn calculate_total_power(state: &WorldState, army_ids: &[u32]) -> Fixed {
     for &army_id in army_ids {
         if let Some(army) = state.armies.get(&army_id) {
             for regiment in &army.regiments {
-                let base_power = match regiment.type_ {
-                    RegimentType::Infantry => INFANTRY_POWER,
-                    RegimentType::Cavalry => CAVALRY_POWER,
-                    RegimentType::Artillery => ARTILLERY_POWER,
-                };
+                let base_power = Fixed::from_f32(match regiment.type_ {
+                    RegimentType::Infantry => defines::INFANTRY_POWER,
+                    RegimentType::Cavalry => defines::CAVALRY_POWER,
+                    RegimentType::Artillery => defines::ARTILLERY_POWER,
+                });
                 // Power scales with regiment strength (men count)
-                total += base_power.mul(regiment.strength.div(Fixed::from_int(1000)));
+                // TODO(review): Confirm power scaling normalization - dividing by 1000 means
+                // power scales with "thousands of men". Is this intentional for variable-strength regiments?
+                total += base_power.mul(
+                    regiment
+                        .strength
+                        .div(Fixed::from_int(defines::REGIMENT_SIZE)),
+                );
             }
         }
     }
@@ -140,6 +140,8 @@ fn apply_casualties_to_armies(state: &mut WorldState, army_ids: &[u32], casualty
     }
 
     // Remove armies with no regiments
+    // TODO(review): Consider collecting army IDs to remove first, then removing them.
+    // Current approach works but is more subtle if refactored inside loops.
     state.armies.retain(|_, army| !army.regiments.is_empty());
 }
 
@@ -322,4 +324,7 @@ mod tests {
         assert!(weak_army.regiments[0].strength < Fixed::from_int(1000));
         assert!(weak_army.regiments[0].strength < Fixed::from_int(950));
     }
+
+    // TODO(review): Add determinism test (run twice, compare results)
+    // TODO(review): Add property test: "Total strength across both sides should monotonically decrease"
 }
