@@ -325,7 +325,21 @@ To ensure maximum reliability across different shells (especially PowerShell) an
 > git diff abc123          # Diff against specific commit (auto-safe)
 > ```
 
+**File Editing:**
+- Use `replace_file_content`, `multi_replace_file_content`, or `write_to_file` for all code changes
+- PowerShell is for running commands (`cargo`, `git`), not editing files
+- If you find yourself using `Set-Content`, `Add-Content`, or string manipulation in PowerShell, stop and use the editing tools instead
+
+**Git Commit Messages:**
+- For rich multi-line commit messages, use the file technique:
+  1. Create message file: `write_to_file` → `commit_msg.txt`
+  2. Commit with file: `git commit -F commit_msg.txt`
+  3. Clean up: `del commit_msg.txt` (Windows) or `rm commit_msg.txt` (Unix)
+- This avoids PowerShell/shell escaping issues with `-m` flags
+- Works reliably across all platforms
+
 ### Minimal Build Guidance
+
 
 To save CPU and enable agent co-existence:
 
