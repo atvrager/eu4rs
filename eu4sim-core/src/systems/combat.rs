@@ -325,6 +325,91 @@ mod tests {
         assert!(weak_army.regiments[0].strength < Fixed::from_int(950));
     }
 
-    // TODO(review): Add determinism test (run twice, compare results)
-    // TODO(review): Add property test: "Total strength across both sides should monotonically decrease"
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn prop_combat_total_strength_monotonically_decreases(
+            strength1 in 100..10_000i64,
+            strength2 in 100..10_000i64,
+            days in 1..20usize
+        ) {
+            let mut state = WorldStateBuilder::new()
+                .date(1444, 11, 11)
+                .with_country("SWE")
+                .with_country("DEN")
+                .build();
+
+            // Create armies
+            let army1 = Army {
+                id: 1,
+                name: "Swedish Army".into(),
+                owner: "SWE".into(),
+                location: 1,
+                regiments: vec![Regiment {
+                    type_: RegimentType::Infantry,
+                    strength: Fixed::from_int(strength1),
+                }],
+                movement: None,
+                embarked_on: None,
+            };
+
+            let army2 = Army {
+                id: 2,
+                name: "Danish Army".into(),
+                owner: "DEN".into(),
+                location: 1,
+                regiments: vec![Regiment {
+                    type_: RegimentType::Infantry,
+                    strength: Fixed::from_int(strength2),
+                }],
+                movement: None,
+                embarked_on: None,
+            };
+
+            state.armies.insert(1, army1);
+            state.armies.insert(2, army2);
+
+            // Declare war
+            let war = crate::state::War {
+                id: 0,
+                name: "SWE vs DEN".into(),
+                attackers: vec!["SWE".into()],
+                defenders: vec!["DEN".into()],
+                start_date: Date::new(1444, 11, 11),
+            };
+            state.diplomacy.wars.insert(0, war);
+
+            // Calculate initial total strength
+            let mut initial_strength = Fixed::ZERO;
+            for army in state.armies.values() {
+                for reg in &army.regiments {
+                    initial_strength += reg.strength;
+                }
+            }
+
+            for _ in 0..days {
+                run_combat_tick(&mut state);
+
+                // Invariant: No negative strength (safety check)
+                for army in state.armies.values() {
+                    for reg in &army.regiments {
+                        prop_assert!(reg.strength >= Fixed::ZERO, "Negative strength found: {}", reg.strength);
+                    }
+                }
+            }
+
+            // Calculate final total strength
+            let mut final_strength = Fixed::ZERO;
+            for army in state.armies.values() {
+                for reg in &army.regiments {
+                    final_strength += reg.strength;
+                }
+            }
+
+            // Invariant: Total strength decreases or stays same (monotonic)
+            prop_assert!(final_strength <= initial_strength,
+                "Strength increased! {} -> {}", initial_strength, final_strength);
+        }
+    }
 }

@@ -329,7 +329,7 @@ mod tests {
         ) {
             let mut state = WorldState::default();
             let cost_fixed = Fixed::from_f32(cost as f32);
-            
+
             // Setup army at 1, moving to 2
             let army = Army {
                 id: 1,
@@ -345,20 +345,20 @@ mod tests {
                 embarked_on: None,
             };
             state.armies.insert(1, army);
-            
+
             // Standard country setup
             state.countries.insert("SWE".into(), crate::state::CountryState::default());
 
             let mut prev_progress = Fixed::ZERO;
-            
+
             for _ in 0..ticks {
                 run_movement_tick(&mut state, None);
-                
+
                 if let Some(army) = state.armies.get(&1) {
                     if army.location == 2 {
                         break;
                     }
-                    
+
                     if let Some(mv) = &army.movement {
                         prop_assert!(mv.progress >= prev_progress, "Progress decreased: {} -> {}", prev_progress, mv.progress);
                         prev_progress = mv.progress;

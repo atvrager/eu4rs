@@ -72,13 +72,15 @@ pub fn run_production_tick(state: &mut WorldState, config: &EconomyConfig) {
         let efficiency_factor = Fixed::ONE + efficiency;
 
         // Autonomy: (1 - autonomy)
-        // TODO(review): Validate that autonomy ∈ [0, 1] to prevent negative income
-        let autonomy = state
+        // Clamp to [0, 1] to prevent negative income
+        let raw_autonomy = state
             .modifiers
             .province_autonomy
             .get(&province_id)
             .copied()
             .unwrap_or(Fixed::ZERO);
+
+        let autonomy = raw_autonomy.clamp(Fixed::ZERO, Fixed::ONE);
         let autonomy_factor = Fixed::ONE - autonomy;
 
         // Final: goods × price × efficiency × autonomy (all Fixed multiplies)
@@ -87,8 +89,11 @@ pub fn run_production_tick(state: &mut WorldState, config: &EconomyConfig) {
             .mul(efficiency_factor)
             .mul(autonomy_factor);
 
+        // Ensure non-negative (production shouldn't reduce treasury)
+        let safe_income = income.max(Fixed::ZERO);
+
         // Aggregate to owner
-        *income_deltas.entry(owner.clone()).or_insert(Fixed::ZERO) += income;
+        *income_deltas.entry(owner.clone()).or_insert(Fixed::ZERO) += safe_income;
     }
 
     // Apply to country treasuries
@@ -104,6 +109,7 @@ mod tests {
     use super::*;
     use crate::modifiers::TradegoodId;
     use crate::state::{CountryState, ProvinceState};
+    use proptest::prelude::*;
 
     fn setup_test_state() -> WorldState {
         let mut state = WorldState::default();
@@ -229,5 +235,27 @@ mod tests {
 
         // Must be identical
         assert_eq!(s1.countries["SWE"].treasury, s2.countries["SWE"].treasury);
+    }
+
+    proptest! {
+        #[test]
+        fn prop_production_never_negative(
+            autonomy in -2.0..2.0f32,
+            efficiency in -2.0..2.0f32
+        ) {
+            let mut state = setup_test_state();
+            let config = EconomyConfig::default();
+
+            // Set random modifiers
+            state.modifiers.province_autonomy.insert(1, Fixed::from_f32(autonomy));
+            state.modifiers.province_production_efficiency.insert(1, Fixed::from_f32(efficiency));
+
+            run_production_tick(&mut state, &config);
+
+            let swe = state.countries.get("SWE").unwrap();
+            // Should not decrease treasury from initial 100
+            prop_assert!(swe.treasury >= Fixed::from_int(100),
+                "Treasury decreased! {} -> {}", 100, swe.treasury);
+        }
     }
 }

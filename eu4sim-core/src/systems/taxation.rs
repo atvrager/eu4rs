@@ -27,13 +27,15 @@ pub fn run_taxation_tick(state: &mut WorldState) {
                 .copied()
                 .unwrap_or(Fixed::ZERO);
 
-            // TODO(review): Validate that autonomy ∈ [0, 1] to prevent negative income
-            let autonomy = state
+            // Clamp autonomy to [0, 1] to prevent negative income or over-production
+            let raw_autonomy = state
                 .modifiers
                 .province_autonomy
                 .get(&province_id)
                 .copied()
                 .unwrap_or(Fixed::ZERO);
+
+            let autonomy = raw_autonomy.clamp(Fixed::ZERO, Fixed::ONE);
 
             // Efficiency = 100% + National% + Local%
             let efficiency = Fixed::ONE + national_mod + local_mod;
@@ -45,7 +47,10 @@ pub fn run_taxation_tick(state: &mut WorldState) {
             // Monthly Income = Yearly / 12
             let monthly_income = yearly_income.div(Fixed::from_int(defines::MONTHS_PER_YEAR));
 
-            *income_deltas.entry(owner.clone()).or_insert(Fixed::ZERO) += monthly_income;
+            // Ensure non-negative income just in case efficiency < -100%
+            let safe_income = monthly_income.max(Fixed::ZERO);
+
+            *income_deltas.entry(owner.clone()).or_insert(Fixed::ZERO) += safe_income;
         }
     }
 
@@ -62,6 +67,7 @@ mod tests {
     use super::*;
     use crate::state::ProvinceState;
     use crate::testing::WorldStateBuilder;
+    use proptest::prelude::*;
 
     #[test]
     fn test_taxation_basic() {
@@ -122,5 +128,33 @@ mod tests {
         assert_eq!(swe.treasury, Fixed::from_f32(0.75));
     }
 
-    // TODO(review): Add determinism test (run twice, compare results)
+    proptest! {
+        #[test]
+        fn prop_taxation_never_negative(
+            autonomy in -2.0..2.0f32,
+            efficiency_mod in -2.0..2.0f32
+        ) {
+            let province = ProvinceState {
+                base_tax: Fixed::from_f32(12.0), // Base 12 = 1.0 monthly base
+                owner: Some("SWE".to_string()),
+                ..Default::default()
+            };
+
+            let mut state = WorldStateBuilder::new()
+                .with_country("SWE")
+                .with_province_state(1, province)
+                .build();
+
+            state.countries.get_mut("SWE").unwrap().treasury = Fixed::ZERO;
+
+            state.modifiers.province_autonomy.insert(1, Fixed::from_f32(autonomy));
+            state.modifiers.country_tax_modifier.insert("SWE".to_string(), Fixed::from_f32(efficiency_mod));
+
+            run_taxation_tick(&mut state);
+
+            let swe = state.countries.get("SWE").unwrap();
+            // Income should never be negative
+            prop_assert!(swe.treasury >= Fixed::ZERO);
+        }
+    }
 }

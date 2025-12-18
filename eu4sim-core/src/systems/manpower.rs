@@ -15,13 +15,15 @@ pub fn run_manpower_tick(state: &mut WorldState) {
     // 1. Calculate Max Manpower from Provinces
     for (&id, province) in &state.provinces {
         if let Some(owner) = &province.owner {
-            // TODO(review): Validate that autonomy ∈ [0, 1] to prevent negative manpower
-            let autonomy = state
+            // Clamp autonomy to [0, 1] to prevent negative contribution
+            let raw_autonomy = state
                 .modifiers
                 .province_autonomy
                 .get(&id)
                 .copied()
                 .unwrap_or(Fixed::ZERO);
+
+            let autonomy = raw_autonomy.clamp(Fixed::ZERO, Fixed::ONE);
 
             let factor = Fixed::ONE - autonomy;
             let prov_max = province
@@ -61,6 +63,7 @@ mod tests {
     use super::*;
     use crate::state::ProvinceState;
     use crate::testing::WorldStateBuilder;
+    use proptest::prelude::*;
 
     #[test]
     fn test_manpower_recovery() {
@@ -115,5 +118,34 @@ mod tests {
         assert_eq!(swe.manpower, Fixed::from_int(20000));
     }
 
-    // TODO(review): Add determinism test (run twice, compare results)
+    proptest! {
+        #[test]
+        fn prop_manpower_recovery_always_positive_base(
+            autonomy in -2.0..2.0f32
+        ) {
+            let province = ProvinceState {
+                base_manpower: Fixed::from_f32(10.0), // 10k men
+                owner: Some("SWE".to_string()),
+                ..Default::default()
+            };
+
+            let mut state = WorldStateBuilder::new()
+                .with_country("SWE")
+                .with_province_state(1, province)
+                .build();
+
+            // Start at 0
+            state.countries.get_mut("SWE").unwrap().manpower = Fixed::ZERO;
+
+            // Set crazy autonomy
+            state.modifiers.province_autonomy.insert(1, Fixed::from_f32(autonomy));
+
+            run_manpower_tick(&mut state);
+
+            let swe = state.countries.get("SWE").unwrap();
+            // Even if autonomy is 100% or -100%, we have Base Manpower (10k),
+            // so recovery should be positive.
+            prop_assert!(swe.manpower > Fixed::ZERO);
+        }
+    }
 }
