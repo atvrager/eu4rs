@@ -287,22 +287,8 @@ sequenceDiagram
 - [Military & Movement](military.md)
 - [Economy](economic-model.md)
 
-## Implementation Roadmap
+## Implementation Status
 
-### Phase 1-3: Foundation (Completed)
-- [x] Create `eu4sim-core` crate with world state structures
-- [x] Implement basic economy system
-- [x] Create `eu4sim` binary and game loop
-- [x] Add deterministic simulation integration tests
+See the [Project Roadmap](../../planning/roadmap.md) for detailed phase tracking and completion status.
 
-### Phase 4: Military & Movement (In Progress)
-- [x] **Movement System**: A* pathfinding, movement commands, state updates
-- [ ] **Naval Transport**: Boarding mechanics, fleet movement with cargo
-- [ ] **Zone of Control**: Fort logic, movement restrictions
-- [ ] **Combat System**: Battle initiation, dice rolls, casualties
-- [ ] **Attrition**: Supply limits, monthly losses
-
-### Phase 5: Diplomacy & AI (Planned)
-- [ ] Diplomatic actions (War, Alliance, Royal Marriage)
-- [ ] Basic AI decision making
-- [ ] Peace treaties and land transfer
+**Current Phase**: Phase 4 - Movement & Pathfinding (90% complete)
