@@ -25,7 +25,7 @@ Run a "complete" game from 1444 to 1821 with:
 | AI | Minimal | Random valid commands, pluggable interface |
 | Diplomacy | Minimal | Stability hits for betrayal (RM, military access) |
 | Tech/Institutions | Minimal | 3/3/3 flat mana, institutions spread by dev |
-| Religion | Medium | Reformation fires 1517, spreads, missionaries convert |
+| Religion | Minimal | Static religions (upgrade to Medium post-launch) |
 | Rulers | SKIP | No rulers - flat mana generation (design experiment) |
 | Development | Minimal | Static + dev purchasing as mana sink |
 | Events | SKIP | Alternate history is fine |
