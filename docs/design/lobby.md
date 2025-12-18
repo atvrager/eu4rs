@@ -11,6 +11,8 @@ The lobby system coordinates player connections, game setup, and the transition 
 
 **Key Insight**: We're not building two systems (SP + MP). We're building *one* networked simulation with a degenerate case of N=1.
 
+> **Note**: The full multiplayer system described here is **post mid-term**. For the mid-term "complete game" goal, only **Phase 1 (Local Foundation)** is needed—single-player as a local lobby with no networking. See [`complete-game-target.md`](simulation/complete-game-target.md#beyond-mid-term-multiplayer--lobby) for progression strategy.
+
 ---
 
 ## Goals
