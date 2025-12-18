@@ -11,6 +11,7 @@ High-level system architecture and design decisions.
 - **[Data Model](design/data-model.md)** - Data structures, storage layout, and relationships
 - **[Type System](design/type-system.md)** - Type inference, fixed-point arithmetic, determinism
 - **[UI/UX Design](design/ui.md)** - User interface and visualization design
+- **[Game Lobby System](design/lobby.md)** - Networking, P2P architecture, State machines
 
 #### Simulation Subsystems
 - **[Simulation Overview](design/simulation/overview.md)** - Core simulation architecture and pure functional model
