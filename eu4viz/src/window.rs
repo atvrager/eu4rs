@@ -826,6 +826,7 @@ mod tests {
             cultures: HashMap::new(),
             tradegoods: HashMap::new(),
             water_ids: HashSet::new(),
+            adjacency_graph: eu4data::adjacency::AdjacencyGraph::default(),
         };
 
         // 2. Verify Data Retrieval
@@ -1084,6 +1085,7 @@ mod tests {
             cultures: HashMap::new(),
             tradegoods: HashMap::new(),
             water_ids: HashSet::new(),
+            adjacency_graph: eu4data::adjacency::AdjacencyGraph::default(),
         };
 
         // Test ID lookup
@@ -1133,6 +1135,7 @@ mod tests {
             cultures: HashMap::new(),
             tradegoods: HashMap::new(),
             water_ids: HashSet::new(),
+            adjacency_graph: eu4data::adjacency::AdjacencyGraph::default(),
         };
 
         // 2. Init AppState (Window size 100x100)
@@ -1196,6 +1199,7 @@ mod tests {
             cultures: HashMap::new(),
             tradegoods: HashMap::new(),
             water_ids: HashSet::new(),
+            adjacency_graph: eu4data::adjacency::AdjacencyGraph::default(),
         };
 
         let mut app_state = AppState::new(world, 100, 100);

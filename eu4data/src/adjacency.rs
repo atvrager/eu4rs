@@ -133,11 +133,14 @@ pub struct StraitEntry {
 ///
 /// Format: From;To;Type;Through;start_x;start_y;stop_x;stop_y;adjacency_rule_name;Comment
 pub fn load_adjacencies_csv(path: &Path) -> Result<Vec<StraitEntry>, CacheError> {
+    let content_bytes = std::fs::read(path).map_err(CacheError::Io)?;
+    let (content_str, _, _) = encoding_rs::WINDOWS_1252.decode(&content_bytes);
+
     let mut reader = csv::ReaderBuilder::new()
         .delimiter(b';')
         .comment(Some(b'#'))
-        .from_path(path)
-        .map_err(|e| CacheError::Io(std::io::Error::other(e)))?;
+        .flexible(true)
+        .from_reader(content_str.as_bytes());
 
     let mut entries = Vec::new();
 
@@ -145,14 +148,21 @@ pub fn load_adjacencies_csv(path: &Path) -> Result<Vec<StraitEntry>, CacheError>
         let record = result.map_err(|e| CacheError::Io(std::io::Error::other(e)))?;
 
         // Parse fields
-        let from: ProvinceId = record
+        let from_val = record
             .get(0)
-            .and_then(|s| s.trim().parse().ok())
+            .and_then(|s| s.trim().parse::<i32>().ok())
             .unwrap_or(0);
-        let to: ProvinceId = record
+        let to_val = record
             .get(1)
-            .and_then(|s| s.trim().parse().ok())
+            .and_then(|s| s.trim().parse::<i32>().ok())
             .unwrap_or(0);
+
+        if from_val < 0 || to_val < 0 {
+            continue;
+        }
+
+        let from = from_val as ProvinceId;
+        let to = to_val as ProvinceId;
         let strait_type = record.get(2).unwrap_or("").trim().to_string();
         let through = record.get(3).and_then(|s| {
             if s.trim() == "-1" {
@@ -177,8 +187,16 @@ pub fn load_adjacencies_csv(path: &Path) -> Result<Vec<StraitEntry>, CacheError>
             .get(7)
             .and_then(|s| s.trim().parse().ok())
             .unwrap_or(0);
-        let adjacency_rule_name = record.get(8).map(|s| s.trim().to_string());
-        let comment = record.get(9).map(|s| s.trim().to_string());
+
+        // Optional fields
+        let (rule_name, comment) = if record.len() >= 10 {
+            (
+                record.get(8).map(|s| s.trim().to_string()),
+                record.get(9).map(|s| s.trim().to_string()),
+            )
+        } else {
+            (None, record.get(8).map(|s| s.trim().to_string()))
+        };
 
         entries.push(StraitEntry {
             from,
@@ -189,7 +207,7 @@ pub fn load_adjacencies_csv(path: &Path) -> Result<Vec<StraitEntry>, CacheError>
             start_y,
             stop_x,
             stop_y,
-            adjacency_rule_name,
+            adjacency_rule_name: rule_name,
             comment,
         });
     }
@@ -201,11 +219,14 @@ pub fn load_adjacencies_csv(path: &Path) -> Result<Vec<StraitEntry>, CacheError>
 ///
 /// Returns mapping of Color → ProvinceId.
 pub fn load_definition_csv(path: &Path) -> Result<HashMap<Color, ProvinceId>, CacheError> {
+    let content_bytes = std::fs::read(path).map_err(CacheError::Io)?;
+    let (content_str, _, _) = encoding_rs::WINDOWS_1252.decode(&content_bytes);
+
     let mut reader = csv::ReaderBuilder::new()
         .delimiter(b';')
         .comment(Some(b'#'))
-        .from_path(path)
-        .map_err(|e| CacheError::Io(std::io::Error::other(e)))?;
+        .flexible(true)
+        .from_reader(content_str.as_bytes());
 
     let mut color_map = HashMap::new();
 
@@ -283,6 +304,14 @@ impl CacheableResource for AdjacencyGraph {
 
         Ok(graph)
     }
+}
+
+/// Load the adjacency graph from cache or generate it.
+pub fn load_adjacency_graph(
+    game_path: &Path,
+    mode: crate::cache::CacheValidationMode,
+) -> Result<AdjacencyGraph, crate::cache::CacheError> {
+    crate::cache::load_or_generate("adjacency_graph", game_path, false, mode)
 }
 
 /// Generate adjacency graph from provinces.bmp.
@@ -476,5 +505,42 @@ mod tests {
         let path = graph.find_path(1, 5);
         // BFS should find shortest path: 1 -> 2 -> 5
         assert_eq!(path, Some(vec![2, 5]));
+    }
+
+    #[test]
+    fn test_encoding_preservation() {
+        use std::fs::File;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let def_path = dir.path().join("definition.csv");
+
+        // 0xE5 is 'å' in WINDOWS-1252
+        let raw_bytes = b"province;red;green;blue;x;x\n2;0;36;128;Sk\xE5ne;x\n";
+
+        let mut f = File::create(&def_path).unwrap();
+        f.write_all(raw_bytes).unwrap();
+
+        let color_map = load_definition_csv(&def_path).unwrap();
+
+        // Find the province ID for the color 0, 36, 128
+        let color = Color {
+            r: 0,
+            g: 36,
+            b: 128,
+        };
+        assert_eq!(color_map.get(&color), Some(&2));
+
+        let adj_path = dir.path().join("adjacencies.csv");
+        // "Skåne-Sjaelland" in WINDOWS-1252
+        let adj_bytes = b"From;To;Type;Through;start_x;start_y;stop_x;stop_y;Comment\n6;12;sea;1258;3008;1633;3000;1630;Sk\xE5ne-Sjaelland\n-1;-1;;;;;;;\n";
+
+        let mut f2 = File::create(&adj_path).unwrap();
+        f2.write_all(adj_bytes).unwrap();
+
+        let straits = load_adjacencies_csv(&adj_path).unwrap();
+        assert_eq!(straits.len(), 1);
+        assert_eq!(straits[0].comment.as_deref(), Some("Sk\u{e5}ne-Sjaelland"));
     }
 }

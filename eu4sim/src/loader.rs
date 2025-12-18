@@ -9,7 +9,15 @@ pub fn load_initial_state(
     game_path: &Path,
     start_date: Date,
     _rng_seed: u64,
-) -> Result<WorldState> {
+) -> Result<(WorldState, eu4data::adjacency::AdjacencyGraph)> {
+    // 0. Load Adjacency Graph (with Strict Cache Validation)
+    log::info!("Loading adjacency graph (strict mode)...");
+    let adjacency = eu4data::adjacency::load_adjacency_graph(
+        game_path,
+        eu4data::cache::CacheValidationMode::Strict,
+    )
+    .map_err(|e| anyhow::anyhow!("Failed to load adjacency graph: {}", e))?;
+
     // 1. Load Trade Goods
     log::info!("Loading trade goods from {:?}", game_path);
     let tradegoods = eu4data::tradegoods::load_tradegoods(game_path).unwrap_or_default();
@@ -129,19 +137,22 @@ pub fn load_initial_state(
     log::info!("Initialized {} armies", armies.len());
 
     // 3. Assemble State
-    Ok(WorldState {
-        date: start_date,
-        rng_seed: _rng_seed,
-        rng_state: 0, // Initialize RNG state
-        provinces,
-        countries,
-        base_goods_prices: base_prices,
-        modifiers: Default::default(),
-        diplomacy: Default::default(),
-        global: Default::default(),
-        armies,
-        next_army_id,
-        fleets: Default::default(),
-        next_fleet_id: 1,
-    })
+    Ok((
+        WorldState {
+            date: start_date,
+            rng_seed: _rng_seed,
+            rng_state: 0, // Initialize RNG state
+            provinces,
+            countries,
+            base_goods_prices: base_prices,
+            modifiers: Default::default(),
+            diplomacy: Default::default(),
+            global: Default::default(),
+            armies,
+            next_army_id,
+            fleets: Default::default(),
+            next_fleet_id: 1,
+        },
+        adjacency,
+    ))
 }

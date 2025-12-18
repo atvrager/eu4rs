@@ -268,30 +268,36 @@ pub fn load_world_data(base_path: &Path) -> Result<window::WorldData, String> {
             Ok((history_res?.0, countries_res?))
         };
 
-    // Task Group 3: Religions, Cultures
-    let task_common_data = || {
-        rayon::join(
-            || eu4data::religions::load_religions(base_path).map_err(|e| e.to_string()),
-            || eu4data::cultures::load_cultures(base_path).map_err(|e| e.to_string()),
-        )
+    // Task Group 3: Religions, Cultures, Adjacency
+    let task_common_data = || -> Result<_, String> {
+        let (rel_cul, adjacency) = rayon::join(
+            || {
+                rayon::join(
+                    || eu4data::religions::load_religions(base_path).map_err(|e| e.to_string()),
+                    || eu4data::cultures::load_cultures(base_path).map_err(|e| e.to_string()),
+                )
+            },
+            || {
+                eu4data::adjacency::load_adjacency_graph(
+                    base_path,
+                    eu4data::cache::CacheValidationMode::Fast,
+                )
+                .map_err(|e| e.to_string())
+            },
+        );
+        let (rel, cul) = rel_cul;
+        Ok((rel?, cul?, adjacency?))
     };
 
     // 4. Execute Top-Level Tasks
-    let (res_defs_map, (res_hist_countries, (res_religions, res_cultures))) =
+    let (res_defs_map, (res_hist_countries, res_common_data)) =
         rayon::join(task_definitions_and_map, || {
             rayon::join(task_history_and_countries, task_common_data)
         });
 
     let (color_to_id, province_map) = res_defs_map?;
     let (province_history, countries) = res_hist_countries?;
-    let religions = res_religions?;
-    let cultures = res_cultures?;
-
-    log::info!(
-        "Loaded {} religions, {} cultures.",
-        religions.len(),
-        cultures.len(),
-    );
+    let (religions, cultures, adjacency_graph) = res_common_data?;
 
     // 5. Default Map (Water)
     let default_map_path = base_path.join("map/default.map");
@@ -391,6 +397,7 @@ pub fn load_world_data(base_path: &Path) -> Result<window::WorldData, String> {
         tradegoods: HashMap::new(),
         water_ids,
         color_to_id,
+        adjacency_graph,
     })
 }
 
@@ -571,6 +578,16 @@ mod tests {
         img.put_pixel(0, 1, Rgb([0, 0, 255]));
         img.put_pixel(1, 1, Rgb([0, 0, 0]));
         img.save(map_dir.join("provinces.bmp")).unwrap();
+
+        // 3b. map/adjacencies.csv
+        let mut adj = File::create(map_dir.join("adjacencies.csv")).unwrap();
+        writeln!(
+            adj,
+            "From;To;Type;Through;start_x;start_y;stop_x;stop_y;comment"
+        )
+        .unwrap();
+        writeln!(adj, "1;2;sea;3;0;0;0;0;Test Adjacency").unwrap();
+        writeln!(adj, "-1;-1;;;;;;;").unwrap();
 
         // 4. common/tradegoods/00_tradegoods.txt
         let mut tg = File::create(tradegoods_dir.join("00_tradegoods.txt")).unwrap();

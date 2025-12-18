@@ -54,7 +54,7 @@ fn main() -> Result<()> {
     };
 
     // Initialize State
-    let mut state =
+    let (mut state, adjacency) =
         loader::load_initial_state(&game_path, Date::new(args.start_year, 11, 11), 12345)?;
 
     log::info!("Initial State Date: {}", state.date);
@@ -73,7 +73,7 @@ fn main() -> Result<()> {
         let prev_swe = state.countries.get("SWE").cloned();
 
         // Step
-        state = step_world(&state, &inputs, None, &config);
+        state = step_world(&state, &inputs, Some(&adjacency), &config);
 
         if let Some(swe) = state.countries.get("SWE") {
             use eu4sim_core::Fixed; // Import Fixed here or at top

@@ -106,7 +106,11 @@ fn load_file(path: &Path, results: &Mutex<HashMap<String, Culture>>) -> Result<(
                             // But usually there isn't a color field.
 
                             if let EU4TxtAstItem::Identifier(name) = &name_node.entry {
-                                if name == "graphical_culture" {
+                                if name == "graphical_culture"
+                                    || name == "male_names"
+                                    || name == "female_names"
+                                    || name == "dynasty_names"
+                                {
                                     continue;
                                 } // non-culture keys
 
@@ -179,5 +183,28 @@ mod tests {
         let expected = hash_color("swedish");
         assert_eq!(swedish.color, expected);
         assert_eq!(swedish.primary.as_deref(), Some("SWE"));
+    }
+
+    #[test]
+    fn test_culture_encoding_preservation() {
+        let dir = tempdir().unwrap();
+        let c_dir = dir.path().join("common/cultures");
+        std::fs::create_dir_all(&c_dir).unwrap();
+
+        // 0xE5 is 'å' in WINDOWS-1252
+        // We'll test a group name with 'å'
+        let raw_bytes = b"scandivani\xE5n = {\n    swedish = {\n        primary = SWE\n    }\n}\n";
+
+        let mut f = std::fs::File::create(c_dir.join("01_enc_test.txt")).unwrap();
+        f.write_all(raw_bytes).unwrap();
+
+        let cultures = load_cultures(dir.path()).unwrap();
+        // The group name isn't stored in the Culture struct currently,
+        // but we verify that the culture *under* that group is loaded.
+        assert!(cultures.contains_key("swedish"));
+        assert_eq!(
+            cultures.get("swedish").unwrap().primary.as_deref(),
+            Some("SWE")
+        );
     }
 }

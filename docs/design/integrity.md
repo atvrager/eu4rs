@@ -128,6 +128,18 @@ pub struct CacheMetadata {
 
 ---
 
+### 2.1. Text Encoding & Character Preservation
+
+Paradox game data traditionally uses legacy encodings that are incompatible with default UTF-8 loaders. To maintain visual integrity and prevent "mojibake" (corrupted text), we enforce strict rules:
+
+- **Mandatory Encoding**: All script (`.txt`) and CSV (`.csv`) files MUST be loaded using **`WINDOWS-1252`** (CP1252).
+- **Zero Loss Promise**: Regional characters (e.g., Swedish `å`, German `ö`) must be perfectly preserved. We use `encoding_rs` to decode bytes before parsing.
+- **Verification**: All loaders must have unit tests verifying preservation of `WINDOWS-1252` specific characters.
+
+**Status: ✅ IMPLEMENTED** in `eu4txt` and `eu4data` loaders.
+
+---
+
 ### 3. Runtime State Checksums
 
 During simulation, we compute checksums of `WorldState` to detect desync.

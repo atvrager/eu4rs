@@ -42,6 +42,9 @@ pub struct WorldData {
     /// Set of Province IDs considered water (seas/lakes).
     #[allow(dead_code)]
     pub water_ids: HashSet<u32>,
+    /// Adjacency graph for pathfinding and movement visualization.
+    #[allow(dead_code)]
+    pub adjacency_graph: eu4data::adjacency::AdjacencyGraph,
 }
 
 impl WorldData {

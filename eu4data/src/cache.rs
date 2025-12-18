@@ -18,6 +18,15 @@ pub enum CacheError {
     SourceNotFound(PathBuf),
 }
 
+/// Mode for cache validation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CacheValidationMode {
+    /// Fast mode: trust local filesystem, only validate based on metadata (mtimes).
+    Fast,
+    /// Strict mode: verify data integrity (hashes) on load.
+    Strict,
+}
+
 /// Metadata for cache validation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheMetadata {
@@ -30,6 +39,12 @@ pub struct CacheMetadata {
     /// Game version (from launcher-settings.json or game exe)
     #[serde(default)]
     pub game_version: Option<String>,
+    /// Manifest hash this cache was built against
+    #[serde(default)]
+    pub manifest_hash: Option<[u8; 32]>,
+    /// SHA256 of the cached data itself (for integrity verification)
+    #[serde(default)]
+    pub data_hash: Option<[u8; 32]>,
     /// Cache generation timestamp
     pub generated_at: SystemTime,
 }
@@ -59,12 +74,47 @@ impl CacheMetadata {
             source_hashes,
             source_mtimes,
             game_version: None,
+            manifest_hash: Some(crate::manifest::GAME_MANIFEST.manifest_hash),
+            data_hash: None,
             generated_at: SystemTime::now(),
         })
     }
 
+    /// Fast path: check mtimes only (for local development).
+    pub fn is_valid_quick(&self, source_files: &[PathBuf]) -> bool {
+        for path in source_files {
+            if let Ok(metadata) = fs::metadata(path) {
+                if let Ok(mtime) = metadata.modified() {
+                    if let Some(cached_mtime) = self.source_mtimes.get(path) {
+                        if &mtime != cached_mtime {
+                            return false;
+                        }
+                    } else {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Check if cache is still valid for given source files.
     pub fn is_valid(&self, source_files: &[PathBuf]) -> bool {
+        // Check manifest hash first (build compatibility)
+        if let Some(cached_manifest) = &self.manifest_hash {
+            if cached_manifest != &crate::manifest::GAME_MANIFEST.manifest_hash {
+                return false;
+            }
+        } else if self.manifest_hash.is_none() {
+            // If cache was built before Phase 3, we should probably invalidate it
+            // but for migration we might just warn. For integrity, we invalidate.
+            return false;
+        }
+
         // Check all source files still exist and have matching hashes
         for path in source_files {
             if !path.exists() {
@@ -108,6 +158,7 @@ pub fn load_or_generate<T: CacheableResource>(
     cache_name: &str,
     game_path: &Path,
     force_regenerate: bool,
+    mode: CacheValidationMode,
 ) -> Result<T, CacheError> {
     let cache_dir = get_cache_dir()?;
     let cache_path = cache_dir.join(format!("{}.json", cache_name));
@@ -121,10 +172,36 @@ pub fn load_or_generate<T: CacheableResource>(
         let meta_json = fs::read_to_string(&meta_path)?;
         let metadata: CacheMetadata = serde_json::from_str(&meta_json)?;
 
-        // Validate cache
-        if metadata.is_valid(&source_files) {
+        // Validate cache based on mode
+        let valid = match mode {
+            CacheValidationMode::Fast => metadata.is_valid_quick(&source_files),
+            CacheValidationMode::Strict => metadata.is_valid(&source_files),
+        };
+
+        if valid {
             log::info!("Using cached {}", cache_name);
             let cache_json = fs::read_to_string(&cache_path)?;
+
+            // In strict mode, verify data integrity
+            if mode == CacheValidationMode::Strict {
+                if let Some(cached_data_hash) = metadata.data_hash {
+                    let current_data_hash = compute_sha256_bytes(cache_json.as_bytes());
+                    if current_data_hash != cached_data_hash {
+                        log::warn!(
+                            "Cache data corruption detected for {}, regenerating",
+                            cache_name
+                        );
+                        return load_or_generate(cache_name, game_path, true, mode);
+                    }
+                } else {
+                    log::warn!(
+                        "Missing data hash in Strict mode for {}, regenerating",
+                        cache_name
+                    );
+                    return load_or_generate(cache_name, game_path, true, mode);
+                }
+            }
+
             let resource: T = serde_json::from_str(&cache_json)?;
             return Ok(resource);
         } else {
@@ -141,9 +218,13 @@ pub fn load_or_generate<T: CacheableResource>(
     fs::create_dir_all(&cache_dir)?;
 
     let cache_json = serde_json::to_string_pretty(&resource)?;
-    fs::write(&cache_path, cache_json)?;
+    let data_hash = compute_sha256_bytes(cache_json.as_bytes());
 
-    let metadata = CacheMetadata::from_sources(&source_files)?;
+    fs::write(&cache_path, &cache_json)?;
+
+    let mut metadata = CacheMetadata::from_sources(&source_files)?;
+    metadata.data_hash = Some(data_hash);
+
     let meta_json = serde_json::to_string_pretty(&metadata)?;
     fs::write(&meta_path, meta_json)?;
 
@@ -162,6 +243,14 @@ fn get_cache_dir() -> Result<PathBuf, CacheError> {
 
     fs::create_dir_all(&cache_dir)?;
     Ok(cache_dir)
+}
+
+/// Compute SHA256 hash of bytes.
+fn compute_sha256_bytes(bytes: &[u8]) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hasher.finalize().into()
 }
 
 /// Compute SHA256 hash of a file.
@@ -200,6 +289,7 @@ mod tests {
         assert_eq!(metadata.source_hashes.len(), 1);
         assert_eq!(metadata.source_mtimes.len(), 1);
         assert!(metadata.source_hashes.contains_key(&file1));
+        assert!(metadata.manifest_hash.is_some());
     }
 
     #[test]
@@ -222,6 +312,39 @@ mod tests {
     }
 
     #[test]
+    fn test_cache_manifest_hash_validation() {
+        let temp = TempDir::new().unwrap();
+        let file1 = temp.path().join("file1.txt");
+        fs::write(&file1, b"content1").unwrap();
+
+        let mut metadata = CacheMetadata::from_sources(&[file1.clone()]).unwrap();
+        assert!(metadata.is_valid(&[file1.clone()]));
+
+        // Mutate manifest hash
+        metadata.manifest_hash = Some([0u8; 32]);
+        assert!(!metadata.is_valid(&[file1]));
+    }
+
+    #[test]
+    fn test_cache_mtime_fast_path() {
+        let temp = TempDir::new().unwrap();
+        let file1 = temp.path().join("file1.txt");
+        fs::write(&file1, b"content1").unwrap();
+
+        let metadata = CacheMetadata::from_sources(&[file1.clone()]).unwrap();
+
+        // Fast path valid
+        assert!(metadata.is_valid_quick(&[file1.clone()]));
+
+        // Modify mtime (and content just in case)
+        std::thread::sleep(std::time::Duration::from_millis(100)); // Ensure mtime change
+        fs::write(&file1, b"content2").unwrap();
+
+        // Fast path should notice
+        assert!(!metadata.is_valid_quick(&[file1]));
+    }
+
+    #[test]
     fn test_compute_file_hash() {
         let temp = TempDir::new().unwrap();
         let file = temp.path().join("test.txt");
@@ -234,5 +357,26 @@ mod tests {
             hash,
             "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
         );
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct MockResource {
+        val: String,
+    }
+    impl CacheableResource for MockResource {
+        fn source_files(_game_path: &Path) -> Vec<PathBuf> {
+            vec![]
+        }
+        fn generate(_game_path: &Path) -> Result<Self, CacheError> {
+            Ok(Self { val: "mock".into() })
+        }
+    }
+
+    #[test]
+    fn test_load_or_generate_basic() {
+        let temp = TempDir::new().unwrap();
+        let res: MockResource =
+            load_or_generate("test", temp.path(), false, CacheValidationMode::Fast).unwrap();
+        assert_eq!(res.val, "mock");
     }
 }
