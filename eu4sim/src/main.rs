@@ -153,17 +153,19 @@ fn main() -> Result<()> {
         // Poll input
         while event::poll(std::time::Duration::ZERO)? {
             if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Char('1') => speed = 1,
-                    KeyCode::Char('2') => speed = 2,
-                    KeyCode::Char('3') => speed = 3,
-                    KeyCode::Char('4') => speed = 4,
-                    KeyCode::Char('5') => speed = 5,
-                    KeyCode::Char('+') | KeyCode::Char('=') => speed = (speed + 1).min(5),
-                    KeyCode::Char('-') => speed = speed.saturating_sub(1).max(1),
-                    KeyCode::Char(' ') => paused = !paused,
-                    KeyCode::Char('q') => return Ok(()),
-                    _ => {}
+                if key.kind == event::KeyEventKind::Press {
+                    match key.code {
+                        KeyCode::Char('1') => speed = 1,
+                        KeyCode::Char('2') => speed = 2,
+                        KeyCode::Char('3') => speed = 3,
+                        KeyCode::Char('4') => speed = 4,
+                        KeyCode::Char('5') => speed = 5,
+                        KeyCode::Char('+') | KeyCode::Char('=') => speed = (speed + 1).min(5),
+                        KeyCode::Char('-') => speed = speed.saturating_sub(1).max(1),
+                        KeyCode::Char(' ') => paused = !paused,
+                        KeyCode::Char('q') => return Ok(()),
+                        _ => {}
+                    }
                 }
             }
         }
@@ -173,16 +175,17 @@ fn main() -> Result<()> {
         // Move cursor up if multi-line
         // Use first_print flag instead of tick count to handle pause refreshes
         if !first_print {
-            if tags.len() > 1 {
-                print!("\x1b[{}A", tags.len());
-            } else {
-                print!("\r");
-            }
+            // +1 for header line
+            print!("\x1b[{}A", tags.len() + 1);
         }
         first_print = false;
 
-        // Render Status
+        // Render Status Header
         let status_suffix = if paused { " [PAUSED]" } else { "" };
+        print!(
+            "[{}] Speed: {}{}                                   \r\n",
+            state.date, speed, status_suffix
+        );
 
         for tag in tags.iter() {
             if let Some(country) = state.countries.get(tag) {
@@ -236,8 +239,7 @@ fn main() -> Result<()> {
                 let reset = "\x1b[0m";
 
                 let output = format!(
-                    "[{}] {}: 💰{:>7.1}({}{:>+6.1}{}) 👥{:>6.0}({}{:>+5.0}{}) ⚔️{:>3.0}/{:>3.0}/{:>3.0} | Army:{:>3}/{:>3}/{:>3} Forts:{:>2} [Spd:{}]{}    ",
-                    state.date,
+                    " {}: 💰{:>7.1}({}{:>+6.1}{}) 👥{:>6.0}({}{:>+5.0}{}) ⚔️{:>3.0}/{:>3.0}/{:>3.0} | Army:{:>3}/{:>3}/{:>3} Forts:{:>2}    ",
                     tag,
                     country.treasury.to_f32(),
                     color_t,
@@ -253,26 +255,16 @@ fn main() -> Result<()> {
                     inf,
                     cav,
                     art,
-                    forts,
-                    speed,
-                    status_suffix
+                    forts
                 );
 
-                if tags.len() > 1 {
-                    print!("{}\r\n", output);
-                } else {
-                    print!("{}", output);
-                }
+                print!("{}\r\n", output);
             } else {
                 let output = format!(
-                    "[{}] {}: \x1b[31m[ELIMINATED]\x1b[0m                                                                            ",
-                    state.date, tag
+                    " {}: \x1b[31m[ELIMINATED]\x1b[0m                                                                            ",
+                    tag
                 );
-                if tags.len() > 1 {
-                    print!("{}\r\n", output);
-                } else {
-                    print!("{}", output);
-                }
+                print!("{}\r\n", output);
             }
         }
         std::io::stdout().flush().unwrap();
