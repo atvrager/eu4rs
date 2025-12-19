@@ -20,6 +20,7 @@ High-level system architecture and design decisions.
 - **[Military System](design/simulation/military.md)** - Combat, movement, pathfinding, naval transport
 - **[Calendar System](design/simulation/calendar.md)** - Temporal logic and non-Gregorian extensions
 - **[CLI Pipeline](design/cli-pipeline.md)** - Argument parsing, profiles, and runner configuration
+- **[State Management](architecture/state-management.md)** - Persistent data structures and functional core patterns
 
 ---
 
@@ -48,6 +49,7 @@ Tools, workflows, and best practices for contributors.
 #### Tools & Automation
 - **[Code Generation](development/code-generation.md)** - Auto-codegen from EU4 data schemas
 - **[Code Statistics](development/code-statistics.md)** - Metrics, reporting, and visualization
+- **[Performance Measurement](development/performance.md)** - Benchmarking, metrics, and profiling
 
 ---
 
@@ -86,4 +88,4 @@ This project prioritizes:
 
 ---
 
-*Last updated: 2025-12-17*
+*Last updated: 2025-12-19*

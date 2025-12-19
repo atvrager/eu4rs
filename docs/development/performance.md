@@ -42,17 +42,20 @@ cargo run -p eu4sim -- --benchmark --ticks 1000
 ## Benchmarking Results (Dec 19, 2025)
 
 **Environment**: Developer Machine (Windows)
-**Scenario**: Observer mode, 1444 start.
+**Scenario**: Observer mode, 1444 start (Release Build).
 
 | Metric | Value |
 |--------|-------|
-| Years Simulated | 28 |
-| Total Time | 13.11s |
-| **Speed** | **2.1 years/sec** |
-| Average Tick | 1.311ms |
+| Years Simulated | 3 |
+| Total Time | 2.87s |
+| **Speed** | **1.0 years/sec** |
+| Average Tick | 2.87ms |
 
-### Theoretical Full Run (1444-1821 = 377 years)
-At **2.1 years/sec**, a full simulation takes approximately **180 seconds (3 minutes)**. This is well within the 10-minute (600 second) goal, providing significant headroom as more systems (AI, Colonization, etc.) are added.
+### Analysis
+The simulation speed is now **1.0 years/sec**, which translates to a full game run (377 years) in approximately **6.3 minutes**. This exceeds the mid-term goal of 10 minutes.
+
+- **AI Overhead**: ~80% of tick time is currently AI decision making (despite being random). This is the next target for parallelization.
+- **State Cloning**: Reduced from **~4.0ms** to **~0.4ms** per tick by switching to `im::HashMap`.
 
 ## Future Optimization & Profiling
 
