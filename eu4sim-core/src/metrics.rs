@@ -10,6 +10,7 @@ pub struct SimMetrics {
     pub combat_time: Duration,
     pub occupation_time: Duration,
     pub economy_time: Duration, // monthly systems combined
+    pub ai_time: Duration,
     pub war_score_time: Duration,
 }
 

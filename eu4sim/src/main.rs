@@ -34,6 +34,10 @@ struct Args {
     /// Print timing summary at end
     #[arg(long, help = "Print timing summary at end")]
     benchmark: bool,
+
+    /// Run in observer mode (AI controls all countries)
+    #[arg(long)]
+    observer: bool,
 }
 
 use eu4sim_core::SimMetrics;
@@ -72,13 +76,71 @@ fn main() -> Result<()> {
         None
     };
 
+    // Initialize AI if in observer mode
+    let mut ais: std::collections::HashMap<String, eu4sim_core::ai::RandomAi> = if args.observer {
+        state
+            .countries
+            .keys()
+            .map(|tag| (tag.clone(), eu4sim_core::ai::RandomAi::new(12345)))
+            .collect()
+    } else {
+        std::collections::HashMap::new()
+    };
+
     // Game Loop
     for _ in 0..args.ticks {
-        // Collect inputs (stub)
-        let inputs = vec![PlayerInputs {
-            country: "SWE".to_string(),
-            commands: vec![], // No commands for now
-        }];
+        let mut inputs = Vec::new();
+
+        if args.observer {
+            let ai_start = std::time::Instant::now();
+            // Generate AI commands for all countries
+            for (tag, ai) in &mut ais {
+                // Minimal omniscient state for now
+                let visible_state = eu4sim_core::ai::VisibleWorldState {
+                    date: state.date,
+                    observer: tag.clone(),
+                    own_country: state.countries.get(tag).cloned().unwrap_or_default(),
+                    at_war: false, // Stub
+                    known_countries: state.countries.keys().cloned().collect(),
+                };
+
+                // Available commands stub - can improve this later
+                let mut available = Vec::new();
+
+                // Find armies and generate move commands
+                for (id, army) in &state.armies {
+                    if &army.owner == tag {
+                        let neighbors = adjacency.neighbors(army.location);
+                        for dest in neighbors {
+                            available.push(eu4sim_core::Command::Move {
+                                army_id: *id,
+                                destination: dest,
+                            });
+                        }
+                    }
+                }
+
+                // Chance to look for peace deals if at war
+                // (Stub: assumes we can see wars logic later)
+
+                let cmds = eu4sim_core::ai::AiPlayer::decide(ai, &visible_state, &available);
+                if !cmds.is_empty() {
+                    inputs.push(PlayerInputs {
+                        country: tag.clone(),
+                        commands: cmds,
+                    });
+                }
+            }
+            if let Some(m) = metrics.as_mut() {
+                m.ai_time += ai_start.elapsed();
+            }
+        } else {
+            // Default stub inputs for non-observer mode
+            inputs.push(PlayerInputs {
+                country: "SWE".to_string(),
+                commands: vec![],
+            });
+        }
 
         let prev_swe = state.countries.get("SWE").cloned();
 
@@ -157,34 +219,64 @@ fn main() -> Result<()> {
 
     if let Some(m) = metrics {
         let years = (state.date.year - args.start_year) as f64;
+        let real_total_time = m.total_time + m.ai_time;
+
         println!("\n=== Benchmark Results ===");
         println!(
             "Simulated: {} years in {:.2}s",
             years,
-            m.total_time.as_secs_f64()
+            real_total_time.as_secs_f64()
         );
-        println!("Speed: {:.1} years/sec", m.years_per_second(years));
-        println!("Tick avg: {:.3}ms", m.tick_avg_ms());
+        let years_per_sec = if real_total_time.as_secs_f64() > 0.0 {
+            years / real_total_time.as_secs_f64()
+        } else {
+            0.0
+        };
+        println!("Speed: {:.1} years/sec", years_per_sec);
+
+        let total_ticks = m.total_ticks.max(1) as f64;
+        println!(
+            "Tick avg: {:.3}ms",
+            real_total_time.as_secs_f64() * 1000.0 / total_ticks
+        );
+
         println!("Breakdown:");
         println!(
             "  Movement:   {:>7.3}ms ({:4.1}%)",
-            m.movement_time.as_secs_f64() * 1000.0 / m.total_ticks as f64,
-            m.movement_time.as_secs_f64() / m.total_time.as_secs_f64() * 100.0
+            m.movement_time.as_secs_f64() * 1000.0 / total_ticks,
+            m.movement_time.as_secs_f64() / real_total_time.as_secs_f64() * 100.0
         );
         println!(
             "  Combat:     {:>7.3}ms ({:4.1}%)",
-            m.combat_time.as_secs_f64() * 1000.0 / m.total_ticks as f64,
-            m.combat_time.as_secs_f64() / m.total_time.as_secs_f64() * 100.0
+            m.combat_time.as_secs_f64() * 1000.0 / total_ticks,
+            m.combat_time.as_secs_f64() / real_total_time.as_secs_f64() * 100.0
         );
         println!(
             "  Occupation: {:>7.3}ms ({:4.1}%)",
-            m.occupation_time.as_secs_f64() * 1000.0 / m.total_ticks as f64,
-            m.occupation_time.as_secs_f64() / m.total_time.as_secs_f64() * 100.0
+            m.occupation_time.as_secs_f64() * 1000.0 / total_ticks,
+            m.occupation_time.as_secs_f64() / real_total_time.as_secs_f64() * 100.0
         );
         println!(
             "  Economy:    {:>7.3}ms ({:4.1}%)",
-            m.economy_time.as_secs_f64() * 1000.0 / m.total_ticks as f64,
-            m.economy_time.as_secs_f64() / m.total_time.as_secs_f64() * 100.0
+            m.economy_time.as_secs_f64() * 1000.0 / total_ticks,
+            m.economy_time.as_secs_f64() / real_total_time.as_secs_f64() * 100.0
+        );
+        println!(
+            "  AI:         {:>7.3}ms ({:4.1}%)",
+            m.ai_time.as_secs_f64() * 1000.0 / total_ticks,
+            m.ai_time.as_secs_f64() / real_total_time.as_secs_f64() * 100.0
+        );
+
+        let other_time = real_total_time
+            .checked_sub(
+                m.movement_time + m.combat_time + m.occupation_time + m.economy_time + m.ai_time,
+            )
+            .unwrap_or_default();
+
+        println!(
+            "  Other:      {:>7.3}ms ({:4.1}%)",
+            other_time.as_secs_f64() * 1000.0 / total_ticks,
+            other_time.as_secs_f64() / real_total_time.as_secs_f64() * 100.0
         );
     }
 

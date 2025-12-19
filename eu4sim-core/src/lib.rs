@@ -1,7 +1,9 @@
+pub mod ai;
 pub mod config;
 pub mod fixed;
 pub mod input;
 pub mod metrics;
+pub use ai::{AiPlayer, RandomAi, VisibilityMode, VisibleWorldState};
 pub mod modifiers;
 pub mod state;
 pub mod step;

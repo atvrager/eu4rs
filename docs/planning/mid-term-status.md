@@ -14,17 +14,22 @@ Run a "complete" game from 1444 to 1821 with:
 
 As of the implementation of the peace deal system, the simulation is tracking well against the sub-10 minute goal:
 
-```text
 === Benchmark Results ===
-Simulated: 28 years in 13.11s
-Speed: 2.1 years/sec
-Tick avg: 1.311ms
+Simulated: 1 years in 4.35s
+Speed: 0.2 years/sec
+Tick avg: 43.513ms
 Breakdown:
-  Movement:     0.005ms ( 0.4%)
-  Combat:       0.098ms ( 7.5%)
-  Occupation:   0.042ms ( 3.2%)
-  Economy:      0.128ms ( 9.7%)
+  Movement:     0.179ms ( 0.4%)
+  Combat:       0.118ms ( 0.3%)
+  Occupation:   0.077ms ( 0.2%)
+  Economy:      0.136ms ( 0.3%)
+  AI:          29.919ms (68.8%) // Needs optimization (allocation heavy)
+  Other:       13.084ms (30.1%) // State cloning overhead
 ```
+
+> [!WARNING]
+> Current performance (0.2 yrs/sec) projects a ~30 minute full game run, missing the <10 minute goal.
+> **Optimization required**: AI allocations and State cloning are the primary bottlenecks.
 
 See [docs/development/performance.md](../development/performance.md) for measurement details.
 
@@ -89,8 +94,8 @@ See [docs/development/performance.md](../development/performance.md) for measure
 
 ## What's Blocking
 
-1. **War Resolution** - Wars can be declared but can't end
-2. **AI** - No decision-making yet
+1. **War Resolution** - Done (Minimal: white peace / annexation / simple terms)
+2. **AI** - Done (Minimal: Random AI enabled)
 
 Everything else can be stubbed or is already done.
 
