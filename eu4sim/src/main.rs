@@ -30,7 +30,13 @@ struct Args {
     /// Dump game data manifest and exit
     #[arg(long)]
     manifest: bool,
+
+    /// Print timing summary at end
+    #[arg(long, help = "Print timing summary at end")]
+    benchmark: bool,
 }
+
+use eu4sim_core::SimMetrics;
 
 fn main() -> Result<()> {
     let args = Args::parse();
@@ -60,6 +66,12 @@ fn main() -> Result<()> {
     // Simulation config (monthly checksums)
     let config = SimConfig::default();
 
+    let mut metrics = if args.benchmark {
+        Some(SimMetrics::default())
+    } else {
+        None
+    };
+
     // Game Loop
     for _ in 0..args.ticks {
         // Collect inputs (stub)
@@ -71,7 +83,7 @@ fn main() -> Result<()> {
         let prev_swe = state.countries.get("SWE").cloned();
 
         // Step
-        state = step_world(&state, &inputs, Some(&adjacency), &config);
+        state = step_world(&state, &inputs, Some(&adjacency), &config, metrics.as_mut());
 
         if let Some(swe) = state.countries.get("SWE") {
             use eu4sim_core::Fixed; // Import Fixed here or at top
@@ -142,6 +154,39 @@ fn main() -> Result<()> {
     }
 
     log::info!("Simulation finished at {}", state.date);
+
+    if let Some(m) = metrics {
+        let years = (state.date.year - args.start_year) as f64;
+        println!("\n=== Benchmark Results ===");
+        println!(
+            "Simulated: {} years in {:.2}s",
+            years,
+            m.total_time.as_secs_f64()
+        );
+        println!("Speed: {:.1} years/sec", m.years_per_second(years));
+        println!("Tick avg: {:.3}ms", m.tick_avg_ms());
+        println!("Breakdown:");
+        println!(
+            "  Movement:   {:>7.3}ms ({:4.1}%)",
+            m.movement_time.as_secs_f64() * 1000.0 / m.total_ticks as f64,
+            m.movement_time.as_secs_f64() / m.total_time.as_secs_f64() * 100.0
+        );
+        println!(
+            "  Combat:     {:>7.3}ms ({:4.1}%)",
+            m.combat_time.as_secs_f64() * 1000.0 / m.total_ticks as f64,
+            m.combat_time.as_secs_f64() / m.total_time.as_secs_f64() * 100.0
+        );
+        println!(
+            "  Occupation: {:>7.3}ms ({:4.1}%)",
+            m.occupation_time.as_secs_f64() * 1000.0 / m.total_ticks as f64,
+            m.occupation_time.as_secs_f64() / m.total_time.as_secs_f64() * 100.0
+        );
+        println!(
+            "  Economy:    {:>7.3}ms ({:4.1}%)",
+            m.economy_time.as_secs_f64() * 1000.0 / m.total_ticks as f64,
+            m.economy_time.as_secs_f64() / m.total_time.as_secs_f64() * 100.0
+        );
+    }
 
     Ok(())
 }

@@ -201,4 +201,23 @@ Before starting work on a feature:
 
 ---
 
+## Future Explorations 💡
+
+Ideas worth exploring but not on the critical path:
+
+### TUI Rendering Mode
+Play EU4 in your terminal! A text-based interface using `ratatui` or similar:
+- ASCII map with country colors
+- Command-line input for orders
+- Turn-based or simplified real-time
+- Perfect for SSH sessions or low-resource environments
+- Could start with observer mode, add interaction later
+
+### Performance Instrumentation
+- `--benchmark` flag to measure simulation speed
+- Phase-by-phase timing breakdown
+- Track progress toward sub-10-minute full game goal
+
+---
+
 *Last updated: 2025-12-19*

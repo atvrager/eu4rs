@@ -8,7 +8,25 @@ Run a "complete" game from 1444 to 1821 with:
 - All countries AI-controlled
 - Economy and military systems functional
 - Observable output (headless or eu4viz)
-- Completes in <10 minutes wall-clock
+- Completes in <10 minutes wall-clock (Current: ~4-5 minutes based on 2.1 yr/s)
+
+### Current Performance (Dec 2025)
+
+As of the implementation of the peace deal system, the simulation is tracking well against the sub-10 minute goal:
+
+```text
+=== Benchmark Results ===
+Simulated: 28 years in 13.11s
+Speed: 2.1 years/sec
+Tick avg: 1.311ms
+Breakdown:
+  Movement:     0.005ms ( 0.4%)
+  Combat:       0.098ms ( 7.5%)
+  Occupation:   0.042ms ( 3.2%)
+  Economy:      0.128ms ( 9.7%)
+```
+
+See [docs/development/performance.md](../development/performance.md) for measurement details.
 
 "Complete" means the simulation doesn't crash or stall - systems exist at varying fidelity levels.
 

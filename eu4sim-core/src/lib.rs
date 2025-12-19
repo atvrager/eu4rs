@@ -1,6 +1,7 @@
 pub mod config;
 pub mod fixed;
 pub mod input;
+pub mod metrics;
 pub mod modifiers;
 pub mod state;
 pub mod step;
@@ -10,6 +11,7 @@ pub mod testing;
 pub use config::SimConfig;
 pub use fixed::Fixed;
 pub use input::{Command, PlayerInputs};
+pub use metrics::SimMetrics;
 pub use modifiers::{GameModifiers, TradegoodId};
 pub use state::WorldState;
 pub use step::{step_world, ActionError};
