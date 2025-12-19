@@ -35,6 +35,10 @@ struct Args {
     #[arg(long, help = "Print timing summary at end")]
     benchmark: bool,
 
+    /// Comma-separated list of country tags to observe (default: "SWE")
+    #[arg(long, default_value = "SWE")]
+    tags: String,
+
     /// Run in observer mode (AI controls all countries)
     #[arg(long)]
     observer: bool,
@@ -97,7 +101,7 @@ fn main() -> Result<()> {
     let mut available: Vec<eu4sim_core::Command> = Vec::with_capacity(1024);
 
     // Game Loop
-    for _ in 0..args.ticks {
+    for i in 0..args.ticks {
         let mut inputs = Vec::new();
 
         if args.observer {
@@ -172,87 +176,124 @@ fn main() -> Result<()> {
             });
         }
 
-        let prev_swe = state.countries.get("SWE").cloned();
+        // Capture previous state for tracked tags
+        let tags: Vec<String> = args
+            .tags
+            .split(',')
+            .map(|s| s.trim().to_uppercase())
+            .collect();
+        let mut prev_states = std::collections::HashMap::new();
+        for tag in &tags {
+            if let Some(c) = state.countries.get(tag) {
+                prev_states.insert(tag.clone(), c.clone());
+            }
+        }
 
         // Step
         state = step_world(&state, &inputs, Some(&adjacency), &config, metrics.as_mut());
 
-        if let Some(swe) = state.countries.get("SWE") {
-            use eu4sim_core::Fixed; // Import Fixed here or at top
-            let prev_treasury = prev_swe.as_ref().map(|c| c.treasury).unwrap_or(Fixed::ZERO);
-            let prev_manpower = prev_swe.as_ref().map(|c| c.manpower).unwrap_or(Fixed::ZERO);
+        use eu4sim_core::Fixed; // Import Fixed here or at top
+        use std::io::Write;
 
-            let delta_treasury = (swe.treasury - prev_treasury).to_f32();
-            let delta_manpower = (swe.manpower - prev_manpower).to_f32();
+        // Move cursor up if multi-line
+        if i > 0 {
+            if tags.len() > 1 {
+                print!("\x1b[{}A", tags.len());
+            } else {
+                print!("\r");
+            }
+        }
 
-            // Army composition
-            let mut inf = 0;
-            let mut cav = 0;
-            let mut art = 0;
+        for tag in tags.iter() {
+            if let Some(country) = state.countries.get(tag) {
+                let prev = prev_states.get(tag);
+                let prev_treasury = prev.map(|c| c.treasury).unwrap_or(Fixed::ZERO);
+                let prev_manpower = prev.map(|c| c.manpower).unwrap_or(Fixed::ZERO);
 
-            for army in state.armies.values() {
-                if army.owner == "SWE" {
-                    for reg in &army.regiments {
-                        match reg.type_ {
-                            eu4sim_core::state::RegimentType::Infantry => inf += 1,
-                            eu4sim_core::state::RegimentType::Cavalry => cav += 1,
-                            eu4sim_core::state::RegimentType::Artillery => art += 1,
+                let delta_treasury = (country.treasury - prev_treasury).to_f32();
+                let delta_manpower = (country.manpower - prev_manpower).to_f32();
+
+                // Army composition
+                let mut inf = 0;
+                let mut cav = 0;
+                let mut art = 0;
+
+                for army in state.armies.values() {
+                    if &army.owner == tag {
+                        for reg in &army.regiments {
+                            match reg.type_ {
+                                eu4sim_core::state::RegimentType::Infantry => inf += 1,
+                                eu4sim_core::state::RegimentType::Cavalry => cav += 1,
+                                eu4sim_core::state::RegimentType::Artillery => art += 1,
+                            }
                         }
                     }
                 }
-            }
 
-            // Fort count
-            let mut forts = 0;
-            for p in state.provinces.values() {
-                if p.owner.as_deref() == Some("SWE") && p.has_fort {
-                    forts += 1;
+                // Fort count
+                let mut forts = 0;
+                for p in state.provinces.values() {
+                    if p.owner.as_ref() == Some(tag) && p.has_fort {
+                        forts += 1;
+                    }
+                }
+
+                // Colors
+                let color_t = if delta_treasury > 0.0 {
+                    "\x1b[32m"
+                } else if delta_treasury < 0.0 {
+                    "\x1b[31m"
+                } else {
+                    "\x1b[90m"
+                };
+                let color_m = if delta_manpower > 0.0 {
+                    "\x1b[32m"
+                } else if delta_manpower < 0.0 {
+                    "\x1b[31m"
+                } else {
+                    "\x1b[90m"
+                };
+                let reset = "\x1b[0m";
+
+                let output = format!(
+                    "[{}] {}: 💰{:.1}({}{:+.1}{}) 👥{:.0}({}{:+.0}{}) ⚔️{:.0}/{:.0}/{:.0} | Army:{}/{}/{} Forts:{}    ",
+                    state.date,
+                    tag,
+                    country.treasury.to_f32(),
+                    color_t,
+                    delta_treasury,
+                    reset,
+                    country.manpower.to_f32(),
+                    color_m,
+                    delta_manpower,
+                    reset,
+                    country.adm_mana.to_f32(),
+                    country.dip_mana.to_f32(),
+                    country.mil_mana.to_f32(),
+                    inf,
+                    cav,
+                    art,
+                    forts
+                );
+
+                if tags.len() > 1 {
+                    println!("{}", output);
+                } else {
+                    print!("{}", output);
+                }
+            } else {
+                let output = format!(
+                    "[{}] {}: \x1b[31m[ELIMINATED]\x1b[0m                                             ",
+                    state.date, tag
+                );
+                if tags.len() > 1 {
+                    println!("{}", output);
+                } else {
+                    print!("{}", output);
                 }
             }
-
-            // Colors
-            // Colors
-            let color_t = if delta_treasury > 0.0 {
-                "\x1b[32m"
-            } else if delta_treasury < 0.0 {
-                "\x1b[31m"
-            } else {
-                "\x1b[90m"
-            };
-            let color_m = if delta_manpower > 0.0 {
-                "\x1b[32m"
-            } else if delta_manpower < 0.0 {
-                "\x1b[31m"
-            } else {
-                "\x1b[90m"
-            };
-            let reset = "\x1b[0m";
-
-            // Status bar (overwrites previous line)
-            print!(
-                "\r[{}] SWE: 💰{:.1}({}{:+.1}{}) 👥{:.0}({}{:+.0}{}) ⚔️{:.0}/{:.0}/{:.0} | Army:{}/{}/{} Forts:{}    ",
-                state.date,
-                swe.treasury.to_f32(),
-                color_t,
-                delta_treasury,
-                reset,
-                swe.manpower.to_f32(),
-                color_m,
-                delta_manpower,
-                reset,
-                swe.adm_mana.to_f32(),
-                swe.dip_mana.to_f32(),
-                swe.mil_mana.to_f32(),
-                inf,
-                cav,
-                art,
-                forts
-            );
-            use std::io::Write;
-            std::io::stdout().flush().unwrap();
-        } else {
-            log::info!("Tick: {}", state.date);
         }
+        std::io::stdout().flush().unwrap();
     }
 
     log::info!("Simulation finished at {}", state.date);
