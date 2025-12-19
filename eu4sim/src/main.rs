@@ -129,17 +129,27 @@ fn main() -> Result<()> {
     let delays = [1000, 500, 200, 50, 0];
 
     use std::io::Write;
-    print!("Controls: 1-5 to change speed, q to quit\r\n");
+    print!("Controls: 1-5 to set speed, +/- to adjust, q to quit\r\n");
 
     let tags: Vec<String> = args
         .tags
         .split(',')
         .map(|s| s.trim().to_uppercase())
         .collect();
-    let mut prev_states = std::collections::HashMap::new();
+    // Track state at the start of the current month for persistent deltas
+    let mut month_start_states = std::collections::HashMap::new();
+    for tag in &tags {
+        if let Some(c) = state.countries.get(tag) {
+            month_start_states.insert(tag.clone(), c.clone());
+        }
+    }
+
+    let mut tick = 0;
+    let mut paused = false;
+    let mut first_print = true;
 
     // Game Loop
-    for i in 0..args.ticks {
+    while tick < args.ticks {
         // Poll input
         while event::poll(std::time::Duration::ZERO)? {
             if let Event::Key(key) = event::read()? {
@@ -149,12 +159,131 @@ fn main() -> Result<()> {
                     KeyCode::Char('3') => speed = 3,
                     KeyCode::Char('4') => speed = 4,
                     KeyCode::Char('5') => speed = 5,
+                    KeyCode::Char('+') | KeyCode::Char('=') => speed = (speed + 1).min(5),
+                    KeyCode::Char('-') => speed = speed.saturating_sub(1).max(1),
+                    KeyCode::Char(' ') => paused = !paused,
                     KeyCode::Char('q') => return Ok(()),
                     _ => {}
                 }
             }
         }
 
+        use eu4sim_core::Fixed; // Import Fixed here or at top
+
+        // Move cursor up if multi-line
+        // Use first_print flag instead of tick count to handle pause refreshes
+        if !first_print {
+            if tags.len() > 1 {
+                print!("\x1b[{}A", tags.len());
+            } else {
+                print!("\r");
+            }
+        }
+        first_print = false;
+
+        // Render Status
+        let status_suffix = if paused { " [PAUSED]" } else { "" };
+
+        for tag in tags.iter() {
+            if let Some(country) = state.countries.get(tag) {
+                let start = month_start_states.get(tag);
+                let start_treasury = start.map(|c| c.treasury).unwrap_or(Fixed::ZERO);
+                let start_manpower = start.map(|c| c.manpower).unwrap_or(Fixed::ZERO);
+
+                let delta_treasury = (country.treasury - start_treasury).to_f32();
+                let delta_manpower = (country.manpower - start_manpower).to_f32();
+
+                // Army composition
+                let mut inf = 0;
+                let mut cav = 0;
+                let mut art = 0;
+
+                for army in state.armies.values() {
+                    if &army.owner == tag {
+                        for reg in &army.regiments {
+                            match reg.type_ {
+                                eu4sim_core::state::RegimentType::Infantry => inf += 1,
+                                eu4sim_core::state::RegimentType::Cavalry => cav += 1,
+                                eu4sim_core::state::RegimentType::Artillery => art += 1,
+                            }
+                        }
+                    }
+                }
+
+                // Fort count
+                let mut forts = 0;
+                for p in state.provinces.values() {
+                    if p.owner.as_ref() == Some(tag) && p.has_fort {
+                        forts += 1;
+                    }
+                }
+
+                // Colors
+                let color_t = if delta_treasury > 0.0 {
+                    "\x1b[32m"
+                } else if delta_treasury < 0.0 {
+                    "\x1b[31m"
+                } else {
+                    "\x1b[90m"
+                };
+                let color_m = if delta_manpower > 0.0 {
+                    "\x1b[32m"
+                } else if delta_manpower < 0.0 {
+                    "\x1b[31m"
+                } else {
+                    "\x1b[90m"
+                };
+                let reset = "\x1b[0m";
+
+                let output = format!(
+                    "[{}] {}: 💰{:>7.1}({}{:>+6.1}{}) 👥{:>6.0}({}{:>+5.0}{}) ⚔️{:>3.0}/{:>3.0}/{:>3.0} | Army:{:>3}/{:>3}/{:>3} Forts:{:>2} [Spd:{}]{}    ",
+                    state.date,
+                    tag,
+                    country.treasury.to_f32(),
+                    color_t,
+                    delta_treasury,
+                    reset,
+                    country.manpower.to_f32(),
+                    color_m,
+                    delta_manpower,
+                    reset,
+                    country.adm_mana.to_f32(),
+                    country.dip_mana.to_f32(),
+                    country.mil_mana.to_f32(),
+                    inf,
+                    cav,
+                    art,
+                    forts,
+                    speed,
+                    status_suffix
+                );
+
+                if tags.len() > 1 {
+                    print!("{}\r\n", output);
+                } else {
+                    print!("{}", output);
+                }
+            } else {
+                let output = format!(
+                    "[{}] {}: \x1b[31m[ELIMINATED]\x1b[0m                                                                            ",
+                    state.date, tag
+                );
+                if tags.len() > 1 {
+                    print!("{}\r\n", output);
+                } else {
+                    print!("{}", output);
+                }
+            }
+        }
+        std::io::stdout().flush().unwrap();
+
+        // Pause Logic
+        if paused {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            continue;
+        }
+
+        // Logic Step
         let mut inputs = Vec::new();
 
         if args.observer {
@@ -229,119 +358,18 @@ fn main() -> Result<()> {
             });
         }
 
-        // Capture previous state for tracked tags
-        prev_states.clear();
-        for tag in &tags {
-            if let Some(c) = state.countries.get(tag) {
-                prev_states.insert(tag.clone(), c.clone());
+        // Update month start states on the 1st of the month
+        if state.date.day == 1 {
+            for tag in &tags {
+                if let Some(c) = state.countries.get(tag) {
+                    month_start_states.insert(tag.clone(), c.clone());
+                }
             }
         }
 
         // Step
         state = step_world(&state, &inputs, Some(&adjacency), &config, metrics.as_mut());
-
-        use eu4sim_core::Fixed; // Import Fixed here or at top
-
-        // Move cursor up if multi-line
-        if i > 0 {
-            if tags.len() > 1 {
-                print!("\x1b[{}A", tags.len());
-            } else {
-                print!("\r");
-            }
-        }
-
-        for tag in tags.iter() {
-            if let Some(country) = state.countries.get(tag) {
-                let prev = prev_states.get(tag);
-                let prev_treasury = prev.map(|c| c.treasury).unwrap_or(Fixed::ZERO);
-                let prev_manpower = prev.map(|c| c.manpower).unwrap_or(Fixed::ZERO);
-
-                let delta_treasury = (country.treasury - prev_treasury).to_f32();
-                let delta_manpower = (country.manpower - prev_manpower).to_f32();
-
-                // Army composition
-                let mut inf = 0;
-                let mut cav = 0;
-                let mut art = 0;
-
-                for army in state.armies.values() {
-                    if &army.owner == tag {
-                        for reg in &army.regiments {
-                            match reg.type_ {
-                                eu4sim_core::state::RegimentType::Infantry => inf += 1,
-                                eu4sim_core::state::RegimentType::Cavalry => cav += 1,
-                                eu4sim_core::state::RegimentType::Artillery => art += 1,
-                            }
-                        }
-                    }
-                }
-
-                // Fort count
-                let mut forts = 0;
-                for p in state.provinces.values() {
-                    if p.owner.as_ref() == Some(tag) && p.has_fort {
-                        forts += 1;
-                    }
-                }
-
-                // Colors
-                let color_t = if delta_treasury > 0.0 {
-                    "\x1b[32m"
-                } else if delta_treasury < 0.0 {
-                    "\x1b[31m"
-                } else {
-                    "\x1b[90m"
-                };
-                let color_m = if delta_manpower > 0.0 {
-                    "\x1b[32m"
-                } else if delta_manpower < 0.0 {
-                    "\x1b[31m"
-                } else {
-                    "\x1b[90m"
-                };
-                let reset = "\x1b[0m";
-
-                let output = format!(
-                    "[{}] {}: 💰{:.1}({}{:+.1}{}) 👥{:.0}({}{:+.0}{}) ⚔️{:.0}/{:.0}/{:.0} | Army:{}/{}/{} Forts:{} [Spd:{}]    ",
-                    state.date,
-                    tag,
-                    country.treasury.to_f32(),
-                    color_t,
-                    delta_treasury,
-                    reset,
-                    country.manpower.to_f32(),
-                    color_m,
-                    delta_manpower,
-                    reset,
-                    country.adm_mana.to_f32(),
-                    country.dip_mana.to_f32(),
-                    country.mil_mana.to_f32(),
-                    inf,
-                    cav,
-                    art,
-                    forts,
-                    speed
-                );
-
-                if tags.len() > 1 {
-                    print!("{}\r\n", output);
-                } else {
-                    print!("{}", output);
-                }
-            } else {
-                let output = format!(
-                    "[{}] {}: \x1b[31m[ELIMINATED]\x1b[0m                                             ",
-                    state.date, tag
-                );
-                if tags.len() > 1 {
-                    print!("{}\r\n", output);
-                } else {
-                    print!("{}", output);
-                }
-            }
-        }
-        std::io::stdout().flush().unwrap();
+        tick += 1;
 
         // Speed control delay
         if speed < 5 {
