@@ -8,6 +8,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 1
 - **Parsed:** 1 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -18,6 +19,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 2
 - **Parsed:** 2 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -29,6 +31,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 87
 - **Parsed:** 87 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -125,6 +128,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 0
 - **Parsed:** 0 (NaN%)
 - **Visualized:** 0 (NaN%)
+- **Simulated:** 0 (NaN%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -134,6 +138,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 0
 - **Parsed:** 0 (NaN%)
 - **Visualized:** 0 (NaN%)
+- **Simulated:** 0 (NaN%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -143,6 +148,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 2
 - **Parsed:** 2 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -154,6 +160,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 10
 - **Parsed:** 10 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -173,6 +180,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 0
 - **Parsed:** 0 (NaN%)
 - **Visualized:** 0 (NaN%)
+- **Simulated:** 0 (NaN%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -182,6 +190,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 55
 - **Parsed:** 55 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -246,6 +255,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 55
 - **Parsed:** 53 (96.4%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -310,6 +320,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 7
 - **Parsed:** 7 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -326,6 +337,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 37
 - **Parsed:** 37 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -372,6 +384,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 1
 - **Parsed:** 1 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -382,6 +395,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 57
 - **Parsed:** 57 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -448,6 +462,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 20
 - **Parsed:** 18 (90.0%)
 - **Visualized:** 1 (5.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -477,6 +492,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 36
 - **Parsed:** 35 (97.2%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -522,6 +538,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 0
 - **Parsed:** 0 (NaN%)
 - **Visualized:** 0 (NaN%)
+- **Simulated:** 0 (NaN%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -531,6 +548,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 0
 - **Parsed:** 0 (NaN%)
 - **Visualized:** 0 (NaN%)
+- **Simulated:** 0 (NaN%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -540,6 +558,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 13
 - **Parsed:** 13 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -562,6 +581,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 5
 - **Parsed:** 4 (80.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -576,6 +596,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 11
 - **Parsed:** 11 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -596,6 +617,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 364
 - **Parsed:** 364 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -969,6 +991,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 38
 - **Parsed:** 38 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -1016,6 +1039,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 12
 - **Parsed:** 12 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -1037,6 +1061,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 0
 - **Parsed:** 0 (NaN%)
 - **Visualized:** 0 (NaN%)
+- **Simulated:** 0 (NaN%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -1046,6 +1071,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 9
 - **Parsed:** 8 (88.9%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -1064,6 +1090,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 6
 - **Parsed:** 6 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -1079,6 +1106,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 62
 - **Parsed:** 62 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -1150,6 +1178,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 0
 - **Parsed:** 0 (NaN%)
 - **Visualized:** 0 (NaN%)
+- **Simulated:** 0 (NaN%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -1159,6 +1188,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 111
 - **Parsed:** 108 (97.3%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -1279,6 +1309,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 6
 - **Parsed:** 6 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -1294,6 +1325,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 225
 - **Parsed:** 224 (99.6%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -1528,6 +1560,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 55
 - **Parsed:** 55 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -1592,6 +1625,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 3
 - **Parsed:** 2 (66.7%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -1604,6 +1638,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 0
 - **Parsed:** 0 (NaN%)
 - **Visualized:** 0 (NaN%)
+- **Simulated:** 0 (NaN%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -1613,6 +1648,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 30
 - **Parsed:** 30 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -1652,6 +1688,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 15
 - **Parsed:** 15 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -1676,6 +1713,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 16
 - **Parsed:** 15 (93.8%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -1701,6 +1739,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 4
 - **Parsed:** 4 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -1714,6 +1753,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 22
 - **Parsed:** 22 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -1745,6 +1785,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 17
 - **Parsed:** 17 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -1771,6 +1812,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 102
 - **Parsed:** 99 (97.1%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -1882,6 +1924,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 0
 - **Parsed:** 0 (NaN%)
 - **Visualized:** 0 (NaN%)
+- **Simulated:** 0 (NaN%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -1891,6 +1934,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 0
 - **Parsed:** 0 (NaN%)
 - **Visualized:** 0 (NaN%)
+- **Simulated:** 0 (NaN%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -1900,6 +1944,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 614
 - **Parsed:** 606 (98.7%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -2523,6 +2568,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 47
 - **Parsed:** 47 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -2579,6 +2625,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 12
 - **Parsed:** 11 (91.7%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -2600,6 +2647,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 20
 - **Parsed:** 20 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -2629,6 +2677,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 47
 - **Parsed:** 47 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -2685,6 +2734,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 355
 - **Parsed:** 354 (99.7%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3049,6 +3099,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 0
 - **Parsed:** 0 (NaN%)
 - **Visualized:** 0 (NaN%)
+- **Simulated:** 0 (NaN%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3058,6 +3109,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 85
 - **Parsed:** 85 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3152,6 +3204,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 15
 - **Parsed:** 15 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3176,6 +3229,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 28
 - **Parsed:** 28 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3213,6 +3267,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 25
 - **Parsed:** 24 (96.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3247,6 +3302,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 12
 - **Parsed:** 12 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3268,6 +3324,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 7
 - **Parsed:** 7 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3284,6 +3341,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 9
 - **Parsed:** 9 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3302,6 +3360,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 0
 - **Parsed:** 0 (NaN%)
 - **Visualized:** 0 (NaN%)
+- **Simulated:** 0 (NaN%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3311,6 +3370,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 44
 - **Parsed:** 44 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3364,6 +3424,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 0
 - **Parsed:** 0 (NaN%)
 - **Visualized:** 0 (NaN%)
+- **Simulated:** 0 (NaN%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3373,6 +3434,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 0
 - **Parsed:** 0 (NaN%)
 - **Visualized:** 0 (NaN%)
+- **Simulated:** 0 (NaN%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3382,6 +3444,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 0
 - **Parsed:** 0 (NaN%)
 - **Visualized:** 0 (NaN%)
+- **Simulated:** 0 (NaN%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3391,6 +3454,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 56
 - **Parsed:** 55 (98.2%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3456,6 +3520,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 86
 - **Parsed:** 86 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3551,6 +3616,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 42
 - **Parsed:** 39 (92.9%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3602,6 +3668,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 3
 - **Parsed:** 3 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3614,6 +3681,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 4
 - **Parsed:** 4 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3627,6 +3695,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 0
 - **Parsed:** 0 (NaN%)
 - **Visualized:** 0 (NaN%)
+- **Simulated:** 0 (NaN%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3636,6 +3705,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 0
 - **Parsed:** 0 (NaN%)
 - **Visualized:** 0 (NaN%)
+- **Simulated:** 0 (NaN%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3645,6 +3715,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 1
 - **Parsed:** 1 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3655,6 +3726,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 0
 - **Parsed:** 0 (NaN%)
 - **Visualized:** 0 (NaN%)
+- **Simulated:** 0 (NaN%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3664,6 +3736,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 0
 - **Parsed:** 0 (NaN%)
 - **Visualized:** 0 (NaN%)
+- **Simulated:** 0 (NaN%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3673,6 +3746,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 37
 - **Parsed:** 36 (97.3%)
 - **Visualized:** 4 (10.8%)
+- **Simulated:** 4 (10.8%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3719,6 +3793,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 33
 - **Parsed:** 33 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3761,6 +3836,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 0
 - **Parsed:** 0 (NaN%)
 - **Visualized:** 0 (NaN%)
+- **Simulated:** 0 (NaN%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3770,6 +3846,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 54
 - **Parsed:** 54 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3833,6 +3910,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 2
 - **Parsed:** 2 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3844,6 +3922,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 23
 - **Parsed:** 23 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3876,6 +3955,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 5
 - **Parsed:** 5 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3890,6 +3970,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 6
 - **Parsed:** 6 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3905,6 +3986,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 10
 - **Parsed:** 10 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3924,6 +4006,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 133
 - **Parsed:** 122 (91.7%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -4066,6 +4149,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 3
 - **Parsed:** 3 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -4078,6 +4162,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 67
 - **Parsed:** 65 (97.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -4154,6 +4239,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 27
 - **Parsed:** 26 (96.3%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -4190,6 +4276,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 0
 - **Parsed:** 0 (NaN%)
 - **Visualized:** 0 (NaN%)
+- **Simulated:** 0 (NaN%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -4199,6 +4286,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 25
 - **Parsed:** 25 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -4233,6 +4321,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 12
 - **Parsed:** 12 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -4254,6 +4343,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 8
 - **Parsed:** 8 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -4271,6 +4361,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 2
 - **Parsed:** 2 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -4282,6 +4373,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 1
 - **Parsed:** 1 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -4292,6 +4384,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 18
 - **Parsed:** 18 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -4319,6 +4412,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 59
 - **Parsed:** 59 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -4387,6 +4481,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 3
 - **Parsed:** 3 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -4399,6 +4494,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 11
 - **Parsed:** 10 (90.9%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -4419,6 +4515,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 0
 - **Parsed:** 0 (NaN%)
 - **Visualized:** 0 (NaN%)
+- **Simulated:** 0 (NaN%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -4428,6 +4525,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 0
 - **Parsed:** 0 (NaN%)
 - **Visualized:** 0 (NaN%)
+- **Simulated:** 0 (NaN%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -4437,6 +4535,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 3
 - **Parsed:** 3 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -4449,6 +4548,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 16
 - **Parsed:** 16 (100.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -4474,6 +4574,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 5
 - **Parsed:** 4 (80.0%)
 - **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|

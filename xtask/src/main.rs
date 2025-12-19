@@ -90,11 +90,11 @@ fn run_ci() -> Result<()> {
 
     // Check for unstaged changes in docs/
     let status = Command::new("git")
-        .args(["diff", "--exit-code", "docs/supported_fields.md"])
+        .args(["diff", "--exit-code", "docs/reference/supported-fields.md"])
         .status()?;
 
     if !status.success() {
-        anyhow::bail!("docs/supported_fields.md is out of date! Run `cargo xtask coverage --doc-gen` and commit the changes.");
+        anyhow::bail!("docs/reference/supported-fields.md is out of date! Run `cargo xtask coverage --doc-gen` and commit the changes.");
     }
 
     println!("\nLocal CI Passed! 🚀");
@@ -321,12 +321,12 @@ fn run_coverage(
 ) -> Result<()> {
     if doc_gen {
         let content = eu4data::coverage::generate_static_docs();
-        let path = std::path::Path::new("docs/supported_fields.md");
+        let path = std::path::Path::new("docs/reference/supported-fields.md");
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         std::fs::write(path, content)?;
-        println!("✅ Generated docs/supported_fields.md");
+        println!("✅ Generated docs/reference/supported-fields.md");
         return Ok(());
     }
 

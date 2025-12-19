@@ -139,6 +139,7 @@ pub fn generate_static_docs() -> String {
         let total = fields.len();
         let parsed = fields.iter().filter(|f| f.parsed).count();
         let visualized = fields.iter().filter(|f| f.visualized).count();
+        let simulated = fields.iter().filter(|f| f.simulated).count();
 
         output.push_str(&format!("## {}\n\n", cat.as_str()));
         output.push_str(&format!("- **Total Known Fields:** {}\n", total));
@@ -148,9 +149,14 @@ pub fn generate_static_docs() -> String {
             (parsed as f64 / total as f64) * 100.0
         ));
         output.push_str(&format!(
-            "- **Visualized:** {} ({:.1}%)\n\n",
+            "- **Visualized:** {} ({:.1}%)\n",
             visualized,
             (visualized as f64 / total as f64) * 100.0
+        ));
+        output.push_str(&format!(
+            "- **Simulated:** {} ({:.1}%)\n\n",
+            simulated,
+            (simulated as f64 / total as f64) * 100.0
         ));
 
         output.push_str("| Field | Parsed | Visualized | Simulated | Notes |\n");
