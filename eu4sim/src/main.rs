@@ -1,10 +1,29 @@
 use anyhow::Result;
 use clap::Parser;
+use crossterm::{
+    event::{self, Event, KeyCode},
+    terminal::{disable_raw_mode, enable_raw_mode},
+};
 use eu4sim_core::state::Date;
 use eu4sim_core::{step_world, PlayerInputs, SimConfig};
 use std::path::PathBuf;
 
 mod loader;
+
+struct RawModeGuard;
+
+impl RawModeGuard {
+    fn new() -> Result<Self> {
+        enable_raw_mode()?;
+        Ok(Self)
+    }
+}
+
+impl Drop for RawModeGuard {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -42,6 +61,10 @@ struct Args {
     /// Run in observer mode (AI controls all countries)
     #[arg(long)]
     observer: bool,
+
+    /// Initial simulation speed (1-5)
+    #[arg(long, default_value_t = 5)]
+    speed: u64,
 }
 
 use eu4sim_core::SimMetrics;
@@ -100,8 +123,38 @@ fn main() -> Result<()> {
     // Pre-allocate buffers for AI (reused each tick)
     let mut available: Vec<eu4sim_core::Command> = Vec::with_capacity(1024);
 
+    let _guard = RawModeGuard::new()?;
+    let mut speed = args.speed.clamp(1, 5) as usize;
+    // Map speed 1..5 to delay in ms
+    let delays = [1000, 500, 200, 50, 0];
+
+    use std::io::Write;
+    print!("Controls: 1-5 to change speed, q to quit\r\n");
+
+    let tags: Vec<String> = args
+        .tags
+        .split(',')
+        .map(|s| s.trim().to_uppercase())
+        .collect();
+    let mut prev_states = std::collections::HashMap::new();
+
     // Game Loop
     for i in 0..args.ticks {
+        // Poll input
+        while event::poll(std::time::Duration::ZERO)? {
+            if let Event::Key(key) = event::read()? {
+                match key.code {
+                    KeyCode::Char('1') => speed = 1,
+                    KeyCode::Char('2') => speed = 2,
+                    KeyCode::Char('3') => speed = 3,
+                    KeyCode::Char('4') => speed = 4,
+                    KeyCode::Char('5') => speed = 5,
+                    KeyCode::Char('q') => return Ok(()),
+                    _ => {}
+                }
+            }
+        }
+
         let mut inputs = Vec::new();
 
         if args.observer {
@@ -177,12 +230,7 @@ fn main() -> Result<()> {
         }
 
         // Capture previous state for tracked tags
-        let tags: Vec<String> = args
-            .tags
-            .split(',')
-            .map(|s| s.trim().to_uppercase())
-            .collect();
-        let mut prev_states = std::collections::HashMap::new();
+        prev_states.clear();
         for tag in &tags {
             if let Some(c) = state.countries.get(tag) {
                 prev_states.insert(tag.clone(), c.clone());
@@ -193,7 +241,6 @@ fn main() -> Result<()> {
         state = step_world(&state, &inputs, Some(&adjacency), &config, metrics.as_mut());
 
         use eu4sim_core::Fixed; // Import Fixed here or at top
-        use std::io::Write;
 
         // Move cursor up if multi-line
         if i > 0 {
@@ -256,7 +303,7 @@ fn main() -> Result<()> {
                 let reset = "\x1b[0m";
 
                 let output = format!(
-                    "[{}] {}: 💰{:.1}({}{:+.1}{}) 👥{:.0}({}{:+.0}{}) ⚔️{:.0}/{:.0}/{:.0} | Army:{}/{}/{} Forts:{}    ",
+                    "[{}] {}: 💰{:.1}({}{:+.1}{}) 👥{:.0}({}{:+.0}{}) ⚔️{:.0}/{:.0}/{:.0} | Army:{}/{}/{} Forts:{} [Spd:{}]    ",
                     state.date,
                     tag,
                     country.treasury.to_f32(),
@@ -273,11 +320,12 @@ fn main() -> Result<()> {
                     inf,
                     cav,
                     art,
-                    forts
+                    forts,
+                    speed
                 );
 
                 if tags.len() > 1 {
-                    println!("{}", output);
+                    print!("{}\r\n", output);
                 } else {
                     print!("{}", output);
                 }
@@ -287,13 +335,18 @@ fn main() -> Result<()> {
                     state.date, tag
                 );
                 if tags.len() > 1 {
-                    println!("{}", output);
+                    print!("{}\r\n", output);
                 } else {
                     print!("{}", output);
                 }
             }
         }
         std::io::stdout().flush().unwrap();
+
+        // Speed control delay
+        if speed < 5 {
+            std::thread::sleep(std::time::Duration::from_millis(delays[speed - 1]));
+        }
     }
 
     log::info!("Simulation finished at {}", state.date);
