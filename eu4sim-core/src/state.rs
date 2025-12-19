@@ -1,8 +1,10 @@
 use crate::fixed::Fixed;
 use crate::modifiers::{GameModifiers, TradegoodId};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::hash::{Hash, Hasher};
+
+pub use im::HashMap;
 
 /// A specific date in history.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

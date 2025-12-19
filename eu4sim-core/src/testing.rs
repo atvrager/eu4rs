@@ -1,7 +1,7 @@
 use crate::fixed::Fixed;
 use crate::modifiers::{GameModifiers, TradegoodId};
-use crate::state::{CountryState, Date, ProvinceId, ProvinceState, Terrain, WorldState};
-use std::collections::HashMap;
+use crate::state::{CountryState, Date, HashMap, ProvinceId, ProvinceState, Terrain, WorldState};
+// Removed std::collections::HashMap import
 
 pub struct WorldStateBuilder {
     state: WorldState,
@@ -15,15 +15,15 @@ impl WorldStateBuilder {
                 date: Date::new(1444, 11, 11),
                 rng_seed: 0,
                 rng_state: 0,
-                provinces: HashMap::new(),
-                countries: HashMap::new(),
-                base_goods_prices: HashMap::new(),
+                provinces: HashMap::default(),
+                countries: HashMap::default(),
+                base_goods_prices: HashMap::default(),
                 modifiers: GameModifiers::default(),
                 diplomacy: Default::default(),
                 global: Default::default(),
-                armies: HashMap::new(),
+                armies: HashMap::default(),
                 next_army_id: 1,
-                fleets: HashMap::new(),
+                fleets: HashMap::default(),
                 next_fleet_id: 1,
             },
         }

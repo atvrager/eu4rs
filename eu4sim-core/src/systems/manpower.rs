@@ -10,7 +10,7 @@ use std::collections::HashMap;
 /// 2. Recovery = Max / 120 (10 years to fill)
 /// 3. Cap at Max.
 pub fn run_manpower_tick(state: &mut WorldState) {
-    let mut country_max_manpower: HashMap<String, Fixed> = HashMap::new();
+    let mut country_max_manpower: HashMap<String, Fixed> = HashMap::default();
 
     // 1. Calculate Max Manpower from Provinces
     for (&id, province) in &state.provinces {
@@ -38,21 +38,24 @@ pub fn run_manpower_tick(state: &mut WorldState) {
     }
 
     // 2. Apply Recovery
-    for (tag, country) in state.countries.iter_mut() {
-        let province_sum = country_max_manpower
-            .get(tag)
-            .copied()
-            .unwrap_or(Fixed::ZERO);
-        let max = Fixed::from_int(defines::BASE_MANPOWER) + province_sum;
+    let country_tags: Vec<String> = state.countries.keys().cloned().collect();
+    for tag in country_tags {
+        if let Some(country) = state.countries.get_mut(&tag) {
+            let province_sum = country_max_manpower
+                .get(&tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            let max = Fixed::from_int(defines::BASE_MANPOWER) + province_sum;
 
-        // Recovery: Max / 120 (120 months = 10 years)
-        let recovery = max.div(Fixed::from_int(defines::RECOVERY_MONTHS));
+            // Recovery: Max / 120 (120 months = 10 years)
+            let recovery = max.div(Fixed::from_int(defines::RECOVERY_MONTHS));
 
-        // Only grant recovery if below max (don't recover while overcapped)
-        if country.manpower < max {
-            country.manpower += recovery;
-            if country.manpower > max {
-                country.manpower = max;
+            // Only grant recovery if below max (don't recover while overcapped)
+            if country.manpower < max {
+                country.manpower += recovery;
+                if country.manpower > max {
+                    country.manpower = max;
+                }
             }
         }
     }

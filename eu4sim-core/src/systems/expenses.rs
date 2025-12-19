@@ -21,19 +21,22 @@ pub fn run_expenses_tick(state: &mut WorldState) {
     }
 
     // Apply Army Costs (with modifiers)
-    for (tag, country) in state.countries.iter_mut() {
-        if let Some(&base_cost) = army_costs.get(tag) {
-            let modifier = state
-                .modifiers
-                .land_maintenance_modifier
-                .get(tag)
-                .copied()
-                .unwrap_or(Fixed::ZERO);
+    let country_tags: Vec<String> = state.countries.keys().cloned().collect();
+    for tag in country_tags.clone() {
+        if let Some(country) = state.countries.get_mut(&tag) {
+            if let Some(&base_cost) = army_costs.get(&tag) {
+                let modifier = state
+                    .modifiers
+                    .land_maintenance_modifier
+                    .get(&tag)
+                    .copied()
+                    .unwrap_or(Fixed::ZERO);
 
-            let factor = Fixed::ONE + modifier;
-            let final_cost = base_cost.mul(factor);
+                let factor = Fixed::ONE + modifier;
+                let final_cost = base_cost.mul(factor);
 
-            country.treasury -= final_cost;
+                country.treasury -= final_cost;
+            }
         }
     }
 
@@ -50,19 +53,21 @@ pub fn run_expenses_tick(state: &mut WorldState) {
     }
 
     // Apply Fort Costs
-    for (tag, country) in state.countries.iter_mut() {
-        if let Some(&base_cost) = fort_costs.get(tag) {
-            let modifier = state
-                .modifiers
-                .fort_maintenance_modifier
-                .get(tag)
-                .copied()
-                .unwrap_or(Fixed::ZERO);
+    for tag in country_tags {
+        if let Some(country) = state.countries.get_mut(&tag) {
+            if let Some(&base_cost) = fort_costs.get(&tag) {
+                let modifier = state
+                    .modifiers
+                    .fort_maintenance_modifier
+                    .get(&tag)
+                    .copied()
+                    .unwrap_or(Fixed::ZERO);
 
-            let factor = Fixed::ONE + modifier;
-            let final_cost = base_cost.mul(factor);
+                let factor = Fixed::ONE + modifier;
+                let final_cost = base_cost.mul(factor);
 
-            country.treasury -= final_cost;
+                country.treasury -= final_cost;
+            }
         }
     }
 }

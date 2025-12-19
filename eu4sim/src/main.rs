@@ -50,7 +50,13 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let level = std::str::FromStr::from_str(&args.log_level).unwrap_or(log::LevelFilter::Info);
+    let log_level = if (args.observer || args.benchmark) && args.log_level == "info" {
+        "warn"
+    } else {
+        &args.log_level
+    };
+
+    let level = std::str::FromStr::from_str(log_level).unwrap_or(log::LevelFilter::Info);
     env_logger::Builder::new()
         .filter_level(level)
         .format_timestamp(None)
@@ -87,6 +93,9 @@ fn main() -> Result<()> {
         std::collections::HashMap::new()
     };
 
+    // Pre-allocate buffers for AI (reused each tick)
+    let mut available: Vec<eu4sim_core::Command> = Vec::with_capacity(1024);
+
     // Game Loop
     for _ in 0..args.ticks {
         let mut inputs = Vec::new();
@@ -95,33 +104,54 @@ fn main() -> Result<()> {
             let ai_start = std::time::Instant::now();
             // Generate AI commands for all countries
             for (tag, ai) in &mut ais {
+                // Check if this country is at war with anyone
+                let at_war = state
+                    .diplomacy
+                    .wars
+                    .values()
+                    .any(|war| war.attackers.contains(tag) || war.defenders.contains(tag));
+
                 // Minimal omniscient state for now
                 let visible_state = eu4sim_core::ai::VisibleWorldState {
                     date: state.date,
                     observer: tag.clone(),
                     own_country: state.countries.get(tag).cloned().unwrap_or_default(),
-                    at_war: false, // Stub
-                    known_countries: state.countries.keys().cloned().collect(),
+                    at_war,
+                    known_countries: vec![], // Unused for RandomAi, skip allocation
                 };
 
-                // Available commands stub - can improve this later
-                let mut available = Vec::new();
+                // Reuse available buffer
+                available.clear();
 
-                // Find armies and generate move commands
+                // Find armies and generate valid move commands
                 for (id, army) in &state.armies {
                     if &army.owner == tag {
                         let neighbors = adjacency.neighbors(army.location);
                         for dest in neighbors {
-                            available.push(eu4sim_core::Command::Move {
-                                army_id: *id,
-                                destination: dest,
-                            });
+                            // Check if we can move to this destination
+                            let can_move = if let Some(prov) = state.provinces.get(&dest) {
+                                match &prov.owner {
+                                    None => true,                        // Uncolonized
+                                    Some(owner) if owner == tag => true, // Own territory
+                                    Some(owner) => {
+                                        // Need military access OR be at war
+                                        state.diplomacy.has_military_access(tag, owner)
+                                            || state.diplomacy.are_at_war(tag, owner)
+                                    }
+                                }
+                            } else {
+                                true // Province not in state, assume OK
+                            };
+
+                            if can_move {
+                                available.push(eu4sim_core::Command::Move {
+                                    army_id: *id,
+                                    destination: dest,
+                                });
+                            }
                         }
                     }
                 }
-
-                // Chance to look for peace deals if at war
-                // (Stub: assumes we can see wars logic later)
 
                 let cmds = eu4sim_core::ai::AiPlayer::decide(ai, &visible_state, &available);
                 if !cmds.is_empty() {

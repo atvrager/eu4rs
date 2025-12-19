@@ -1,10 +1,10 @@
 use anyhow::Result;
 use eu4sim_core::modifiers::TradegoodId;
 use eu4sim_core::state::{
-    Army, CountryState, Date, ProvinceState, Regiment, RegimentType, Terrain,
+    Army, CountryState, Date, HashMap as ImHashMap, ProvinceState, Regiment, RegimentType, Terrain,
 };
 use eu4sim_core::{Fixed, WorldState};
-use std::collections::HashMap;
+use std::collections::HashMap as StdHashMap;
 use std::path::Path;
 
 /// Parse terrain string to Terrain enum
@@ -44,8 +44,8 @@ pub fn load_initial_state(
     let mut sorted_goods: Vec<_> = tradegoods.iter().collect();
     sorted_goods.sort_by_key(|(k, _)| *k);
 
-    let mut base_prices = HashMap::new();
-    let mut name_to_id = HashMap::new();
+    let mut base_prices = StdHashMap::new();
+    let mut name_to_id = StdHashMap::new();
 
     for (idx, (name, data)) in sorted_goods.iter().enumerate() {
         let id = TradegoodId(idx as u16);
@@ -67,10 +67,10 @@ pub fn load_initial_state(
     let (province_history, _) = eu4data::history::load_province_history(game_path)
         .map_err(|e| anyhow::anyhow!("Failed to load provinces: {}", e))?;
 
-    let mut provinces = HashMap::new();
-    let mut countries = HashMap::new();
-    let mut country_total_manpower: HashMap<String, f32> = HashMap::new();
-    let mut country_capitals: HashMap<String, u32> = HashMap::new();
+    let mut provinces = StdHashMap::new();
+    let mut countries = StdHashMap::new();
+    let mut country_total_manpower: StdHashMap<String, f32> = StdHashMap::new();
+    let mut country_capitals: StdHashMap<String, u32> = StdHashMap::new();
 
     // First pass: Create provinces and identify countries
     for (id, hist) in province_history {
@@ -127,8 +127,7 @@ pub fn load_initial_state(
     );
 
     // 2b. Initialize Armies
-    // Rule: 1 Infantry per 5 Manpower Dev
-    let mut armies = HashMap::new();
+    let mut armies = StdHashMap::new();
     let mut next_army_id = 1;
     let reg_strength = Fixed::from_int(1000); // 1000 men
 
@@ -173,15 +172,15 @@ pub fn load_initial_state(
             date: start_date,
             rng_seed: _rng_seed,
             rng_state: 0, // Initialize RNG state
-            provinces,
-            countries,
-            base_goods_prices: base_prices,
+            provinces: provinces.into(),
+            countries: countries.into(),
+            base_goods_prices: base_prices.into(),
             modifiers: Default::default(),
             diplomacy: Default::default(),
             global: Default::default(),
-            armies,
+            armies: armies.into(),
             next_army_id,
-            fleets: Default::default(),
+            fleets: ImHashMap::default(),
             next_fleet_id: 1,
         },
         adjacency,

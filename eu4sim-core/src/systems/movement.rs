@@ -23,36 +23,39 @@ pub fn run_movement_tick(state: &mut WorldState, _graph: Option<&AdjacencyGraph>
     let mut completed_fleet_movements: Vec<u32> = Vec::new();
 
     // Process fleets
-    for (&fleet_id, fleet) in state.fleets.iter_mut() {
-        if let Some(movement) = &mut fleet.movement {
-            movement.progress += Fixed::from_int(BASE_SPEED); // Add daily progress
+    let fleet_ids: Vec<_> = state.fleets.keys().cloned().collect();
+    for fleet_id in fleet_ids {
+        if let Some(fleet) = state.fleets.get_mut(&fleet_id) {
+            if let Some(movement) = &mut fleet.movement {
+                movement.progress += Fixed::from_int(BASE_SPEED); // Add daily progress
 
-            if movement.progress >= movement.required_progress {
-                // Move to next province
-                if let Some(next_province) = movement.path.pop_front() {
-                    let prev_location = fleet.location;
-                    fleet.location = next_province;
-                    movement.progress = Fixed::ZERO;
+                if movement.progress >= movement.required_progress {
+                    // Move to next province
+                    if let Some(next_province) = movement.path.pop_front() {
+                        let prev_location = fleet.location;
+                        fleet.location = next_province;
+                        movement.progress = Fixed::ZERO;
 
-                    // Calculate cost for next step if path continues
-                    if let Some(&next_next) = movement.path.front() {
-                        cost_updates.push(CostUpdate {
-                            unit_type: UnitType::Fleet,
-                            unit_id: fleet_id,
-                            from: next_province,
-                            to: next_next,
-                        });
-                    }
+                        // Calculate cost for next step if path continues
+                        if let Some(&next_next) = movement.path.front() {
+                            cost_updates.push(CostUpdate {
+                                unit_type: UnitType::Fleet,
+                                unit_id: fleet_id,
+                                from: next_province,
+                                to: next_next,
+                            });
+                        }
 
-                    log::info!(
-                        "Fleet {} moved from {} to {}",
-                        fleet_id,
-                        prev_location,
-                        next_province
-                    );
+                        log::trace!(
+                            "Fleet {} moved from {} to {}",
+                            fleet_id,
+                            prev_location,
+                            next_province
+                        );
 
-                    if movement.path.is_empty() {
-                        completed_fleet_movements.push(fleet_id);
+                        if movement.path.is_empty() {
+                            completed_fleet_movements.push(fleet_id);
+                        }
                     }
                 }
             }
@@ -60,48 +63,53 @@ pub fn run_movement_tick(state: &mut WorldState, _graph: Option<&AdjacencyGraph>
     }
 
     // Update embarked armies
-    for army in state.armies.values_mut() {
-        if let Some(fleet_id) = army.embarked_on {
-            if let Some(fleet) = state.fleets.get(&fleet_id) {
-                army.location = fleet.location;
+    let army_ids: Vec<_> = state.armies.keys().cloned().collect();
+    for army_id in army_ids.clone() {
+        if let Some(army) = state.armies.get_mut(&army_id) {
+            if let Some(fleet_id) = army.embarked_on {
+                if let Some(fleet) = state.fleets.get(&fleet_id) {
+                    army.location = fleet.location;
+                }
             }
         }
     }
 
     // Process armies
-    for (&army_id, army) in state.armies.iter_mut() {
-        if army.embarked_on.is_some() {
-            continue;
-        }
+    for army_id in army_ids {
+        if let Some(army) = state.armies.get_mut(&army_id) {
+            if army.embarked_on.is_some() {
+                continue;
+            }
 
-        if let Some(movement) = &mut army.movement {
-            movement.progress += Fixed::from_int(BASE_SPEED);
+            if let Some(movement) = &mut army.movement {
+                movement.progress += Fixed::from_int(BASE_SPEED);
 
-            if movement.progress >= movement.required_progress {
-                if let Some(next_province) = movement.path.pop_front() {
-                    let prev_location = army.location;
-                    army.location = next_province;
-                    movement.progress = Fixed::ZERO;
+                if movement.progress >= movement.required_progress {
+                    if let Some(next_province) = movement.path.pop_front() {
+                        let prev_location = army.location;
+                        army.location = next_province;
+                        movement.progress = Fixed::ZERO;
 
-                    // Calculate cost for next step if path continues
-                    if let Some(&next_next) = movement.path.front() {
-                        cost_updates.push(CostUpdate {
-                            unit_type: UnitType::Army,
-                            unit_id: army_id,
-                            from: next_province,
-                            to: next_next,
-                        });
-                    }
+                        // Calculate cost for next step if path continues
+                        if let Some(&next_next) = movement.path.front() {
+                            cost_updates.push(CostUpdate {
+                                unit_type: UnitType::Army,
+                                unit_id: army_id,
+                                from: next_province,
+                                to: next_next,
+                            });
+                        }
 
-                    log::info!(
-                        "Army {} moved from {} to {}",
-                        army_id,
-                        prev_location,
-                        next_province
-                    );
+                        log::trace!(
+                            "Army {} moved from {} to {}",
+                            army_id,
+                            prev_location,
+                            next_province
+                        );
 
-                    if movement.path.is_empty() {
-                        completed_army_movements.push(army_id);
+                        if movement.path.is_empty() {
+                            completed_army_movements.push(army_id);
+                        }
                     }
                 }
             }

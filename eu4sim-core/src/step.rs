@@ -312,7 +312,7 @@ fn execute_command(
                     progress: Fixed::ZERO,
                     required_progress: Fixed::from_int(10), // BASE_MOVE_COST
                 });
-                log::info!(
+                log::trace!(
                     "Army {} pathing from {} to {} via {:?}",
                     army_id,
                     current_location,
@@ -806,15 +806,18 @@ fn restore_province_controllers(state: &mut WorldState, war_id: u32) {
             .cloned()
             .collect();
 
-        for prov in state.provinces.values_mut() {
-            if let Some(owner) = &prov.owner {
-                // If controller was a war participant, restore to owner
-                if prov
-                    .controller
-                    .as_ref()
-                    .is_some_and(|c| all_participants.contains(c) && c != owner)
-                {
-                    prov.controller = Some(owner.clone());
+        let prov_ids: Vec<_> = state.provinces.keys().cloned().collect();
+        for prov_id in prov_ids {
+            if let Some(prov) = state.provinces.get_mut(&prov_id) {
+                if let Some(owner) = &prov.owner {
+                    // If controller was a war participant, restore to owner
+                    if prov
+                        .controller
+                        .as_ref()
+                        .is_some_and(|c| all_participants.contains(c) && c != owner)
+                    {
+                        prov.controller = Some(owner.clone());
+                    }
                 }
             }
         }

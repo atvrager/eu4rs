@@ -5,12 +5,15 @@ use crate::state::WorldState;
 pub fn run_mana_tick(state: &mut WorldState) {
     let monthly_gain = Fixed::from_int(3);
 
-    for (tag, country) in state.countries.iter_mut() {
-        country.adm_mana += monthly_gain;
-        country.dip_mana += monthly_gain;
-        country.mil_mana += monthly_gain;
+    let country_tags: Vec<String> = state.countries.keys().cloned().collect();
+    for tag in country_tags {
+        if let Some(country) = state.countries.get_mut(&tag) {
+            country.adm_mana += monthly_gain;
+            country.dip_mana += monthly_gain;
+            country.mil_mana += monthly_gain;
 
-        log::debug!("Mana tick for {}: +3/+3/+3", tag);
+            log::debug!("Mana tick for {}: +3/+3/+3", tag);
+        }
     }
 }
 
