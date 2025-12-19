@@ -1,6 +1,6 @@
 use crate::fixed::Fixed;
 use crate::input::{Command, DevType, PlayerInputs};
-use crate::state::{MovementState, WorldState};
+use crate::state::{MovementState, PeaceTerms, PendingPeace, WorldState};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -46,6 +46,16 @@ pub enum ActionError {
     InvalidProvinceId,
     #[error("Province is not owned by this country")]
     NotOwned,
+    #[error("War not found: {war_id}")]
+    WarNotFound { war_id: u32 },
+    #[error("Country {tag} is not a participant in war {war_id}")]
+    NotWarParticipant { tag: String, war_id: u32 },
+    #[error("Insufficient war score: required {required}, have {available}")]
+    InsufficientWarScore { required: u8, available: u8 },
+    #[error("No pending peace offer in war {war_id}")]
+    NoPendingPeace { war_id: u32 },
+    #[error("Cannot accept own peace offer")]
+    CannotAcceptOwnOffer,
 }
 
 /// Advance the world by one tick.
@@ -80,6 +90,9 @@ pub fn step_world(
     // Combat runs daily (whenever armies are engaged)
     crate::systems::run_combat_tick(&mut new_state);
 
+    // Update occupation (armies in enemy territory take control)
+    update_occupation(&mut new_state);
+
     // Economic systems run monthly (on 1st of each month)
     if new_state.date.day == 1 {
         let economy_config = crate::systems::EconomyConfig::default();
@@ -88,6 +101,12 @@ pub fn step_world(
         crate::systems::run_manpower_tick(&mut new_state);
         crate::systems::run_expenses_tick(&mut new_state);
         crate::systems::run_mana_tick(&mut new_state);
+
+        // Recalculate war scores monthly
+        crate::systems::recalculate_war_scores(&mut new_state);
+
+        // Auto-end wars after 10 years (stalemate prevention)
+        auto_end_stale_wars(&mut new_state);
     }
 
     // 4. Compute checksum (if enabled)
@@ -106,6 +125,71 @@ pub fn step_world(
     }
 
     new_state
+}
+
+/// Updates province controllers based on army presence.
+/// If an army is in a province owned by an enemy (during war), the army's owner becomes controller.
+fn update_occupation(state: &mut WorldState) {
+    // Collect updates first to avoid borrow issues
+    let mut updates: Vec<(u32, String)> = Vec::new();
+
+    for army in state.armies.values() {
+        let province_id = army.location;
+        if let Some(province) = state.provinces.get(&province_id) {
+            if let Some(owner) = &province.owner {
+                // Check if army owner is at war with province owner
+                if owner != &army.owner && state.diplomacy.are_at_war(&army.owner, owner) {
+                    // Army is in enemy territory during war - occupy!
+                    if province.controller.as_ref() != Some(&army.owner) {
+                        updates.push((province_id, army.owner.clone()));
+                    }
+                }
+            }
+        }
+    }
+
+    // Apply updates
+    for (province_id, new_controller) in updates {
+        if let Some(province) = state.provinces.get_mut(&province_id) {
+            log::info!(
+                "Province {} now occupied by {}",
+                province_id,
+                new_controller
+            );
+            province.controller = Some(new_controller);
+        }
+    }
+}
+
+/// Auto-ends wars that have been ongoing for 10+ years with white peace.
+fn auto_end_stale_wars(state: &mut WorldState) {
+    const STALEMATE_YEARS: i32 = 10;
+
+    // Collect wars to end (can't modify while iterating)
+    let wars_to_end: Vec<u32> = state
+        .diplomacy
+        .wars
+        .values()
+        .filter(|war| {
+            let years_at_war = state.date.year - war.start_date.year;
+            years_at_war >= STALEMATE_YEARS
+        })
+        .map(|war| war.id)
+        .collect();
+
+    for war_id in wars_to_end {
+        // Restore province controllers
+        restore_province_controllers(state, war_id);
+
+        // Remove war
+        if let Some(war) = state.diplomacy.wars.remove(&war_id) {
+            log::info!(
+                "War '{}' auto-ended in white peace after {} years of stalemate",
+                war.name,
+                STALEMATE_YEARS
+            );
+        }
+    }
 }
 
 fn execute_command(
@@ -250,6 +334,11 @@ fn execute_command(
                 attackers: vec![country_tag.to_string()],
                 defenders: vec![target.clone()],
                 start_date: state.date,
+                attacker_score: 0,
+                attacker_battle_score: 0,
+                defender_score: 0,
+                defender_battle_score: 0,
+                pending_peace: None,
             };
 
             state.diplomacy.wars.insert(war_id, war);
@@ -489,7 +578,220 @@ fn execute_command(
 
             Ok(())
         }
+        Command::OfferPeace { war_id, terms } => {
+            // Validate war exists
+            let war = state
+                .diplomacy
+                .wars
+                .get(war_id)
+                .ok_or(ActionError::WarNotFound { war_id: *war_id })?;
+
+            // Validate country is participant
+            let is_attacker = war.attackers.contains(&country_tag.to_string());
+            let is_defender = war.defenders.contains(&country_tag.to_string());
+            if !is_attacker && !is_defender {
+                return Err(ActionError::NotWarParticipant {
+                    tag: country_tag.to_string(),
+                    war_id: *war_id,
+                });
+            }
+
+            // Calculate war score cost for terms
+            let war_score_cost = calculate_peace_terms_cost(state, terms, war, is_attacker);
+            let available_score = if is_attacker {
+                war.attacker_score
+            } else {
+                war.defender_score
+            };
+
+            if war_score_cost > available_score {
+                return Err(ActionError::InsufficientWarScore {
+                    required: war_score_cost,
+                    available: available_score,
+                });
+            }
+
+            // Store peace offer
+            let pending = PendingPeace {
+                from_attacker: is_attacker,
+                terms: terms.clone(),
+                offered_on: state.date,
+            };
+
+            if let Some(war) = state.diplomacy.wars.get_mut(war_id) {
+                war.pending_peace = Some(pending);
+            }
+
+            log::info!(
+                "{} offered peace in war {} with terms {:?}",
+                country_tag,
+                war_id,
+                terms
+            );
+            Ok(())
+        }
+        Command::AcceptPeace { war_id } => {
+            // Validate war and pending peace exist
+            let war = state
+                .diplomacy
+                .wars
+                .get(war_id)
+                .ok_or(ActionError::WarNotFound { war_id: *war_id })?;
+
+            let pending = war
+                .pending_peace
+                .clone()
+                .ok_or(ActionError::NoPendingPeace { war_id: *war_id })?;
+
+            // Validate caller is the recipient (not the offerer)
+            let is_attacker = war.attackers.contains(&country_tag.to_string());
+            if pending.from_attacker == is_attacker {
+                return Err(ActionError::CannotAcceptOwnOffer);
+            }
+
+            // Execute peace terms
+            execute_peace_terms(state, *war_id, &pending.terms)?;
+
+            // Remove war
+            state.diplomacy.wars.remove(war_id);
+
+            log::info!("{} accepted peace in war {}", country_tag, war_id);
+            Ok(())
+        }
+        Command::RejectPeace { war_id } => {
+            // Clear pending peace offer
+            if let Some(war) = state.diplomacy.wars.get_mut(war_id) {
+                war.pending_peace = None;
+                log::info!("{} rejected peace in war {}", country_tag, war_id);
+            }
+            Ok(())
+        }
         Command::Quit => Ok(()), // Handled by outer loop usually, but harmless here
+    }
+}
+
+/// Calculates the war score cost for peace terms.
+fn calculate_peace_terms_cost(
+    state: &WorldState,
+    terms: &PeaceTerms,
+    war: &crate::state::War,
+    is_attacker: bool,
+) -> u8 {
+    match terms {
+        PeaceTerms::WhitePeace => 0, // Free with 50% war score (AI acceptance logic)
+        PeaceTerms::TakeProvinces { provinces } => {
+            // Cost = sum of province dev / 2 (simplified)
+            let enemy_tags: &[String] = if is_attacker {
+                &war.defenders
+            } else {
+                &war.attackers
+            };
+
+            let mut cost = 0u32;
+            for &prov_id in provinces {
+                if let Some(prov) = state.provinces.get(&prov_id) {
+                    // Only count provinces owned by enemy
+                    if prov.owner.as_ref().is_some_and(|o| enemy_tags.contains(o)) {
+                        let dev = prov.base_tax + prov.base_production + prov.base_manpower;
+                        cost += (dev.to_f32() / 2.0).ceil() as u32;
+                    }
+                }
+            }
+            cost.min(100) as u8
+        }
+        PeaceTerms::FullAnnexation => 100, // Requires 100% war score
+    }
+}
+
+/// Executes peace terms (province transfers, country elimination).
+fn execute_peace_terms(
+    state: &mut WorldState,
+    war_id: u32,
+    terms: &PeaceTerms,
+) -> Result<(), ActionError> {
+    // Get war info before modifying state
+    let war = state
+        .diplomacy
+        .wars
+        .get(&war_id)
+        .ok_or(ActionError::WarNotFound { war_id })?;
+
+    // Determine winner based on war score
+    let attacker_winning = war.attacker_score > war.defender_score;
+    let winner_tags: Vec<String> = if attacker_winning {
+        war.attackers.clone()
+    } else {
+        war.defenders.clone()
+    };
+
+    match terms {
+        PeaceTerms::WhitePeace => {
+            // Restore all provinces to original owners
+            restore_province_controllers(state, war_id);
+        }
+        PeaceTerms::TakeProvinces { provinces } => {
+            // Transfer provinces to winner (first attacker/defender)
+            let new_owner = winner_tags.first().cloned().unwrap_or_default();
+            for &prov_id in provinces {
+                if let Some(prov) = state.provinces.get_mut(&prov_id) {
+                    prov.owner = Some(new_owner.clone());
+                    prov.controller = Some(new_owner.clone());
+                    log::info!("Province {} transferred to {}", prov_id, new_owner);
+                }
+            }
+        }
+        PeaceTerms::FullAnnexation => {
+            // Transfer ALL enemy provinces to winner
+            let loser_tags: Vec<String> = if attacker_winning {
+                war.defenders.clone()
+            } else {
+                war.attackers.clone()
+            };
+            let new_owner = winner_tags.first().cloned().unwrap_or_default();
+
+            let province_ids: Vec<u32> = state.provinces.keys().copied().collect();
+            for prov_id in province_ids {
+                if let Some(prov) = state.provinces.get_mut(&prov_id) {
+                    if prov.owner.as_ref().is_some_and(|o| loser_tags.contains(o)) {
+                        prov.owner = Some(new_owner.clone());
+                        prov.controller = Some(new_owner.clone());
+                    }
+                }
+            }
+
+            // Remove annexed countries
+            for tag in &loser_tags {
+                state.countries.remove(tag);
+                log::info!("Country {} eliminated through full annexation", tag);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Restores province controllers to their owners after white peace.
+fn restore_province_controllers(state: &mut WorldState, war_id: u32) {
+    if let Some(war) = state.diplomacy.wars.get(&war_id) {
+        let all_participants: Vec<String> = war
+            .attackers
+            .iter()
+            .chain(war.defenders.iter())
+            .cloned()
+            .collect();
+
+        for prov in state.provinces.values_mut() {
+            if let Some(owner) = &prov.owner {
+                // If controller was a war participant, restore to owner
+                if prov
+                    .controller
+                    .as_ref()
+                    .is_some_and(|c| all_participants.contains(c) && c != owner)
+                {
+                    prov.controller = Some(owner.clone());
+                }
+            }
+        }
     }
 }
 

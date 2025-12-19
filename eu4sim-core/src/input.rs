@@ -1,4 +1,4 @@
-use crate::state::{ArmyId, FleetId, ProvinceId, Tag};
+use crate::state::{ArmyId, FleetId, PeaceTerms, ProvinceId, Tag, WarId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,8 +55,20 @@ pub enum Command {
     DeclareWar {
         target: Tag,
     },
+    /// Offer peace terms in a war
+    OfferPeace {
+        war_id: WarId,
+        terms: PeaceTerms,
+    },
+    /// Accept a pending peace offer
+    AcceptPeace {
+        war_id: WarId,
+    },
+    /// Reject a pending peace offer
+    RejectPeace {
+        war_id: WarId,
+    },
     // SendDiplomat { target: Tag, action: DiplomaticAction },
-    // AcceptPeace { war_id: WarId },
 
     // Internal
     // SetNationalFocus { focus: NationalFocus },

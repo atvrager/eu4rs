@@ -196,6 +196,11 @@ mod tests {
             attackers: vec!["SWE".into()],
             defenders: vec!["DEN".into()],
             start_date: Date::new(1444, 11, 11),
+            attacker_score: 0,
+            attacker_battle_score: 0,
+            defender_score: 0,
+            defender_battle_score: 0,
+            pending_peace: None,
         };
         state.diplomacy.wars.insert(0, war);
 
@@ -304,6 +309,11 @@ mod tests {
             attackers: vec!["SWE".into()],
             defenders: vec!["DEN".into()],
             start_date: Date::new(1444, 11, 11),
+            attacker_score: 0,
+            attacker_battle_score: 0,
+            defender_score: 0,
+            defender_battle_score: 0,
+            pending_peace: None,
         };
         state.diplomacy.wars.insert(0, war);
 
@@ -377,6 +387,11 @@ mod tests {
                 attackers: vec!["SWE".into()],
                 defenders: vec!["DEN".into()],
                 start_date: Date::new(1444, 11, 11),
+                attacker_score: 0,
+                attacker_battle_score: 0,
+                defender_score: 0,
+                defender_battle_score: 0,
+                pending_peace: None,
             };
             state.diplomacy.wars.insert(0, war);
 

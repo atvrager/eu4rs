@@ -161,6 +161,8 @@ pub enum Terrain {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProvinceState {
     pub owner: Option<Tag>,
+    /// Current controller (differs from owner when occupied in war)
+    pub controller: Option<Tag>,
     pub religion: Option<String>,
     pub culture: Option<String>,
     /// Trade good produced by this province
@@ -213,6 +215,38 @@ pub struct War {
     pub defenders: Vec<Tag>,
     /// War start date
     pub start_date: Date,
+    /// War score for attacker side (0-100)
+    pub attacker_score: u8,
+    /// War score from battles only (capped at 40)
+    pub attacker_battle_score: u8,
+    /// War score for defender side (0-100)
+    pub defender_score: u8,
+    /// War score from battles only (capped at 40)
+    pub defender_battle_score: u8,
+    /// Pending peace offer (if any)
+    pub pending_peace: Option<PendingPeace>,
+}
+
+/// A pending peace offer in a war.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PendingPeace {
+    /// True if attacker is offering, false if defender
+    pub from_attacker: bool,
+    /// The terms being offered
+    pub terms: PeaceTerms,
+    /// Date the offer was made
+    pub offered_on: Date,
+}
+
+/// Terms of a peace deal.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum PeaceTerms {
+    /// No territorial changes
+    WhitePeace,
+    /// Transfer specific provinces to the victor
+    TakeProvinces { provinces: Vec<ProvinceId> },
+    /// Complete annexation of the defeated country
+    FullAnnexation,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -331,6 +365,7 @@ impl WorldState {
             let p = &self.provinces[&id];
             id.hash(&mut hasher);
             p.owner.hash(&mut hasher);
+            p.controller.hash(&mut hasher);
             p.religion.hash(&mut hasher);
             p.culture.hash(&mut hasher);
             p.trade_goods_id.hash(&mut hasher);
@@ -392,6 +427,12 @@ impl WorldState {
             w.attackers.hash(&mut hasher);
             w.defenders.hash(&mut hasher);
             w.start_date.hash(&mut hasher);
+            w.attacker_score.hash(&mut hasher);
+            w.attacker_battle_score.hash(&mut hasher);
+            w.defender_score.hash(&mut hasher);
+            w.defender_battle_score.hash(&mut hasher);
+            // Note: pending_peace intentionally excluded from checksum
+            // (offers are transient and don't affect simulation state)
         }
 
         // Military access (sorted by key)

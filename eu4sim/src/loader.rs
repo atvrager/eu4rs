@@ -91,6 +91,7 @@ pub fn load_initial_state(
         // Create ProvinceState
         let p = ProvinceState {
             owner: hist.owner.clone(),
+            controller: hist.owner.clone(),
             religion: hist.religion.clone(),
             culture: hist.culture.clone(),
             trade_goods_id: goods_id,

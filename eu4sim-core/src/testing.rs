@@ -60,6 +60,7 @@ impl WorldStateBuilder {
             id,
             ProvinceState {
                 owner: owner_tag.map(|s| s.to_string()),
+                controller: owner_tag.map(|s| s.to_string()),
                 religion: None,
                 culture: None,
                 trade_goods_id: None,
@@ -93,6 +94,7 @@ impl WorldStateBuilder {
             id,
             ProvinceState {
                 owner: owner_tag.map(|s| s.to_string()),
+                controller: owner_tag.map(|s| s.to_string()),
                 religion: None,
                 culture: None,
                 trade_goods_id,
