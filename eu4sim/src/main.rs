@@ -136,11 +136,15 @@ fn main() -> Result<()> {
         .split(',')
         .map(|s| s.trim().to_uppercase())
         .collect();
-    // Track state at the start of the current month for persistent deltas
+    // Track state at the start of the current month
     let mut month_start_states = std::collections::HashMap::new();
+    // Track deltas from the previous completed month
+    let mut last_month_deltas = std::collections::HashMap::new();
+
     for tag in &tags {
         if let Some(c) = state.countries.get(tag) {
             month_start_states.insert(tag.clone(), c.clone());
+            last_month_deltas.insert(tag.clone(), (0.0, 0.0));
         }
     }
 
@@ -170,8 +174,6 @@ fn main() -> Result<()> {
             }
         }
 
-        use eu4sim_core::Fixed; // Import Fixed here or at top
-
         // Move cursor up if multi-line
         // Use first_print flag instead of tick count to handle pause refreshes
         if !first_print {
@@ -189,12 +191,9 @@ fn main() -> Result<()> {
 
         for tag in tags.iter() {
             if let Some(country) = state.countries.get(tag) {
-                let start = month_start_states.get(tag);
-                let start_treasury = start.map(|c| c.treasury).unwrap_or(Fixed::ZERO);
-                let start_manpower = start.map(|c| c.manpower).unwrap_or(Fixed::ZERO);
-
-                let delta_treasury = (country.treasury - start_treasury).to_f32();
-                let delta_manpower = (country.manpower - start_manpower).to_f32();
+                // Use persistent last_month_deltas
+                let (delta_treasury, delta_manpower) =
+                    last_month_deltas.get(tag).copied().unwrap_or((0.0, 0.0));
 
                 // Army composition
                 let mut inf = 0;
@@ -354,7 +353,11 @@ fn main() -> Result<()> {
         if state.date.day == 1 {
             for tag in &tags {
                 if let Some(c) = state.countries.get(tag) {
-                    month_start_states.insert(tag.clone(), c.clone());
+                    if let Some(prev) = month_start_states.insert(tag.clone(), c.clone()) {
+                        let dt = (c.treasury - prev.treasury).to_f32();
+                        let dm = (c.manpower - prev.manpower).to_f32();
+                        last_month_deltas.insert(tag.clone(), (dt, dm));
+                    }
                 }
             }
         }
