@@ -14,6 +14,7 @@ pub mod manifest;
 pub mod map;
 pub mod path;
 pub mod religions;
+pub mod terrain;
 pub mod tradegoods;
 pub mod types;
 pub use types::*;

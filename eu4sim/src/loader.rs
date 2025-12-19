@@ -1,9 +1,27 @@
 use anyhow::Result;
 use eu4sim_core::modifiers::TradegoodId;
-use eu4sim_core::state::{Army, CountryState, Date, ProvinceState, Regiment, RegimentType};
+use eu4sim_core::state::{
+    Army, CountryState, Date, ProvinceState, Regiment, RegimentType, Terrain,
+};
 use eu4sim_core::{Fixed, WorldState};
 use std::collections::HashMap;
 use std::path::Path;
+
+/// Parse terrain string to Terrain enum
+fn parse_terrain(terrain_str: &str) -> Option<Terrain> {
+    match terrain_str {
+        "plains" | "grasslands" => Some(Terrain::Plains),
+        "farmlands" => Some(Terrain::Farmlands),
+        "hills" => Some(Terrain::Hills),
+        "mountain" | "mountains" => Some(Terrain::Mountains),
+        "forest" | "woods" => Some(Terrain::Forest),
+        "marsh" | "wetlands" => Some(Terrain::Marsh),
+        "jungle" => Some(Terrain::Jungle),
+        "desert" | "drylands" => Some(Terrain::Desert),
+        "ocean" | "sea" => Some(Terrain::Sea),
+        _ => None,
+    }
+}
 
 pub fn load_initial_state(
     game_path: &Path,
@@ -38,7 +56,13 @@ pub fn load_initial_state(
     }
     log::info!("Loaded {} trade goods", base_prices.len());
 
-    // 2. Load Provinces
+    // 2. Load Terrain
+    log::info!("Loading terrain data...");
+    let terrain_map = eu4data::terrain::load_terrain_overrides(game_path)
+        .map_err(|e| anyhow::anyhow!("Failed to load terrain: {}", e))?;
+    log::info!("Loaded {} terrain overrides", terrain_map.len());
+
+    // 3. Load Provinces
     log::info!("Loading province history...");
     let (province_history, _) = eu4data::history::load_province_history(game_path)
         .map_err(|e| anyhow::anyhow!("Failed to load provinces: {}", e))?;
@@ -74,8 +98,10 @@ pub fn load_initial_state(
             base_production: Fixed::from_f32(hist.base_production.unwrap_or(0.0)),
             base_manpower: Fixed::from_f32(hist.base_manpower.unwrap_or(0.0)),
             has_fort: hist.fort_15th.unwrap_or(false),
-            is_sea: false, // TODO: Load from terrain data
-            terrain: None,
+            is_sea: hist.base_tax.is_none()
+                && hist.base_production.is_none()
+                && hist.owner.is_none(),
+            terrain: terrain_map.get(&id).and_then(|s| parse_terrain(s)),
         };
         provinces.insert(id, p.clone());
 
