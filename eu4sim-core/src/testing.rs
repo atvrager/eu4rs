@@ -42,6 +42,9 @@ impl WorldStateBuilder {
                 manpower: Fixed::from_int(50000),
                 stability: 0,
                 prestige: Fixed::ZERO,
+                adm_mana: Fixed::ZERO,
+                dip_mana: Fixed::ZERO,
+                mil_mana: Fixed::ZERO,
             },
         );
         self

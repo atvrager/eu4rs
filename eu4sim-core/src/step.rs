@@ -1,5 +1,5 @@
 use crate::fixed::Fixed;
-use crate::input::{Command, PlayerInputs};
+use crate::input::{Command, DevType, PlayerInputs};
 use crate::state::{MovementState, WorldState};
 use thiserror::Error;
 
@@ -38,6 +38,14 @@ pub enum ActionError {
         destination: u32,
         fleet_location: u32,
     },
+    #[error("Insufficient mana for this action")]
+    InsufficientMana,
+    #[error("Invalid country tag")]
+    InvalidTag,
+    #[error("Invalid province ID")]
+    InvalidProvinceId,
+    #[error("Province is not owned by this country")]
+    NotOwned,
 }
 
 /// Advance the world by one tick.
@@ -79,6 +87,7 @@ pub fn step_world(
         crate::systems::run_taxation_tick(&mut new_state);
         crate::systems::run_manpower_tick(&mut new_state);
         crate::systems::run_expenses_tick(&mut new_state);
+        crate::systems::run_mana_tick(&mut new_state);
     }
 
     // 4. Compute checksum (if enabled)
@@ -426,6 +435,60 @@ fn execute_command(
 
             Ok(())
         }
+        Command::PurchaseDevelopment { province, dev_type } => {
+            const DEV_COST: Fixed = Fixed::from_int(50);
+
+            // Validate country exists
+            let country = state
+                .countries
+                .get_mut(country_tag)
+                .ok_or(ActionError::InvalidTag)?;
+
+            // Validate province exists and is owned
+            let prov = state
+                .provinces
+                .get_mut(province)
+                .ok_or(ActionError::InvalidProvinceId)?;
+
+            if prov.owner.as_deref() != Some(country_tag) {
+                return Err(ActionError::NotOwned);
+            }
+
+            // Check mana and apply cost
+            match dev_type {
+                DevType::Tax => {
+                    if country.adm_mana < DEV_COST {
+                        return Err(ActionError::InsufficientMana);
+                    }
+                    country.adm_mana -= DEV_COST;
+                    prov.base_tax += Fixed::from_int(1);
+                }
+                DevType::Production => {
+                    if country.dip_mana < DEV_COST {
+                        return Err(ActionError::InsufficientMana);
+                    }
+                    country.dip_mana -= DEV_COST;
+                    prov.base_production += Fixed::from_int(1);
+                }
+                DevType::Manpower => {
+                    if country.mil_mana < DEV_COST {
+                        return Err(ActionError::InsufficientMana);
+                    }
+                    country.mil_mana -= DEV_COST;
+                    prov.base_manpower += Fixed::from_int(1);
+                }
+            }
+
+            log::info!(
+                "{} purchased {:?} development in province {} for {} mana",
+                country_tag,
+                dev_type,
+                province,
+                DEV_COST.to_f32()
+            );
+
+            Ok(())
+        }
         Command::Quit => Ok(()), // Handled by outer loop usually, but harmless here
     }
 }
@@ -582,5 +645,131 @@ mod tests {
 
         // No war should be created
         assert_eq!(new_state.diplomacy.wars.len(), 0);
+    }
+
+    #[test]
+    fn test_dev_purchasing_full_cycle() {
+        let mut state = WorldStateBuilder::new()
+            .with_country("SWE")
+            .with_province_full(1, Some("SWE"), None, Fixed::from_int(5))
+            .build();
+
+        // Generate mana (17 months = 51 mana each)
+        for _ in 0..17 {
+            state.date = state.date.add_days(30);
+            crate::systems::run_mana_tick(&mut state);
+        }
+
+        // Purchase tax dev
+        let cmd = Command::PurchaseDevelopment {
+            province: 1,
+            dev_type: DevType::Tax,
+        };
+        execute_command(&mut state, "SWE", &cmd, None).unwrap();
+
+        // Verify state
+        let swe = state.countries.get("SWE").unwrap();
+        let prov = state.provinces.get(&1).unwrap();
+
+        assert_eq!(swe.adm_mana, Fixed::from_int(1)); // 51 - 50
+        assert_eq!(prov.base_tax, Fixed::from_int(2)); // 1 + 1
+
+        // Insufficient mana should fail
+        let cmd2 = Command::PurchaseDevelopment {
+            province: 1,
+            dev_type: DevType::Tax,
+        };
+        assert!(execute_command(&mut state, "SWE", &cmd2, None).is_err());
+    }
+
+    #[test]
+    fn test_dev_purchasing_all_types() {
+        let mut state = WorldStateBuilder::new()
+            .with_country("SWE")
+            .with_province_full(1, Some("SWE"), None, Fixed::from_int(5))
+            .build();
+
+        // Generate mana (51 months = 153 mana each)
+        for _ in 0..51 {
+            state.date = state.date.add_days(30);
+            crate::systems::run_mana_tick(&mut state);
+        }
+
+        let initial_swe = state.countries.get("SWE").unwrap();
+        assert_eq!(initial_swe.adm_mana, Fixed::from_int(153));
+        assert_eq!(initial_swe.dip_mana, Fixed::from_int(153));
+        assert_eq!(initial_swe.mil_mana, Fixed::from_int(153));
+
+        // Purchase all three types
+        execute_command(
+            &mut state,
+            "SWE",
+            &Command::PurchaseDevelopment {
+                province: 1,
+                dev_type: DevType::Tax,
+            },
+            None,
+        )
+        .unwrap();
+
+        execute_command(
+            &mut state,
+            "SWE",
+            &Command::PurchaseDevelopment {
+                province: 1,
+                dev_type: DevType::Production,
+            },
+            None,
+        )
+        .unwrap();
+
+        execute_command(
+            &mut state,
+            "SWE",
+            &Command::PurchaseDevelopment {
+                province: 1,
+                dev_type: DevType::Manpower,
+            },
+            None,
+        )
+        .unwrap();
+
+        // Verify all mana types decreased
+        let swe = state.countries.get("SWE").unwrap();
+        assert_eq!(swe.adm_mana, Fixed::from_int(103)); // 153 - 50
+        assert_eq!(swe.dip_mana, Fixed::from_int(103)); // 153 - 50
+        assert_eq!(swe.mil_mana, Fixed::from_int(103)); // 153 - 50
+
+        // Verify all dev types increased
+        let prov = state.provinces.get(&1).unwrap();
+        assert_eq!(prov.base_tax, Fixed::from_int(2)); // 1 + 1
+        assert_eq!(prov.base_production, Fixed::from_int(6)); // 5 + 1
+        assert_eq!(prov.base_manpower, Fixed::from_int(2)); // 1 + 1
+    }
+
+    #[test]
+    fn test_dev_purchasing_not_owned() {
+        let mut state = WorldStateBuilder::new()
+            .with_country("SWE")
+            .with_country("DEN")
+            .with_province_full(1, Some("DEN"), None, Fixed::from_int(5))
+            .build();
+
+        // Give SWE mana
+        state.countries.get_mut("SWE").unwrap().adm_mana = Fixed::from_int(100);
+
+        // SWE tries to purchase dev in DEN's province
+        let result = execute_command(
+            &mut state,
+            "SWE",
+            &Command::PurchaseDevelopment {
+                province: 1,
+                dev_type: DevType::Tax,
+            },
+            None,
+        );
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ActionError::NotOwned));
     }
 }

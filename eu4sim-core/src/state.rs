@@ -171,6 +171,12 @@ pub struct CountryState {
     pub manpower: Fixed,
     pub stability: i8,
     pub prestige: Fixed,
+    /// Administrative monarch power
+    pub adm_mana: Fixed,
+    /// Diplomatic monarch power
+    pub dip_mana: Fixed,
+    /// Military monarch power
+    pub mil_mana: Fixed,
 }
 
 /// Type of diplomatic relationship between two countries.
@@ -284,6 +290,9 @@ impl WorldState {
             c.manpower.0.hash(&mut hasher);
             c.stability.hash(&mut hasher);
             c.prestige.0.hash(&mut hasher);
+            c.adm_mana.0.hash(&mut hasher);
+            c.dip_mana.0.hash(&mut hasher);
+            c.mil_mana.0.hash(&mut hasher);
         }
 
         // Provinces (sorted by ID)
