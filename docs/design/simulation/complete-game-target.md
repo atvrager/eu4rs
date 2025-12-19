@@ -136,6 +136,19 @@ Random AI behavior:
 
 **Architecture Note**: AI interface must be pluggable from day one. See [AI Visibility Architecture](#ai-visibility-architecture) below.
 
+**Minimal Path → Final**:
+- **Phase 1 (Mid-Term)**: Simple trait with full state access
+  ```rust
+  pub trait AI {
+      fn decide(&self, state: &WorldState) -> Vec<Command>;
+  }
+  ```
+- **Phase 2**: Add visibility parameter (always pass `Omniscient` initially)
+  ```rust
+  fn decide(&self, state: &WorldState, mode: VisibilityMode) -> Vec<Command>;
+  ```
+- **Phase 3**: Implement `Realistic` filtering for production AI training
+
 ---
 
 ### Diplomacy
@@ -202,7 +215,7 @@ Random AI behavior:
 
 ### Religion
 
-**Target: Medium**
+**Target: Minimal** (upgrade to Medium post-launch)
 
 | Tier | Description |
 |------|-------------|
@@ -212,7 +225,12 @@ Random AI behavior:
 
 **Current Status**: Not implemented.
 
-**Design Note**: Religion is core to EU4 identity (1444-1821 spans the Reformation). Medium tier ensures the world changes religiously over time, which is important for simulation variety and performance testing across different game states.
+**Design Note**: Religion is core to EU4 identity (1444-1821 spans the Reformation), but static religions are sufficient for mid-term "complete game" testing. Medium tier can be added post-launch for historical flavor and simulation variety.
+
+**Minimal Path → Medium**:
+- **Phase 1 (Mid-Term)**: Static `religion: ReligionId` field, no conversion
+- **Phase 2**: Add `Missionary` system (simple conversion at fixed rate)
+- **Phase 3**: Add Reformation event (fires 1517, spreads via adjacency + dev weight)
 
 ---
 
@@ -286,7 +304,7 @@ Random AI behavior:
 | Tech & Institutions | Minimal | ❌ Not started | Mana exists, institutions spread by dev |
 | Events | SKIP | — | Alternate history is fine |
 | Rebels | SKIP | — | No internal instability |
-| Religion | Medium | ❌ Not started | Reformation spreads |
+| Religion | Minimal | ❌ Not started | Static religions (upgrade to Medium post-launch) |
 | Rulers | SKIP | — | Flat mana, no rulers |
 | Development | Minimal | ❌ Not started | Static + dev buying |
 
@@ -381,6 +399,14 @@ impl Simulation {
 ```
 
 **For Mid-Term**: Start with `Omniscient` mode (simpler). The interface is designed so `Realistic` can be added without changing AI implementations.
+
+**Implementation Phases**:
+1. **Phase 1 (Mid-Term)**: AI trait takes `&WorldState` directly, no visibility filtering
+2. **Phase 2**: Add `VisibilityMode` parameter to API, always pass `Omniscient`
+3. **Phase 3**: Implement `visible_state()` filtering function for `Realistic` mode
+4. **Phase 4**: Train production AI using only `Realistic` mode
+
+**Key**: Design the final interface in Phase 2, but defer expensive filtering implementation until needed.
 
 ---
 
@@ -507,6 +533,48 @@ pub enum PeaceTerms {
 
 *Random AI picks from this set uniformly. Many will be invalid at any given moment (can't declare war if already at war, can't colonize if no valid targets), so `available_commands()` filters to legal subset.*
 
+**Implementation Strategy: Define All, Implement Incrementally**
+
+Define the full `Command` enum with all 34 variants NOW (cheap), but implement execution in phases:
+
+```rust
+pub enum Command {
+    // PHASE 1: Core loop (implement for mid-term)
+    MoveArmy { army_id, destination },
+    DeclareWar { target, cb },
+    OfferPeace { war_id, terms },
+    AcceptPeace { war_id },
+    Pass,
+
+    // PHASE 2: Essential systems (implement post mid-term)
+    StartColony { province },
+    DevelopProvince { province, mana_type },
+    OfferAlliance { target },
+    AcceptAlliance { from },
+    // ... (all defined but stubbed)
+}
+
+impl Command {
+    pub fn execute(&self, world: &mut WorldState) -> Result<()> {
+        match self {
+            // Implemented
+            Command::MoveArmy { .. } => { /* working */ },
+
+            // Stubbed (graceful no-op)
+            Command::StartColony { .. } => {
+                log::warn!("Colonization not implemented yet");
+                Ok(())
+            },
+        }
+    }
+}
+```
+
+**Benefits**:
+- Command API locked early → no refactoring when adding networking
+- `available_commands()` can return unimplemented commands → AI sees future features
+- Graceful degradation → game doesn't crash on stub commands
+
 ---
 
 ### Bounded Range Library
@@ -624,9 +692,11 @@ Implementation order based on dependencies. Each phase unblocks the next.
 |------|--------------|-------|
 | Bounded range library | None | Stability, prestige, war score all use this |
 | Pending diplomacy queue | None | For queued offers/responses |
-| Command enum definition | None | All 34 command types as Rust enum |
+| Command enum definition | None | All 34 command types as Rust enum (define all, implement ~10 initially) |
 
 *These are small, self-contained pieces that other systems build on.*
+
+**Implementation Note**: Command enum should define ALL 34 variants now (cheap, locks API), but `execute()` only implements Phase 1 commands. Unimplemented commands log a warning and return `Ok(())`. This prevents refactoring when adding networking.
 
 ### Phase 1: Core Loop (Blockers)
 
@@ -664,10 +734,10 @@ Implementation order based on dependencies. Each phase unblocks the next.
 | Development | Mana system | DevelopProvince command, costs 50 mana |
 | Tech system | Mana system | BuyTech command (rarely used by random AI) |
 | Institution spread | Tech system | Monthly spread based on dev |
-| Reformation | Date system, religion data | Fires ~1517, spreads to provinces |
-| Missionary system | Religion | AssignMissionary command, conversion tick |
+| ~~Reformation~~ | ~~Date system, religion data~~ | **DEFERRED** (Religion is Minimal for mid-term) |
+| ~~Missionary system~~ | ~~Religion~~ | **DEFERRED** (Religion is Minimal for mid-term) |
 
-**Milestone**: After Phase 3, the world changes over 377 years - colonies appear, development grows, Reformation spreads.
+**Milestone**: After Phase 3, the world changes over 377 years - colonies appear, development grows. (Religion remains static for mid-term.)
 
 ### Phase 4: Polish & Observation
 
@@ -710,10 +780,44 @@ Phase 2 (Essential)  Phase 3 (Content)
 | Phase 0 | 3 | Small - utility code |
 | Phase 1 | 6 | **Large** - core game loop |
 | Phase 2 | 5 | Medium - mechanics |
-| Phase 3 | 6 | Medium - content |
+| Phase 3 | 4 | Small - content (Religion deferred) |
 | Phase 4 | 4 | Small - tooling |
 
 **Phase 1 is the critical work.** Once that's done, the rest can be parallelized or deferred.
+
+---
+
+## Beyond Mid-Term: Multiplayer & Lobby
+
+The simulation design is **multiplayer-ready from day one**, but the networking layer is deliberately deferred.
+
+**Single-Player as "Local Lobby"**:
+
+Mid-term implementation treats single-player as a degenerate lobby case:
+
+```rust
+pub struct LocalLobby {
+    pub slots: Vec<Slot>,        // 1 human, N AI
+    pub settings: GameSettings,
+    pub phase: LobbyPhase,       // Setup → Loading → InGame
+}
+
+// No networking code
+impl LocalLobby {
+    pub fn start_game(&self) -> WorldState { /* initialize */ }
+}
+```
+
+**Progression to Networked Multiplayer**:
+
+1. **Phase 1 (Mid-Term)**: Local lobby only, single-player
+2. **Phase 2**: Extract `trait LobbyBackend` with `Local` impl
+3. **Phase 3**: Add `NetworkedLobby` impl (QUIC/STUN/TURN)
+4. **Phase 4**: Polish (hot-join, host migration, observer mode)
+
+See [`docs/design/lobby.md`](./lobby.md) for full multiplayer design. The lobby state machine (`LobbyPhase`, `Slot`, `GameSettings`) is identical for local and networked backends—only the transport changes.
+
+**Key Insight**: By designing the lobby abstraction NOW (even for single-player), we avoid refactoring when adding networking. The same `Command` enum, `WorldState` checksum, and deterministic `step_world()` work for both local and networked games.
 
 ---
 
