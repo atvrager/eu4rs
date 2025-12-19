@@ -96,7 +96,7 @@ Everything else can be stubbed or is already done.
 
 - [ ] Implement peace deal system (Logic integration)
 - [ ] Add stability system with betrayal consequences
-- [ ] Add mana generation + dev purchasing
+- [x] Add mana generation + dev purchasing
 - [ ] Add colonization with standing orders
 - [ ] Add reformation spread
 - [ ] Connect headless output or eu4viz
