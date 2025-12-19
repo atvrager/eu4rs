@@ -1,6 +1,6 @@
 use crate::fixed::Fixed;
 use crate::modifiers::{GameModifiers, TradegoodId};
-use crate::state::{CountryState, Date, ProvinceId, ProvinceState, WorldState};
+use crate::state::{CountryState, Date, ProvinceId, ProvinceState, Terrain, WorldState};
 use std::collections::HashMap;
 
 pub struct WorldStateBuilder {
@@ -68,8 +68,16 @@ impl WorldStateBuilder {
                 base_manpower: Fixed::ONE,
                 has_fort: false,
                 is_sea: false,
+                terrain: None,
             },
         );
+        self
+    }
+
+    pub fn with_terrain(mut self, id: ProvinceId, terrain: Terrain) -> Self {
+        if let Some(p) = self.state.provinces.get_mut(&id) {
+            p.terrain = Some(terrain);
+        }
         self
     }
 
@@ -93,6 +101,7 @@ impl WorldStateBuilder {
                 base_manpower: Fixed::ONE,
                 has_fort: false,
                 is_sea: false,
+                terrain: None,
             },
         );
         self

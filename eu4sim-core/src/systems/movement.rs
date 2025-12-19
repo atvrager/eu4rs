@@ -1,18 +1,24 @@
-use crate::state::WorldState;
-
 use crate::fixed::Fixed;
+use crate::state::{ProvinceId, WorldState};
 use eu4data::adjacency::AdjacencyGraph;
 
-/// Base movement cost in "points" (days) per province for now.
-const BASE_MOVE_COST: i64 = 10;
 const BASE_SPEED: i64 = 1;
 
 /// Runs daily movement tick for all armies with queued movement paths.
-///
-/// TODO: The `_graph` parameter is reserved for future terrain/naval zone validation.
-/// Currently, movement costs are calculated via `WorldState::calculate_cost()` which
-/// doesn't require the graph structure. Consider removing if not needed by Phase 5.
 pub fn run_movement_tick(state: &mut WorldState, _graph: Option<&AdjacencyGraph>) {
+    // === PASS 1: Collect units that transitioned and need cost recalculation ===
+    enum UnitType {
+        Army,
+        Fleet,
+    }
+    struct CostUpdate {
+        unit_type: UnitType,
+        unit_id: u32,
+        from: ProvinceId,
+        to: ProvinceId,
+    }
+
+    let mut cost_updates: Vec<CostUpdate> = Vec::new();
     let mut completed_army_movements: Vec<u32> = Vec::new();
     let mut completed_fleet_movements: Vec<u32> = Vec::new();
 
@@ -29,12 +35,13 @@ pub fn run_movement_tick(state: &mut WorldState, _graph: Option<&AdjacencyGraph>
                     movement.progress = Fixed::ZERO;
 
                     // Calculate cost for next step if path continues
-                    // TODO: Use WorldState::calculate_cost() here. Currently blocked by borrow checker
-                    // (can't call &state method while iterating &mut state.fleets).
-                    // Solution: Collect (fleet_id, next_province, next_next) tuples first, then
-                    // calculate costs in a second pass, or use interior mutability pattern.
-                    if movement.path.front().is_some() {
-                        movement.required_progress = Fixed::from_int(BASE_MOVE_COST);
+                    if let Some(&next_next) = movement.path.front() {
+                        cost_updates.push(CostUpdate {
+                            unit_type: UnitType::Fleet,
+                            unit_id: fleet_id,
+                            from: next_province,
+                            to: next_next,
+                        });
                     }
 
                     log::info!(
@@ -77,9 +84,13 @@ pub fn run_movement_tick(state: &mut WorldState, _graph: Option<&AdjacencyGraph>
                     movement.progress = Fixed::ZERO;
 
                     // Calculate cost for next step if path continues
-                    // TODO: Use WorldState::calculate_cost() here (same borrow checker issue as fleets).
-                    if movement.path.front().is_some() {
-                        movement.required_progress = Fixed::from_int(BASE_MOVE_COST);
+                    if let Some(&next_next) = movement.path.front() {
+                        cost_updates.push(CostUpdate {
+                            unit_type: UnitType::Army,
+                            unit_id: army_id,
+                            from: next_province,
+                            to: next_next,
+                        });
                     }
 
                     log::info!(
@@ -91,6 +102,28 @@ pub fn run_movement_tick(state: &mut WorldState, _graph: Option<&AdjacencyGraph>
 
                     if movement.path.is_empty() {
                         completed_army_movements.push(army_id);
+                    }
+                }
+            }
+        }
+    }
+
+    // === PASS 2: Apply dynamic costs ===
+    for update in cost_updates {
+        use eu4data::adjacency::CostCalculator;
+        let cost = state.calculate_cost(update.from, update.to);
+        match update.unit_type {
+            UnitType::Fleet => {
+                if let Some(fleet) = state.fleets.get_mut(&update.unit_id) {
+                    if let Some(movement) = &mut fleet.movement {
+                        movement.required_progress = Fixed::from_int(cost as i64);
+                    }
+                }
+            }
+            UnitType::Army => {
+                if let Some(army) = state.armies.get_mut(&update.unit_id) {
+                    if let Some(movement) = &mut army.movement {
+                        movement.required_progress = Fixed::from_int(cost as i64);
                     }
                 }
             }
@@ -114,7 +147,7 @@ pub fn run_movement_tick(state: &mut WorldState, _graph: Option<&AdjacencyGraph>
 mod tests {
     use super::*;
     use crate::fixed::Fixed;
-    use crate::state::{Army, MovementState, Regiment, RegimentType};
+    use crate::state::{Army, MovementState, Regiment, RegimentType, Terrain};
     use crate::testing::WorldStateBuilder;
     use std::collections::VecDeque;
 
@@ -289,6 +322,8 @@ mod tests {
             .with_province(1, Some("SWE"))
             .with_province(2, Some("SWE"))
             .with_province(3, Some("SWE"))
+            .with_terrain(2, Terrain::Plains)
+            .with_terrain(3, Terrain::Mountains)
             .build();
 
         let army = Army {
@@ -303,20 +338,44 @@ mod tests {
             movement: Some(MovementState {
                 path: VecDeque::from(vec![2, 3]),
                 progress: Fixed::ZERO,
-                required_progress: Fixed::from_int(10),
+                required_progress: Fixed::from_int(5), // Short leg 1
             }),
             embarked_on: None,
         };
         state.armies.insert(1, army);
 
-        for _ in 0..10 {
+        // Move to province 2 (takes 5 ticks)
+        for _ in 0..5 {
             run_movement_tick(&mut state, None);
         }
-
         let a = state.armies.get(&1).unwrap();
         assert_eq!(a.location, 2);
+
+        // Verify next leg cost is mountain-based (20 days)
         let mv = a.movement.as_ref().unwrap();
-        assert_eq!(mv.required_progress, Fixed::from_int(10));
+        assert_eq!(mv.required_progress, Fixed::from_int(20));
+
+        // Finish movement through mountains
+        for _ in 0..20 {
+            run_movement_tick(&mut state, None);
+        }
+        let a = state.armies.get(&1).unwrap();
+        assert_eq!(a.location, 3);
+        assert!(a.movement.is_none());
+    }
+
+    #[test]
+    fn test_sea_movement_cost() {
+        let state = WorldStateBuilder::new()
+            .with_country("SWE")
+            .with_province(1, Some("SWE"))
+            .with_province(2, Some("SWE"))
+            .with_terrain(2, Terrain::Sea)
+            .build();
+
+        use eu4data::adjacency::CostCalculator;
+        let cost = state.calculate_cost(1, 2);
+        assert_eq!(cost, 5); // Sea is 0.5x
     }
 
     use proptest::prelude::*;

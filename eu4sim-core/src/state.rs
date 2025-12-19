@@ -144,6 +144,20 @@ pub struct WorldState {
     pub next_fleet_id: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Terrain {
+    Plains,
+    Farmlands,
+    Hills,
+    Mountains,
+    Forest,
+    Marsh,
+    Jungle,
+    Desert,
+    Sea,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProvinceState {
     pub owner: Option<Tag>,
@@ -161,6 +175,8 @@ pub struct ProvinceState {
     pub has_fort: bool,
     /// Whether this province is a sea province (for naval movement)
     pub is_sea: bool,
+    /// Terrain type (e.g., "plains", "mountains", "forest")
+    pub terrain: Option<Terrain>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -246,11 +262,24 @@ pub struct GlobalState {
     // HRE, Curia, etc.
 }
 
+/// Terrain movement cost multipliers (base cost = 10 days)
+fn terrain_cost_multiplier(terrain: Option<Terrain>) -> u32 {
+    match terrain {
+        Some(Terrain::Mountains) => 20, // 2.0x
+        Some(Terrain::Hills) | Some(Terrain::Marsh) | Some(Terrain::Jungle) => 15, // 1.5x
+        Some(Terrain::Forest) | Some(Terrain::Desert) => 12, // 1.2x
+        Some(Terrain::Sea) => 5,        // 0.5x (naval)
+        _ => 10,                        // plains, farmlands, default
+    }
+}
+
 impl eu4data::adjacency::CostCalculator for WorldState {
-    fn calculate_cost(&self, _from: ProvinceId, _to: ProvinceId) -> u32 {
-        // Base cost is 10 days.
-        // TODO: Add terrain multipliers, military access penalties, etc.
-        10
+    fn calculate_cost(&self, _from: ProvinceId, to: ProvinceId) -> u32 {
+        // Look up destination terrain and return cost
+        self.provinces
+            .get(&to)
+            .map(|p| terrain_cost_multiplier(p.terrain))
+            .unwrap_or(10)
     }
 
     fn calculate_heuristic(&self, _from: ProvinceId, _to: ProvinceId) -> u32 {
@@ -310,6 +339,7 @@ impl WorldState {
             p.base_manpower.0.hash(&mut hasher);
             p.has_fort.hash(&mut hasher);
             p.is_sea.hash(&mut hasher);
+            p.terrain.hash(&mut hasher);
         }
 
         // Armies (sorted by ID)

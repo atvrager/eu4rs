@@ -1,6 +1,6 @@
 # Mid-Term Goal: Planning Status
 
-*Last updated: 2025-12-18*
+*Last updated: 2025-12-19*
 
 ## Goal
 
@@ -58,7 +58,7 @@ Run a "complete" game from 1444 to 1821 with:
 - Holy war CB available
 
 **Army Movement & Occupation**:
-- Movement system exists (Phase 4 roadmap, 90% complete)
+- Movement system complete (Phase 4 roadmap, 100% complete)
 - Armies move to adjacent provinces; can enter enemy territory during war
 - Combat triggers automatically when hostile armies in same province
 - Occupation = army standing in enemy province (no siege for minimal)

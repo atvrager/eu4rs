@@ -4,8 +4,8 @@ This document tracks the implementation status of the eu4rs simulation engine an
 
 ## Overview
 
-**Current Focus**: Phase 4 - Military & Movement (90% complete)
-**Next Up**: Phase 5 - Advanced Military Features
+**Current Focus**: Phase 5 - Advanced Military Features
+**Next Up**: Phase 6 - Diplomacy & AI
 
 ---
 
@@ -68,7 +68,7 @@ Basic war system with combat resolution.
 
 ---
 
-## Phase 4: Movement & Pathfinding 🔄 **IN PROGRESS** (90%)
+## Phase 4: Movement & Pathfinding ✅ **COMPLETE**
 
 *Implemented in v0.1.3-0.1.4*
 
@@ -85,9 +85,8 @@ Deterministic army/fleet movement with A* pathfinding.
   - Armies follow fleet location when embarked
   - Boarding/disembarking mechanics implemented
 - [x] **Property Tests**: Movement monotonicity verification
-- [ ] **Dynamic Costs**: Currently uses `BASE_MOVE_COST` (10 days)
-  - TODO: Terrain-based cost calculation
-  - Blocked by borrow checker (needs read/write phase split)
+- [x] **Dynamic Costs**: Terrain-based movement costs
+  - Resolves borrow checker blocker via two-pass pattern
 - [ ] **Zone of Control**: Fort logic restricting movement
 - [ ] **Attrition**: Supply limit calculations and monthly losses
 
@@ -202,4 +201,4 @@ Before starting work on a feature:
 
 ---
 
-*Last updated: 2025-12-17*
+*Last updated: 2025-12-19*
