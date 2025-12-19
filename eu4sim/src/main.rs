@@ -211,15 +211,16 @@ fn main() -> Result<()> {
             }
 
             // Colors
+            // Colors
             let color_t = if delta_treasury > 0.0 {
-                "\x1b[32m+"
+                "\x1b[32m"
             } else if delta_treasury < 0.0 {
                 "\x1b[31m"
             } else {
                 "\x1b[90m"
             };
             let color_m = if delta_manpower > 0.0 {
-                "\x1b[32m+"
+                "\x1b[32m"
             } else if delta_manpower < 0.0 {
                 "\x1b[31m"
             } else {
@@ -227,19 +228,28 @@ fn main() -> Result<()> {
             };
             let reset = "\x1b[0m";
 
-            // Only log if something changed
-            if delta_treasury.abs() > 0.001 || delta_manpower.abs() > 0.001 {
-                log::info!(
-                    "Tick: {} | SWE Treasury: {:.4} ({}{:.2}{}) | Manpower: {:.0} ({}{:.0}{}) | Army: I:{} C:{} A:{} | Forts: {}",
-                    state.date,
-                    swe.treasury.to_f32(),
-                    color_t, delta_treasury, reset,
-                    swe.manpower.to_f32(),
-                    color_m, delta_manpower, reset,
-                    inf, cav, art,
-                    forts
-                );
-            }
+            // Status bar (overwrites previous line)
+            print!(
+                "\r[{}] SWE: 💰{:.1}({}{:+.1}{}) 👥{:.0}({}{:+.0}{}) ⚔️{:.0}/{:.0}/{:.0} | Army:{}/{}/{} Forts:{}    ",
+                state.date,
+                swe.treasury.to_f32(),
+                color_t,
+                delta_treasury,
+                reset,
+                swe.manpower.to_f32(),
+                color_m,
+                delta_manpower,
+                reset,
+                swe.adm_mana.to_f32(),
+                swe.dip_mana.to_f32(),
+                swe.mil_mana.to_f32(),
+                inf,
+                cav,
+                art,
+                forts
+            );
+            use std::io::Write;
+            std::io::stdout().flush().unwrap();
         } else {
             log::info!("Tick: {}", state.date);
         }
