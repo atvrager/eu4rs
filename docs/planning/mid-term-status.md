@@ -14,16 +14,16 @@ Run a "complete" game from 1444 to 1821 with:
 
 | Metric | Value | Status |
 | :--- | :--- | :--- |
-| **Tick Time** | **2.87 ms** | ✅ Goal Reached (<10ms) |
-| **Speed** | **1.0 years/sec** | ✅ Goal Reached (>0.6 yrs/s) |
-| **Full Game Time** | **~6.3 minutes** | 🚀 Goal Reached (<10m) |
+| **Tick Time** | **0.93 ms** | ✅ Goal Reached (<10ms) |
+| **Speed** | **3.0 years/sec** | 🚀 3x improvement |
+| **Full Game Time** | **~2.1 minutes** | 🚀 Goal Exceeded (<10m) |
 
 **Breakdown (Release Build):**
-- **AI Decision Loop:** 2.34 ms (81%) - Majority of time, filtering move logic helped.
-- **State Cloning (Other):** **0.42 ms** (14%) - Reduced from 4ms by migrating to `im::HashMap`.
-- **Systems (Combat/Move):** < 0.2 ms - Negligible.
+- **AI Decision Loop:** 0.39 ms (42%) - Parallelized with rayon.
+- **State Cloning (Other):** 0.44 ms (47%) - Persistent `im::HashMap`.
+- **Systems (Combat/Move/Economy):** ~0.1 ms (11%) - Negligible.
 
-**Verdict:** The simulation is now production-ready for large-scale observer runs. Further scaling should focus on AI multithreading, which is now possible thanks to the persistent `im` data structures.
+**Verdict:** The simulation is now production-ready for large-scale observer runs. AI loop parallelized with rayon, yielding 3x speedup (1.0 → 3.0 yr/s).
 
 "Complete" means the simulation doesn't crash or stall - systems exist at varying fidelity levels.
 
@@ -100,7 +100,7 @@ Everything else can be stubbed or is already done.
 - [ ] Add colonization with standing orders
 - [ ] Add reformation spread
 - [ ] Connect headless output or eu4viz
-- [ ] Multithreaded AI decision loop (Performance optimization)
+- [x] Multithreaded AI decision loop (Performance optimization)
 
 ## Open Planning Work
 
