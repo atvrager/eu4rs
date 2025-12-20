@@ -26,6 +26,7 @@ This document describes the integrity system for `eu4rs`, ensuring deterministic
 - AI can be offloaded from weaker clients
 - Replay system works identically for both modes
 - Testing multiplayer = testing single-player
+- **Verified Core**: (Vision) Using formal methods (Lean 4/Coq) to prove simulation invariants. See [formal-methods.md](./formal-methods.md).
 
 ---
 
