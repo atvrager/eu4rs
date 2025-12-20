@@ -46,15 +46,27 @@ cargo run -p eu4sim -- --benchmark --ticks 1000
 
 | Metric | Value |
 |--------|-------|
-| Years Simulated | 3 |
-| Total Time | 2.87s |
-| **Speed** | **1.0 years/sec** |
-| Average Tick | 2.87ms |
+| Years Simulated | 102 |
+| Total Time | 33.89s |
+| **Speed** | **3.0 years/sec** |
+| Average Tick | 0.929ms |
+
+### Breakdown
+
+| System | Time per Tick | % of Total |
+|--------|---------------|------------|
+| AI | 0.391ms | 42.1% |
+| Other | 0.436ms | 47.0% |
+| Economy | 0.049ms | 5.2% |
+| Combat | 0.023ms | 2.4% |
+| Movement | 0.019ms | 2.0% |
+| Occupation | 0.011ms | 1.2% |
 
 ### Analysis
-The simulation speed is now **1.0 years/sec**, which translates to a full game run (377 years) in approximately **6.3 minutes**. This exceeds the mid-term goal of 10 minutes.
+The simulation speed is now **3.0 years/sec**, which translates to a full game run (377 years) in approximately **2.1 minutes**. This significantly exceeds the mid-term goal of 10 minutes.
 
-- **AI Overhead**: ~80% of tick time is currently AI decision making (despite being random). This is the next target for parallelization.
+**Recent Improvements**:
+- **AI Parallelization (Dec 19)**: Rayon-based parallel AI loop reduced AI overhead from 81% to 42% of tick time, yielding a **3x speedup** (1.0 → 3.0 years/sec).
 - **State Cloning**: Reduced from **~4.0ms** to **~0.4ms** per tick by switching to `im::HashMap`.
 
 ## Future Optimization & Profiling
