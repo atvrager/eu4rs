@@ -177,7 +177,7 @@ Random AI behavior:
 | **Medium** | Institutions spread geographically with proper mechanics. Ahead/behind of time penalties. Tech affects unit stats. Advisors generate extra mana. |
 | **Full** | Full MP system, idea groups, policies, national ideas, embracement mechanics, institution origin events, tech groups. |
 
-**Current Status**: Not implemented.
+**Current Status**: ✅ Implemented. BuyTech command with linear cost (600 + level×60). EmbraceInstitution with 10% presence requirement. Monthly institution spread.
 
 **Design Note**: Mana system is fundamental to EU4 and should exist even if underutilized at Minimal tier. Property tests should verify mana accumulation/spending. Unit pips (Ottoman early advantage) deliberately skipped—balance comes from other factors.
 
@@ -223,7 +223,7 @@ Random AI behavior:
 | **Medium** | Religious unity affects stability/unrest. Reformation fires ~1517, spreads to provinces (simplified spread logic). Missionaries convert provinces at flat rate. Holy war CB available. |
 | **Full** | Papal mechanics, Protestant/Reformed leagues, defender of faith, religious ideas, Curia controller, Orthodox patriarchs, Hindu deity swapping, Shinto isolationism, etc. |
 
-**Current Status**: Not implemented.
+**Current Status**: ✅ Implemented. Reformation spread system active. ConvertCountryReligion command available.
 
 **Design Note**: Religion is core to EU4 identity (1444-1821 spans the Reformation), but static religions are sufficient for mid-term "complete game" testing. Medium tier can be added post-launch for historical flavor and simulation variety.
 
@@ -260,7 +260,7 @@ Random AI behavior:
 | **Medium** | Buildings can be constructed (cost, build time, bonuses). Core building types affect income/manpower/trade. Development cost modifiers (terrain, climate). |
 | **Full** | Great projects, monuments, manufactories, state buildings, dev efficiency, centralization, governing capacity. |
 
-**Current Status**: Not implemented.
+**Current Status**: ✅ Implemented. DevelopProvince command costs 50 mana per click, increases base_tax/production/manpower.
 
 **Design Note**: Dev purchasing gives AI a mana sink and lets provinces grow over 377 years. Without it, accumulated mana has nowhere to go (especially with no tech-up from random AI). Simple implementation: click → spend 50 mana → +1 dev.
 
@@ -299,14 +299,16 @@ Random AI behavior:
 | Military | Minimal+ | ✅ Done | Combat works, wars end with peace deals and truces |
 | War Resolution | Medium | ✅ Done | Peace deal logic, truces, country elimination |
 | Colonization | Minimal | ✅ Done | Fixed growth, standing orders implemented |
-| AI | Minimal | ✅ Done | Random commands, war declaration filtering |
-| Diplomacy | Minimal | 🔄 Partial | Stability hits for betrayal (truce enforcement exists) |
-| Tech & Institutions | Minimal | ❌ Not started | Mana exists, institutions spread by dev |
+| AI | Minimal | ✅ Done | Random commands, war declaration filtering, tech/dev weights |
+| Diplomacy | Minimal | ✅ Done | Stability hits for betrayal, truce enforcement |
+| Tech & Institutions | Minimal | ✅ Done | BuyTech, EmbraceInstitution, monthly spread |
 | Events | SKIP | — | Alternate history is fine |
 | Rebels | SKIP | — | No internal instability |
-| Religion | Minimal | ❌ Not started | Static religions (upgrade to Medium post-launch) |
-| Rulers | SKIP | — | Flat mana, no rulers |
-| Development | Minimal | ❌ Not started | Static + dev buying |
+| Religion | Minimal | ✅ Done | Reformation spread, missionary conversion |
+| Rulers | SKIP | — | Flat mana, no rulers (design experiment) |
+| Development | Minimal | ✅ Done | DevelopProvince command (50 mana/click) |
+
+**🎉 ALL MID-TERM SYSTEMS COMPLETE (December 2025)**
 
 ---
 
