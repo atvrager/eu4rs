@@ -442,6 +442,7 @@ These commands are safe to run without user confirmation (set `SafeToAutoRun: tr
 | `cargo xtask ci` | Full CI — always safe |
 | `cargo xtask coverage` | Coverage commands |
 | `cargo xtask quota` | Read-only quota check |
+| `cargo run-sim`, `cargo sim-watch*` | Simulation runner aliases |
 | `git status`, `git log -n N`, `git diff` | Read-only git |
 | `git add .`, `git commit` | Standard git workflow |
 

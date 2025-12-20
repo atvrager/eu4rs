@@ -6,6 +6,12 @@ run-viz-trace = "run --package eu4viz --bin eu4viz -- --log-level trace"
 run-sim-debug = "run --package eu4sim --bin eu4sim -- --log-level debug"
 run-sim-info = "run --package eu4sim --bin eu4sim -- --log-level info"
 run-sim-trace = "run --package eu4sim --bin eu4sim -- --log-level trace"
+# Release builds (fast)
+run-sim = "run --release --package eu4sim --bin eu4sim --"
+# Observer mode shortcuts
+sim-watch = "run --release --package eu4sim --bin eu4sim -- --observer --tags FRA,TUR,CAS,ENG,MNG --log-level warn"
+sim-watch-100 = "run --release --package eu4sim --bin eu4sim -- --observer --ticks 100 --tags FRA,TUR,CAS,ENG --log-level warn"
+sim-watch-1yr = "run --release --package eu4sim --bin eu4sim -- --observer --ticks 360 --tags FRA,TUR,CAS,ENG --log-level warn"
 cov = "llvm-cov --summary-only"
 cov-summary = "llvm-cov --summary-only"
 
