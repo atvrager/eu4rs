@@ -113,6 +113,17 @@ pub fn step_world(
     if new_state.date.day == 1 {
         let econ_start = Instant::now();
         let economy_config = crate::systems::EconomyConfig::default();
+
+        // Monthly tick ordering:
+        // 1. Production → Updates province output values
+        // 2. Taxation → Collects from updated production
+        // 3. Manpower → Regenerates military capacity
+        // 4. Expenses → Deducts costs (uses fresh manpower pool)
+        // 5. Mana → Generates monarch points
+        // 6. War scores → Recalculates based on current occupation
+        // 7. Auto-peace → Ends stalemate wars (10yr timeout)
+        //
+        // Order matters for production→taxation. Other systems are independent.
         crate::systems::run_production_tick(&mut new_state, &economy_config);
         crate::systems::run_taxation_tick(&mut new_state);
         crate::systems::run_manpower_tick(&mut new_state);
