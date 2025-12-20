@@ -12,7 +12,10 @@
       "Bash(git diff:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git show:*)"
+      "Bash(git show:*)",
+      "Bash(cat:*)",
+      "Skill(calibrate)",
+      "Skill(calibrate:*)"
     ]
   }
 }
