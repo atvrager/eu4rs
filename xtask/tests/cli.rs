@@ -76,10 +76,13 @@ fn test_coverage_doc_gen() {
         .assert()
         .success()
         .stdout(predicates::str::contains(
-            "Generated docs/supported_fields.md",
+            "Generated docs/reference/supported-fields.md",
         ));
 
-    assert!(dir.path().join("docs/supported_fields.md").exists());
+    assert!(dir
+        .path()
+        .join("docs/reference/supported-fields.md")
+        .exists());
 }
 
 #[test]

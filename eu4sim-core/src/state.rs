@@ -20,10 +20,13 @@ impl Date {
     }
 
     /// Adds days to the current date.
-    /// Simplified calendar: 12 months of 30 days is common in PDX games internally,
-    /// but we'll implement a basic Gregorian-ish tick for now or simpler.
-    /// EU4 actually uses standard calendar but simplified logic sometimes.
-    /// We'll assume a simple increment for the prototype.
+    ///
+    /// **Calendar Simplification**: We currently use a simplified calendar with
+    /// uniform 30-day months (360-day year).
+    ///
+    /// This differs from EU4's Gregorian-ish calendar but simplifies simulation math.
+    /// Dates will drift relative to historical events over time.
+    /// This is an intentional prototype decision.
     pub fn add_days(&self, days: u32) -> Self {
         // Very naive implementation for prototype
         let mut d = self.day as u32 + days;

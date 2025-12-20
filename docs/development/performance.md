@@ -46,15 +46,27 @@ cargo run -p eu4sim -- --benchmark --ticks 1000
 
 | Metric | Value |
 |--------|-------|
-| Years Simulated | 3 |
-| Total Time | 2.87s |
-| **Speed** | **1.0 years/sec** |
-| Average Tick | 2.87ms |
+| Years Simulated | 102 |
+| Total Time | 33.89s |
+| **Speed** | **3.0 years/sec** |
+| Average Tick | 0.929ms |
+
+### Breakdown
+
+| System | Time per Tick | % of Total |
+|--------|---------------|------------|
+| AI | 0.391ms | 42.1% |
+| Other | 0.436ms | 47.0% |
+| Economy | 0.049ms | 5.2% |
+| Combat | 0.023ms | 2.4% |
+| Movement | 0.019ms | 2.0% |
+| Occupation | 0.011ms | 1.2% |
 
 ### Analysis
-The simulation speed is now **1.0 years/sec**, which translates to a full game run (377 years) in approximately **6.3 minutes**. This exceeds the mid-term goal of 10 minutes.
+The simulation speed is now **3.0 years/sec**, which translates to a full game run (377 years) in approximately **2.1 minutes**. This significantly exceeds the mid-term goal of 10 minutes.
 
-- **AI Overhead**: ~80% of tick time is currently AI decision making (despite being random). This is the next target for parallelization.
+**Recent Improvements**:
+- **AI Parallelization (Dec 19)**: Rayon-based parallel AI loop reduced AI overhead from 81% to 42% of tick time, yielding a **3x speedup** (1.0 → 3.0 years/sec).
 - **State Cloning**: Reduced from **~4.0ms** to **~0.4ms** per tick by switching to `im::HashMap`.
 
 ## Future Optimization & Profiling
@@ -63,8 +75,23 @@ When simulation speed drops or sub-system costs rise unexpectedly, the following
 
 ### 1. Sampling Profilers
 Use `samply` (Web-based profiler for Rust/Firefox) or `flamegraph` to identify hotspots in the simulation loop.
-- **Samply**: Excellent for Windows/Linux. `samply record cargo run -p eu4sim -- --ticks 1000`
-- **Flamegraph**: Classic visualization. `cargo flamegraph -p eu4sim -- --ticks 1000`
+
+**Recommended: Samply** (Easy interactive traces)
+```bash
+cargo install samply
+# Run observer mode for 1000 ticks
+samply record cargo run -p eu4sim --release -- --observer --ticks 1000
+```
+This opens a local server (firefox Profiler compatible) to explore call stacks.
+
+**Alternative: Flamegraph** (Classic visualization)
+```bash
+cargo install flamegraph
+cargo flamegraph -p eu4sim -- --observer --ticks 1000
+```
+Generates `flamegraph.svg` in current directory.
+
+*Note: Always use `--release` for accurate bottlenecks (debug builds are dominated by non-inlined method calls).*
 
 ### 2. Micro-benchmarking (Criterion)
 For critical algorithms like pathfinding or CAS calculations, use `criterion` to measure performance in isolation and detect regressions.

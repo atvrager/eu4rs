@@ -1050,6 +1050,7 @@ dependencies = [
  "eu4sim-core",
  "log",
  "predicates",
+ "rayon",
 ]
 
 [[package]]
