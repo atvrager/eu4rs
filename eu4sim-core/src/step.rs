@@ -130,6 +130,7 @@ pub fn step_world(
         crate::systems::run_manpower_tick(&mut new_state);
         crate::systems::run_expenses_tick(&mut new_state);
         crate::systems::run_mana_tick(&mut new_state);
+        crate::systems::run_stats_tick(&mut new_state);
         crate::systems::run_colonization_tick(&mut new_state);
 
         // Recalculate war scores monthly
@@ -336,7 +337,7 @@ fn execute_command(
 
             Ok(())
         }
-        Command::DeclareWar { target } => {
+        Command::DeclareWar { target, cb } => {
             // Validate attacker exists
             if !state.countries.contains_key(country_tag) {
                 return Err(ActionError::CountryNotFound {
@@ -361,6 +362,18 @@ fn execute_command(
                 return Err(ActionError::AlreadyAtWar {
                     target: target.clone(),
                 });
+            }
+
+            // Apply No-CB stability penalty
+            if cb.is_none() {
+                if let Some(country) = state.countries.get_mut(country_tag) {
+                    country.stability.add(-2);
+                    log::info!(
+                        "{} declares no-CB war on {}: -2 stability",
+                        country_tag,
+                        target
+                    );
+                }
             }
 
             // Create war
@@ -886,6 +899,7 @@ fn execute_peace_terms(
         .diplomacy
         .wars
         .get(&war_id)
+        .cloned()
         .ok_or(ActionError::WarNotFound { war_id })?;
 
     // Determine winner based on war score
@@ -900,6 +914,13 @@ fn execute_peace_terms(
         PeaceTerms::WhitePeace => {
             // Restore all provinces to original owners
             restore_province_controllers(state, war_id);
+
+            // Attacker loses 10 prestige for failing to enforce demands
+            for attacker in &war.attackers {
+                if let Some(c) = state.countries.get_mut(attacker) {
+                    c.prestige.add(Fixed::from_int(-10));
+                }
+            }
         }
         PeaceTerms::TakeProvinces { provinces } => {
             // Transfer provinces to winner (first attacker/defender)
@@ -935,6 +956,13 @@ fn execute_peace_terms(
             for tag in &loser_tags {
                 state.countries.remove(tag);
                 log::info!("Country {} eliminated through full annexation", tag);
+            }
+
+            // Winners gain 25 prestige
+            for tag in &winner_tags {
+                if let Some(c) = state.countries.get_mut(tag) {
+                    c.prestige.add(Fixed::from_int(25));
+                }
             }
         }
     }
@@ -1063,6 +1091,7 @@ mod tests {
             country: "SWE".to_string(),
             commands: vec![Command::DeclareWar {
                 target: "DEN".to_string(),
+                cb: None,
             }],
         }];
 
@@ -1092,6 +1121,7 @@ mod tests {
             country: "SWE".to_string(),
             commands: vec![Command::DeclareWar {
                 target: "SWE".to_string(),
+                cb: None,
             }],
         }];
 
@@ -1120,6 +1150,7 @@ mod tests {
             country: "SWE".to_string(),
             commands: vec![Command::DeclareWar {
                 target: "DEN".to_string(),
+                cb: None,
             }],
         }];
 
@@ -1137,6 +1168,7 @@ mod tests {
             country: "SWE".to_string(),
             commands: vec![Command::DeclareWar {
                 target: "DEN".to_string(),
+                cb: None,
             }],
         }];
 
@@ -1163,6 +1195,7 @@ mod tests {
             country: "SWE".to_string(),
             commands: vec![Command::DeclareWar {
                 target: "XXX".to_string(),
+                cb: None,
             }],
         }];
 

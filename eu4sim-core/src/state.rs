@@ -1,3 +1,4 @@
+use crate::bounded::{new_prestige, new_stability, new_tradition, BoundedFixed, BoundedInt};
 use crate::fixed::Fixed;
 use crate::modifiers::{GameModifiers, TradegoodId};
 use serde::{Deserialize, Serialize};
@@ -195,20 +196,40 @@ pub struct ProvinceState {
     pub terrain: Option<Terrain>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CountryState {
     /// Treasury balance (Fixed for determinism)
     pub treasury: Fixed,
     /// Available manpower pool
+    /// Available manpower pool
     pub manpower: Fixed,
-    pub stability: i8,
-    pub prestige: Fixed,
+    /// Country stability (-3 to +3)
+    pub stability: BoundedInt,
+    /// Country prestige (-100 to +100), decays toward 0
+    pub prestige: BoundedFixed,
+    /// Army tradition (0 to 100), decays toward 0
+    pub army_tradition: BoundedFixed,
     /// Administrative monarch power
     pub adm_mana: Fixed,
     /// Diplomatic monarch power
     pub dip_mana: Fixed,
     /// Military monarch power
     pub mil_mana: Fixed,
+}
+
+impl Default for CountryState {
+    fn default() -> Self {
+        Self {
+            treasury: Fixed::ZERO,
+            manpower: Fixed::ZERO,
+            stability: new_stability(),
+            prestige: new_prestige(),
+            army_tradition: new_tradition(),
+            adm_mana: Fixed::ZERO,
+            dip_mana: Fixed::ZERO,
+            mil_mana: Fixed::ZERO,
+        }
+    }
 }
 
 /// Type of diplomatic relationship between two countries.
@@ -366,7 +387,8 @@ impl WorldState {
             c.treasury.0.hash(&mut hasher);
             c.manpower.0.hash(&mut hasher);
             c.stability.hash(&mut hasher);
-            c.prestige.0.hash(&mut hasher);
+            c.prestige.hash(&mut hasher);
+            c.army_tradition.hash(&mut hasher);
             c.adm_mana.0.hash(&mut hasher);
             c.dip_mana.0.hash(&mut hasher);
             c.mil_mana.0.hash(&mut hasher);

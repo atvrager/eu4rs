@@ -1,4 +1,5 @@
 pub mod ai;
+pub mod bounded;
 pub mod config;
 pub mod fixed;
 pub mod input;
@@ -10,6 +11,7 @@ pub mod step;
 pub mod systems;
 pub mod testing;
 
+pub use bounded::{new_prestige, new_stability, new_tradition, BoundedFixed, BoundedInt};
 pub use config::SimConfig;
 pub use fixed::Fixed;
 pub use input::{Command, PlayerInputs};

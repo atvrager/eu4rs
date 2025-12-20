@@ -53,6 +53,7 @@ pub enum Command {
     // Diplomatic - War
     DeclareWar {
         target: Tag,
+        cb: Option<String>,
     },
     OfferPeace {
         war_id: WarId,

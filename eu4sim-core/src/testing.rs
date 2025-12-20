@@ -41,11 +41,7 @@ impl WorldStateBuilder {
             CountryState {
                 treasury: Fixed::from_int(100), // Default generous treasury
                 manpower: Fixed::from_int(50000),
-                stability: 0,
-                prestige: Fixed::ZERO,
-                adm_mana: Fixed::ZERO,
-                dip_mana: Fixed::ZERO,
-                mil_mana: Fixed::ZERO,
+                ..Default::default()
             },
         );
         self

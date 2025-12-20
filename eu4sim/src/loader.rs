@@ -111,11 +111,7 @@ pub fn load_initial_state(
             countries.entry(tag).or_insert_with(|| CountryState {
                 treasury: Fixed::ZERO,
                 manpower: Fixed::ZERO,
-                prestige: Fixed::ZERO,
-                stability: 0,
-                adm_mana: Fixed::ZERO,
-                dip_mana: Fixed::ZERO,
-                mil_mana: Fixed::ZERO,
+                ..Default::default()
             });
         }
     }
