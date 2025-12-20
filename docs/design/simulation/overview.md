@@ -274,6 +274,58 @@ sequenceDiagram
     UI->>User: See temple under construction
 ```
 
+## AI & Machine Learning Readiness
+
+The simulation architecture is designed to support future ML-trained AI players. Key design principles:
+
+### Training-Ready Interfaces
+
+The `AiPlayer` trait uses structured inputs and outputs suitable for training data generation:
+
+```rust
+pub trait AiPlayer {
+    fn decide(
+        &mut self,
+        visible_state: &VisibleWorldState,  // Serializable input
+        available_commands: &[Command],      // Enumerable action space
+    ) -> Vec<Command>;                       // Structured output
+}
+```
+
+**Why this matters:**
+- **Serializable state**: `VisibleWorldState` can be converted to training prompts
+- **Bounded actions**: `available_commands` provides a finite action space per tick
+- **Structured output**: `Command` enum avoids parsing errors vs free-form text
+
+### Data Generation Support
+
+Any `AiPlayer` implementation (random, heuristic, human input log) can generate training data:
+
+```rust
+// Pseudocode for data generation
+for game in games {
+    for tick in game {
+        let state = game.visible_state(country);
+        let available = game.available_commands(country);
+        let chosen = ai.decide(&state, &available);
+
+        // Log as training sample
+        log_training_sample(state, available, chosen, game.outcome());
+    }
+}
+```
+
+### Determinism Requirement
+
+**Critical**: The simulation must remain deterministic for:
+- Replay validation (verify training data matches outcomes)
+- Lockstep multiplayer (ML models must not introduce desyncs)
+- Reproducible evaluation (same model + seed = same game)
+
+ML models should use **argmax** (deterministic) rather than temperature sampling. If sampling is needed, seed the model's RNG from `WorldState.rng_state`.
+
+See [Learned AI Design](learned-ai.md) for the full ML training architecture.
+
 ## Open Questions
 
 1. **Tick granularity**: Daily vs monthly ticks? (EU4 uses daily)

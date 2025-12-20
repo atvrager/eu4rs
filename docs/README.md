@@ -20,6 +20,8 @@ High-level system architecture and design decisions.
 - **[Military System](design/simulation/military.md)** - Combat, movement, pathfinding, naval transport
 - **[Calendar System](design/simulation/calendar.md)** - Temporal logic and non-Gregorian extensions
 - **[CLI Pipeline](design/cli-pipeline.md)** - Argument parsing, profiles, and runner configuration
+- **[Learned AI](design/simulation/learned-ai.md)** - LLM-based AI training and inference architecture
+- **[Learned AI Musings](design/simulation/learned-ai-musings.md)** - Design notes from an LLM's perspective
 - **[State Management](architecture/state-management.md)** - Persistent data structures and functional core patterns
 
 ---

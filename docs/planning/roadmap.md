@@ -123,15 +123,23 @@ Enhanced combat and military management.
 
 *Target: v0.3.0*
 
-Expanded diplomatic actions and basic AI.
+Expanded diplomatic actions and heuristic AI foundation.
 
 - [ ] **Peace Treaties**: War resolution with land transfer
 - [ ] **Alliance Enforcement**: Defensive pact call-to-arms
 - [ ] **Casus Belli System**: War justification mechanics
-- [ ] **Basic AI**: Simple decision-making for countries
-  - Economic management
-  - Military deployment
-  - Diplomatic actions
+- [ ] **AI Crate Refactor**: Extract `eu4sim-ai` crate from `eu4sim-core/src/ai/`
+  - Keep `RandomAi` (existing)
+  - Prepare trait interface for multiple implementations
+- [ ] **GreedyBot**: Heuristic AI that makes locally-optimal decisions
+  - Economy: Prioritize high-ROI buildings, develop best provinces
+  - Military: Attack weak neighbors, defend when outnumbered, siege forts
+  - Diplomacy: Ally against threats, rival competitors
+  - Action ranking logic (reusable for ML prompt filtering later)
+  - Serves as training data generator for learned AI
+- [ ] **Available Commands API**: `fn available_commands(&WorldState, &Tag) -> Vec<Command>`
+  - Required for both GreedyBot and learned AI
+  - Enumerates all legal actions for a country this tick
 
 ---
 
@@ -204,6 +212,31 @@ Before starting work on a feature:
 ## Future Explorations 💡
 
 Ideas worth exploring but not on the critical path:
+
+### Learned AI (LLM-Trained)
+
+Train small language models (1.5-2B params) to play EU4. See [Learned AI Design](../design/simulation/learned-ai.md).
+
+**Prerequisites** (from Phase 6):
+- GreedyBot (generates training data)
+- `available_commands` API (defines action space)
+- AI crate extraction (`eu4sim-ai`)
+
+**Training Pipeline**:
+1. Generate gameplay data with GreedyBot (Rust → JSONL)
+2. Fine-tune base model with LoRA (Python, trl/peft)
+3. RL improvement via self-play (Python + Rust game env)
+
+**Inference Pipeline** (Rust):
+- Candle for CPU inference
+- Quantized models (4-bit) for speed
+- Shared backbone, LoRA adapters for personalities (aggressive, diplomatic, etc.)
+
+**Why this is exciting**:
+- One trained model can serve all AI countries (shared backbone)
+- Different personalities via cheap LoRA adapters (~20MB each)
+- Action-index output = no parsing errors, deterministic
+- Reuse GreedyBot heuristics for prompt action filtering
 
 ### TUI Rendering Mode
 Play EU4 in your terminal! A text-based interface using `ratatui` or similar:
