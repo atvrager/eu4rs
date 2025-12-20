@@ -168,6 +168,18 @@ pub struct WorldState {
     pub colonies: HashMap<ProvinceId, Colony>,
 }
 
+impl WorldState {
+    /// Returns all valid commands for a country at the current state.
+    /// This is the single source of truth for valid AI and player actions.
+    pub fn available_commands(
+        &self,
+        tag: &str,
+        adjacency: Option<&eu4data::adjacency::AdjacencyGraph>,
+    ) -> Vec<crate::input::Command> {
+        crate::step::available_commands(self, tag, adjacency)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Terrain {
@@ -283,9 +295,10 @@ pub struct PendingPeace {
 }
 
 /// Terms of a peace deal.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum PeaceTerms {
     /// No territorial changes
+    #[default]
     WhitePeace,
     /// Transfer specific provinces to the victor
     TakeProvinces { provinces: Vec<ProvinceId> },

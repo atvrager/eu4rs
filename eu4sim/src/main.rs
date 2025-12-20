@@ -4,7 +4,7 @@ use crossterm::{
     event::{self, Event, KeyCode},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
-use eu4sim_core::state::{Date, PeaceTerms, ProvinceId, Tag};
+use eu4sim_core::state::Date;
 use eu4sim_core::{step_world, PlayerInputs, SimConfig};
 use rayon::prelude::*;
 use std::path::PathBuf;
@@ -286,17 +286,6 @@ fn main() -> Result<()> {
         if args.observer {
             let ai_start = std::time::Instant::now();
             // Generate AI commands for all countries (parallel)
-            // Pre-calculate owned provinces per country for AI use
-            let mut country_provinces: std::collections::HashMap<Tag, Vec<ProvinceId>> =
-                std::collections::HashMap::with_capacity(state.countries.len());
-            for (&id, prov) in &state.provinces {
-                if let Some(owner) = &prov.owner {
-                    country_provinces.entry(owner.clone()).or_default().push(id);
-                }
-            }
-
-            let country_provinces = country_provinces; // Make immutable
-
             inputs = ais
                 .par_iter_mut()
                 .filter_map(|(tag, ai)| {
@@ -317,98 +306,7 @@ fn main() -> Result<()> {
                     };
 
                     // Allocate available commands buffer per-AI
-                    let mut available = Vec::with_capacity(256);
-
-                    // Find armies and generate valid move commands
-                    for (id, army) in &state.armies {
-                        if &army.owner == tag {
-                            let neighbors = adjacency.neighbors(army.location);
-                            for dest in neighbors {
-                                // Check if we can move to this destination
-                                let can_move = if let Some(prov) = state.provinces.get(&dest) {
-                                    match &prov.owner {
-                                        None => true,                        // Uncolonized
-                                        Some(owner) if owner == tag => true, // Own territory
-                                        Some(owner) => {
-                                            // Need military access OR be at war
-                                            state.diplomacy.has_military_access(tag, owner)
-                                                || state.diplomacy.are_at_war(tag, owner)
-                                        }
-                                    }
-                                } else {
-                                    true // Province not in state, assume OK
-                                };
-
-                                if can_move {
-                                    available.push(eu4sim_core::Command::Move {
-                                        army_id: *id,
-                                        destination: dest,
-                                    });
-                                }
-                            }
-                        }
-                    }
-
-                    // Find unowned neighbor provinces to colonize
-                    if let Some(provinces) = country_provinces.get(tag) {
-                        for &prov_id in provinces {
-                            let neighbors = adjacency.neighbors(prov_id);
-                            for neighbor_id in neighbors {
-                                if let Some(neighbor) = state.provinces.get(&neighbor_id) {
-                                    if neighbor.owner.is_none()
-                                        && !neighbor.is_sea
-                                        && !state.colonies.contains_key(&neighbor_id)
-                                    {
-                                        available.push(eu4sim_core::Command::StartColony {
-                                            province: neighbor_id,
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Generate DeclareWar commands for potential targets
-                    for target_tag in state.countries.keys() {
-                        if target_tag != tag && !state.diplomacy.are_at_war(tag, target_tag) {
-                            // Only add DeclareWar if no active truce
-                            if !state
-                                .diplomacy
-                                .has_active_truce(tag, target_tag, state.date)
-                            {
-                                available.push(eu4sim_core::Command::DeclareWar {
-                                    target: target_tag.clone(),
-                                    cb: None,
-                                });
-                            }
-                        }
-                    }
-
-                    // Generate peace commands for active wars
-                    for (war_id, war) in &state.diplomacy.wars {
-                        let is_attacker = war.attackers.contains(tag);
-                        let is_defender = war.defenders.contains(tag);
-
-                        if is_attacker || is_defender {
-                            // Offer white peace in any war we're involved in
-                            available.push(eu4sim_core::Command::OfferPeace {
-                                war_id: *war_id,
-                                terms: PeaceTerms::WhitePeace,
-                            });
-
-                            // Accept peace if opponent has offered
-                            if let Some(pending) = &war.pending_peace {
-                                let offer_from_opponent = (is_attacker && !pending.from_attacker)
-                                    || (is_defender && pending.from_attacker);
-
-                                if offer_from_opponent {
-                                    available.push(eu4sim_core::Command::AcceptPeace {
-                                        war_id: *war_id,
-                                    });
-                                }
-                            }
-                        }
-                    }
+                    let available = state.available_commands(tag, Some(&adjacency));
 
                     let cmds = eu4sim_core::ai::AiPlayer::decide(ai, &visible_state, &available);
                     if !cmds.is_empty() {

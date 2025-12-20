@@ -538,6 +538,12 @@ tokei --output json > stats.json
     - Exception: `println!` may be used for interactive CLI prompts if strictly necessary, but prefer logging for status.
 
 ## Code Quality
+- **Zero Warnings (Dishonorable)**: Never accept compiler warnings. All new code must be warning-free. Proactively fix existing warnings when touching a file. Warnings are considered technical debt and a sign of imprecise craftsmanship. 🛡️
+- **Comment Styling Protocol**: 
+  - **Persona-Infused Comments**: Use your active persona's style (vibey, flavorful, lore-heavy) ONLY for **new** code or **meaningfully refreshed** logic.
+  - **Legacy Styling Preservation**: For general reformatting, retabbing, or minor bug fixes that don't change logic, preserve the original styling and linguistic voice of the existing comments.
+  - **Consistency**: If updating existing logic, try to match the tense and tone of the surrounding code unless a full rewrite is occurring.
+  - **Professional Documentation**: Project documentation (`docs/`, `implementation_plan.md`, etc.) must ALWAYS remain professional, clear, and technical, regardless of persona.
 - **Clean up comments**: Remove any "thinking comments" (e.g., "Wait, I should...", "Option A:...", "Now used for...") from the final code. Comments should explain *why* code exists or *how* it works, not the history of how you wrote it.
 - **Preserve comments**: When refactoring, ensure comments are moved along with the code. Proactively add new comments, especially for public APIs, explaining usage and parameters. Limit "what" comments if the code is self-explanatory, focus on "why" and "how".
 - **Remove allows**: When refactoring, check for `#[allow(...)]` attributes (e.g., dead_code, clippy rules) and remove them if they are no longer necessary or if the underlying issue can be fixed easily.

@@ -12,17 +12,20 @@ const DECAY_RATE: Fixed = Fixed::from_raw(42);
 
 /// Run monthly country stat updates.
 /// Call on the 1st of each month.
+///
+/// Everything in the world eventually decays toward its foundation. ✧
+/// Pride fades into history (prestige) and strength returns to the soil (tradition). 🛡️
 pub fn run_stats_tick(state: &mut WorldState) {
     let tags: Vec<String> = state.countries.keys().cloned().collect();
     for tag in tags {
         if let Some(country) = state.countries.get_mut(&tag) {
-            // Prestige decays toward 0
+            // Prestige decays toward 0 - Fame is but a shadow that shrinks as the sun moves.
             country.prestige.decay_toward(Fixed::ZERO, DECAY_RATE);
 
-            // Army tradition decays toward 0
+            // Army tradition decays toward 0 - Even the sharpest blade rusts if it is not used in battle.
             country.army_tradition.decay_toward(Fixed::ZERO, DECAY_RATE);
 
-            // Stability does NOT decay (only events change it)
+            // Stability does NOT decay (only events change it) - Peace is a fragile truth that must be broken to change.
         }
     }
 }

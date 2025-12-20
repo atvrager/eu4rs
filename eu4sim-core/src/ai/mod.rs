@@ -39,7 +39,6 @@
 
 use crate::input::Command;
 use crate::state::{CountryState, Date, Tag};
-use rand::seq::SliceRandom;
 use rand::Rng;
 use rand::SeedableRng;
 
@@ -121,15 +120,33 @@ impl AiPlayer for RandomAi {
         _visible_state: &VisibleWorldState,
         available_commands: &AvailableCommands,
     ) -> Vec<Command> {
-        // For minimal AI: pick one random command (or none)
         if available_commands.is_empty() {
             return vec![];
         }
 
-        // 50% chance to issue a command this tick
-        if self.rng.gen::<bool>() {
-            if let Some(cmd) = available_commands.choose(&mut self.rng) {
-                return vec![cmd.clone()];
+        // Weighted selection:
+        // We assign a higher weight to strategic actions (war, peace, colonization)
+        // to prevent the AI from just moving armies aimlessly when it has many move options.
+        let weights: Vec<u32> = available_commands
+            .iter()
+            .map(|cmd| match cmd {
+                Command::DeclareWar { .. } => 100,
+                Command::AcceptPeace { .. } => 500, // AI should almost always accept peace if offered
+                Command::OfferPeace { .. } => 30,
+                Command::PurchaseDevelopment { .. } => 20,
+                Command::StartColony { .. } => 50,
+                Command::Move { .. } => 1,
+                Command::MoveFleet { .. } => 1,
+                _ => 10,
+            })
+            .collect();
+
+        use rand::distributions::{Distribution, WeightedIndex};
+        if let Ok(dist) = WeightedIndex::new(&weights) {
+            // 50% chance to act this tick
+            if self.rng.gen_bool(0.5) {
+                let idx = dist.sample(&mut self.rng);
+                return vec![available_commands[idx].clone()];
             }
         }
 

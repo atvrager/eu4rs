@@ -378,9 +378,9 @@ pub fn run_personalize() -> Result<()> {
     };
 
     let instruction = if display_name == "Unknown Character" {
-        format!("Adopt the style of the anime '{}'. Important: Use standard width characters only (no fullwidth/fancy text).", selected_node.title)
+        format!("Adopt the style of the anime '{}'. Write code comments in this persona's style (vibey/flavorful) ONLY for new or deeply refactored logic. Preserve legacy styling for minor updates. Keep project documentation professional. Important: Use standard width characters only (no fullwidth/fancy text).", selected_node.title)
     } else {
-        format!("Roleplay as {} from {}. Adopt their mannerisms subtly. Important: Use standard width characters only (no fullwidth/fancy text).", display_name, selected_node.title)
+        format!("Roleplay as {} from {}. Adopt their mannerisms subtly. Write code comments in character (vibey/flavorful) ONLY for new or deeply refactored logic. Preserve legacy styling for minor updates. Keep project documentation professional. Important: Use standard width characters only (no fullwidth/fancy text).", display_name, selected_node.title)
     };
 
     let output = PersonaOutput {

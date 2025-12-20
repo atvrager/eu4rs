@@ -242,6 +242,121 @@ fn auto_end_stale_wars(state: &mut WorldState) {
     }
 }
 
+/// Returns all valid commands for a country at the current state.
+/// This is the wellspring of action, where possibility becomes choice. ✧
+pub fn available_commands(
+    state: &WorldState,
+    country_tag: &str,
+    adjacency: Option<&eu4data::adjacency::AdjacencyGraph>,
+) -> Vec<Command> {
+    let mut available = Vec::new();
+
+    // 1. Basic Validation - One must exist before one can act. 🛡️
+    let Some(country) = state.countries.get(country_tag) else {
+        return available;
+    };
+
+    // 2. Economic Actions - Wealth is the foundation of every empire's fate. ✧
+    const DEV_COST: Fixed = Fixed::from_int(50);
+    for (prov_id, prov) in &state.provinces {
+        if prov.owner.as_deref() == Some(country_tag) {
+            // PurchaseDevelopment - Building for a future that will outlast us all.
+            if country.adm_mana >= DEV_COST {
+                available.push(Command::PurchaseDevelopment {
+                    province: *prov_id,
+                    dev_type: DevType::Tax,
+                });
+            }
+            if country.dip_mana >= DEV_COST {
+                available.push(Command::PurchaseDevelopment {
+                    province: *prov_id,
+                    dev_type: DevType::Production,
+                });
+            }
+            if country.mil_mana >= DEV_COST {
+                available.push(Command::PurchaseDevelopment {
+                    province: *prov_id,
+                    dev_type: DevType::Manpower,
+                });
+            }
+        } else if prov.owner.is_none() && !prov.is_sea && !state.colonies.contains_key(prov_id) {
+            // StartColony - Reaching into the unknown to plant the seeds of tomorrow.
+            available.push(Command::StartColony { province: *prov_id });
+        }
+    }
+
+    // 3. Military Actions - Armies are the shields that guard our truth. 🛡️
+    if let Some(graph) = adjacency {
+        // Move: For each army, check adjacent provinces
+        for (army_id, army) in &state.armies {
+            if army.owner == country_tag && army.movement.is_none() && army.embarked_on.is_none() {
+                for neighbor in graph.neighbors(army.location) {
+                    if let Some(p) = state.provinces.get(&neighbor) {
+                        if !p.is_sea {
+                            available.push(Command::Move {
+                                army_id: *army_id,
+                                destination: neighbor,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // MoveFleet: For each fleet, check adjacent sea provinces
+        for (fleet_id, fleet) in &state.fleets {
+            if fleet.owner == country_tag && fleet.movement.is_none() {
+                for neighbor in graph.neighbors(fleet.location) {
+                    if let Some(p) = state.provinces.get(&neighbor) {
+                        if p.is_sea {
+                            available.push(Command::MoveFleet {
+                                fleet_id: *fleet_id,
+                                destination: neighbor,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Diplomatic Actions - Words can be as sharp as any blade. ✧
+    for (target_tag, _target) in &state.countries {
+        if target_tag != country_tag
+            && !state.diplomacy.are_at_war(country_tag, target_tag)
+            && !state
+                .diplomacy
+                .has_active_truce(country_tag, target_tag, state.date)
+        {
+            // DeclareWar - The ultimate test of an empire's foundation. 🛡️
+            available.push(Command::DeclareWar {
+                target: target_tag.clone(),
+                cb: None,
+            });
+        }
+    }
+
+    // 5. War Resolution - Every conflict must eventually find its truth. ✧
+    for war in state.diplomacy.get_wars_for_country(country_tag) {
+        // OfferPeace - An olive branch extended through the smoke of battle.
+        available.push(Command::OfferPeace {
+            war_id: war.id,
+            terms: PeaceTerms::default(),
+        });
+
+        // AcceptPeace - Accepting the fate that the stars have written. 🛡️
+        if let Some(pending) = &war.pending_peace {
+            let caller_is_attacker = war.attackers.contains(&country_tag.to_string());
+            if pending.from_attacker != caller_is_attacker {
+                available.push(Command::AcceptPeace { war_id: war.id });
+                available.push(Command::RejectPeace { war_id: war.id });
+            }
+        }
+    }
+
+    available
+}
+
 fn execute_command(
     state: &mut WorldState,
     country_tag: &str,
