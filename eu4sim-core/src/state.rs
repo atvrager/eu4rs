@@ -178,6 +178,21 @@ impl WorldState {
     ) -> Vec<crate::input::Command> {
         crate::step::available_commands(self, tag, adjacency)
     }
+
+    /// Generate a random f32 in [0.0, 1.0) using deterministic RNG.
+    ///
+    /// Uses xorshift64 for deterministic random number generation.
+    /// Critical for replay compatibility - same seed produces same sequence.
+    pub fn random_f32(&mut self) -> f32 {
+        // Simple xorshift64 for determinism
+        let mut x = self.rng_state;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.rng_state = x;
+        // Convert to f32 in [0, 1)
+        (x as f32) / (u64::MAX as f32)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -236,6 +251,8 @@ pub struct CountryState {
     pub dip_mana: Fixed,
     /// Military monarch power
     pub mil_mana: Fixed,
+    /// State religion (e.g., "catholic", "protestant")
+    pub religion: Option<String>,
 }
 
 impl Default for CountryState {
@@ -249,6 +266,7 @@ impl Default for CountryState {
             adm_mana: Fixed::ZERO,
             dip_mana: Fixed::ZERO,
             mil_mana: Fixed::ZERO,
+            religion: None,
         }
     }
 }
@@ -374,9 +392,22 @@ impl DiplomacyState {
     }
 }
 
+/// Tracks the global state of the Reformation.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ReformationState {
+    /// Has the Protestant Reformation fired?
+    pub protestant_reformation_fired: bool,
+    /// Has the Reformed movement fired?
+    pub reformed_reformation_fired: bool,
+    /// Active Centers of Reformation: province_id -> religion
+    pub centers_of_reformation: HashMap<ProvinceId, String>,
+    /// When each center was created (for expiry)
+    pub center_creation_dates: HashMap<ProvinceId, Date>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct GlobalState {
-    // HRE, Curia, etc.
+    pub reformation: ReformationState,
 }
 
 /// Terrain movement cost multipliers (base cost = 10 days)
@@ -440,6 +471,7 @@ impl WorldState {
             c.adm_mana.0.hash(&mut hasher);
             c.dip_mana.0.hash(&mut hasher);
             c.mil_mana.0.hash(&mut hasher);
+            c.religion.hash(&mut hasher);
         }
 
         // Provinces (sorted by ID)
@@ -490,6 +522,27 @@ impl WorldState {
             f.transport_capacity.hash(&mut hasher);
             f.embarked_armies.hash(&mut hasher);
             f.movement.hash(&mut hasher);
+        }
+
+        // Reformation state
+        self.global
+            .reformation
+            .protestant_reformation_fired
+            .hash(&mut hasher);
+        self.global
+            .reformation
+            .reformed_reformation_fired
+            .hash(&mut hasher);
+        let mut center_ids: Vec<_> = self
+            .global
+            .reformation
+            .centers_of_reformation
+            .keys()
+            .collect();
+        center_ids.sort();
+        for &id in center_ids {
+            id.hash(&mut hasher);
+            self.global.reformation.centers_of_reformation[&id].hash(&mut hasher);
         }
 
         // Colonies (sorted by province ID)

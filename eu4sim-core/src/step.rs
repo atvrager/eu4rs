@@ -126,8 +126,9 @@ pub fn step_world(
         // 4. Expenses → Deducts costs (uses fresh manpower pool)
         // 5. Mana → Generates monarch points
         // 6. Colonization → Progresses active colonies
-        // 7. War scores → Recalculates based on current occupation
-        // 8. Auto-peace → Ends stalemate wars (10yr timeout)
+        // 7. Reformation → Spreads Protestant/Reformed religions
+        // 8. War scores → Recalculates based on current occupation
+        // 9. Auto-peace → Ends stalemate wars (10yr timeout)
         //
         // Order matters for production→taxation. Other systems are independent.
         crate::systems::run_production_tick(&mut new_state, &economy_config);
@@ -137,6 +138,7 @@ pub fn step_world(
         crate::systems::run_mana_tick(&mut new_state);
         crate::systems::run_stats_tick(&mut new_state);
         crate::systems::run_colonization_tick(&mut new_state);
+        crate::systems::run_reformation_tick(&mut new_state, adjacency);
 
         // Recalculate war scores monthly
         crate::systems::recalculate_war_scores(&mut new_state);
@@ -1021,8 +1023,20 @@ fn execute_command(
             log::warn!("RecallMissionary not implemented yet");
             Ok(())
         }
-        Command::ConvertCountryReligion { .. } => {
-            log::warn!("ConvertCountryReligion not implemented yet");
+        Command::ConvertCountryReligion { religion } => {
+            let country =
+                state
+                    .countries
+                    .get_mut(country_tag)
+                    .ok_or(ActionError::CountryNotFound {
+                        tag: country_tag.to_string(),
+                    })?;
+
+            // Stability hit for changing religion (controversial decision)
+            country.stability.add(-2);
+            country.religion = Some(religion.clone());
+
+            log::info!("{} has converted to {}", country_tag, religion);
             Ok(())
         }
         Command::DevelopProvince { .. } => {

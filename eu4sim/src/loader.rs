@@ -116,6 +116,16 @@ pub fn load_initial_state(
         }
     }
 
+    // Second pass: Set country religions based on capital province
+    // (Country history not yet loaded, so we use capital's religion as proxy)
+    for (tag, country) in &mut countries {
+        if let Some(&capital_id) = country_capitals.get(tag) {
+            if let Some(capital) = provinces.get(&capital_id) {
+                country.religion = capital.religion.clone();
+            }
+        }
+    }
+
     log::info!(
         "Loaded {} provinces, {} countries",
         provinces.len(),
