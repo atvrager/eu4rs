@@ -127,6 +127,52 @@ When opening Antigravity, select **Claude Opus 4.5 (Thinking)** as your primary 
 6. **Think step-by-step**: Explain routing decision and reasoning before delegating
 7. **Leverage Flash quota**: When Claude or Gemini Pro quota is low, check if Gemini 3 Flash quota is healthy
 
+### Planning vs Fast Mode
+
+Antigravity has **two independent dimensions** for model configuration:
+
+1. **Model Selection** (dropdown): Opus Thinking, Sonnet Thinking, Sonnet, Gemini Pro High/Low, Gemini Flash
+2. **Mode Toggle**: Planning vs Fast
+
+This creates a **matrix** - any model can run in either mode:
+
+| Model | Planning Mode | Fast Mode |
+|-------|---------------|-----------|
+| Claude Opus 4.5 (Thinking) | Deep analysis + extended reasoning | Direct execution |
+| Claude Sonnet 4.5 (Thinking) | Complex planning + reasoning | Faster iterations |
+| Claude Sonnet 4.5 | Standard planning | Quick execution |
+| Gemini 3 Pro (High) | Thorough exploration | Rapid prototyping |
+| Gemini 3 Pro (Low) | Basic planning | Fastest iteration |
+| Gemini 3 Flash | N/A (always fast) | Default |
+
+**Use Planning Mode for:**
+- **Multi-step planning**: Breaking down complex features into implementation steps
+- **Architectural decisions**: Evaluating tradeoffs between approaches
+- **Debugging complex issues**: Tracing through code paths, analyzing state
+- **Code review with rationale**: Understanding *why* code works (or doesn't)
+- **Ambiguous requirements**: Tasks needing clarification before implementation
+- **Research tasks**: Exploring codebases, understanding systems
+- **First pass on any problem**: Get the approach right before executing
+
+**Use Fast Mode for:**
+- **Direct implementation**: When the plan is already clear
+- **Simple edits**: Typo fixes, small refactors, adding comments
+- **Repetitive tasks**: Applying known patterns across files
+- **Git operations**: Commits, rebases, log analysis
+- **Well-defined features**: Requirements are unambiguous
+- **Iteration after planning**: Plan once in Planning mode, iterate in Fast
+
+**Recommended Workflow:**
+1. Start in **Planning mode** with appropriate model tier
+2. Once plan is clear, switch to **Fast mode** for execution
+3. Return to Planning if you hit unexpected complexity
+
+**Cost-Benefit:**
+- Planning mode uses more tokens (~2-3x) but catches edge cases
+- Fast mode is cheaper and lower latency
+- Thinking models (Opus/Sonnet Thinking) add *another* layer of reasoning on top of the mode
+- **Rule of thumb**: Use Planning + Thinking model for novel problems, Fast + non-Thinking for known patterns
+
 **Proactive Model Switching (MANDATORY):**
 
 Since model switching requires manual user action (Antigravity dropdown), the agent MUST:
@@ -186,7 +232,102 @@ Use `cargo xtask quota` to see when quotas refresh. Factor this into routing dec
 
 ## Claude Code Integration
 
-Claude Code is a parallel agent (VSCode extension / CLI) that can work alongside Antigravity. It has **independent rate limits** (not quota), so delegating work to Claude Code preserves Antigravity quota.
+Claude Code is a parallel agent (VSCode extension / CLI) that can work alongside Antigravity. It uses the **Anthropic API directly** with its own rate limits (separate from Antigravity quota).
+
+### Rate Limit Monitoring
+
+Check Claude Code's rate limit status with:
+```powershell
+cargo xtask quota
+```
+
+This shows:
+- **Claude API Rate Limits**: Input/output tokens remaining, request limits, reset times
+- **Antigravity Quotas**: Model-specific quota percentages (Windows only)
+- **Gemini API**: Validation status
+
+**Rate Limit vs Quota:**
+- **Antigravity**: Uses a *quota* system (percentage-based, refreshes periodically)
+- **Claude Code**: Uses *rate limits* (tokens/minute, requests/minute, resets continuously)
+- Delegating work to Claude Code preserves Antigravity quota while consuming API rate limits
+
+**Setup Required:**
+Add your Anthropic API key to `.env` in the project root:
+```
+ANTHROPIC_API_KEY=sk-ant-api03-...
+```
+Get a key at: https://console.anthropic.com/settings/keys
+
+### Model Selection in Claude Code
+
+Claude Code supports model switching via `/model` command:
+
+| Model | Command | Use Case |
+|-------|---------|----------|
+| Opus 4.5 | `/model opus` | Complex debugging, architecture, critical code |
+| Sonnet 4.5 | `/model sonnet` | Standard features, moderate complexity |
+| Haiku | `/model haiku` | Docs, comments, simple edits, git ops |
+
+**Thinking Mode in Claude Code:**
+
+Unlike Antigravity's Planning/Fast toggle, Claude Code's thinking is **model-dependent**:
+- **Sonnet 4.5 and Opus 4.5**: Thinking enabled by default
+- **Haiku and older models**: Thinking disabled
+
+You can control thinking behavior via:
+| Method | Scope | How |
+|--------|-------|-----|
+| Global toggle | All requests | `/config` → toggle `alwaysThinkingEnabled` |
+| Per-request | Single request | Include `ultrathink` keyword in your message |
+| Token budget | Environment | Set `MAX_THINKING_TOKENS` env var |
+| Hybrid mode | Auto-switch | Use `--model opusplan` (Opus for planning, Sonnet for execution) |
+
+### Tier-Based Routing for Claude Code
+
+Configure your tier in `.env` (`CLAUDE_CODE_TIER=max20`). Route tasks based on subscription:
+
+| Tier | Routing Strategy |
+|------|------------------|
+| **Free** | Haiku only. Escalate all real work to Antigravity. Reserve for git ops and doc edits. |
+| **Max 5 ($20)** | Haiku default, Sonnet for moderate tasks. Opus for critical only. Prefer Antigravity for large features. |
+| **Max 20 ($100)** | Sonnet default, Opus for planning/debugging. Can run full features in Claude Code. |
+| **Max 50 ($200)** | Opus freely. Use Claude Code as primary, Antigravity as backup. |
+
+**Tier-Specific Guidance:**
+
+**Free Tier:**
+- `/model haiku` for everything
+- Use Antigravity for any real coding work
+- Claude Code for: git commits, file lookups, quick questions
+
+**Max 5 ($20/mo):**
+- Default to Haiku for routine work
+- Sonnet for: bug fixes, moderate refactoring, feature implementation
+- Opus only for: critical production bugs, architecture decisions
+- Handoff large tasks to Antigravity after planning in Claude Code
+
+**Max 20 ($100/mo):**
+- Default to Sonnet for most work
+- Opus for: initial planning, complex debugging, code review
+- Switch to Haiku for: bulk commits, documentation
+- Can complete most features entirely in Claude Code
+
+**Max 50 ($200/mo):**
+- Default to Opus for all planning and critical work
+- Sonnet for execution after plan is clear
+- Full autonomy in Claude Code
+- Use Antigravity for: multimodal tasks, very large context, parallel work
+
+**When user reports issues:**
+- If hitting limits: drop down one model tier (Opus → Sonnet → Haiku)
+- If quality issues: escalate to next model tier
+- If frequent rate limits: delegate more to Antigravity
+
+**Calibration:**
+Run `/calibrate` at session start to:
+1. Confirm current model identity
+2. Generate a session persona
+3. Get routing recommendations for task types
 
 ### VS Code Extension Configuration (Required)
 

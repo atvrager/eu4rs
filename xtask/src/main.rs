@@ -212,12 +212,106 @@ fn run_clean() -> Result<()> {
 fn run_quota() -> Result<()> {
     println!("Checking Model Quota Status...\n");
 
-    // Try Antigravity detection first (Windows only)
+    let client = Client::new();
+
+    // =========================================================================
+    // Claude Code Subscription (from .env config)
+    // =========================================================================
+    let claude_tier = env::var("CLAUDE_CODE_TIER").ok();
+    if let Some(tier) = claude_tier {
+        let (tier_name, multiplier) = match tier.to_lowercase().as_str() {
+            "free" => ("Free", "1x"),
+            "max5" => ("Max 5 ($20/mo)", "5x"),
+            "max20" => ("Max 20 ($100/mo)", "20x"),
+            "max50" => ("Max 50 ($200/mo)", "50x"),
+            _ => (tier.as_str(), "?x"),
+        };
+        println!("📊 **Claude Code** (from CLAUDE_CODE_TIER in .env)\n");
+        println!("Subscription: {} ({} Pro usage)", tier_name, multiplier);
+        println!("   Note: Real-time availability not detectable programmatically.\n");
+    } else {
+        println!("📊 **Claude Code**\n");
+        println!("   Set CLAUDE_CODE_TIER in .env (free/max5/max20/max50)\n");
+    }
+
+    // =========================================================================
+    // Claude API (optional - for direct API access / scripts)
+    // Note: Claude Code extension uses separate account-based auth, not API keys
+    // =========================================================================
+    let anthropic_key = env::var("ANTHROPIC_API_KEY").ok();
+    if let Some(key) = anthropic_key {
+        match check_anthropic(&client, &key) {
+            ClaudeCheckResult::Valid(limits) => {
+                if limits.has_data() {
+                    println!("📊 **Claude API** (direct API key)\n");
+                    println!("Plan: {}\n", limits.infer_tier());
+
+                    println!("| Resource | Remaining | Limit | % | Status |");
+                    println!("|----------|-----------|-------|---|--------|");
+
+                    if let (Some(rem), Some(lim)) =
+                        (limits.input_tokens_remaining, limits.input_tokens_limit)
+                    {
+                        let pct = limits.input_percentage().unwrap_or(0);
+                        println!(
+                            "| Input Tokens | {} | {} | {}% | {} |",
+                            format_tokens(rem),
+                            format_tokens(lim),
+                            pct,
+                            rate_limit_status(pct)
+                        );
+                    }
+
+                    if let (Some(rem), Some(lim)) =
+                        (limits.output_tokens_remaining, limits.output_tokens_limit)
+                    {
+                        let pct = limits.output_percentage().unwrap_or(0);
+                        println!(
+                            "| Output Tokens | {} | {} | {}% | {} |",
+                            format_tokens(rem),
+                            format_tokens(lim),
+                            pct,
+                            rate_limit_status(pct)
+                        );
+                    }
+
+                    if let (Some(rem), Some(lim)) =
+                        (limits.requests_remaining, limits.requests_limit)
+                    {
+                        let pct = limits.requests_percentage().unwrap_or(0);
+                        println!(
+                            "| Requests | {} | {} | {}% | {} |",
+                            rem,
+                            lim,
+                            pct,
+                            rate_limit_status(pct)
+                        );
+                    }
+
+                    if let Some(reset) = &limits.reset_time {
+                        println!("\nResets: {}", format_refresh_time_generic(reset));
+                    }
+                    println!();
+                }
+                // Don't show "active" message if no data - clutters output
+            }
+            ClaudeCheckResult::InvalidKey | ClaudeCheckResult::OutOfCredits => {
+                // Don't show - not relevant to Claude Code extension
+            }
+            ClaudeCheckResult::Error(_) => {
+                // Don't show - not relevant to Claude Code extension
+            }
+        }
+    }
+
+    // =========================================================================
+    // Antigravity Model Quotas (Windows only)
+    // =========================================================================
     #[cfg(target_os = "windows")]
-    let antigravity_success = {
+    {
+        println!("\n📊 **Antigravity Model Quotas**\n");
         match check_antigravity_quota() {
             Ok(quotas) if !quotas.is_empty() => {
-                println!("📊 **Antigravity Model Quotas**\n");
                 println!("| Model | Quota | Status | Refreshes |");
                 println!("|-------|-------|--------|----------|");
                 for q in &quotas {
@@ -234,56 +328,33 @@ fn run_quota() -> Result<()> {
                         refresh_str
                     );
                 }
-                true
             }
             Ok(_) => {
-                println!("⚠️  Antigravity detected but no quota data available.\n");
-                false
+                println!("ℹ️  Antigravity detected but no quota data available.");
             }
             Err(e) => {
-                println!("ℹ️  Antigravity not detected: {}\n", e);
-                false
+                println!("ℹ️  Antigravity not detected: {}", e);
             }
         }
-    };
+    }
 
     #[cfg(not(target_os = "windows"))]
-    let antigravity_success = {
-        println!("ℹ️  Antigravity detection not available on this platform.\n");
-        false
-    };
+    {
+        println!("\nℹ️  Antigravity detection not available on this platform.");
+    }
 
-    // Fallback to API key validation if Antigravity failed
-    if !antigravity_success {
-        println!("Falling back to API key validation...\n");
-
-        let client = Client::new();
-
-        let anthropic_key = env::var("ANTHROPIC_API_KEY").ok();
-        let claude_status = if let Some(key) = anthropic_key {
-            match check_anthropic(&client, &key) {
-                Ok(s) => s,
-                Err(e) => format!("Error: {}", e),
-            }
-        } else {
-            "Skipped (ANTHROPIC_API_KEY not set)".to_string()
-        };
-
-        let gemini_key = env::var("GEMINI_API_KEY").ok();
-        let gemini_status = if let Some(key) = gemini_key {
-            match check_gemini(&client, &key) {
-                Ok(s) => s,
-                Err(e) => format!("Error: {}", e),
-            }
-        } else {
-            "Skipped (GEMINI_API_KEY not set)".to_string()
-        };
-
-        println!("📊 **API Key Validation** (no quota levels available)\n");
-        println!("| Model Family | Status |");
-        println!("|--------------|--------|");
-        println!("| Claude | {} |", claude_status);
-        println!("| Gemini | {} |", gemini_status);
+    // =========================================================================
+    // Gemini API (validation only - no rate limit API available)
+    // =========================================================================
+    println!("\n📊 **Gemini API**\n");
+    let gemini_key = env::var("GEMINI_API_KEY").ok();
+    if let Some(key) = gemini_key {
+        match check_gemini(&client, &key) {
+            Ok(s) => println!("{}", s),
+            Err(e) => println!("Error: {}", e),
+        }
+    } else {
+        println!("ℹ️  GEMINI_API_KEY not set (optional for Gemini routing)");
     }
 
     // Add geolocation triangulation (Windows only)
@@ -484,6 +555,52 @@ fn quota_status_label(percentage: u8) -> &'static str {
         1..=10 => "🔴 Critical",
         11..=50 => "🟡 Low",
         _ => "🟢 Healthy",
+    }
+}
+
+/// Returns a human-readable status for rate limits (same logic, different name for clarity)
+fn rate_limit_status(percentage: u8) -> &'static str {
+    match percentage {
+        0 => "🔴 Exhausted",
+        1..=10 => "🔴 Critical",
+        11..=50 => "🟡 Low",
+        _ => "🟢 Healthy",
+    }
+}
+
+/// Format large token counts for readability (e.g., 450000 -> "450K")
+fn format_tokens(count: u64) -> String {
+    if count >= 1_000_000 {
+        format!("{:.1}M", count as f64 / 1_000_000.0)
+    } else if count >= 1_000 {
+        format!("{}K", count / 1_000)
+    } else {
+        count.to_string()
+    }
+}
+
+/// Formats a reset time as a human-readable relative duration (non-Windows version)
+fn format_refresh_time_generic(reset_time: &chrono::DateTime<chrono::Utc>) -> String {
+    use chrono::Utc;
+    let now = Utc::now();
+
+    if *reset_time <= now {
+        return "Refreshed ✓".to_string();
+    }
+
+    let duration = *reset_time - now;
+    let hours = duration.num_hours();
+    let mins = duration.num_minutes() % 60;
+
+    if hours > 24 {
+        let days = hours / 24;
+        format!("in {}d {}h", days, hours % 24)
+    } else if hours > 0 {
+        format!("in {}h {}m", hours, mins)
+    } else if mins > 0 {
+        format!("in {}m", mins)
+    } else {
+        "in <1m".to_string()
     }
 }
 
@@ -748,26 +865,162 @@ use antigravity::{check_antigravity_quota, ModelQuota};
 #[allow(dead_code)]
 type QuotaResult = Vec<ModelQuota>;
 
-fn check_anthropic(client: &Client, key: &str) -> Result<String> {
-    let resp = client
-        .get("https://api.anthropic.com/v1/models")
-        .header("x-api-key", key)
-        .header("anthropic-version", "2023-06-01")
-        .send()?;
+/// Rate limit info from Claude API response headers
+struct ClaudeRateLimits {
+    input_tokens_remaining: Option<u64>,
+    input_tokens_limit: Option<u64>,
+    output_tokens_remaining: Option<u64>,
+    output_tokens_limit: Option<u64>,
+    requests_remaining: Option<u64>,
+    requests_limit: Option<u64>,
+    reset_time: Option<chrono::DateTime<chrono::Utc>>,
+}
 
-    if resp.status().is_success() {
-        Ok("Active (API Key Valid)".to_string())
-    } else {
-        let status = resp.status();
-        let text = resp.text().unwrap_or_default();
-        if status.as_u16() == 401 {
-            Ok("Invalid API Key".to_string())
-        } else if text.contains("credit balance is too low") {
-            Ok("Out of Credits (Balance too low)".to_string())
-        } else {
-            Ok(format!("Failed (HTTP {}): {}", status, text))
+impl ClaudeRateLimits {
+    /// Parse rate limit headers from an HTTP response
+    fn from_headers(headers: &reqwest::header::HeaderMap) -> Self {
+        let get_u64 = |name: &str| -> Option<u64> {
+            headers
+                .get(name)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.parse().ok())
+        };
+
+        let reset_time = headers
+            .get("anthropic-ratelimit-input-tokens-reset")
+            .or_else(|| headers.get("anthropic-ratelimit-requests-reset"))
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.with_timezone(&chrono::Utc));
+
+        Self {
+            input_tokens_remaining: get_u64("anthropic-ratelimit-input-tokens-remaining"),
+            input_tokens_limit: get_u64("anthropic-ratelimit-input-tokens-limit"),
+            output_tokens_remaining: get_u64("anthropic-ratelimit-output-tokens-remaining"),
+            output_tokens_limit: get_u64("anthropic-ratelimit-output-tokens-limit"),
+            requests_remaining: get_u64("anthropic-ratelimit-requests-remaining"),
+            requests_limit: get_u64("anthropic-ratelimit-requests-limit"),
+            reset_time,
         }
     }
+
+    /// Calculate percentage remaining for a limit type
+    fn percentage(&self, remaining: Option<u64>, limit: Option<u64>) -> Option<u8> {
+        match (remaining, limit) {
+            (Some(r), Some(l)) if l > 0 => Some(((r as f64 / l as f64) * 100.0) as u8),
+            _ => None,
+        }
+    }
+
+    /// Get input tokens percentage remaining
+    fn input_percentage(&self) -> Option<u8> {
+        self.percentage(self.input_tokens_remaining, self.input_tokens_limit)
+    }
+
+    /// Get output tokens percentage remaining
+    fn output_percentage(&self) -> Option<u8> {
+        self.percentage(self.output_tokens_remaining, self.output_tokens_limit)
+    }
+
+    /// Get requests percentage remaining
+    fn requests_percentage(&self) -> Option<u8> {
+        self.percentage(self.requests_remaining, self.requests_limit)
+    }
+
+    /// Check if we got any rate limit data
+    fn has_data(&self) -> bool {
+        self.input_tokens_limit.is_some()
+            || self.output_tokens_limit.is_some()
+            || self.requests_limit.is_some()
+    }
+
+    /// Infer the API tier/plan based on rate limits
+    /// Reference: https://docs.anthropic.com/en/api/rate-limits
+    fn infer_tier(&self) -> &'static str {
+        // Anthropic tiers (as of late 2024):
+        // Tier 1 (Free/$5):    40K input/min,   8K output/min,   50 req/min
+        // Tier 2 ($40+):      80K input/min,  16K output/min,  1000 req/min
+        // Tier 3 ($200+):    160K input/min,  32K output/min,  2000 req/min
+        // Tier 4 ($400+):    400K input/min,  80K output/min,  4000 req/min
+        // Scale (custom):     Higher limits, custom pricing
+        match self.requests_limit {
+            Some(r) if r >= 4000 => "Tier 4+ (Scale) 🚀",
+            Some(r) if r >= 2000 => "Tier 3 ($200+)",
+            Some(r) if r >= 1000 => "Tier 2 ($40+)",
+            Some(r) if r >= 50 => "Tier 1 (Free/$5)",
+            _ => match self.input_tokens_limit {
+                Some(t) if t >= 400_000 => "Tier 4+ (Scale) 🚀",
+                Some(t) if t >= 160_000 => "Tier 3 ($200+)",
+                Some(t) if t >= 80_000 => "Tier 2 ($40+)",
+                Some(t) if t >= 40_000 => "Tier 1 (Free/$5)",
+                _ => "Unknown tier",
+            },
+        }
+    }
+}
+
+/// Result of checking Claude API - either just validation or full rate limits
+#[allow(dead_code)] // Error variant used for completeness, may be logged in future
+enum ClaudeCheckResult {
+    Valid(ClaudeRateLimits),
+    InvalidKey,
+    OutOfCredits,
+    Error(String),
+}
+
+/// Models to try for token counting (in order of preference)
+/// Using stable aliases where possible - these should remain valid longer
+const TOKEN_COUNT_MODELS: &[&str] = &[
+    "claude-sonnet-4-5-20250514", // Current Sonnet 4.5
+    "claude-3-5-sonnet-latest",   // Alias that should track latest 3.5
+    "claude-3-haiku-20240307",    // Stable older model as fallback
+];
+
+fn check_anthropic(client: &Client, key: &str) -> ClaudeCheckResult {
+    // Try each model until one works - the rate limit headers are account-wide
+    for model in TOKEN_COUNT_MODELS {
+        let body = format!(
+            r#"{{"model":"{}","messages":[{{"role":"user","content":"x"}}]}}"#,
+            model
+        );
+
+        let resp = client
+            .post("https://api.anthropic.com/v1/messages/count_tokens")
+            .header("x-api-key", key)
+            .header("anthropic-version", "2023-06-01")
+            .header("content-type", "application/json")
+            .body(body)
+            .send();
+
+        match resp {
+            Ok(response) => {
+                let status = response.status();
+                let headers = response.headers().clone();
+
+                if status.is_success() {
+                    return ClaudeCheckResult::Valid(ClaudeRateLimits::from_headers(&headers));
+                } else if status.as_u16() == 401 {
+                    return ClaudeCheckResult::InvalidKey;
+                } else {
+                    let text = response.text().unwrap_or_default();
+                    if text.contains("credit balance is too low") {
+                        return ClaudeCheckResult::OutOfCredits;
+                    }
+                    // Model might be invalid - try next one
+                    if text.contains("model")
+                        || text.contains("not found")
+                        || text.contains("invalid")
+                    {
+                        continue;
+                    }
+                    return ClaudeCheckResult::Error(format!("HTTP {}: {}", status, text));
+                }
+            }
+            Err(e) => return ClaudeCheckResult::Error(format!("Request failed: {}", e)),
+        }
+    }
+
+    ClaudeCheckResult::Error("All model fallbacks failed".to_string())
 }
 
 fn check_gemini(client: &Client, key: &str) -> Result<String> {
