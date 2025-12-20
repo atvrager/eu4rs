@@ -1,7 +1,7 @@
 use crate::fixed::Fixed;
 use crate::input::{Command, DevType, PlayerInputs};
 use crate::metrics::SimMetrics;
-use crate::state::{MovementState, PeaceTerms, PendingPeace, WorldState};
+use crate::state::{MovementState, PeaceTerms, PendingPeace, ProvinceId, WorldState};
 use std::time::Instant;
 use thiserror::Error;
 
@@ -242,6 +242,29 @@ fn auto_end_stale_wars(state: &mut WorldState) {
     }
 }
 
+/// Determines if an army can enter a province. 🛡️
+/// The sword may only pass where diplomacy permits or war demands.
+fn can_army_enter(state: &WorldState, country_tag: &str, province_id: ProvinceId) -> bool {
+    let Some(province) = state.provinces.get(&province_id) else {
+        return false; // Province doesn't exist - deny entry
+    };
+
+    // Armies cannot walk on water
+    if province.is_sea {
+        return false;
+    }
+
+    match &province.owner {
+        None => true,                                // Uncolonized wilderness - anyone may pass
+        Some(owner) if owner == country_tag => true, // Home territory
+        Some(owner) => {
+            // Foreign soil - need diplomatic passage or be at war
+            state.diplomacy.has_military_access(country_tag, owner)
+                || state.diplomacy.are_at_war(country_tag, owner)
+        }
+    }
+}
+
 /// Returns all valid commands for a country at the current state.
 /// This is the wellspring of action, where possibility becomes choice. ✧
 pub fn available_commands(
@@ -279,9 +302,30 @@ pub fn available_commands(
                     dev_type: DevType::Manpower,
                 });
             }
-        } else if prov.owner.is_none() && !prov.is_sea && !state.colonies.contains_key(prov_id) {
-            // StartColony - Reaching into the unknown to plant the seeds of tomorrow.
-            available.push(Command::StartColony { province: *prov_id });
+        }
+    }
+
+    // StartColony - Reaching into the unknown, but only where our borders touch the void. ✧
+    // Must be adjacent to an owned province to colonize.
+    if let Some(graph) = adjacency {
+        let mut colonizable: std::collections::HashSet<ProvinceId> =
+            std::collections::HashSet::new();
+        for (prov_id, prov) in &state.provinces {
+            if prov.owner.as_deref() == Some(country_tag) {
+                for neighbor_id in graph.neighbors(*prov_id) {
+                    if let Some(neighbor) = state.provinces.get(&neighbor_id) {
+                        if neighbor.owner.is_none()
+                            && !neighbor.is_sea
+                            && !state.colonies.contains_key(&neighbor_id)
+                        {
+                            colonizable.insert(neighbor_id);
+                        }
+                    }
+                }
+            }
+        }
+        for prov_id in colonizable {
+            available.push(Command::StartColony { province: prov_id });
         }
     }
 
@@ -291,13 +335,11 @@ pub fn available_commands(
         for (army_id, army) in &state.armies {
             if army.owner == country_tag && army.movement.is_none() && army.embarked_on.is_none() {
                 for neighbor in graph.neighbors(army.location) {
-                    if let Some(p) = state.provinces.get(&neighbor) {
-                        if !p.is_sea {
-                            available.push(Command::Move {
-                                army_id: *army_id,
-                                destination: neighbor,
-                            });
-                        }
+                    if can_army_enter(state, country_tag, neighbor) {
+                        available.push(Command::Move {
+                            army_id: *army_id,
+                            destination: neighbor,
+                        });
                     }
                 }
             }

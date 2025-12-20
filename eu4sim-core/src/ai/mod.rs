@@ -137,6 +137,7 @@ impl AiPlayer for RandomAi {
                 Command::StartColony { .. } => 50,
                 Command::Move { .. } => 1,
                 Command::MoveFleet { .. } => 1,
+                Command::RejectPeace { .. } => 1, // Pride is rarely worth the bloodshed
                 _ => 10,
             })
             .collect();
