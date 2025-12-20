@@ -114,7 +114,13 @@ fn main() -> Result<()> {
         state
             .countries
             .keys()
-            .map(|tag| (tag.clone(), eu4sim_core::ai::RandomAi::new(12345)))
+            .map(|tag| {
+                // Hash tag into seed for diversity
+                let base_seed = 12345u64;
+                let tag_hash: u64 = tag.as_bytes().iter().map(|&b| b as u64).sum();
+                let seed = base_seed.wrapping_add(tag_hash);
+                (tag.clone(), eu4sim_core::ai::RandomAi::new(seed))
+            })
             .collect()
     } else {
         std::collections::HashMap::new()
