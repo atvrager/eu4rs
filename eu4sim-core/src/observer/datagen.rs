@@ -147,6 +147,15 @@ impl DataGenObserver {
 
         let mut samples = Vec::with_capacity(countries_to_track.len());
 
+        // Pre-compute country strength once (O(armies), shared across all observers)
+        let known_country_strength: std::collections::HashMap<String, u32> = world
+            .armies
+            .values()
+            .fold(std::collections::HashMap::new(), |mut acc, army| {
+                *acc.entry(army.owner.clone()).or_default() += army.regiments.len() as u32;
+                acc
+            });
+
         for tag in countries_to_track {
             let Some(country) = world.countries.get(tag) else {
                 continue;
@@ -157,6 +166,41 @@ impl DataGenObserver {
                 war.attackers.iter().any(|t| t == tag) || war.defenders.iter().any(|t| t == tag)
             });
 
+            // Calculate war scores for this observer
+            let mut our_war_score = std::collections::HashMap::new();
+            let mut enemy_provinces = std::collections::HashSet::new();
+            for war in world.diplomacy.wars.values() {
+                let is_attacker = war.attackers.iter().any(|t| t == tag);
+                let is_defender = war.defenders.iter().any(|t| t == tag);
+
+                if is_attacker || is_defender {
+                    // Calculate relative war score (positive = winning, negative = losing)
+                    let score = if is_attacker {
+                        crate::fixed::Fixed::from_int(war.attacker_score as i64)
+                            - crate::fixed::Fixed::from_int(war.defender_score as i64)
+                    } else {
+                        crate::fixed::Fixed::from_int(war.defender_score as i64)
+                            - crate::fixed::Fixed::from_int(war.attacker_score as i64)
+                    };
+                    our_war_score.insert(war.id, score);
+
+                    // Collect enemy provinces
+                    let enemy_tags: Vec<&String> = if is_attacker {
+                        war.defenders.iter().collect()
+                    } else {
+                        war.attackers.iter().collect()
+                    };
+
+                    for (prov_id, prov) in &world.provinces {
+                        if let Some(owner) = &prov.owner {
+                            if enemy_tags.contains(&owner) {
+                                enemy_provinces.insert(*prov_id);
+                            }
+                        }
+                    }
+                }
+            }
+
             // Build visible state
             let visible_state = VisibleWorldState {
                 date: world.date,
@@ -164,6 +208,9 @@ impl DataGenObserver {
                 own_country: country.clone(),
                 at_war,
                 known_countries: vec![], // Could populate with neighbors/contacts
+                enemy_provinces,
+                known_country_strength: known_country_strength.clone(),
+                our_war_score,
             };
 
             // Calculate available commands

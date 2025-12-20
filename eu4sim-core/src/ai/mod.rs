@@ -37,11 +37,13 @@
 //!
 //! See `docs/design/simulation/learned-ai.md` for the full ML architecture.
 
+use crate::fixed::Fixed;
 use crate::input::Command;
-use crate::state::{CountryState, Date, Tag};
+use crate::state::{CountryState, Date, ProvinceId, Tag, WarId};
 use rand::Rng;
 use rand::SeedableRng;
 use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 
 /// Visibility mode for AI and UI filtering
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,6 +65,15 @@ pub struct VisibleWorldState {
     pub own_country: CountryState,
     pub at_war: bool,
     pub known_countries: Vec<Tag>,
+    /// Provinces owned by enemies in active wars
+    pub enemy_provinces: HashSet<ProvinceId>,
+    /// Military strength (total regiments) of countries.
+    /// Note: Currently populated with ALL countries (Omniscient mode).
+    /// Will be filtered to actually-visible countries when Realistic mode is implemented.
+    pub known_country_strength: HashMap<Tag, u32>,
+    /// War score for each war the observer is participating in
+    /// Positive = observer is winning, negative = observer is losing
+    pub our_war_score: HashMap<WarId, Fixed>,
 }
 
 /// Available commands for a country
@@ -158,6 +169,9 @@ impl AiPlayer for RandomAi {
     }
 }
 
+mod greedy;
+pub use greedy::GreedyAI;
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
@@ -171,6 +185,9 @@ pub mod tests {
             own_country: CountryState::default(), // Assuming default or minimal construction
             at_war: false,
             known_countries: vec![],
+            enemy_provinces: HashSet::new(),
+            known_country_strength: HashMap::new(),
+            our_war_score: HashMap::new(),
         }
     }
 

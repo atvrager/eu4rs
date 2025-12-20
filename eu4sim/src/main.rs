@@ -260,6 +260,9 @@ fn main() -> Result<()> {
                         own_country: state.countries.get(tag).cloned().unwrap_or_default(),
                         at_war,
                         known_countries: vec![], // Unused for RandomAi, skip allocation
+                        enemy_provinces: std::collections::HashSet::new(),
+                        known_country_strength: std::collections::HashMap::new(),
+                        our_war_score: std::collections::HashMap::new(),
                     };
 
                     // Allocate available commands buffer per-AI
