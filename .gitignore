@@ -10,6 +10,9 @@ stats.html
 # Temporary commit message file (used by agents)
 commit_msg.txt
 
+# Claude Code local settings (machine-specific)
+.claude/settings.local.json
+
 # Auto-generated types
 eu4data/src/generated/types/*
 !eu4data/src/generated/types/mod.rs
