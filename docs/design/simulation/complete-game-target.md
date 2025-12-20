@@ -658,7 +658,7 @@ impl BoundedValue<i32> {
 | **Institution Spread** | "Spread by dev" | Origin points? Monthly spread chance? Embrace cost formula? |
 | **Tech Effects** | "Mana exists, tech can be bought" | What does tech DO in minimal? Unit strength? Colonial range? Nothing? |
 | **Province Cost Formula** | "Scaled by dev" | Exact formula: `dev * X`? Diminishing returns? Capital bonus? |
-| **Truce Duration** | "X years after peace" | 5 years? 15 years? Scale by war severity? |
+| ~~**Truce Duration**~~ | ~~"X years after peace"~~ | ~~Resolved: 5 years flat. See [`truce-system.md`](./truce-system.md)~~ |
 
 ### Architectural Sketches Needed
 
@@ -722,7 +722,7 @@ Implementation order based on dependencies. Each phase unblocks the next.
 | Stability system | Bounded range | -3 to +3, triggers from diplomacy betrayal |
 | Stability triggers | Stability | Define: RM break at war, access violation, etc. |
 | Alliance call-to-arms | Diplomacy exists | Auto-join or queued request on defensive war |
-| Truce system | Peace system | X years truce after peace, blocks re-declaration |
+| Truce system | Peace system | 5 years flat, blocks re-declaration. **Design complete**: [`truce-system.md`](./truce-system.md) |
 
 **Milestone**: After Phase 2, diplomacy has consequences and alliances matter.
 
