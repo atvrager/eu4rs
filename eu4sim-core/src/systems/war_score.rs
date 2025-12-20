@@ -213,4 +213,198 @@ mod tests {
         assert!(war.attacker_score > 0);
         assert_eq!(war.defender_score, 0);
     }
+
+    // Property tests for war score invariants
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn prop_scores_always_bounded(
+                attacker_battles in 0u8..20,
+                defender_battles in 0u8..20,
+                attacker_occ_dev in 0u32..1000,
+                defender_occ_dev in 0u32..1000,
+                total_dev in 1u32..1000,
+            ) {
+                let mut state = WorldStateBuilder::new()
+                    .with_country("ATK")
+                    .with_country("DEF")
+                    .build();
+
+                // Create provinces with controlled total dev
+                for i in 0..total_dev {
+                    state.provinces.insert(i, crate::state::ProvinceState {
+                        owner: Some("DEF".into()),
+                        controller: if i < attacker_occ_dev {
+                            Some("ATK".into())
+                        } else {
+                            Some("DEF".into())
+                        },
+                        base_tax: Fixed::from_int(1),
+                        base_production: Fixed::ZERO,
+                        base_manpower: Fixed::ZERO,
+                        ..Default::default()
+                    });
+                }
+
+                let mut war = War {
+                    id: 0,
+                    name: "Test".into(),
+                    attackers: vec!["ATK".into()],
+                    defenders: vec!["DEF".into()],
+                    start_date: Date::new(1444, 11, 11),
+                    attacker_score: 0,
+                    attacker_battle_score: 0,
+                    defender_score: 0,
+                    defender_battle_score: 0,
+                    pending_peace: None,
+                };
+
+                // Award battle scores
+                for _ in 0..attacker_battles {
+                    award_battle_score(&mut war, true);
+                }
+                for _ in 0..defender_battles {
+                    award_battle_score(&mut war, false);
+                }
+
+                state.diplomacy.wars.insert(0, war);
+                recalculate_war_scores(&mut state);
+
+                let war = state.diplomacy.wars.get(&0).unwrap();
+                prop_assert!(war.attacker_score <= 100, "Attacker score {} exceeds 100", war.attacker_score);
+                prop_assert!(war.defender_score <= 100, "Defender score {} exceeds 100", war.defender_score);
+            }
+
+            #[test]
+            fn prop_full_occupation_gives_max_score(dev_per_province in 1u32..10) {
+                let mut state = WorldStateBuilder::new()
+                    .with_country("ATK")
+                    .with_country("DEF")
+                    .build();
+
+                // Create 5 defender provinces, all occupied by attacker
+                for i in 0..5 {
+                    state.provinces.insert(i, crate::state::ProvinceState {
+                        owner: Some("DEF".into()),
+                        controller: Some("ATK".into()),
+                        base_tax: Fixed::from_int(dev_per_province as i64),
+                        base_production: Fixed::ZERO,
+                        base_manpower: Fixed::ZERO,
+                        ..Default::default()
+                    });
+                }
+
+                let war = War {
+                    id: 0,
+                    name: "Test".into(),
+                    attackers: vec!["ATK".into()],
+                    defenders: vec!["DEF".into()],
+                    start_date: Date::new(1444, 11, 11),
+                    attacker_score: 0,
+                    attacker_battle_score: 0,
+                    defender_score: 0,
+                    defender_battle_score: 0,
+                    pending_peace: None,
+                };
+
+                state.diplomacy.wars.insert(0, war);
+                recalculate_war_scores(&mut state);
+
+                let war = state.diplomacy.wars.get(&0).unwrap();
+                // Full occupation should give MAX_OCCUPATION_SCORE (60)
+                prop_assert_eq!(war.attacker_score, MAX_OCCUPATION_SCORE);
+            }
+
+            #[test]
+            fn prop_score_monotonic_with_occupation(
+                total_provinces in 2u32..10,
+                occupied_count_a in 0u32..10,
+                occupied_count_b in 0u32..10,
+            ) {
+                let total_provinces = total_provinces.max(2);
+                let occupied_a = occupied_count_a.min(total_provinces);
+                let occupied_b = occupied_count_b.min(total_provinces);
+
+                if occupied_a == occupied_b {
+                    return Ok(()); // Skip equal cases
+                }
+
+                let (less_occupied, more_occupied) = if occupied_a < occupied_b {
+                    (occupied_a, occupied_b)
+                } else {
+                    (occupied_b, occupied_a)
+                };
+
+                // Test with less occupation
+                let mut state_less = WorldStateBuilder::new()
+                    .with_country("ATK")
+                    .with_country("DEF")
+                    .build();
+
+                for i in 0..total_provinces {
+                    state_less.provinces.insert(i, crate::state::ProvinceState {
+                        owner: Some("DEF".into()),
+                        controller: if i < less_occupied {
+                            Some("ATK".into())
+                        } else {
+                            Some("DEF".into())
+                        },
+                        base_tax: Fixed::from_int(1),
+                        base_production: Fixed::ZERO,
+                        base_manpower: Fixed::ZERO,
+                        ..Default::default()
+                    });
+                }
+
+                let war = War {
+                    id: 0,
+                    name: "Test".into(),
+                    attackers: vec!["ATK".into()],
+                    defenders: vec!["DEF".into()],
+                    start_date: Date::new(1444, 11, 11),
+                    attacker_score: 0,
+                    attacker_battle_score: 0,
+                    defender_score: 0,
+                    defender_battle_score: 0,
+                    pending_peace: None,
+                };
+                state_less.diplomacy.wars.insert(0, war.clone());
+                recalculate_war_scores(&mut state_less);
+                let score_less = state_less.diplomacy.wars.get(&0).unwrap().attacker_score;
+
+                // Test with more occupation
+                let mut state_more = WorldStateBuilder::new()
+                    .with_country("ATK")
+                    .with_country("DEF")
+                    .build();
+
+                for i in 0..total_provinces {
+                    state_more.provinces.insert(i, crate::state::ProvinceState {
+                        owner: Some("DEF".into()),
+                        controller: if i < more_occupied {
+                            Some("ATK".into())
+                        } else {
+                            Some("DEF".into())
+                        },
+                        base_tax: Fixed::from_int(1),
+                        base_production: Fixed::ZERO,
+                        base_manpower: Fixed::ZERO,
+                        ..Default::default()
+                    });
+                }
+
+                state_more.diplomacy.wars.insert(0, war);
+                recalculate_war_scores(&mut state_more);
+                let score_more = state_more.diplomacy.wars.get(&0).unwrap().attacker_score;
+
+                // More occupation should give higher or equal score
+                prop_assert!(score_more >= score_less,
+                    "More occupation ({}) gave score {} but less occupation ({}) gave {}",
+                    more_occupied, score_more, less_occupied, score_less);
+            }
+        }
+    }
 }
