@@ -3,13 +3,14 @@
 //! Detects notable events by comparing state between ticks and outputs
 //! structured JSON lines to any `Write` destination (stdout, file, pipe).
 //!
-//! # Current Events (War Only)
+//! # Current Events
 //!
 //! - `war_declared` - New war started
 //! - `peace_white` - War ended with white peace
 //! - `peace_provinces` - War ended with province transfer
 //! - `peace_annexation` - War ended with full annexation
 //! - `country_eliminated` - Country removed from the game
+//! - `province_owner_changed` - Province ownership changed (for timeline reconstruction)
 //!
 //! # Future Extensions
 //!
@@ -25,7 +26,7 @@
 
 use super::{ObserverConfig, ObserverError, SimObserver, Snapshot};
 use crate::state::{ProvinceId, Tag, War, WarId};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -37,7 +38,7 @@ use std::sync::Mutex;
 /// ```json
 /// {"type":"war_declared","tick":365,"date":"1445.11.11",...}
 /// ```
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum GameEvent {
     /// A new war has been declared.
@@ -99,6 +100,19 @@ pub enum GameEvent {
         /// Who eliminated them (if known from recent war)
         #[serde(skip_serializing_if = "Option::is_none")]
         eliminator: Option<Tag>,
+    },
+
+    /// Province ownership changed (for timeline reconstruction).
+    ProvinceOwnerChanged {
+        tick: u64,
+        date: String,
+        province_id: ProvinceId,
+        /// Previous owner (None if uncolonized)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        old_owner: Option<Tag>,
+        /// New owner (None if province became uncolonized)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        new_owner: Option<Tag>,
     },
 }
 
@@ -264,6 +278,21 @@ impl EventLogObserver {
                     tag: tag.clone(),
                     eliminator,
                 });
+            }
+        }
+
+        // 4. Detect province ownership changes
+        for (prov_id, current_prov) in world.provinces.iter() {
+            if let Some(prev_owner) = prev.prev_province_owners.get(prov_id) {
+                if prev_owner != &current_prov.owner {
+                    events.push(GameEvent::ProvinceOwnerChanged {
+                        tick: snapshot.tick,
+                        date: world.date.to_string(),
+                        province_id: *prov_id,
+                        old_owner: prev_owner.clone(),
+                        new_owner: current_prov.owner.clone(),
+                    });
+                }
             }
         }
 

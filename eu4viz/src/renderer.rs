@@ -114,6 +114,11 @@ pub struct Eu4Renderer {
 impl Eu4Renderer {
     /// Switches the active map texture without re-uploading to GPU.
     pub fn set_map_mode(&mut self, device: &wgpu::Device, mode: MapMode) {
+        log::debug!(
+            "set_map_mode called: {:?}, available: {:?}",
+            mode,
+            self.map_textures.keys().collect::<Vec<_>>()
+        );
         if let Some(texture) = self.map_textures.get(&mode) {
             let camera_bind_group_layout = self.render_pipeline.get_bind_group_layout(0);
 
@@ -135,8 +140,9 @@ impl Eu4Renderer {
                 ],
                 label: Some("diffuse_bind_group_updated"),
             });
+            log::debug!("set_map_mode complete: {:?}", mode);
         } else {
-            eprintln!("Map mode texture not found in cache: {:?}", mode);
+            log::error!("Map mode texture not found in cache: {:?}", mode);
         }
     }
 
@@ -201,6 +207,24 @@ impl Eu4Renderer {
         }
         // Force refresh of bind group for default mode (Province)
         self.set_map_mode(device, MapMode::Province);
+    }
+
+    /// Updates a single map texture without clearing other cached maps.
+    ///
+    /// Use this when regenerating one map (e.g., Political during timeline seeking)
+    /// to avoid destroying other map textures.
+    pub fn update_single_map(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        mode: MapMode,
+        img: image::DynamicImage,
+    ) {
+        if let Ok(texture) =
+            Texture::from_image(device, queue, &img, Some(&format!("{:?} Texture", mode)))
+        {
+            self.map_textures.insert(mode, texture);
+        }
     }
 
     /// Creates a new renderer.

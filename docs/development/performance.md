@@ -99,3 +99,85 @@ For critical algorithms like pathfinding or CAS calculations, use `criterion` to
 ### 3. CPU Cache Optimization
 - **Data Locality**: Monitor `Occupation` and `Combat` costs. If they grow, consider moving to a more ECS-like (entity-component-system) layout for `WorldState` to improve cache hit rates.
 - **Parallelism**: Most systems are currently sequential. While determinism is easier to maintain sequentially, monthly economy ticks across 600+ countries are a prime candidate for `rayon` if total speed becomes a bottleneck.
+
+---
+
+## Visualization Performance (eu4viz)
+
+### Map Regeneration Bottleneck
+
+The political map must be regenerated whenever the timeline tick changes (scrubbing, playback). This operation processes ~11.5M pixels (5632×2048) and was a major performance bottleneck.
+
+**Timeline Scrub Benchmarks (Dec 20, 2025)**:
+
+| Optimization | CPU Time | Status |
+|--------------|----------|--------|
+| Sequential (baseline) | 5.87s | ❌ Unusable |
+| Rayon row parallelization | 605ms | ⚠️ Sluggish |
+| + Pre-computed province ID buffer | 367ms | ✅ Acceptable |
+
+**Target**: <100ms for responsive scrubbing, <16ms for 60 FPS playback.
+
+### Current Optimizations
+
+1. **Rayon Parallelization**: `regenerate_political_map` uses `par_chunks_mut` to process rows in parallel across all CPU cores. ~10x speedup.
+
+2. **Pre-computed Province ID Buffer**: A `Vec<Option<u32>>` mapping each pixel to its province ID is computed once at load time. Eliminates per-pixel HashMap lookup during regeneration.
+
+3. **FPS Counter**: Window title displays real-time FPS for profiling.
+
+4. **Timing Instrumentation**: Debug logs show CPU vs GPU upload breakdown.
+
+### Future Optimization Opportunities
+
+The following optimizations are documented for future implementation if current performance is insufficient:
+
+#### 1. Pre-computed Country Color Buffer (CPU)
+Instead of chaining owner→country→color HashMap lookups per pixel, maintain a `Vec<[u8; 3]>` where index = province_id → RGB color. Update only when ownership changes.
+
+**Estimated improvement**: 2-5x (eliminates 3 HashMap lookups per province).
+
+#### 2. GPU Compute Shader (Major Refactor)
+Move map generation to the GPU entirely using wgpu compute shaders:
+
+```wgsl
+// Pseudo-code structure
+@group(0) @binding(0) var<storage, read> province_ids: array<u32>;
+@group(0) @binding(1) var<storage, read> province_colors: array<vec3<f32>>;
+@group(0) @binding(2) var<storage, read_write> output_pixels: array<vec3<f32>>;
+
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+    let pixel_idx = id.x;
+    let prov_id = province_ids[pixel_idx];
+    output_pixels[pixel_idx] = province_colors[prov_id];
+}
+```
+
+**Requirements**:
+- Upload province ID buffer to GPU once at load
+- Upload province→color mapping when tick changes
+- Single dispatch: 11.5M pixels / 256 workgroup = 44,921 workgroups
+
+**Estimated improvement**: 50-100x (GPU parallelism + memory bandwidth).
+
+#### 3. Delta Updates
+For playback mode, only update provinces that changed ownership between ticks rather than regenerating the entire map. Requires tracking ownership deltas from the event log.
+
+**Estimated improvement**: 10-100x for typical ticks (few provinces change).
+
+#### 4. Lower Resolution Preview
+During active scrubbing, render at 1/4 resolution (1408×512) and upscale. Switch to full resolution when scrubbing stops.
+
+**Estimated improvement**: 16x during interaction.
+
+### Profiling Commands
+
+```powershell
+# Run with verbose logging to see timing breakdown
+cargo run -p eu4viz -- -v --event-log events.jsonl
+
+# Watch for these log lines:
+# [DEBUG] Map regen: CPU 85ms, Upload 12ms, Total 97ms
+# [DEBUG] regenerate_political_map took 85.3ms
+```

@@ -25,6 +25,14 @@ pub struct UIState {
     /// Flag indicating if the UI state has changed and the texture needs regeneration.
     /// This optimization prevents unnecessary CPU drawing and GPU uploads.
     pub dirty: bool,
+    /// Current tick in the timeline (if replay mode).
+    pub timeline_tick: Option<u64>,
+    /// Bounds (min_tick, max_tick) of the timeline.
+    pub timeline_bounds: Option<(u64, u64)>,
+    /// Readable date at the current timeline tick.
+    pub timeline_date: Option<String>,
+    /// Whether the user is currently dragging the timeline slider.
+    pub is_dragging_slider: bool,
 }
 
 impl UIState {
@@ -40,6 +48,10 @@ impl UIState {
             cursor_pos: None,
             map_mode: MapMode::Province,
             dirty: true, // Initial dirty to draw first frame
+            timeline_tick: None,
+            timeline_bounds: None,
+            timeline_date: None,
+            is_dragging_slider: false,
         }
     }
 
@@ -222,7 +234,83 @@ impl UIState {
             }
         }
 
-        // 4. Draw Console if Open
+        // 5. Draw Time Slider if in Replay Mode
+        if let (Some(tick), Some((min, max))) = (self.timeline_tick, self.timeline_bounds) {
+            let slider_h = 40;
+            let slider_w = width.saturating_sub(600); // Center it, 300px margin
+            let slider_x = 300;
+            let slider_y = height.saturating_sub(slider_h + 20);
+
+            // Background Track
+            for y in slider_y..(slider_y + slider_h) {
+                for x in slider_x..(slider_x + slider_w) {
+                    if x < width && y < height {
+                        image.put_pixel(x, y, Rgba([30, 30, 30, 180]));
+                    }
+                }
+            }
+
+            // Fill Bar
+            let progress = if max > min {
+                (tick - min) as f64 / (max - min) as f64
+            } else {
+                0.0
+            };
+            let fill_w = (progress * slider_w as f64) as u32;
+            for y in (slider_y + 15)..(slider_y + 25) {
+                for x in slider_x..(slider_x + fill_w) {
+                    if x < width && y < height {
+                        image.put_pixel(x, y, Rgba([200, 160, 40, 255]));
+                    }
+                }
+            }
+
+            // Thumb (Circle-ish)
+            let thumb_x = slider_x + fill_w;
+            let thumb_r: i32 = 10;
+            for dy in -thumb_r..=thumb_r {
+                for dx in -thumb_r..=thumb_r {
+                    if dx * dx + dy * dy <= thumb_r * thumb_r {
+                        let tx = (thumb_x as i32 + dx) as u32;
+                        let ty = (slider_y as i32 + 20 + dy) as u32;
+                        if tx < width && ty < height {
+                            image.put_pixel(tx, ty, Rgba([255, 255, 255, 255]));
+                        }
+                    }
+                }
+            }
+
+            // Date Label (with background for visibility)
+            if let Some(date_str) = &self.timeline_date {
+                let box_w = 150;
+                let box_h = 30;
+                let box_x = slider_x + (slider_w / 2) - (box_w / 2);
+                let box_y = slider_y.saturating_sub(box_h + 5);
+
+                // Background
+                for y in box_y..(box_y + box_h) {
+                    for x in box_x..(box_x + box_w) {
+                        if x < width && y < height {
+                            image.put_pixel(x, y, Rgba([20, 20, 20, 200]));
+                        }
+                    }
+                }
+
+                // Text (centered in box)
+                let text_img = text_renderer.render(date_str, box_w, box_h);
+                for (tx, ty, px) in text_img.enumerate_pixels() {
+                    if px[3] > 0 {
+                        let target_x = box_x + tx;
+                        let target_y = box_y + ty;
+                        if target_x < width && target_y < height {
+                            image.put_pixel(target_x, target_y, *px);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 6. Draw Console if Open
         if self.console_open {
             let logs = console_log.get_lines();
             let console_img = draw_console_overlay(&logs, text_renderer, width, height / 2); // Half height console?

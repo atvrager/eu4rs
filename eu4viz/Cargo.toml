@@ -9,6 +9,7 @@ bytemuck = { version = "1.24.0", features = ["derive"] }
 clap = { version = "4.5.53", features = ["derive"] }
 env_logger = "0.11.8"
 eu4data = { version = "0.1.0", path = "../eu4data" }
+eu4sim-core = { version = "0.1.0", path = "../eu4sim-core" }
 eu4txt = { path = "../eu4txt" }
 image = "0.25.9"
 log = "0.4.29"
@@ -17,6 +18,9 @@ rayon = "1.11.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 wgpu = "0.20.0"
+egui = "0.29"
+egui-wgpu = "0.29"
+egui-winit = "0.29"
 winit = "0.29.15"
 
 [dev-dependencies]

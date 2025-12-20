@@ -49,6 +49,13 @@ impl log::Log for MultiLogger {
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
             let msg = format!("{}", record.args());
+
+            // Suppress benign warning from wgpu/driver about unsupported present modes
+            // This happens when the driver exposes a mode (e.g. 1000361000) that wgpu doesn't map.
+            if record.target().starts_with("wgpu") && msg.contains("Unrecognized present mode") {
+                return;
+            }
+
             self.console.push(record.level(), msg.clone());
             println!("[{}] {}", record.level(), msg);
         }

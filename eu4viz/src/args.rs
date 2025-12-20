@@ -20,6 +20,10 @@ pub struct Cli {
     #[arg(long, default_value = "info")]
     pub log_level: String,
 
+    /// Path to simulation event log (JSONL) for replay
+    #[arg(long)]
+    pub event_log: Option<PathBuf>,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 }

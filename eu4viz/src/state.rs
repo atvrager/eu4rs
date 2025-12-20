@@ -1,5 +1,6 @@
 use crate::args::MapMode;
 use crate::camera::Camera;
+use crate::timeline::Timeline;
 use eu4data::Tradegoods;
 use eu4data::countries::Country;
 use eu4data::cultures::Culture;
@@ -23,6 +24,10 @@ pub struct WorldData {
     pub religion_map: RgbImage,
     /// Culture map colors.
     pub culture_map: RgbImage,
+    /// Pre-computed province ID for each pixel (width * height).
+    /// Eliminates HashMap lookups during map regeneration.
+    /// Uses u32::MAX as None sentinel to save memory.
+    pub province_id_buffer: Vec<u32>,
     /// Mapping from unique RGB colors in province_map to Province IDs.
     pub color_to_id: HashMap<(u8, u8, u8), u32>,
     /// History data keyed by Province ID.
@@ -120,10 +125,16 @@ pub struct AppState {
     pub last_cursor_pos: Option<(f64, f64)>,
     /// The currently active map mode.
     pub current_map_mode: MapMode,
+    /// The simulation timeline (if provided).
+    pub timeline: Option<Timeline>,
+    /// Whether the timeline is currently playing.
+    pub is_playing: bool,
+    /// Playback speed in ticks per frame.
+    pub playback_speed: u64,
 }
 
 impl AppState {
-    pub fn new(world_data: WorldData, width: u32, height: u32) -> Self {
+    pub fn new(world_data: WorldData, width: u32, height: u32, timeline: Option<Timeline>) -> Self {
         let (tex_w, tex_h) = world_data.province_map.dimensions();
         let content_aspect = if tex_h > 0 {
             tex_w as f64 / tex_h as f64
@@ -138,7 +149,41 @@ impl AppState {
             is_panning: false,
             last_cursor_pos: None,
             current_map_mode: MapMode::Province,
+            timeline,
+            is_playing: false,
+            playback_speed: 1,
         }
+    }
+
+    /// Seeks to a specific tick in the timeline.
+    ///
+    /// Returns true if the map needs to be regenerated (i.e. if in political mode).
+    pub fn seek_to(&mut self, tick: u64) -> bool {
+        if let Some(timeline) = &mut self.timeline {
+            let (min, max) = timeline.bounds();
+            let target = tick.clamp(min, max);
+            timeline.seek_to(target);
+            return self.current_map_mode == MapMode::Political;
+        }
+        false
+    }
+
+    /// Seeks relative to the current tick.
+    pub fn seek_relative(&mut self, delta: i64) -> bool {
+        if let Some(timeline) = &self.timeline {
+            let current = timeline.current_tick();
+            let target = if delta >= 0 {
+                current.saturating_add(delta as u64)
+            } else {
+                current.saturating_sub(delta.unsigned_abs())
+            };
+            return self.seek_to(target);
+        }
+        false
+    }
+
+    pub fn toggle_playback(&mut self) {
+        self.is_playing = !self.is_playing;
     }
 
     /// Calculates the tooltip text for the province under the cursor.

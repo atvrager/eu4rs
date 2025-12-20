@@ -70,12 +70,10 @@ impl<'de> de::Deserializer<'de> for &mut Deserializer<'de> {
                 self.deserialize_seq(visitor)
             }
             EU4TxtAstItem::Assignment => {
-                // Assignment is strictly Key = Value.
-                // Usually handled by MapAccess, but if we are here, maybe we want the Val?
-                // Or maybe a tuple?
-                Err(Error(
-                    "Unexpected Assignment in deserialize_any".to_string(),
-                ))
+                // Assignment is Key = Value. When we hit this in deserialize_any
+                // (e.g., for IgnoredAny on date-keyed entries), treat it as a map.
+                // This allows TolerantDeserialize to skip date-keyed entries gracefully.
+                self.deserialize_map(visitor)
             }
             _ => Err(Error(format!(
                 "Unimplemented deserialize_any for {:?}",
@@ -128,6 +126,15 @@ impl<'de> de::Deserializer<'de> for &mut Deserializer<'de> {
     {
         match &self.input.entry {
             EU4TxtAstItem::Identifier(s) | EU4TxtAstItem::StringValue(s) => visitor.visit_str(s),
+            EU4TxtAstItem::IntValue(i) => visitor.visit_string(i.to_string()),
+            EU4TxtAstItem::FloatValue(f) => {
+                // Handle NaN explicitly if needed, but f.to_string() does "NaN"
+                if f.is_nan() {
+                    visitor.visit_str("nan")
+                } else {
+                    visitor.visit_string(f.to_string())
+                }
+            }
             _ => Err(Error(format!(
                 "Expected string, got {:?}",
                 self.input.entry
@@ -231,40 +238,36 @@ impl<'de> MapAccess<'de> for CommaSeparated<'_, 'de> {
         K: DeserializeSeed<'de>,
     {
         // In a Map, we expect children to be Assignments: Key = Val.
-        // We peek at the next item.
-        // We can't easily peek standard iter, but we can clone it? No.
-        // We just get the next item.
-        if let Some(node) = self.iter.next() {
-            match &node.entry {
-                EU4TxtAstItem::Assignment => {
-                    // LHS is key. RHS is value.
-                    // We store RHS in self.value for next_value call.
-                    let key_node = node
-                        .children
-                        .first()
-                        .ok_or(Error("Missing Key".to_string()))?;
-                    let val_node = node
-                        .children
-                        .get(1)
-                        .ok_or(Error("Missing Val".to_string()))?;
-                    self.value = Some(val_node);
+        // But EU4 files sometimes have mixed content (e.g., province files have
+        // both assignments and nested date blocks). Skip non-Assignments.
+        loop {
+            match self.iter.next() {
+                Some(node) => {
+                    match &node.entry {
+                        EU4TxtAstItem::Assignment => {
+                            // LHS is key. RHS is value.
+                            // We store RHS in self.value for next_value call.
+                            let key_node = node
+                                .children
+                                .first()
+                                .ok_or(Error("Missing Key".to_string()))?;
+                            let val_node = node
+                                .children
+                                .get(1)
+                                .ok_or(Error("Missing Val".to_string()))?;
+                            self.value = Some(val_node);
 
-                    let mut de = Deserializer::from_node(key_node);
-                    seed.deserialize(&mut de).map(Some)
+                            let mut de = Deserializer::from_node(key_node);
+                            return seed.deserialize(&mut de).map(Some);
+                        }
+                        _ => {
+                            // Not an assignment (loose value, comment, etc). Skip it.
+                            continue;
+                        }
+                    }
                 }
-                _ => {
-                    // It's not an assignment. It might be a loose value in a map?
-                    // EU4 sometimes has "mixed" bags.
-                    // For now, fail or skip?
-                    // Fail.
-                    Err(Error(format!(
-                        "Expected Assignment in Map, got {:?}",
-                        node.entry
-                    )))
-                }
+                None => return Ok(None),
             }
-        } else {
-            Ok(None)
         }
     }
 

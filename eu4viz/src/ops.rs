@@ -382,6 +382,16 @@ pub fn load_world_data(base_path: &Path) -> Result<window::WorldData, String> {
         },
     );
 
+    // 7. Pre-compute province ID buffer (eliminates HashMap lookups during map regen)
+    log::info!("Pre-computing province ID buffer...");
+    let province_id_buffer: Vec<u32> = province_map
+        .pixels()
+        .map(|pixel| {
+            let rgb = (pixel[0], pixel[1], pixel[2]);
+            color_to_id.get(&rgb).copied().unwrap_or(u32::MAX)
+        })
+        .collect();
+
     log::info!("Total load time: {:?}", start_time.elapsed());
 
     Ok(window::WorldData {
@@ -390,6 +400,7 @@ pub fn load_world_data(base_path: &Path) -> Result<window::WorldData, String> {
         tradegoods_map,
         religion_map,
         culture_map,
+        province_id_buffer,
         province_history,
         countries,
         religions,
@@ -430,6 +441,74 @@ fn draw_map_political(
         map.put_pixel(x, y, color);
     }
     map
+}
+
+pub fn regenerate_political_map(
+    world_data: &window::WorldData,
+    timeline: &crate::timeline::Timeline,
+) -> RgbImage {
+    use rayon::prelude::*;
+
+    let start = std::time::Instant::now();
+    let width = world_data.province_map.width() as usize;
+    let height = world_data.province_map.height() as usize;
+    let current_owners = timeline.current_owners();
+
+    // Pre-allocate output buffer (3 bytes per pixel: RGB)
+    let mut pixels: Vec<u8> = vec![0; width * height * 3];
+
+    // Process rows in parallel using pre-computed province ID buffer
+    pixels
+        .par_chunks_mut(width * 3)
+        .enumerate()
+        .for_each(|(y, row)| {
+            let row_offset = y * width;
+            for x in 0..width {
+                let pixel_idx = row_offset + x;
+                let id = world_data.province_id_buffer[pixel_idx];
+                let color = if id != u32::MAX {
+                    if world_data.water_ids.contains(&id) {
+                        [64, 164, 223] // Water blue
+                    } else {
+                        // Check timeline for owner override, fallback to province_history
+                        let owner_tag = current_owners
+                            .get(&id)
+                            .and_then(|opt| opt.as_ref())
+                            .or_else(|| {
+                                world_data
+                                    .province_history
+                                    .get(&id)
+                                    .and_then(|h| h.owner.as_ref())
+                            });
+
+                        if let Some(tag) = owner_tag {
+                            if let Some(country) = world_data.countries.get(tag)
+                                && country.color.len() >= 3
+                            {
+                                [country.color[0], country.color[1], country.color[2]]
+                            } else {
+                                [100, 100, 100] // Uncolonized default
+                            }
+                        } else {
+                            [100, 100, 100] // Uncolonized default
+                        }
+                    }
+                } else {
+                    [0, 0, 0] // Unknown province / Sentinel
+                };
+
+                let offset = x * 3;
+                row[offset] = color[0];
+                row[offset + 1] = color[1];
+                row[offset + 2] = color[2];
+            }
+        });
+
+    log::debug!("regenerate_political_map took {:?}", start.elapsed());
+
+    // Convert raw buffer to RgbImage
+    RgbImage::from_raw(width as u32, height as u32, pixels)
+        .expect("Buffer size mismatch in regenerate_political_map")
 }
 
 fn draw_map_tradegoods(

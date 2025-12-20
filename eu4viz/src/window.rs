@@ -1,4 +1,5 @@
 use crate::args::MapMode;
+use crate::timeline::Timeline;
 use std::collections::HashMap;
 
 use winit::{
@@ -24,6 +25,7 @@ pub enum WindowAction {
     ToggleConsole,
     SetMapMode(MapMode),
     Resize(u32, u32),
+    RegenerateMap,
 }
 
 #[derive(Debug, PartialEq)]
@@ -36,6 +38,11 @@ pub enum GameInput {
     PrimaryClick,
     ToggleConsole,
     CycleMapMode,
+    SeekRelative(i64),
+    SeekAbsolute(u64),
+    TogglePlayback,
+    StartSliderDrag,
+    StopSliderDrag,
 }
 
 /// Processes a game input and updates the application state.
@@ -75,6 +82,19 @@ pub fn process_input(
                     return WindowAction::Redraw;
                 }
             }
+
+            // Handle slider dragging - update tick but defer map regen to release
+            if ui_state.is_dragging_slider
+                && let Some((min, max)) = ui_state.timeline_bounds
+            {
+                let slider_w = width as f64 - 600.0;
+                let slider_x = 300.0;
+                let progress = ((x - slider_x) / slider_w).clamp(0.0, 1.0);
+                let target_tick = min + (progress * (max - min) as f64) as u64;
+                // Seek but don't regenerate map during drag (too expensive)
+                let _ = app_state.seek_to(target_tick);
+                return WindowAction::Redraw;
+            }
         }
         GameInput::Pan { dx, dy } => {
             // Manual pan command?
@@ -94,6 +114,31 @@ pub fn process_input(
             }
         }
         GameInput::PrimaryClick => {
+            if let (Some((mx, my)), Some((min, max))) =
+                (app_state.cursor_pos, ui_state.timeline_bounds)
+            {
+                // Slider Hit Test
+                let slider_h = 40.0;
+                let slider_w = width as f64 - 600.0;
+                let slider_x = 300.0;
+                let slider_y = height as f64 - (slider_h + 20.0);
+
+                if mx >= slider_x
+                    && mx <= (slider_x + slider_w)
+                    && my >= slider_y
+                    && my <= (slider_y + slider_h)
+                {
+                    // Start dragging
+                    ui_state.is_dragging_slider = true;
+                    let progress = (mx - slider_x) / slider_w;
+                    let target_tick = min + (progress * (max - min) as f64) as u64;
+                    if app_state.seek_to(target_tick) {
+                        return WindowAction::RegenerateMap;
+                    }
+                    return WindowAction::Redraw;
+                }
+            }
+
             // If not clicking on sidebar
             #[allow(clippy::collapsible_if)]
             if !ui_state.sidebar_open || app_state.cursor_pos.unwrap().0 < (width as f64 - 300.0) {
@@ -114,12 +159,42 @@ pub fn process_input(
             log::info!("Switched Map Mode to: {:?}", new_mode);
             return WindowAction::SetMapMode(new_mode);
         }
+        GameInput::SeekRelative(delta) => {
+            if app_state.seek_relative(delta) {
+                return WindowAction::RegenerateMap;
+            }
+            return WindowAction::Redraw;
+        }
+        GameInput::SeekAbsolute(tick) => {
+            if app_state.seek_to(tick) {
+                return WindowAction::RegenerateMap;
+            }
+            return WindowAction::Redraw;
+        }
+        GameInput::TogglePlayback => {
+            app_state.toggle_playback();
+            return WindowAction::Redraw;
+        }
+        GameInput::StartSliderDrag => {
+            ui_state.is_dragging_slider = true;
+        }
+        GameInput::StopSliderDrag => {
+            let was_dragging = ui_state.is_dragging_slider;
+            ui_state.is_dragging_slider = false;
+            // Regenerate map on release if we were dragging
+            if was_dragging && app_state.current_map_mode == MapMode::Political {
+                return WindowAction::RegenerateMap;
+            }
+        }
     }
     WindowAction::None
 }
 
+/// Result type for background loading operation
+type LoadResult = Result<(WorldData, Option<Result<Timeline, String>>), String>;
+
 enum AppFlow {
-    Loading(Receiver<Result<WorldData, String>>),
+    Loading(Receiver<LoadResult>),
     Running(Box<AppState>),
 }
 
@@ -136,6 +211,11 @@ struct State<'a> {
 
     flow: AppFlow,
     console_log: ConsoleLog,
+
+    // FPS tracking
+    frame_count: u32,
+    fps_timer: std::time::Instant,
+    last_fps: f32,
 }
 
 impl<'a> State<'a> {
@@ -144,6 +224,7 @@ impl<'a> State<'a> {
         window: &'a winit::window::Window,
         log_level: log::LevelFilter,
         eu4_path: &std::path::Path,
+        event_log: Option<std::path::PathBuf>,
     ) -> State<'a> {
         // Enforce 1920x1080 Physical or specific size if possible, otherwise use existing.
         // The user specifically asked for "Physical" to avoid DPI issues.
@@ -151,6 +232,8 @@ impl<'a> State<'a> {
         // but we can try to request initialization at a size that matches.
         // For strict "No DPI Scaling" behavior, we often just ignore scale factor or request specific inner physical size.
         // However, on Windows, the OS decorates the window.
+        // Let's try to request the physical size immediately.
+
         // Let's try to request the physical size immediately.
 
         let target_width = 1920;
@@ -202,7 +285,19 @@ impl<'a> State<'a> {
             format: surface_format,
             width: size.width,
             height: size.height,
-            present_mode: surface_caps.present_modes[0],
+            present_mode: surface_caps
+                .present_modes
+                .iter()
+                .copied()
+                .find(|&mode| mode == wgpu::PresentMode::Fifo)
+                .or_else(|| {
+                    surface_caps
+                        .present_modes
+                        .iter()
+                        .copied()
+                        .find(|&mode| mode == wgpu::PresentMode::Mailbox)
+                })
+                .unwrap_or(surface_caps.present_modes[0]),
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
@@ -242,8 +337,12 @@ impl<'a> State<'a> {
         // Spawn async loading thread
         let (tx, rx) = std::sync::mpsc::channel();
         let eu4_path_clone = eu4_path.to_path_buf();
+        let event_log_clone = event_log;
         std::thread::spawn(move || {
-            let res = crate::ops::load_world_data(&eu4_path_clone);
+            let world_res = crate::ops::load_world_data(&eu4_path_clone);
+            let timeline_res = event_log_clone.map(crate::timeline::Timeline::from_file);
+
+            let res = world_res.map(|w| (w, timeline_res));
             let _ = tx.send(res);
         });
 
@@ -259,6 +358,9 @@ impl<'a> State<'a> {
             ui_state: crate::ui::UIState::new(),
             flow: AppFlow::Loading(rx),
             console_log,
+            frame_count: 0,
+            fps_timer: std::time::Instant::now(),
+            last_fps: 0.0,
         }
     }
 
@@ -311,6 +413,11 @@ impl<'a> State<'a> {
                 button: winit::event::MouseButton::Left,
                 ..
             } => Some(GameInput::PrimaryClick),
+            WindowEvent::MouseInput {
+                state: winit::event::ElementState::Released,
+                button: winit::event::MouseButton::Left,
+                ..
+            } => Some(GameInput::StopSliderDrag),
             WindowEvent::KeyboardInput {
                 event:
                     winit::event::KeyEvent {
@@ -322,6 +429,9 @@ impl<'a> State<'a> {
             } => match keycode {
                 winit::keyboard::KeyCode::KeyC => Some(GameInput::ToggleConsole),
                 winit::keyboard::KeyCode::Tab => Some(GameInput::CycleMapMode),
+                winit::keyboard::KeyCode::ArrowLeft => Some(GameInput::SeekRelative(-1)),
+                winit::keyboard::KeyCode::ArrowRight => Some(GameInput::SeekRelative(1)),
+                winit::keyboard::KeyCode::Space => Some(GameInput::TogglePlayback),
                 _ => None,
             },
             _ => None,
@@ -347,6 +457,32 @@ impl<'a> State<'a> {
                 }
                 WindowAction::Exit => true,
                 WindowAction::Resize(_, _) => true,
+                WindowAction::RegenerateMap => {
+                    if let AppFlow::Running(ref mut app_state) = self.flow
+                        && let Some(ref timeline) = app_state.timeline
+                    {
+                        let regen_start = std::time::Instant::now();
+                        let new_map =
+                            crate::ops::regenerate_political_map(&app_state.world_data, timeline);
+                        let cpu_time = regen_start.elapsed();
+
+                        let upload_start = std::time::Instant::now();
+                        self.renderer.update_single_map(
+                            &self.device,
+                            &self.queue,
+                            MapMode::Political,
+                            image::DynamicImage::ImageRgb8(new_map),
+                        );
+                        let upload_time = upload_start.elapsed();
+                        log::debug!(
+                            "Map regen: CPU {:?}, Upload {:?}, Total {:?}",
+                            cpu_time,
+                            upload_time,
+                            regen_start.elapsed()
+                        );
+                    }
+                    true
+                }
             }
         } else {
             false
@@ -359,8 +495,17 @@ impl<'a> State<'a> {
                 // Check if loading is done
                 if let Ok(result) = rx.try_recv() {
                     match result {
-                        Ok(world_data) => {
+                        Ok((world_data, timeline_res)) => {
                             println!("World Data Loaded! Initializing AppState...");
+
+                            let timeline = match timeline_res {
+                                Some(Ok(t)) => Some(t),
+                                Some(Err(e)) => {
+                                    println!("Warning: Failed to load event log: {}", e);
+                                    None
+                                }
+                                None => None,
+                            };
 
                             // Prepare renderer with real maps
                             let mut map_images = HashMap::new();
@@ -388,8 +533,12 @@ impl<'a> State<'a> {
                             self.renderer
                                 .update_maps(&self.device, &self.queue, map_images);
 
-                            let app_state =
-                                AppState::new(world_data, self.size.width, self.size.height);
+                            let app_state = AppState::new(
+                                world_data,
+                                self.size.width,
+                                self.size.height,
+                                timeline,
+                            );
                             self.flow = AppFlow::Running(Box::new(app_state));
                         }
                         Err(e) => {
@@ -401,7 +550,48 @@ impl<'a> State<'a> {
                 }
             }
             AppFlow::Running(app_state) => {
-                // Update Camera Buffer (only if running)
+                // 1. Playback Logic
+                if app_state.is_playing
+                    && app_state.seek_relative(app_state.playback_speed as i64)
+                    && let Some(ref timeline) = app_state.timeline
+                {
+                    let regen_start = std::time::Instant::now();
+                    let new_map =
+                        crate::ops::regenerate_political_map(&app_state.world_data, timeline);
+                    let cpu_time = regen_start.elapsed();
+
+                    let upload_start = std::time::Instant::now();
+                    self.renderer.update_single_map(
+                        &self.device,
+                        &self.queue,
+                        MapMode::Political,
+                        image::DynamicImage::ImageRgb8(new_map),
+                    );
+                    let upload_time = upload_start.elapsed();
+                    log::debug!(
+                        "Playback regen: CPU {:?}, Upload {:?}",
+                        cpu_time,
+                        upload_time
+                    );
+                }
+
+                // 2. Sync UI State (only when tick changes)
+                if let Some(timeline) = &app_state.timeline {
+                    let current_tick = timeline.current_tick();
+
+                    // Only update if tick changed - avoid O(n) scan every frame
+                    if self.ui_state.timeline_tick != Some(current_tick) {
+                        // Find date for current tick (O(n) but only on change)
+                        let current_date = timeline.current_date();
+
+                        self.ui_state.timeline_tick = Some(current_tick);
+                        self.ui_state.timeline_bounds = Some(timeline.bounds());
+                        self.ui_state.timeline_date = current_date;
+                        self.ui_state.dirty = true;
+                    }
+                }
+
+                // 3. Update Camera Buffer
                 self.renderer.update_camera_buffer(
                     &self.queue,
                     app_state
@@ -413,6 +603,17 @@ impl<'a> State<'a> {
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        // FPS tracking
+        self.frame_count += 1;
+        let elapsed = self.fps_timer.elapsed();
+        if elapsed >= std::time::Duration::from_secs(1) {
+            self.last_fps = self.frame_count as f32 / elapsed.as_secs_f32();
+            self.frame_count = 0;
+            self.fps_timer = std::time::Instant::now();
+            self.window
+                .set_title(&format!("eu4viz - {:.1} FPS", self.last_fps));
+        }
+
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -516,7 +717,11 @@ impl<'a> State<'a> {
 
 /// Initializes `winit` event loop, opens a window, creates the `State` (which wraps `Eu4Renderer`),
 /// and starts the render loop.
-pub fn run(log_level: log::LevelFilter, eu4_path: &std::path::Path) {
+pub fn run(
+    log_level: log::LevelFilter,
+    eu4_path: &std::path::Path,
+    event_log: Option<std::path::PathBuf>,
+) {
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new()
         .with_title("eu4viz - Map Viewer")
@@ -527,7 +732,7 @@ pub fn run(log_level: log::LevelFilter, eu4_path: &std::path::Path) {
     let eu4_path = eu4_path.to_path_buf();
 
     // Init State
-    let mut state = pollster::block_on(State::new(&window, log_level, &eu4_path));
+    let mut state = pollster::block_on(State::new(&window, log_level, &eu4_path, event_log));
 
     let _ = event_loop.run(move |event, control_flow| {
         match event {
@@ -813,12 +1018,22 @@ mod tests {
             },
         );
 
+        // Pre-compute province ID buffer
+        let province_id_buffer: Vec<u32> = province_map
+            .pixels()
+            .map(|pixel| {
+                let rgb = (pixel[0], pixel[1], pixel[2]);
+                color_to_id.get(&rgb).copied().unwrap_or(u32::MAX)
+            })
+            .collect();
+
         let world_data = WorldData {
             province_map,
             political_map: RgbImage::new(1, 1),
             tradegoods_map: RgbImage::new(1, 1),
             religion_map: RgbImage::new(1, 1),
             culture_map: RgbImage::new(1, 1),
+            province_id_buffer,
             color_to_id,
             province_history,
             countries: HashMap::new(),
@@ -1072,12 +1287,22 @@ mod tests {
             },
         );
 
+        // Pre-compute province ID buffer
+        let province_id_buffer: Vec<u32> = img
+            .pixels()
+            .map(|pixel| {
+                let rgb = (pixel[0], pixel[1], pixel[2]);
+                color_to_id.get(&rgb).copied().unwrap_or(u32::MAX)
+            })
+            .collect();
+
         let world = WorldData {
             province_map: img,
             political_map: RgbImage::new(1, 1),
             tradegoods_map: RgbImage::new(1, 1),
             religion_map: RgbImage::new(1, 1),
             culture_map: RgbImage::new(1, 1),
+            province_id_buffer,
             color_to_id,
             province_history: history,
             countries: HashMap::new(),
@@ -1122,12 +1347,22 @@ mod tests {
             *p = image::Rgb([255, 0, 0]);
         }
 
+        // Pre-compute province ID buffer
+        let province_id_buffer: Vec<u32> = img
+            .pixels()
+            .map(|pixel| {
+                let rgb = (pixel[0], pixel[1], pixel[2]);
+                color_to_id.get(&rgb).copied().unwrap_or(u32::MAX)
+            })
+            .collect();
+
         let world = WorldData {
             province_map: img,
             political_map: RgbImage::new(1, 1),
             tradegoods_map: RgbImage::new(1, 1),
             religion_map: RgbImage::new(1, 1),
             culture_map: RgbImage::new(1, 1),
+            province_id_buffer,
             color_to_id,
             province_history: HashMap::new(),
             countries: HashMap::new(),
@@ -1139,7 +1374,7 @@ mod tests {
         };
 
         // 2. Init AppState (Window size 100x100)
-        let mut app = AppState::new(world, 100, 100);
+        let mut app = AppState::new(world, 100, 100, None);
 
         // 3. Test Selection (Middle of map -> ID 1)
         app.update_cursor(50.0, 50.0);
@@ -1186,12 +1421,22 @@ mod tests {
             },
         );
 
+        // Pre-compute province ID buffer
+        let province_id_buffer: Vec<u32> = img
+            .pixels()
+            .map(|pixel| {
+                let rgb = (pixel[0], pixel[1], pixel[2]);
+                color_to_id.get(&rgb).copied().unwrap_or(u32::MAX)
+            })
+            .collect();
+
         let world = WorldData {
             province_map: img,
             political_map: RgbImage::new(1, 1),
             tradegoods_map: RgbImage::new(1, 1),
             religion_map: RgbImage::new(1, 1),
             culture_map: RgbImage::new(1, 1),
+            province_id_buffer,
             color_to_id,
             province_history: history,
             countries: HashMap::new(),
@@ -1202,7 +1447,7 @@ mod tests {
             adjacency_graph: eu4data::adjacency::AdjacencyGraph::default(),
         };
 
-        let mut app_state = AppState::new(world, 100, 100);
+        let mut app_state = AppState::new(world, 100, 100, None);
         let mut ui_state = crate::ui::UIState::new();
 
         // 2. Test Toggle Console

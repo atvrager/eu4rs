@@ -12,6 +12,7 @@ mod state;
 #[cfg(test)]
 mod testing;
 mod text;
+mod timeline;
 mod ui;
 
 use args::{Cli, Commands, MapMode};
@@ -74,7 +75,7 @@ fn run(mut args: Cli) -> Result<(), String> {
                 let base = eu4_path;
                 let level =
                     std::str::FromStr::from_str(&args.log_level).unwrap_or(log::LevelFilter::Info);
-                window::run(level, &base);
+                window::run(level, &base, args.event_log);
                 return Ok(());
             }
             Commands::Snapshot { output, mode } => {
@@ -140,7 +141,7 @@ fn run(mut args: Cli) -> Result<(), String> {
         // Default to Source Port GUI
         let base = eu4_path;
         let level = std::str::FromStr::from_str(&args.log_level).unwrap_or(log::LevelFilter::Info);
-        window::run(level, &base);
+        window::run(level, &base, args.event_log);
     }
 
     Ok(())
@@ -195,6 +196,7 @@ mod tests {
             pretty_print: false,
             language: "english".to_string(),
             log_level: "info".to_string(),
+            event_log: None,
             command: Some(Commands::DumpTradegoods),
         };
 
@@ -211,6 +213,7 @@ mod tests {
             pretty_print: false,
             language: "english".to_string(),
             log_level: "info".to_string(),
+            event_log: None,
             command: Some(Commands::Lookup {
                 key: "TEST".to_string(),
             }),
@@ -229,6 +232,7 @@ mod tests {
             pretty_print: true,
             language: "english".to_string(),
             log_level: "info".to_string(),
+            event_log: None,
             command: None,
         };
         // Should print error but return Ok

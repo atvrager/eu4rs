@@ -175,6 +175,10 @@ Parallel development track for rendering and debugging.
 - [x] **Political Map Mode**: Country colors
 - [x] **Terrain Rendering**: Terrain type visualization
 - [x] **Camera Controls**: Pan, zoom, rotation
+- [x] **Timeline Replay**: Event log visualization with time slider
+  - Sparse ownership changes for memory-efficient state reconstruction
+  - Drag-to-scrub with 367ms map regeneration (16x optimized)
+  - Date display with fallback computation
 - [ ] **Unit Visualization**: Army/fleet icons on map
 - [ ] **UI Overlays**: Info panels, tooltips
 - [ ] **Map Modes**: Diplomatic, trade, development views
@@ -185,8 +189,8 @@ Parallel development track for rendering and debugging.
 - [x] **Code Coverage**: >75% target with `llvm-cov` ([docs](../development/testing/coverage.md))
 - [x] **Auto-Codegen**: Type generation from EU4 schemas ([docs](../development/code-generation.md))
 - [x] **Personalization System**: AI agent personas via MyAnimeList integration
-- [ ] **Profiling**: Performance analysis tools
-- [ ] **Replay System**: Deterministic replay from command log
+- [x] **Profiling**: FPS counter, timing instrumentation ([docs](../development/performance.md))
+- [x] **Replay System**: Timeline replay from event log
 
 ---
 
@@ -194,6 +198,7 @@ Parallel development track for rendering and debugging.
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| **0.1.8** | 2025-12-20 | Timeline replay with event log, 367ms map regeneration, FPS profiling |
 | **0.1.7** | 2025-12-19 | Truce system, AI war declaration filtering, checksum integration |
 | **0.1.6** | 2025-12-19 | Personalization System, agent personas, Claude Code protocols |
 | **0.1.5** | 2025-12-19 | Stability & prestige system, bounded value types |
@@ -214,7 +219,7 @@ Before starting work on a feature:
 3. **Follow property-based testing** workflow ([guide](../development/testing/property-based-testing.md))
 4. **Run CI** before committing: `cargo xtask ci`
 
-**Priority**: Focus on completing Phase 4 before starting Phase 5.
+**Priority**: Phase 4 complete. Focus on Phase 5 (Advanced Military) features.
 
 ---
 
@@ -262,4 +267,4 @@ Play EU4 in your terminal! A text-based interface using `ratatui` or similar:
 
 ---
 
-*Last updated: 2025-12-19* (v0.1.7)
+*Last updated: 2025-12-20* (v0.1.8)
