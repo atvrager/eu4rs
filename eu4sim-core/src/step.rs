@@ -707,7 +707,6 @@ fn execute_command(
         // ===== STUB COMMANDS (Phase 2+) =====
         // These commands are defined but not yet implemented.
         // They log a warning and return Ok(()) to allow graceful degradation.
-
         Command::MergeArmies { .. } => {
             log::warn!("MergeArmies not implemented yet");
             Ok(())

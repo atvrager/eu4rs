@@ -21,7 +21,7 @@ pub enum DevType {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Command {
     // ===== IMPLEMENTED COMMANDS =====
-    
+
     // Economic
     BuildInProvince {
         province: ProvinceId,
@@ -66,7 +66,7 @@ pub enum Command {
     },
 
     // ===== STUB COMMANDS (Phase 2+) =====
-    
+
     // Military (additional)
     MergeArmies {
         army_ids: Vec<ArmyId>,

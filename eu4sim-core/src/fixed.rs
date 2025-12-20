@@ -82,6 +82,24 @@ impl Fixed {
         self.0
     }
 
+    /// Truncate to integer (rounds toward zero)
+    ///
+    /// Safe for sim logic (deterministic integer division).
+    #[inline]
+    pub const fn to_int(self) -> i64 {
+        self.0 / Self::SCALE
+    }
+
+    /// Returns the smaller of two Fixed values (deterministic)
+    #[inline]
+    pub fn min(self, other: Fixed) -> Fixed {
+        if self.0 <= other.0 {
+            self
+        } else {
+            other
+        }
+    }
+
     /// Multiply two fixed-point values: (a × b) / SCALE
     ///
     /// Uses i128 intermediate to prevent overflow.
