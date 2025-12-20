@@ -14,16 +14,16 @@ Run a "complete" game from 1444 to 1821 with:
 
 | Metric | Value | Status |
 | :--- | :--- | :--- |
-| **Tick Time** | **0.93 ms** | ✅ Goal Reached (<10ms) |
-| **Speed** | **3.0 years/sec** | 🚀 3x improvement |
-| **Full Game Time** | **~2.1 minutes** | 🚀 Goal Exceeded (<10m) |
+| **Tick Time** | **1.34 ms** | ✅ Goal Reached (<10ms) |
+| **Speed** | **2.2 years/sec** | 🚀 2x improvement over goal |
+| **Full Game Time** | **~2.8 minutes** | 🚀 Goal Exceeded (<10m) |
 
 **Breakdown (Release Build):**
-- **AI Decision Loop:** 0.39 ms (42%) - Parallelized with rayon.
-- **State Cloning (Other):** 0.44 ms (47%) - Persistent `im::HashMap`.
-- **Systems (Combat/Move/Economy):** ~0.1 ms (11%) - Negligible.
+- **AI Decision Loop:** 0.81 ms (61%) - Optimized search + Parallelized.
+- **State Cloning (Other):** 0.42 ms (31%) - Persistent `im::HashMap`.
+- **Systems:** ~0.11 ms (8%) - Negligible.
 
-**Verdict:** The simulation is now production-ready for large-scale observer runs. AI loop parallelized with rayon, yielding 3x speedup (1.0 → 3.0 yr/s).
+**Verdict:** The simulation is now production-ready for large-scale observer runs. AI loop optimized with pre-calculated owner maps, yielding 2.2 yr/s while supporting colonization search.
 
 "Complete" means the simulation doesn't crash or stall - systems exist at varying fidelity levels.
 
@@ -97,7 +97,7 @@ Everything else can be stubbed or is already done.
 - [ ] Implement peace deal system (Logic integration)
 - [ ] Add stability system with betrayal consequences
 - [x] Add mana generation + dev purchasing
-- [ ] Add colonization with standing orders
+- [x] Add colonization with standing orders
 - [ ] Add reformation spread
 - [ ] Connect headless output or eu4viz
 - [x] Multithreaded AI decision loop (Performance optimization)

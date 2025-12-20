@@ -46,21 +46,21 @@ cargo run -p eu4sim -- --benchmark --ticks 1000
 
 | Metric | Value |
 |--------|-------|
-| Years Simulated | 102 |
-| Total Time | 33.89s |
-| **Speed** | **3.0 years/sec** |
-| Average Tick | 0.929ms |
+| Years Simulated | 11 |
+| Total Time | 4.90s |
+| **Speed** | **2.2 years/sec** |
+| Average Tick | 1.342ms |
 
 ### Breakdown
 
 | System | Time per Tick | % of Total |
 |--------|---------------|------------|
-| AI | 0.391ms | 42.1% |
-| Other | 0.436ms | 47.0% |
-| Economy | 0.049ms | 5.2% |
-| Combat | 0.023ms | 2.4% |
-| Movement | 0.019ms | 2.0% |
-| Occupation | 0.011ms | 1.2% |
+| AI | 0.812ms | 60.5% |
+| Other | 0.419ms | 31.2% |
+| Economy | 0.055ms | 4.1% |
+| Combat | 0.023ms | 1.7% |
+| Movement | 0.021ms | 1.6% |
+| Occupation | 0.012ms | 0.9% |
 
 ### Analysis
 The simulation speed is now **3.0 years/sec**, which translates to a full game run (377 years) in approximately **2.1 minutes**. This significantly exceeds the mid-term goal of 10 minutes.

@@ -120,8 +120,9 @@ pub fn step_world(
         // 3. Manpower → Regenerates military capacity
         // 4. Expenses → Deducts costs (uses fresh manpower pool)
         // 5. Mana → Generates monarch points
-        // 6. War scores → Recalculates based on current occupation
-        // 7. Auto-peace → Ends stalemate wars (10yr timeout)
+        // 6. Colonization → Progresses active colonies
+        // 7. War scores → Recalculates based on current occupation
+        // 8. Auto-peace → Ends stalemate wars (10yr timeout)
         //
         // Order matters for production→taxation. Other systems are independent.
         crate::systems::run_production_tick(&mut new_state, &economy_config);
@@ -129,6 +130,7 @@ pub fn step_world(
         crate::systems::run_manpower_tick(&mut new_state);
         crate::systems::run_expenses_tick(&mut new_state);
         crate::systems::run_mana_tick(&mut new_state);
+        crate::systems::run_colonization_tick(&mut new_state);
 
         // Recalculate war scores monthly
         crate::systems::recalculate_war_scores(&mut new_state);
@@ -715,12 +717,39 @@ fn execute_command(
             log::warn!("SplitArmy not implemented yet");
             Ok(())
         }
-        Command::StartColony { .. } => {
-            log::warn!("Colonization not implemented yet");
+        Command::StartColony { province } => {
+            let province = *province;
+            // Minimal: Validate unowned province, not already a colony, not a sea province.
+            if state
+                .provinces
+                .get(&province)
+                .is_none_or(|p| p.owner.is_none())
+                && !state.colonies.contains_key(&province)
+            {
+                if let Some(p) = state.provinces.get(&province) {
+                    if !p.is_sea {
+                        state.colonies.insert(
+                            province,
+                            crate::state::Colony {
+                                province,
+                                owner: country_tag.to_string(),
+                                settlers: 0,
+                            },
+                        );
+                        log::info!("{} started a colony in province {}", country_tag, province);
+                    }
+                }
+            }
             Ok(())
         }
-        Command::AbandonColony { .. } => {
-            log::warn!("AbandonColony not implemented yet");
+        Command::AbandonColony { province } => {
+            let province = *province;
+            if let Some(colony) = state.colonies.get(&province) {
+                if colony.owner == country_tag {
+                    state.colonies.remove(&province);
+                    log::info!("{} abandoned colony in province {}", country_tag, province);
+                }
+            }
             Ok(())
         }
         Command::OfferAlliance { .. } => {
@@ -1273,5 +1302,43 @@ mod tests {
 
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), ActionError::NotOwned));
+    }
+
+    #[test]
+    fn test_colonization_cycle() {
+        use crate::testing::WorldStateBuilder;
+
+        let mut state = WorldStateBuilder::new()
+            .with_country("SWE")
+            .with_province(1, None) // Unowned
+            .build();
+
+        // Start colony
+        let cmd = Command::StartColony { province: 1 };
+        execute_command(&mut state, "SWE", &cmd, None).unwrap();
+
+        assert!(state.colonies.contains_key(&1));
+        let colony = state.colonies.get(&1).unwrap();
+        assert_eq!(colony.owner, "SWE");
+        assert_eq!(colony.settlers, 0);
+
+        // Progress 12 months (1 year)
+        for _ in 0..12 {
+            state.date = state.date.add_days(30);
+            crate::systems::run_colonization_tick(&mut state);
+        }
+
+        // 83 * 12 = 996 settlers. Not finished yet.
+        assert!(state.colonies.contains_key(&1));
+        assert_eq!(state.colonies.get(&1).unwrap().settlers, 996);
+
+        // One more month
+        state.date = state.date.add_days(30);
+        crate::systems::run_colonization_tick(&mut state);
+
+        // 996 + 83 = 1079 >= 1000. Finished!
+        assert!(!state.colonies.contains_key(&1));
+        let prov = state.provinces.get(&1).unwrap();
+        assert_eq!(prov.owner.as_ref().unwrap(), "SWE");
     }
 }

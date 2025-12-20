@@ -182,6 +182,7 @@ pub fn load_initial_state(
             next_army_id,
             fleets: ImHashMap::default(),
             next_fleet_id: 1,
+            colonies: ImHashMap::default(),
         },
         adjacency,
     ))

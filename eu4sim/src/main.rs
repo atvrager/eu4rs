@@ -4,7 +4,7 @@ use crossterm::{
     event::{self, Event, KeyCode},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
-use eu4sim_core::state::Date;
+use eu4sim_core::state::{Date, ProvinceId, Tag};
 use eu4sim_core::{step_world, PlayerInputs, SimConfig};
 use rayon::prelude::*;
 use std::path::PathBuf;
@@ -286,6 +286,17 @@ fn main() -> Result<()> {
         if args.observer {
             let ai_start = std::time::Instant::now();
             // Generate AI commands for all countries (parallel)
+            // Pre-calculate owned provinces per country for AI use
+            let mut country_provinces: std::collections::HashMap<Tag, Vec<ProvinceId>> =
+                std::collections::HashMap::with_capacity(state.countries.len());
+            for (&id, prov) in &state.provinces {
+                if let Some(owner) = &prov.owner {
+                    country_provinces.entry(owner.clone()).or_default().push(id);
+                }
+            }
+
+            let country_provinces = country_provinces; // Make immutable
+
             inputs = ais
                 .par_iter_mut()
                 .filter_map(|(tag, ai)| {
@@ -333,6 +344,25 @@ fn main() -> Result<()> {
                                         army_id: *id,
                                         destination: dest,
                                     });
+                                }
+                            }
+                        }
+                    }
+
+                    // Find unowned neighbor provinces to colonize
+                    if let Some(provinces) = country_provinces.get(tag) {
+                        for &prov_id in provinces {
+                            let neighbors = adjacency.neighbors(prov_id);
+                            for neighbor_id in neighbors {
+                                if let Some(neighbor) = state.provinces.get(&neighbor_id) {
+                                    if neighbor.owner.is_none()
+                                        && !neighbor.is_sea
+                                        && !state.colonies.contains_key(&neighbor_id)
+                                    {
+                                        available.push(eu4sim_core::Command::StartColony {
+                                            province: neighbor_id,
+                                        });
+                                    }
                                 }
                             }
                         }

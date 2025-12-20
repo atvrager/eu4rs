@@ -129,6 +129,14 @@ pub struct Fleet {
     pub movement: Option<MovementState>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Colony {
+    pub province: ProvinceId,
+    pub owner: Tag,
+    /// Current number of settlers (0 to 1000)
+    pub settlers: u32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct WorldState {
     pub date: Date,
@@ -147,6 +155,7 @@ pub struct WorldState {
     pub next_army_id: u32,
     pub fleets: HashMap<FleetId, Fleet>,
     pub next_fleet_id: u32,
+    pub colonies: HashMap<ProvinceId, Colony>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -411,6 +420,16 @@ impl WorldState {
             f.transport_capacity.hash(&mut hasher);
             f.embarked_armies.hash(&mut hasher);
             f.movement.hash(&mut hasher);
+        }
+
+        // Colonies (sorted by province ID)
+        let mut colony_ids: Vec<_> = self.colonies.keys().collect();
+        colony_ids.sort();
+        for &id in colony_ids {
+            let c = &self.colonies[&id];
+            id.hash(&mut hasher);
+            c.owner.hash(&mut hasher);
+            c.settlers.hash(&mut hasher);
         }
 
         // Diplomacy

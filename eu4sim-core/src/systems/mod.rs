@@ -1,5 +1,6 @@
 //! Simulation systems.
 
+pub mod colonization;
 pub mod combat;
 pub mod expenses;
 pub mod mana;
@@ -9,6 +10,7 @@ pub mod production;
 pub mod taxation;
 pub mod war_score;
 
+pub use colonization::run_colonization_tick;
 pub use combat::run_combat_tick;
 pub use expenses::run_expenses_tick;
 pub use mana::run_mana_tick;
