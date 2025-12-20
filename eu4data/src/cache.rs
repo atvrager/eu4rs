@@ -284,7 +284,7 @@ mod tests {
         let file1 = temp.path().join("file1.txt");
         fs::write(&file1, b"content1").unwrap();
 
-        let metadata = CacheMetadata::from_sources(&[file1.clone()]).unwrap();
+        let metadata = CacheMetadata::from_sources(std::slice::from_ref(&file1)).unwrap();
 
         assert_eq!(metadata.source_hashes.len(), 1);
         assert_eq!(metadata.source_mtimes.len(), 1);
@@ -298,10 +298,10 @@ mod tests {
         let file1 = temp.path().join("file1.txt");
         fs::write(&file1, b"content1").unwrap();
 
-        let metadata = CacheMetadata::from_sources(&[file1.clone()]).unwrap();
+        let metadata = CacheMetadata::from_sources(std::slice::from_ref(&file1)).unwrap();
 
         // Should be valid immediately
-        assert!(metadata.is_valid(&[file1.clone()]));
+        assert!(metadata.is_valid(std::slice::from_ref(&file1)));
 
         // Modify file
         std::thread::sleep(std::time::Duration::from_millis(10));
@@ -317,8 +317,8 @@ mod tests {
         let file1 = temp.path().join("file1.txt");
         fs::write(&file1, b"content1").unwrap();
 
-        let mut metadata = CacheMetadata::from_sources(&[file1.clone()]).unwrap();
-        assert!(metadata.is_valid(&[file1.clone()]));
+        let mut metadata = CacheMetadata::from_sources(std::slice::from_ref(&file1)).unwrap();
+        assert!(metadata.is_valid(std::slice::from_ref(&file1)));
 
         // Mutate manifest hash
         metadata.manifest_hash = Some([0u8; 32]);
@@ -331,10 +331,10 @@ mod tests {
         let file1 = temp.path().join("file1.txt");
         fs::write(&file1, b"content1").unwrap();
 
-        let metadata = CacheMetadata::from_sources(&[file1.clone()]).unwrap();
+        let metadata = CacheMetadata::from_sources(std::slice::from_ref(&file1)).unwrap();
 
         // Fast path valid
-        assert!(metadata.is_valid_quick(&[file1.clone()]));
+        assert!(metadata.is_valid_quick(std::slice::from_ref(&file1)));
 
         // Modify mtime (and content just in case)
         std::thread::sleep(std::time::Duration::from_millis(100)); // Ensure mtime change

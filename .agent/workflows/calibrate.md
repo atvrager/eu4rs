@@ -32,6 +32,11 @@ Use this command when the agent seems confused about routing, project convention
    - Test: "I want to run `cargo watch -x test` while making changes" → Suggest Claude Code
    - Claude Code has independent rate limits, preserves Antigravity quota
 
+6. **Assign Persona**: Run `cargo xtask personalize` (if .env configured) to generate a personality for the session.
+   - Adopt the returned personality *subtly*. 
+   - Use the "instruction" field to guide your tone.
+   - If the command fails or isn't configured, proceed without a persona.
+
 ## Expected Output
 
 After running `/calibrate`, the agent should respond with:
@@ -40,4 +45,5 @@ After running `/calibrate`, the agent should respond with:
 - Quota status with refresh times
 - Refresh-aware routing recommendation (if applicable)
 - Claude Code delegation awareness
+- **Active Persona** (if generated)
 - Confirmation that AGENTS.md has been re-read

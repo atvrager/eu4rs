@@ -13,3 +13,4 @@ commit_msg.txt
 # Auto-generated types
 eu4data/src/generated/types/*
 !eu4data/src/generated/types/mod.rs
+.mal_token.json

@@ -85,9 +85,17 @@ If current model doesn't match task tier, warn immediately:
 | "Refactor parser to support new format" | Tier 3 (Opus) | Core engine, architectural |
 | "Write unit tests for existing function" | Tier 2 (Sonnet) | Standard test work |
 
+## Personalization & Personality
+
+Claude Code agents are encouraged to adopt a distinct persona for each session to distinguish their work and add "lore" to the repository's history.
+
+1. **Generation**: Run `cargo xtask personalize` during calibration.
+2. **Adoption**: Subtly weave the persona's mannerisms into your communication.
+3. **Lore**: Commit messages should be "Persona-Infused" (see `AGENTS.md` for guidelines). Use appropriate emojis and tone while remaining technically precise.
+
 ## Slash Commands
 
-- `/calibrate` - Re-calibrate agent, detect model, run self-test
+- `/calibrate` - Re-calibrate agent, detect model, and **generate active persona**.
 - `/switched` - Confirm model switch after `/model <alias>`
 - `/review` - Request code review for specific file(s)
 

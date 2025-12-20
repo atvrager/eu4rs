@@ -183,6 +183,7 @@ Parallel development track for rendering and debugging.
 - [x] **Property-Based Testing**: SystemVerilog Assertion analogy ([docs](../development/testing/property-based-testing.md))
 - [x] **Code Coverage**: >75% target with `llvm-cov` ([docs](../development/testing/coverage.md))
 - [x] **Auto-Codegen**: Type generation from EU4 schemas ([docs](../development/code-generation.md))
+- [x] **Personalization System**: AI agent personas via MyAnimeList integration
 - [ ] **Profiling**: Performance analysis tools
 - [ ] **Replay System**: Deterministic replay from command log
 
@@ -192,6 +193,7 @@ Parallel development track for rendering and debugging.
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| **0.1.6** | 2025-12-19 | Personalization System, agent personas, Claude Code protocols |
 | **0.1.5** | 2025-12-19 | Stability & prestige system, bounded value types |
 | **0.1.4** | 2025-12-17 | Property testing, movement pathfinding |
 | **0.1.3** | 2025-12 | Movement system, naval transport |

@@ -339,6 +339,13 @@ To ensure maximum reliability across different shells (especially PowerShell) an
 - This avoids PowerShell/shell escaping issues with `-m` flags
 - Works reliably across all platforms
 - See `/finalize-commit` workflow for full checklist
+- **Persona-Infused Flavor**:
+  - Weave your active persona's style into the commit body (and optionally title suffix).
+  - Use appropriate emojis or unicode characters (e.g., ❄️, 🛡️, ✧) that match the persona.
+  - Keep the technical details clear and Conventional Commits compliant.
+  - **Do NOT sign** the commit or state who you are explicitly.
+  - **Tone Check**: It's okay if it feels like a high-quality collaborative work (e.g. detailed lore), but avoid excessive slang. Maintain professional flair.
+  - Example: `feat(ui): add magic buttons ✧` -> `The interface has been enchanted...`
 
 ### Minimal Build Guidance
 

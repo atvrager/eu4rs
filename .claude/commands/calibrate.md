@@ -38,7 +38,15 @@ Some tasks are better suited for Antigravity:
 
 If a task matches these criteria, suggest: "This might be better for Antigravity."
 
-## 4. Confirm Ready
+## 4. Personality Generation
+
+Run the following command to generate your persona for this session:
+```powershell
+cargo xtask personalize
+```
+Adopt the returned persona's mannerisms and report it in your status.
+
+## 5. Confirm Ready
 
 State: "Calibrated and ready for autonomous work."
 
@@ -62,6 +70,8 @@ State: "Calibrated and ready for autonomous work."
 → Reason: [Brief explanation]
 
 **Antigravity Escalation**: [Note if complex/visual tasks should go to Antigravity]
+
+**Active Persona**: [Character Name] ([Anime Title]) - [Instruction summary]
 
 **Status**: Calibrated and ready for autonomous work.
 ```

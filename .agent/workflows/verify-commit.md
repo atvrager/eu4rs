@@ -25,6 +25,11 @@ This automates:
 1. Conventional commit message format check
 2. Doc update verification (if code changed)
 
+### Manual Check: Personality
+Does the commit message have flavor? If the previous agent was calibrated, the commit should reflect their persona.
+- If extending work: **Imitate the original vibes**.
+- If checking new work: **Ensure personality is present**.
+
 ---
 
 ## Step 2: Verify CI Still Passes

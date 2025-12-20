@@ -94,6 +94,19 @@ Use conventional commits: `type(scope): description`
 - `docs(roadmap): mark Phase 4 complete`
 - `refactor(ai): extract decision loop to separate module`
 
+### Persona Flavor (MANDATORY)
+
+Consult `AGENTS.md` for the "Persona-Infused Commit Messages" protocol.
+
+1. **Infuse Body**: Write the description body in your active persona's voice.
+2. **Use Emojis**: Add a relevant emoji to the title suffix or body.
+3. **No Signatures**: Do not sign the commit.
+
+*Example:*
+> `feat(ui): add magic buttons ✧`
+>
+> The interface has been enchanted with new functionality...
+
 ### For multi-line messages, use the file technique:
 
 Create `commit_msg.txt` with your message:

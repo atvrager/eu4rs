@@ -5,6 +5,8 @@ use reqwest::blocking::Client;
 use std::env;
 use std::process::{Command, Stdio};
 
+mod personalize;
+
 #[derive(Parser)]
 #[command(name = "xtask")]
 #[command(about = "Development automation scripts", long_about = None)]
@@ -42,6 +44,12 @@ enum Commands {
 
     /// Verify the HEAD commit follows project conventions (post-commit check)
     VerifyCommit,
+
+    /// Authenticate with MyAnimeList (OAuth2 PKCE)
+    MalLogin,
+
+    /// Generate a persona based on MAL history
+    Personalize,
 }
 
 fn main() -> Result<()> {
@@ -64,6 +72,9 @@ fn main() -> Result<()> {
         } => run_coverage(eu4_path, doc_gen, discover, update),
 
         Commands::VerifyCommit => run_verify_commit(),
+
+        Commands::MalLogin => personalize::run_login(),
+        Commands::Personalize => personalize::run_personalize(),
     }
 }
 
@@ -74,7 +85,17 @@ fn run_ci() -> Result<()> {
     run_command("cargo", &["fmt", "--", "--check"])?;
 
     println!("\n[2/4] Running Clippy...");
-    run_command("cargo", &["clippy", "--", "-D", "warnings"])?;
+    run_command(
+        "cargo",
+        &[
+            "clippy",
+            "--all-targets",
+            "--all-features",
+            "--",
+            "-D",
+            "warnings",
+        ],
+    )?;
 
     println!("\n[3/4] Running Tests...");
     // Use nextest for faster parallel test execution

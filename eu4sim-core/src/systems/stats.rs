@@ -35,8 +35,10 @@ mod tests {
 
     #[test]
     fn test_prestige_decay() {
-        let mut country = CountryState::default();
-        country.prestige = new_prestige();
+        let mut country = CountryState {
+            prestige: new_prestige(),
+            ..Default::default()
+        };
         country.prestige.set(Fixed::from_int(100)); // Max prestige
 
         let mut state = WorldState::default();
