@@ -17,3 +17,6 @@ commit_msg.txt
 eu4data/src/generated/types/*
 !eu4data/src/generated/types/mod.rs
 .mal_token.json
+
+# Observer output files
+*.jsonl

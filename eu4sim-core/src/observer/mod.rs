@@ -32,7 +32,10 @@
 //! ```
 
 pub mod console;
+pub mod datagen;
+pub mod event_log;
 
+use crate::input::PlayerInputs;
 use crate::state::WorldState;
 use std::sync::Arc;
 use thiserror::Error;
@@ -79,6 +82,9 @@ pub enum ObserverError {
     /// I/O error (e.g., writing to terminal)
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+    /// Serialization error (e.g., JSON output)
+    #[error("Serialization error: {0}")]
+    Serialize(#[from] serde_json::Error),
     /// Rendering/formatting error
     #[error("Render error: {0}")]
     Render(String),
@@ -125,6 +131,29 @@ pub trait SimObserver: Send + Sync {
     /// Receives an immutable snapshot that cannot affect simulation state.
     fn on_tick(&self, snapshot: &Snapshot) -> Result<(), ObserverError>;
 
+    /// Called after each tick with both state AND the inputs that were processed.
+    ///
+    /// This method is only called for observers that return `true` from `needs_inputs()`.
+    /// Default implementation delegates to `on_tick`, ignoring inputs.
+    ///
+    /// Use this for observers that need to correlate state changes with player actions,
+    /// such as training data generators.
+    fn on_tick_with_inputs(
+        &self,
+        snapshot: &Snapshot,
+        _inputs: &[PlayerInputs],
+    ) -> Result<(), ObserverError> {
+        self.on_tick(snapshot)
+    }
+
+    /// Whether this observer needs input data.
+    ///
+    /// If `true`, the registry will call `on_tick_with_inputs` instead of `on_tick`.
+    /// Default is `false` for backward compatibility.
+    fn needs_inputs(&self) -> bool {
+        false
+    }
+
     /// Human-readable name for logging/debugging.
     fn name(&self) -> &str;
 
@@ -160,10 +189,21 @@ impl ObserverRegistry {
         self.observers.push(observer);
     }
 
-    /// Notify all observers of a tick.
+    /// Notify all observers of a tick (without input data).
+    ///
+    /// Convenience method that calls `notify_with_inputs` with empty inputs.
+    /// Use this when you don't need to pass player inputs to observers.
+    pub fn notify(&self, snapshot: &Snapshot) {
+        self.notify_with_inputs(snapshot, &[])
+    }
+
+    /// Notify all observers of a tick with player inputs.
+    ///
+    /// For observers that need input data (`needs_inputs() == true`), calls
+    /// `on_tick_with_inputs`. For others, calls `on_tick`.
     ///
     /// Errors are logged but do not propagate (non-blocking).
-    pub fn notify(&self, snapshot: &Snapshot) {
+    pub fn notify_with_inputs(&self, snapshot: &Snapshot, inputs: &[PlayerInputs]) {
         for observer in &self.observers {
             let config = observer.config();
 
@@ -172,7 +212,13 @@ impl ObserverRegistry {
                 || (config.notify_on_month_start && snapshot.state.date.day == 1);
 
             if should_notify {
-                if let Err(e) = observer.on_tick(snapshot) {
+                let result = if observer.needs_inputs() {
+                    observer.on_tick_with_inputs(snapshot, inputs)
+                } else {
+                    observer.on_tick(snapshot)
+                };
+
+                if let Err(e) = result {
                     log::warn!("Observer '{}' error: {}", observer.name(), e);
                 }
             }

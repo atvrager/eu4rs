@@ -5,10 +5,13 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode},
 };
 use eu4sim_core::observer::console::ConsoleObserver;
+use eu4sim_core::observer::datagen::DataGenObserver;
+use eu4sim_core::observer::event_log::EventLogObserver;
 use eu4sim_core::state::Date;
 use eu4sim_core::{step_world, ObserverRegistry, PlayerInputs, SimConfig, Snapshot};
 use rayon::prelude::*;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 mod loader;
 
@@ -67,6 +70,14 @@ struct Args {
     /// Initial simulation speed (1-5)
     #[arg(long, default_value_t = 5)]
     speed: u64,
+
+    /// Write event log JSONL to file (use "-" for stdout)
+    #[arg(long)]
+    event_log: Option<String>,
+
+    /// Write training data JSONL to file (use "-" for stdout)
+    #[arg(long)]
+    datagen: Option<String>,
 }
 
 use eu4sim_core::SimMetrics;
@@ -97,8 +108,9 @@ fn main() -> Result<()> {
     let game_path = PathBuf::from(args.game_path);
 
     // Initialize State
-    let (mut state, adjacency) =
+    let (mut state, adjacency_raw) =
         loader::load_initial_state(&game_path, Date::new(args.start_year, 11, 11), 12345)?;
+    let adjacency = Arc::new(adjacency_raw);
 
     log::info!("Initial State Date: {}", state.date);
 
@@ -153,6 +165,26 @@ fn main() -> Result<()> {
     let tag_refs: Vec<&str> = tags.iter().map(|s| s.as_str()).collect();
     observers.register(Box::new(ConsoleObserver::new(&tag_refs)));
 
+    // Register event log observer if requested
+    if let Some(ref path) = args.event_log {
+        let observer = if path == "-" {
+            EventLogObserver::stdout()
+        } else {
+            EventLogObserver::file(path)?
+        };
+        observers.register(Box::new(observer));
+    }
+
+    // Register datagen observer if requested
+    if let Some(ref path) = args.datagen {
+        let observer = if path == "-" {
+            DataGenObserver::stdout(Some(Arc::clone(&adjacency)))
+        } else {
+            DataGenObserver::file(path, Some(Arc::clone(&adjacency)))?
+        };
+        observers.register(Box::new(observer));
+    }
+
     let mut tick: u64 = 0;
     let mut paused = false;
     let mut header_printed = false;
@@ -196,18 +228,17 @@ fn main() -> Result<()> {
         );
         std::io::stdout().flush().unwrap();
 
-        // Notify observers (renders country stats)
-        let snapshot = Snapshot::new(state.clone(), tick, 0);
-        observers.notify(&snapshot);
-
-        // Pause Logic
+        // Pause Logic (render state but don't advance)
         if paused {
+            // Still notify observers so display updates
+            let snapshot = Snapshot::new(state.clone(), tick, 0);
+            observers.notify(&snapshot);
             std::thread::sleep(std::time::Duration::from_millis(100));
             continue;
         }
 
-        // Logic Step
-        let mut inputs = Vec::new();
+        // Logic Step - generate AI inputs
+        let mut inputs: Vec<PlayerInputs> = Vec::new();
 
         if args.observer {
             let ai_start = std::time::Instant::now();
@@ -232,7 +263,7 @@ fn main() -> Result<()> {
                     };
 
                     // Allocate available commands buffer per-AI
-                    let available = state.available_commands(tag, Some(&adjacency));
+                    let available = state.available_commands(tag, Some(&*adjacency));
 
                     let cmds = eu4sim_core::ai::AiPlayer::decide(ai, &visible_state, &available);
                     if !cmds.is_empty() {
@@ -257,8 +288,18 @@ fn main() -> Result<()> {
         }
 
         // Step
-        state = step_world(&state, &inputs, Some(&adjacency), &config, metrics.as_mut());
+        state = step_world(
+            &state,
+            &inputs,
+            Some(&*adjacency),
+            &config,
+            metrics.as_mut(),
+        );
         tick += 1;
+
+        // Notify observers with post-step state and inputs that were processed
+        let snapshot = Snapshot::new(state.clone(), tick, 0);
+        observers.notify_with_inputs(&snapshot, &inputs);
 
         // Speed control delay
         if speed < 5 {

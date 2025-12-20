@@ -18,6 +18,8 @@ pub use fixed::Fixed;
 pub use input::{Command, PlayerInputs};
 pub use metrics::SimMetrics;
 pub use modifiers::{GameModifiers, TradegoodId};
+pub use observer::datagen::{DataGenObserver, TrainingSample};
+pub use observer::event_log::{EventLogObserver, GameEvent};
 pub use observer::{ObserverConfig, ObserverError, ObserverRegistry, SimObserver, Snapshot};
 pub use state::WorldState;
 pub use step::{step_world, ActionError};

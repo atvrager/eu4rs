@@ -41,6 +41,7 @@ use crate::input::Command;
 use crate::state::{CountryState, Date, Tag};
 use rand::Rng;
 use rand::SeedableRng;
+use serde::Serialize;
 
 /// Visibility mode for AI and UI filtering
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,7 +56,7 @@ pub enum VisibilityMode {
 ///
 /// In Omniscient mode, this is a direct copy of relevant fields.
 /// In Realistic mode, this would be filtered (future work).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct VisibleWorldState {
     pub date: Date,
     pub observer: Tag,
