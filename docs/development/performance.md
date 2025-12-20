@@ -63,8 +63,23 @@ When simulation speed drops or sub-system costs rise unexpectedly, the following
 
 ### 1. Sampling Profilers
 Use `samply` (Web-based profiler for Rust/Firefox) or `flamegraph` to identify hotspots in the simulation loop.
-- **Samply**: Excellent for Windows/Linux. `samply record cargo run -p eu4sim -- --ticks 1000`
-- **Flamegraph**: Classic visualization. `cargo flamegraph -p eu4sim -- --ticks 1000`
+
+**Recommended: Samply** (Easy interactive traces)
+```bash
+cargo install samply
+# Run observer mode for 1000 ticks
+samply record cargo run -p eu4sim --release -- --observer --ticks 1000
+```
+This opens a local server (firefox Profiler compatible) to explore call stacks.
+
+**Alternative: Flamegraph** (Classic visualization)
+```bash
+cargo install flamegraph
+cargo flamegraph -p eu4sim -- --observer --ticks 1000
+```
+Generates `flamegraph.svg` in current directory.
+
+*Note: Always use `--release` for accurate bottlenecks (debug builds are dominated by non-inlined method calls).*
 
 ### 2. Micro-benchmarking (Criterion)
 For critical algorithms like pathfinding or CAS calculations, use `criterion` to measure performance in isolation and detect regressions.
