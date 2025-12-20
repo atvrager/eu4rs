@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use regex::Regex;
 use reqwest::blocking::Client;
 use std::env;
 use std::process::{Command, Stdio};
@@ -38,6 +39,9 @@ enum Commands {
         #[arg(long)]
         update: bool,
     },
+
+    /// Verify the HEAD commit follows project conventions (post-commit check)
+    VerifyCommit,
 }
 
 fn main() -> Result<()> {
@@ -58,6 +62,8 @@ fn main() -> Result<()> {
             discover,
             update,
         } => run_coverage(eu4_path, doc_gen, discover, update),
+
+        Commands::VerifyCommit => run_verify_commit(),
     }
 }
 
@@ -387,6 +393,64 @@ fn run_coverage(
 
     // Always print to terminal
     println!("{}", report.to_terminal());
+
+    Ok(())
+}
+
+fn run_verify_commit() -> Result<()> {
+    println!("Verifying HEAD commit...\n");
+
+    // 1. Get commit message
+    let output = Command::new("git")
+        .args(["log", "-1", "--format=%s%n%n%b"])
+        .output()
+        .context("Failed to get git log")?;
+    let message = String::from_utf8_lossy(&output.stdout);
+
+    // 2. Check conventions
+    // Regex: ^(feat|fix|refactor|docs|test|chore|perf)(\(.+\))?: .+$
+    let re = Regex::new(r"^(feat|fix|refactor|docs|test|chore|perf)(\(.+\))?: .+$").unwrap();
+    let subject = message.lines().next().unwrap_or("");
+
+    let mut passed = true;
+
+    if re.is_match(subject) {
+        println!("✅ Commit message format is correct.");
+    } else {
+        println!("❌ Commit message format invalid.");
+        println!("   Expected: type(scope): description");
+        println!("   Got:      {}", subject);
+        passed = false;
+    }
+
+    // 3. Check docs updates
+    let diff_output = Command::new("git")
+        .args(["show", "--name-only", "--format=", "HEAD"])
+        .output()
+        .context("Failed to get git diff")?;
+    let changed_files = String::from_utf8_lossy(&diff_output.stdout);
+
+    let has_code_changes = changed_files.lines().any(|f| {
+        f.starts_with("eu4sim-core/") || f.starts_with("eu4sim/") || f.starts_with("eu4data/")
+    });
+    let has_doc_updates = changed_files.lines().any(|f| f.starts_with("docs/"));
+    let is_docs_commit = subject.starts_with("docs");
+
+    if has_code_changes && !has_doc_updates && !is_docs_commit {
+        println!("⚠️  Code changed but no docs updated.");
+        println!("   If this added a feature or completed a roadmap item, update:");
+        println!("   - docs/planning/mid-term-status.md");
+        println!("   - docs/planning/roadmap.md");
+    } else if has_doc_updates {
+        println!("✅ Docs updated.");
+    }
+
+    if passed {
+        println!("\nCommit Verified! 🚀");
+        println!("Ready to push: git push");
+    } else {
+        anyhow::bail!("Verification failed. Please amend commit.");
+    }
 
     Ok(())
 }

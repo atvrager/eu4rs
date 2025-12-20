@@ -225,7 +225,7 @@ mod tests {
                 attacker_battles in 0u8..20,
                 defender_battles in 0u8..20,
                 attacker_occ_dev in 0u32..1000,
-                defender_occ_dev in 0u32..1000,
+                _defender_occ_dev in 0u32..1000,
                 total_dev in 1u32..1000,
             ) {
                 let mut state = WorldStateBuilder::new()

@@ -39,7 +39,7 @@ Run a "complete" game from 1444 to 1821 with:
 | War Resolution | Medium | 50% white peace, dev-scaled province costs, 5/10yr auto-end |
 | Colonization | Minimal | Distance-based, standing order command |
 | AI | Minimal | Random valid commands, pluggable interface |
-| Diplomacy | Minimal | Stability hits for betrayal (RM, military access) |
+| Diplomacy | Minimal | Stability hits for betrayal (RM, military access), No-CB war penalty |
 | Tech/Institutions | Minimal | 3/3/3 flat mana, institutions spread by dev |
 | Religion | Minimal | Static religions (upgrade to Medium post-launch) |
 | Rulers | SKIP | No rulers - flat mana generation (design experiment) |
@@ -95,7 +95,7 @@ Everything else can be stubbed or is already done.
 ## Next Steps (Not Prioritized)
 
 - [ ] Implement peace deal system (Logic integration)
-- [ ] Add stability system with betrayal consequences
+- [x] Add stability system with betrayal consequences
 - [x] Add mana generation + dev purchasing
 - [x] Add colonization with standing orders
 - [ ] Add reformation spread
@@ -106,7 +106,7 @@ Everything else can be stubbed or is already done.
 
 See [complete-game-target.md](../design/simulation/complete-game-target.md#open-planning-work) for full list.
 
-**Needs Design Session**: Casus Belli system, Alliance call-to-arms, Stability triggers, Reformation spread, Institution spread, Tech effects, Province cost formula, Truce duration.
+**Needs Design Session**: Casus Belli system, Alliance call-to-arms, Reformation spread, Institution spread, Tech effects, Province cost formula, Truce duration.
 
 **Architectural Sketches Needed**: AI decision frequency, Performance architecture, Save/Load system, Determinism testing.
 

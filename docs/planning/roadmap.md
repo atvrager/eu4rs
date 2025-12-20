@@ -61,8 +61,12 @@ Basic war system with combat resolution.
   - Regiment destruction when strength reaches zero
   - Army removal when all regiments destroyed
 - [x] **Combat Power**: Type-based modifiers (Infantry: 1.0, Cavalry: 1.5, Artillery: 1.2)
+- [x] **Stability & Prestige System**: Bounded value types for stability (-3 to +3), prestige, army tradition
+  - Monthly decay for prestige and tradition (~5%/year)
+  - No-CB war penalty (-2 stability)
+  - Peace term effects (White Peace: -10 prestige, Full Annexation: +25)
 
-**Key Files**: [combat.rs](../../eu4sim-core/src/systems/combat.rs), [step.rs](../../eu4sim-core/src/step.rs)
+**Key Files**: [combat.rs](../../eu4sim-core/src/systems/combat.rs), [step.rs](../../eu4sim-core/src/step.rs), [bounded.rs](../../eu4sim-core/src/bounded.rs), [stats.rs](../../eu4sim-core/src/systems/stats.rs)
 
 **Limitations**: Alliances not enforced, no peace treaties yet
 
@@ -188,6 +192,7 @@ Parallel development track for rendering and debugging.
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| **0.1.5** | 2025-12-19 | Stability & prestige system, bounded value types |
 | **0.1.4** | 2025-12-17 | Property testing, movement pathfinding |
 | **0.1.3** | 2025-12 | Movement system, naval transport |
 | **0.1.2** | 2025-11 | Combat system, war declarations |

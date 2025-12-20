@@ -237,7 +237,7 @@ Before handing work between agents (Antigravity ↔ Claude Code):
 
 **Benefits:**
 - Clean rollback points if agent makes mistakes
-- Git becomes the review mechanism (`git diff HEAD~1`)
+- Git becomes the review mechanism (`git show --stat HEAD`)
 - Clear responsibility boundaries in git history
 - Easy to cherry-pick or revert specific agent work
 
@@ -334,9 +334,11 @@ To ensure maximum reliability across different shells (especially PowerShell) an
 - For rich multi-line commit messages, use the file technique:
   1. Create message file: `write_to_file` → `commit_msg.txt`
   2. Commit with file: `git commit -F commit_msg.txt`
-  3. Clean up: `del commit_msg.txt` (Windows) or `rm commit_msg.txt` (Unix)
+  3. Clean up: Empty the file (use `write_to_file` with `EmptyFile: true`)
+- `commit_msg.txt` is in `.gitignore` to prevent accidental staging
 - This avoids PowerShell/shell escaping issues with `-m` flags
 - Works reliably across all platforms
+- See `/finalize-commit` workflow for full checklist
 
 ### Minimal Build Guidance
 
@@ -384,6 +386,27 @@ Review with: git diff --stat"
 - Existing public APIs (breaking changes)
 - Security-sensitive code (auth, secrets, credentials)
 - Large refactors (>5 files or >200 lines changed)
+
+## Documentation Requirements
+
+After implementing any feature that:
+- Adds a new system or module
+- Completes a roadmap item
+- Changes a tier target status
+- Implements a planned feature from `mid-term-status.md`
+
+You **MUST** update the relevant progression docs before committing:
+
+| File | When to Update |
+|------|----------------|
+| `docs/planning/mid-term-status.md` | Mark "Next Steps" items `[x]`, update tier table, remove from planning |
+| `docs/planning/roadmap.md` | Mark phase items complete, add to Version History |
+| `docs/design/simulation/complete-game-target.md` | Update "Current Status" for affected systems |
+
+Always update the `Last updated:` date when modifying these files.
+
+> [!TIP]
+> Use the `/finalize-commit` workflow for a complete checklist.
 
 ## Agent Testing & Calibration
 

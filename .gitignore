@@ -7,7 +7,9 @@ stats.json
 stats.html
 .env
 
-# Auto-generated types
+# Temporary commit message file (used by agents)
+commit_msg.txt
+
 # Auto-generated types
 eu4data/src/generated/types/*
 !eu4data/src/generated/types/mod.rs
