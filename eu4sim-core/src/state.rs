@@ -49,6 +49,15 @@ impl Date {
             day: d as u8,
         }
     }
+
+    /// Adds years to the current date.
+    pub fn add_years(&self, years: i32) -> Self {
+        Self {
+            year: self.year + years,
+            month: self.month,
+            day: self.day,
+        }
+    }
 }
 
 impl Default for Date {
@@ -295,6 +304,9 @@ pub struct DiplomacyState {
     /// Military access: (Grantor, Receiver) -> bool
     /// If true, Receiver can move armies through Grantor's territory
     pub military_access: HashMap<(Tag, Tag), bool>,
+    /// Active truces: (Tag1, Tag2) -> expiry date
+    /// Keys stored in sorted order (smaller tag first) to avoid duplication
+    pub truces: HashMap<(Tag, Tag), Date>,
 }
 
 impl DiplomacyState {
@@ -323,6 +335,29 @@ impl DiplomacyState {
             .get(&(grantor.to_string(), receiver.to_string()))
             .copied()
             .unwrap_or(false)
+    }
+
+    /// Check if there is an active truce between two countries.
+    pub fn has_active_truce(&self, tag1: &str, tag2: &str, current_date: Date) -> bool {
+        let key = Self::sorted_pair(tag1, tag2);
+        self.truces
+            .get(&key)
+            .map(|expiry| *expiry > current_date)
+            .unwrap_or(false)
+    }
+
+    /// Create a new truce between two countries.
+    pub fn create_truce(&mut self, tag1: &str, tag2: &str, expiry_date: Date) {
+        let key = Self::sorted_pair(tag1, tag2);
+        self.truces.insert(key, expiry_date);
+    }
+
+    pub fn sorted_pair(a: &str, b: &str) -> (String, String) {
+        if a < b {
+            (a.to_string(), b.to_string())
+        } else {
+            (b.to_string(), a.to_string())
+        }
     }
 }
 
@@ -487,6 +522,14 @@ impl WorldState {
         for key in access_keys {
             key.hash(&mut hasher);
             self.diplomacy.military_access[key].hash(&mut hasher);
+        }
+
+        // Truces (sorted by key)
+        let mut truce_keys: Vec<_> = self.diplomacy.truces.keys().collect();
+        truce_keys.sort();
+        for key in truce_keys {
+            key.hash(&mut hasher);
+            self.diplomacy.truces[key].hash(&mut hasher);
         }
 
         hasher.finish()

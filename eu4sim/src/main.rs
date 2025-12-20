@@ -368,6 +368,22 @@ fn main() -> Result<()> {
                         }
                     }
 
+                    // Generate DeclareWar commands for potential targets
+                    for target_tag in state.countries.keys() {
+                        if target_tag != tag && !state.diplomacy.are_at_war(tag, target_tag) {
+                            // Only add DeclareWar if no active truce
+                            if !state
+                                .diplomacy
+                                .has_active_truce(tag, target_tag, state.date)
+                            {
+                                available.push(eu4sim_core::Command::DeclareWar {
+                                    target: target_tag.clone(),
+                                    cb: None,
+                                });
+                            }
+                        }
+                    }
+
                     // Generate peace commands for active wars
                     for (war_id, war) in &state.diplomacy.wars {
                         let is_attacker = war.attackers.contains(tag);

@@ -41,7 +41,7 @@ Each game system is defined at three fidelity levels. The mid-term goal targets 
 | **Medium** | Sieges work, morale affects combat, attrition exists, leaders provide bonuses, terrain matters. |
 | **Full** | Full combat width, dice rolls, discipline/tactics, professionalism, mercenaries, condottieri. |
 
-**Current Status**: Minimal implemented. Missing: war termination.
+**Current Status**: Minimal implemented. Peace deals and truces implemented.
 
 **Army Movement & Occupation**:
 
@@ -81,7 +81,7 @@ Random AI behavior:
 | **Medium** | War score from battles/occupation/blockades. Peace deals transfer provinces. White peace possible. |
 | **Full** | Ticking war score, call to arms, separate peace, coalition mechanics, war exhaustion, aggressive expansion. |
 
-**Current Status**: Not implemented. **BLOCKING for mid-term goal.**
+**Current Status**: Minimal implemented (peace deal logic, province transfer, country death, truces).
 
 **Mid-term Implementation**:
 - **War score**: 0-100%, from battles won and provinces occupied
@@ -161,7 +161,7 @@ Random AI behavior:
 | **Medium** | Opinion system, vassals/subjects, coalition formation, rivalry bonuses, diplomatic reputation, separate peace in wars. |
 | **Full** | Favors, trust, great power mechanics, guarantee independence, threaten war, support independence, full subject types (PU, march, tributary). |
 
-**Current Status**: Alliance/Rival tracking exists. War declaration exists.
+**Current Status**: Minimal implemented. Alliances, rivals, war declaration, and truces functional.
 
 **Design Note**: Stability consequences for diplomatic betrayal are prioritized because they're often the source of confusing war declaration UI in the real game. Getting this right is a concrete UX improvement opportunity.
 
@@ -296,11 +296,11 @@ Random AI behavior:
 | System | Target Tier | Blocking? | Notes |
 |--------|-------------|-----------|-------|
 | Economy | Minimal | ✅ Done | Production + tax + expenses |
-| Military | Minimal+ | 🔄 Partial | Combat works, wars can't end |
-| War Resolution | Medium | ❌ **BLOCKING** | Peace deals needed |
-| Colonization | Minimal | ❌ Not started | Fixed growth, no exploration |
-| AI | Minimal | ❌ Not started | Random valid commands |
-| Diplomacy | Minimal | 🔄 Partial | Need stability consequences |
+| Military | Minimal+ | ✅ Done | Combat works, wars end with peace deals and truces |
+| War Resolution | Medium | ✅ Done | Peace deal logic, truces, country elimination |
+| Colonization | Minimal | ✅ Done | Fixed growth, standing orders implemented |
+| AI | Minimal | ✅ Done | Random commands, war declaration filtering |
+| Diplomacy | Minimal | 🔄 Partial | Stability hits for betrayal (truce enforcement exists) |
 | Tech & Institutions | Minimal | ❌ Not started | Mana exists, institutions spread by dev |
 | Events | SKIP | — | Alternate history is fine |
 | Rebels | SKIP | — | No internal instability |

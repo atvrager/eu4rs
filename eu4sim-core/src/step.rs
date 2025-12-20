@@ -58,6 +58,11 @@ pub enum ActionError {
     NoPendingPeace { war_id: u32 },
     #[error("Cannot accept own peace offer")]
     CannotAcceptOwnOffer,
+    #[error("Active truce with {target} (expires {expires})")]
+    TruceActive {
+        target: String,
+        expires: crate::state::Date,
+    },
 }
 
 /// Advance the world by one tick.
@@ -218,6 +223,11 @@ fn auto_end_stale_wars(state: &mut WorldState) {
         .collect();
 
     for war_id in wars_to_end {
+        // Create truces before removing war
+        if let Some(war) = state.diplomacy.wars.get(&war_id).cloned() {
+            create_war_truces(state, &war, state.date);
+        }
+
         // Restore province controllers
         restore_province_controllers(state, war_id);
 
@@ -361,6 +371,19 @@ fn execute_command(
             if state.diplomacy.are_at_war(country_tag, target) {
                 return Err(ActionError::AlreadyAtWar {
                     target: target.clone(),
+                });
+            }
+
+            // Check for active truce
+            if state
+                .diplomacy
+                .has_active_truce(country_tag, target, state.date)
+            {
+                let key = crate::state::DiplomacyState::sorted_pair(country_tag, target);
+                let expiry = state.diplomacy.truces.get(&key).unwrap();
+                return Err(ActionError::TruceActive {
+                    target: target.clone(),
+                    expires: *expiry,
                 });
             }
 
@@ -688,6 +711,7 @@ fn execute_command(
                 .diplomacy
                 .wars
                 .get(war_id)
+                .cloned()
                 .ok_or(ActionError::WarNotFound { war_id: *war_id })?;
 
             let pending = war
@@ -703,6 +727,9 @@ fn execute_command(
 
             // Execute peace terms
             execute_peace_terms(state, *war_id, &pending.terms)?;
+
+            // Create truces before removing war
+            create_war_truces(state, &war, state.date);
 
             // Remove war
             state.diplomacy.wars.remove(war_id);
@@ -994,6 +1021,20 @@ fn restore_province_controllers(state: &mut WorldState, war_id: u32) {
                     }
                 }
             }
+        }
+    }
+}
+
+/// Creates truces between all attackers and defenders in a war.
+fn create_war_truces(
+    state: &mut WorldState,
+    war: &crate::state::War,
+    current_date: crate::state::Date,
+) {
+    let expiry = current_date.add_years(5);
+    for attacker in &war.attackers {
+        for defender in &war.defenders {
+            state.diplomacy.create_truce(attacker, defender, expiry);
         }
     }
 }
@@ -1373,5 +1414,87 @@ mod tests {
         assert!(!state.colonies.contains_key(&1));
         let prov = state.provinces.get(&1).unwrap();
         assert_eq!(prov.owner.as_ref().unwrap(), "SWE");
+    }
+
+    #[test]
+    fn test_truce_blocks_war_declaration() {
+        let mut state = WorldStateBuilder::new()
+            .with_country("A")
+            .with_country("B")
+            .build();
+
+        // Create truce expiring in 5 years
+        let expiry = state.date.add_years(5);
+        state.diplomacy.create_truce("A", "B", expiry);
+
+        // Declare war should fail
+        let result = execute_command(
+            &mut state,
+            "A",
+            &Command::DeclareWar {
+                target: "B".into(),
+                cb: None,
+            },
+            None,
+        );
+        assert!(matches!(result, Err(ActionError::TruceActive { .. })));
+    }
+
+    #[test]
+    fn test_truce_expires() {
+        let mut state = WorldStateBuilder::new()
+            .with_country("A")
+            .with_country("B")
+            .build();
+
+        // Truce at current date is EXPIRED (expires > current_date)
+        // So if expiry == state.date, it's NOT active anymore
+        state.diplomacy.create_truce("A", "B", state.date);
+
+        // Should not be active
+        assert!(!state.diplomacy.has_active_truce("A", "B", state.date));
+    }
+
+    #[test]
+    fn test_peace_creates_truces() {
+        let mut state = WorldStateBuilder::new()
+            .with_country("A")
+            .with_country("B")
+            .build();
+
+        // Start a war
+        let war_id = 0;
+        state.diplomacy.wars.insert(
+            war_id,
+            crate::state::War {
+                id: war_id,
+                name: "A vs B".to_string(),
+                attackers: vec!["A".to_string()],
+                defenders: vec!["B".to_string()],
+                start_date: state.date,
+                attacker_score: 0,
+                attacker_battle_score: 0,
+                defender_score: 0,
+                defender_battle_score: 0,
+                pending_peace: None,
+            },
+        );
+
+        // Offer and accept peace
+        let terms = PeaceTerms::WhitePeace;
+        execute_command(
+            &mut state,
+            "A",
+            &Command::OfferPeace {
+                war_id,
+                terms: terms.clone(),
+            },
+            None,
+        )
+        .unwrap();
+        execute_command(&mut state, "B", &Command::AcceptPeace { war_id }, None).unwrap();
+
+        // Verify truce exists
+        assert!(state.diplomacy.has_active_truce("A", "B", state.date));
     }
 }

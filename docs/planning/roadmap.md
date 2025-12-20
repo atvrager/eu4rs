@@ -117,6 +117,7 @@ Enhanced combat and military management.
   - Command, fire, shock, maneuver
   - Leader assignment to armies/fleets
 - [ ] **Morale System**: Unit morale and rout mechanics
+- [x] **Truce System**: 5-year cooling off period between warring parties
 - [ ] **Supply Lines**: Attrition based on supply limit
   - Province supply capacity
   - Distance from capital/ports
@@ -193,6 +194,7 @@ Parallel development track for rendering and debugging.
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| **0.1.7** | 2025-12-19 | Truce system, AI war declaration filtering, checksum integration |
 | **0.1.6** | 2025-12-19 | Personalization System, agent personas, Claude Code protocols |
 | **0.1.5** | 2025-12-19 | Stability & prestige system, bounded value types |
 | **0.1.4** | 2025-12-17 | Property testing, movement pathfinding |
@@ -260,4 +262,4 @@ Play EU4 in your terminal! A text-based interface using `ratatui` or similar:
 
 ---
 
-*Last updated: 2025-12-19*
+*Last updated: 2025-12-19* (v0.1.7)
