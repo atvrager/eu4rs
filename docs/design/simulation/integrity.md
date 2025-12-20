@@ -356,6 +356,34 @@ For competitive multiplayer, a server-authoritative model with state broadcastin
 
 ---
 
+## Known Issues
+
+### ⚠️ PERF: Truce/Diplomacy Key Allocations
+
+**Location**: `eu4sim-core/src/state.rs` (`DiplomacyState::sorted_pair`)
+
+**Problem**: Every truce/diplomacy lookup allocates two `String`s:
+```rust
+pub fn sorted_pair(a: &str, b: &str) -> (String, String) {
+    if a < b {
+        (a.to_string(), b.to_string())
+    } else {
+        (b.to_string(), a.to_string())
+    }
+}
+```
+
+**Impact**: O(n) allocations per lookup in hot diplomatic paths. Not critical now, but scales poorly with many countries.
+
+**Potential Fixes**:
+1. **String interning**: Use a global interner for country tags, lookup by `InternedId`
+2. **BTreeMap with tuple borrows**: Requires GAT or custom key types
+3. **Pre-sorted storage**: Store relations as `(smaller_tag, larger_tag)` at insertion time
+
+**Deferral Reason**: Requires changing `HashMap<(String, String), _>` across multiple structs and updating serde. Not trivial.
+
+---
+
 ## References
 
 - [Gaffer On Games: Deterministic Lockstep](https://gafferongames.com/post/deterministic_lockstep/)

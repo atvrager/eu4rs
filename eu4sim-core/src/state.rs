@@ -179,19 +179,22 @@ impl WorldState {
         crate::step::available_commands(self, tag, adjacency)
     }
 
-    /// Generate a random f32 in [0.0, 1.0) using deterministic RNG.
+    /// Generate a random Fixed in [0, 1) using deterministic RNG.
     ///
     /// Uses xorshift64 for deterministic random number generation.
     /// Critical for replay compatibility - same seed produces same sequence.
-    pub fn random_f32(&mut self) -> f32 {
-        // Simple xorshift64 for determinism
+    /// Returns Fixed for netcode-safe arithmetic (no floats in sim logic).
+    pub fn random_fixed(&mut self) -> Fixed {
+        // xorshift64 - deterministic PRNG
         let mut x = self.rng_state;
         x ^= x << 13;
         x ^= x >> 7;
         x ^= x << 17;
         self.rng_state = x;
-        // Convert to f32 in [0, 1)
-        (x as f32) / (u64::MAX as f32)
+        // Convert to Fixed in [0, 1) range
+        // Fixed uses SCALE=10000, so we need raw value in [0, 10000)
+        // Use upper 32 bits for better distribution, then modulo SCALE
+        Fixed::from_raw(((x >> 32) % (Fixed::SCALE as u64)) as i64)
     }
 }
 
@@ -236,7 +239,6 @@ pub struct ProvinceState {
 pub struct CountryState {
     /// Treasury balance (Fixed for determinism)
     pub treasury: Fixed,
-    /// Available manpower pool
     /// Available manpower pool
     pub manpower: Fixed,
     /// Country stability (-3 to +3)

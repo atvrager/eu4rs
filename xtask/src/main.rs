@@ -523,7 +523,11 @@ fn run_verify_commit() -> Result<()> {
     let changed_files = String::from_utf8_lossy(&diff_output.stdout);
 
     let has_code_changes = changed_files.lines().any(|f| {
-        f.starts_with("eu4sim-core/") || f.starts_with("eu4sim/") || f.starts_with("eu4data/")
+        f.starts_with("eu4sim-core/")
+            || f.starts_with("eu4sim/")
+            || f.starts_with("eu4data/")
+            || f.starts_with("eu4viz/")
+            || f.starts_with("xtask/")
     });
     let has_doc_updates = changed_files.lines().any(|f| f.starts_with("docs/"));
     let is_docs_commit = subject.starts_with("docs");

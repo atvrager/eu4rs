@@ -107,13 +107,20 @@ fn spawn_centers(state: &mut WorldState, religion: &str, candidates: &[ProvinceI
 }
 
 fn process_centers(state: &mut WorldState, adjacency: Option<&AdjacencyGraph>) {
+    use crate::fixed::Fixed;
+
     let Some(adj) = adjacency else { return };
 
     // Collect candidates: (neighbor_id, religion, threshold)
-    let mut candidates: Vec<(ProvinceId, String, f32)> = Vec::new();
+    // All arithmetic uses Fixed for netcode-safe determinism
+    let mut candidates: Vec<(ProvinceId, String, Fixed)> = Vec::new();
+
+    // Base chance: 2% per month = 0.02 = 200 in Fixed scale (SCALE=10000)
+    let base_chance = Fixed::from_raw(200);
+    // Divisor for development scaling: 10.0
+    let ten = Fixed::from_int(10);
 
     for (&center_id, religion) in &state.global.reformation.centers_of_reformation {
-        // Get adjacent provinces
         let neighbors = adj.neighbors(center_id);
 
         for neighbor_id in neighbors {
@@ -131,23 +138,22 @@ fn process_centers(state: &mut WorldState, adjacency: Option<&AdjacencyGraph>) {
                 continue;
             }
 
-            // Calculate conversion chance
-            // Mission objective: determine probability based on development
+            // Calculate conversion chance using Fixed arithmetic
+            // Formula: threshold = base_chance * (10 / (10 + dev))
             // Higher development = more resistance to religious change
             let dev = neighbor.base_tax + neighbor.base_production + neighbor.base_manpower;
-            let dev_f32 = dev.to_f32();
-            let base_chance = 0.02; // 2% per month
-            let dev_modifier = 1.0 / (1.0 + dev_f32 / 10.0);
-            let threshold = base_chance * dev_modifier;
+            let denominator = ten + dev;
+            let dev_modifier = ten.div(denominator);
+            let threshold = base_chance.mul(dev_modifier);
 
             candidates.push((neighbor_id, religion.clone(), threshold));
         }
     }
 
-    // Now roll RNG for each candidate and collect conversions
+    // Roll RNG for each candidate using deterministic Fixed arithmetic
     let mut conversions: Vec<(ProvinceId, String)> = Vec::new();
     for (province_id, religion, threshold) in candidates {
-        let roll = state.random_f32();
+        let roll = state.random_fixed();
         if roll < threshold {
             conversions.push((province_id, religion));
         }
