@@ -4,7 +4,7 @@ use crossterm::{
     event::{self, Event, KeyCode},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
-use eu4sim_core::state::{Date, ProvinceId, Tag};
+use eu4sim_core::state::{Date, PeaceTerms, ProvinceId, Tag};
 use eu4sim_core::{step_world, PlayerInputs, SimConfig};
 use rayon::prelude::*;
 use std::path::PathBuf;
@@ -363,6 +363,32 @@ fn main() -> Result<()> {
                                             province: neighbor_id,
                                         });
                                     }
+                                }
+                            }
+                        }
+                    }
+
+                    // Generate peace commands for active wars
+                    for (war_id, war) in &state.diplomacy.wars {
+                        let is_attacker = war.attackers.contains(tag);
+                        let is_defender = war.defenders.contains(tag);
+
+                        if is_attacker || is_defender {
+                            // Offer white peace in any war we're involved in
+                            available.push(eu4sim_core::Command::OfferPeace {
+                                war_id: *war_id,
+                                terms: PeaceTerms::WhitePeace,
+                            });
+
+                            // Accept peace if opponent has offered
+                            if let Some(pending) = &war.pending_peace {
+                                let offer_from_opponent = (is_attacker && !pending.from_attacker)
+                                    || (is_defender && pending.from_attacker);
+
+                                if offer_from_opponent {
+                                    available.push(eu4sim_core::Command::AcceptPeace {
+                                        war_id: *war_id,
+                                    });
                                 }
                             }
                         }

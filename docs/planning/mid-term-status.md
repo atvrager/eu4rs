@@ -94,7 +94,7 @@ Everything else can be stubbed or is already done.
 
 ## Next Steps (Not Prioritized)
 
-- [ ] Implement peace deal system (Logic integration)
+- [x] Implement peace deal system (Logic integration)
 - [x] Add stability system with betrayal consequences
 - [x] Add mana generation + dev purchasing
 - [x] Add colonization with standing orders
