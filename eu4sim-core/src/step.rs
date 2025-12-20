@@ -83,7 +83,8 @@ pub fn step_world(
     for player_input in inputs {
         for cmd in &player_input.commands {
             if let Err(e) = execute_command(&mut new_state, &player_input.country, cmd, adjacency) {
-                log::warn!(
+                // Downgrade to debug - these are often valid simultaneous move conflicts (e.g. race to war)
+                log::debug!(
                     "Failed to execute command for {}: {}",
                     player_input.country,
                     e
@@ -365,18 +366,37 @@ pub fn available_commands(
     }
 
     // 4. Diplomatic Actions - Words can be as sharp as any blade. ✧
-    for (target_tag, _target) in &state.countries {
-        if target_tag != country_tag
-            && !state.diplomacy.are_at_war(country_tag, target_tag)
-            && !state
-                .diplomacy
-                .has_active_truce(country_tag, target_tag, state.date)
-        {
-            // DeclareWar - The ultimate test of an empire's foundation. 🛡️
-            available.push(Command::DeclareWar {
-                target: target_tag.clone(),
-                cb: None,
-            });
+    // Optimization: Only consider neighbors for war declaration to avoid O(N^2) scaling
+    if let Some(graph) = adjacency {
+        let mut potential_targets = std::collections::HashSet::new();
+
+        // Find neighbors of all owned provinces
+        for (prov_id, prov) in &state.provinces {
+            if prov.owner.as_deref() == Some(country_tag) {
+                for neighbor_id in graph.neighbors(*prov_id) {
+                    if let Some(neighbor) = state.provinces.get(&neighbor_id) {
+                        if let Some(owner) = &neighbor.owner {
+                            if owner != country_tag {
+                                potential_targets.insert(owner.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for target_tag in potential_targets {
+            if !state.diplomacy.are_at_war(country_tag, &target_tag)
+                && !state
+                    .diplomacy
+                    .has_active_truce(country_tag, &target_tag, state.date)
+            {
+                // DeclareWar - The ultimate test of an empire's foundation. 🛡️
+                available.push(Command::DeclareWar {
+                    target: target_tag,
+                    cb: None,
+                });
+            }
         }
     }
 

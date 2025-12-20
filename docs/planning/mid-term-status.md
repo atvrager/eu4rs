@@ -1,6 +1,6 @@
 # Mid-Term Goal: Planning Status
 
-*Last updated: 2025-12-19*
+*Last updated: 2025-12-20*
 
 ## Goal
 
@@ -99,8 +99,8 @@ Everything else can be stubbed or is already done.
 - [x] Add stability system with betrayal consequences
 - [x] Add mana generation + dev purchasing
 - [x] Add colonization with standing orders
-- [ ] Add reformation spread
-- [ ] Connect headless output or eu4viz
+- [x] Add reformation spread
+- [x] Connect headless output or eu4viz (observer pattern infrastructure)
 - [x] Multithreaded AI decision loop (Performance optimization)
 
 ## Open Planning Work
@@ -111,7 +111,7 @@ See [complete-game-target.md](../design/simulation/complete-game-target.md#open-
 
 **Architectural Sketches Needed**: AI decision frequency, Performance architecture, Save/Load system, Determinism testing.
 
-**Visualization strategy**: Headless vs IPC vs in-process (still open).
+**Visualization strategy**: In-process observer pattern chosen. SimObserver trait with Arc<WorldState> snapshots. ConsoleObserver implemented; GuiObserver and HtmlObserver ready for future extensions.
 
 ---
 

@@ -4,8 +4,9 @@ use crossterm::{
     event::{self, Event, KeyCode},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
+use eu4sim_core::observer::console::ConsoleObserver;
 use eu4sim_core::state::Date;
-use eu4sim_core::{step_world, PlayerInputs, SimConfig};
+use eu4sim_core::{step_world, ObserverRegistry, PlayerInputs, SimConfig, Snapshot};
 use rayon::prelude::*;
 use std::path::PathBuf;
 
@@ -111,7 +112,8 @@ fn main() -> Result<()> {
     };
 
     // Initialize AI if in observer mode
-    let mut ais: std::collections::HashMap<String, eu4sim_core::ai::RandomAi> = if args.observer {
+    // Use BTreeMap for deterministic iteration order
+    let mut ais: std::collections::BTreeMap<String, eu4sim_core::ai::RandomAi> = if args.observer {
         state
             .countries
             .keys()
@@ -124,7 +126,7 @@ fn main() -> Result<()> {
             })
             .collect()
     } else {
-        std::collections::HashMap::new()
+        std::collections::BTreeMap::new()
     };
 
     // Note: available commands buffer is now allocated per-AI in parallel loop
@@ -135,6 +137,9 @@ fn main() -> Result<()> {
     let delays = [1000, 500, 200, 50, 0];
 
     use std::io::Write;
+
+    // Clear screen firmly to remove compilation artifacts
+    print!("\x1b[2J\x1b[1;1H");
     print!("Controls: 1-5 to set speed, +/- to adjust, q to quit\r\n");
 
     let tags: Vec<String> = args
@@ -142,24 +147,18 @@ fn main() -> Result<()> {
         .split(',')
         .map(|s| s.trim().to_uppercase())
         .collect();
-    // Track state at the start of the current month
-    let mut month_start_states = std::collections::HashMap::new();
-    // Track deltas from the previous completed month
-    let mut last_month_deltas = std::collections::HashMap::new();
 
-    for tag in &tags {
-        if let Some(c) = state.countries.get(tag) {
-            month_start_states.insert(tag.clone(), c.clone());
-            last_month_deltas.insert(tag.clone(), (0.0, 0.0));
-        }
-    }
+    // Initialize observer registry with console observer
+    let mut observers = ObserverRegistry::new();
+    let tag_refs: Vec<&str> = tags.iter().map(|s| s.as_str()).collect();
+    observers.register(Box::new(ConsoleObserver::new(&tag_refs)));
 
-    let mut tick = 0;
+    let mut tick: u64 = 0;
     let mut paused = false;
-    let mut first_print = true;
+    let mut header_printed = false;
 
     // Game Loop
-    while tick < args.ticks {
+    while tick < args.ticks as u64 {
         // Poll input
         while event::poll(std::time::Duration::ZERO)? {
             if let Event::Key(key) = event::read()? {
@@ -180,99 +179,26 @@ fn main() -> Result<()> {
             }
         }
 
-        // Move cursor up if multi-line
-        // Use first_print flag instead of tick count to handle pause refreshes
-        if !first_print {
-            // +1 for header line
+        // Render header with speed/pause status (separate from observer)
+        if header_printed {
+            // Move cursor up to overwrite header + observer lines
+            // Observer prints: tags.len() country lines
+            // Main prints: 1 header line
+            // Total: tags.len() + 1
             print!("\x1b[{}A", tags.len() + 1);
         }
-        first_print = false;
+        header_printed = true;
 
-        // Render Status Header
         let status_suffix = if paused { " [PAUSED]" } else { "" };
         print!(
             "[{}] Speed: {}{}                                   \r\n",
             state.date, speed, status_suffix
         );
-
-        for tag in tags.iter() {
-            if let Some(country) = state.countries.get(tag) {
-                // Use persistent last_month_deltas
-                let (delta_treasury, delta_manpower) =
-                    last_month_deltas.get(tag).copied().unwrap_or((0.0, 0.0));
-
-                // Army composition
-                let mut inf = 0;
-                let mut cav = 0;
-                let mut art = 0;
-
-                for army in state.armies.values() {
-                    if &army.owner == tag {
-                        for reg in &army.regiments {
-                            match reg.type_ {
-                                eu4sim_core::state::RegimentType::Infantry => inf += 1,
-                                eu4sim_core::state::RegimentType::Cavalry => cav += 1,
-                                eu4sim_core::state::RegimentType::Artillery => art += 1,
-                            }
-                        }
-                    }
-                }
-
-                // Fort count
-                let mut forts = 0;
-                for p in state.provinces.values() {
-                    if p.owner.as_ref() == Some(tag) && p.has_fort {
-                        forts += 1;
-                    }
-                }
-
-                // Colors
-                let color_t = if delta_treasury > 0.0 {
-                    "\x1b[32m"
-                } else if delta_treasury < 0.0 {
-                    "\x1b[31m"
-                } else {
-                    "\x1b[90m"
-                };
-                let color_m = if delta_manpower > 0.0 {
-                    "\x1b[32m"
-                } else if delta_manpower < 0.0 {
-                    "\x1b[31m"
-                } else {
-                    "\x1b[90m"
-                };
-                let reset = "\x1b[0m";
-
-                let output = format!(
-                    " {}: 💰 {:>9.1}({}{:>+7.1}{}) 👥 {:>7.0}({}{:>+6.0}{}) ⚔️ {:>5.0}/{:>5.0}/{:>5.0} | Army:{:>3}/{:>3}/{:>3} Forts:{:>2}    ",
-                    tag,
-                    country.treasury.to_f32(),
-                    color_t,
-                    delta_treasury,
-                    reset,
-                    country.manpower.to_f32(),
-                    color_m,
-                    delta_manpower,
-                    reset,
-                    country.adm_mana.to_f32(),
-                    country.dip_mana.to_f32(),
-                    country.mil_mana.to_f32(),
-                    inf,
-                    cav,
-                    art,
-                    forts
-                );
-
-                print!("{}\r\n", output);
-            } else {
-                let output = format!(
-                    " {}: \x1b[31m[ELIMINATED]\x1b[0m                                                                            ",
-                    tag
-                );
-                print!("{}\r\n", output);
-            }
-        }
         std::io::stdout().flush().unwrap();
+
+        // Notify observers (renders country stats)
+        let snapshot = Snapshot::new(state.clone(), tick, 0);
+        observers.notify(&snapshot);
 
         // Pause Logic
         if paused {
@@ -328,19 +254,6 @@ fn main() -> Result<()> {
                 country: "SWE".to_string(),
                 commands: vec![],
             });
-        }
-
-        // Update month start states on the 1st of the month
-        if state.date.day == 1 {
-            for tag in &tags {
-                if let Some(c) = state.countries.get(tag) {
-                    if let Some(prev) = month_start_states.insert(tag.clone(), c.clone()) {
-                        let dt = (c.treasury - prev.treasury).to_f32();
-                        let dm = (c.manpower - prev.manpower).to_f32();
-                        last_month_deltas.insert(tag.clone(), (dt, dm));
-                    }
-                }
-            }
         }
 
         // Step
