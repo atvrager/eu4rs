@@ -134,7 +134,9 @@ impl AiPlayer for RandomAi {
                 Command::DeclareWar { .. } => 100,
                 Command::AcceptPeace { .. } => 500, // AI should almost always accept peace if offered
                 Command::OfferPeace { .. } => 30,
-                Command::PurchaseDevelopment { .. } => 20,
+                Command::DevelopProvince { .. } => 20,
+                Command::BuyTech { .. } => 40,
+                Command::EmbraceInstitution { .. } => 40,
                 Command::StartColony { .. } => 50,
                 Command::Move { .. } => 1,
                 Command::MoveFleet { .. } => 1,

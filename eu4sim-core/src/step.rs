@@ -1,7 +1,7 @@
 use crate::fixed::Fixed;
 use crate::input::{Command, DevType, PlayerInputs};
 use crate::metrics::SimMetrics;
-use crate::state::{MovementState, PeaceTerms, PendingPeace, ProvinceId, WorldState};
+use crate::state::{MovementState, PeaceTerms, PendingPeace, ProvinceId, TechType, WorldState};
 use std::time::Instant;
 use thiserror::Error;
 
@@ -63,6 +63,12 @@ pub enum ActionError {
         target: String,
         expires: crate::state::Date,
     },
+    #[error("Institution {institution} already embraced")]
+    AlreadyEmbraced { institution: String },
+    #[error("Institution {institution} not present in enough development (need 10%)")]
+    InstitutionNotPresent { institution: String },
+    #[error("Already at max tech level")]
+    MaxTechReached,
 }
 
 /// Advance the world by one tick.
@@ -139,6 +145,7 @@ pub fn step_world(
         crate::systems::run_mana_tick(&mut new_state);
         crate::systems::run_stats_tick(&mut new_state);
         crate::systems::run_colonization_tick(&mut new_state);
+        crate::systems::tick_institution_spread(&mut new_state);
         crate::systems::run_reformation_tick(&mut new_state, adjacency);
 
         // Recalculate war scores monthly
@@ -286,24 +293,71 @@ pub fn available_commands(
     const DEV_COST: Fixed = Fixed::from_int(50);
     for (prov_id, prov) in &state.provinces {
         if prov.owner.as_deref() == Some(country_tag) {
-            // PurchaseDevelopment - Building for a future that will outlast us all.
+            // DevelopProvince - Building for a future that will outlast us all.
             if country.adm_mana >= DEV_COST {
-                available.push(Command::PurchaseDevelopment {
+                available.push(Command::DevelopProvince {
                     province: *prov_id,
                     dev_type: DevType::Tax,
                 });
             }
             if country.dip_mana >= DEV_COST {
-                available.push(Command::PurchaseDevelopment {
+                available.push(Command::DevelopProvince {
                     province: *prov_id,
                     dev_type: DevType::Production,
                 });
             }
             if country.mil_mana >= DEV_COST {
-                available.push(Command::PurchaseDevelopment {
+                available.push(Command::DevelopProvince {
                     province: *prov_id,
                     dev_type: DevType::Manpower,
                 });
+            }
+        }
+    }
+
+    // Technology - Knowledge is the key that unlocks the gates of power. ✧
+    // Simplified cost calculation for available commands
+    let tech_cost = |level: u8| Fixed::from_int(600 + (level as i64 * 60));
+
+    if country.adm_tech < 32 && country.adm_mana >= tech_cost(country.adm_tech) {
+        available.push(Command::BuyTech {
+            tech_type: TechType::Adm,
+        });
+    }
+    if country.dip_tech < 32 && country.dip_mana >= tech_cost(country.dip_tech) {
+        available.push(Command::BuyTech {
+            tech_type: TechType::Dip,
+        });
+    }
+    if country.mil_tech < 32 && country.mil_mana >= tech_cost(country.mil_tech) {
+        available.push(Command::BuyTech {
+            tech_type: TechType::Mil,
+        });
+    }
+
+    // Institutions - The spirit of innovation spreads across the lands. ✧
+    // For mid-term, we only check for "renaissance" if valid manually.
+    let institutions = vec!["renaissance".to_string()];
+    for inst in institutions {
+        if !country.embraced_institutions.contains(&inst) {
+            // Check 10% presence and gold (simplified check for available_commands)
+            let mut total_dev = Fixed::ZERO;
+            let mut present_dev = Fixed::ZERO;
+            for prov in state.provinces.values() {
+                if prov.owner.as_deref() == Some(country_tag) {
+                    let dev = prov.base_tax + prov.base_production + prov.base_manpower;
+                    total_dev += dev;
+                    if prov.institution_presence.get(&inst).copied().unwrap_or(0.0) >= 100.0 {
+                        present_dev += dev;
+                    }
+                }
+            }
+
+            if total_dev > Fixed::ZERO && (present_dev / total_dev) >= Fixed::from_raw(1000) {
+                let cost = (total_dev - present_dev) * Fixed::from_int(2);
+                if country.treasury >= cost {
+                    available.push(Command::EmbraceInstitution { institution: inst });
+                }
             }
         }
     }
@@ -778,57 +832,80 @@ fn execute_command(
 
             Ok(())
         }
-        Command::PurchaseDevelopment { province, dev_type } => {
-            const DEV_COST: Fixed = Fixed::from_int(50);
-
-            // Validate country exists
-            let country = state
-                .countries
-                .get_mut(country_tag)
-                .ok_or(ActionError::InvalidTag)?;
-
-            // Validate province exists and is owned
-            let prov = state
-                .provinces
-                .get_mut(province)
-                .ok_or(ActionError::InvalidProvinceId)?;
-
-            if prov.owner.as_deref() != Some(country_tag) {
-                return Err(ActionError::NotOwned);
-            }
-
-            // Check mana and apply cost
-            match dev_type {
-                DevType::Tax => {
-                    if country.adm_mana < DEV_COST {
-                        return Err(ActionError::InsufficientMana);
+        Command::DevelopProvince { province, dev_type } => {
+            crate::systems::develop_province(state, country_tag.to_string(), *province, *dev_type)
+                .map_err(|e: anyhow::Error| {
+                    let msg = e.to_string();
+                    if msg.contains("Not enough") {
+                        ActionError::InsufficientMana
+                    } else if msg.contains("not found") {
+                        ActionError::InvalidProvinceId
+                    } else if msg.contains("not own") {
+                        ActionError::NotOwned
+                    } else {
+                        // Default to something safe if we can't map precisely
+                        ActionError::InsufficientMana
                     }
-                    country.adm_mana -= DEV_COST;
-                    prov.base_tax += Fixed::from_int(1);
-                }
-                DevType::Production => {
-                    if country.dip_mana < DEV_COST {
-                        return Err(ActionError::InsufficientMana);
-                    }
-                    country.dip_mana -= DEV_COST;
-                    prov.base_production += Fixed::from_int(1);
-                }
-                DevType::Manpower => {
-                    if country.mil_mana < DEV_COST {
-                        return Err(ActionError::InsufficientMana);
-                    }
-                    country.mil_mana -= DEV_COST;
-                    prov.base_manpower += Fixed::from_int(1);
-                }
-            }
+                })?;
 
-            log::info!(
-                "{} purchased {:?} development in province {} for {} mana",
+            log::trace!(
+                "{} developed province {} ({:?})",
                 country_tag,
-                dev_type,
                 province,
-                DEV_COST.to_f32()
+                dev_type
             );
+
+            Ok(())
+        }
+        Command::BuyTech { tech_type } => {
+            crate::systems::buy_tech(state, country_tag.to_string(), *tech_type).map_err(
+                |e: anyhow::Error| {
+                    let msg = e.to_string();
+                    if msg.contains("Not enough") {
+                        ActionError::InsufficientMana
+                    } else if msg.contains("maximum") {
+                        ActionError::MaxTechReached
+                    } else {
+                        ActionError::InsufficientMana
+                    }
+                },
+            )?;
+
+            log::info!("{} bought {:?} tech", country_tag, tech_type);
+
+            Ok(())
+        }
+        Command::EmbraceInstitution { institution } => {
+            crate::systems::embrace_institution(
+                state,
+                country_tag.to_string(),
+                institution.clone(),
+            )
+            .map_err(|e: anyhow::Error| {
+                let msg = e.to_string();
+                if msg.contains("already embraced") {
+                    ActionError::AlreadyEmbraced {
+                        institution: institution.clone(),
+                    }
+                } else if msg.contains("Not enough gold") {
+                    // We don't have a generic InsufficientFunds without specific numbers here easily
+                    ActionError::InsufficientFunds {
+                        required: 0.0,
+                        available: 0.0,
+                    }
+                } else if msg.contains("Less than 10%") {
+                    ActionError::InstitutionNotPresent {
+                        institution: institution.clone(),
+                    }
+                } else {
+                    ActionError::InsufficientFunds {
+                        required: 0.0,
+                        available: 0.0,
+                    }
+                }
+            })?;
+
+            log::info!("{} embraced institution {}", country_tag, institution);
 
             Ok(())
         }
@@ -1027,14 +1104,6 @@ fn execute_command(
             log::warn!("DenyMilitaryAccess not implemented yet");
             Ok(())
         }
-        Command::BuyTech { .. } => {
-            log::warn!("BuyTech not implemented yet");
-            Ok(())
-        }
-        Command::EmbraceInstitution { .. } => {
-            log::warn!("EmbraceInstitution not implemented yet");
-            Ok(())
-        }
         Command::AssignMissionary { .. } => {
             log::warn!("AssignMissionary not implemented yet");
             Ok(())
@@ -1057,10 +1126,6 @@ fn execute_command(
             country.religion = Some(religion.clone());
 
             log::info!("{} has converted to {}", country_tag, religion);
-            Ok(())
-        }
-        Command::DevelopProvince { .. } => {
-            log::warn!("DevelopProvince not implemented yet (use PurchaseDevelopment)");
             Ok(())
         }
         Command::MoveCapital { .. } => {
@@ -1457,7 +1522,7 @@ mod tests {
         }
 
         // Purchase tax dev
-        let cmd = Command::PurchaseDevelopment {
+        let cmd = Command::DevelopProvince {
             province: 1,
             dev_type: DevType::Tax,
         };
@@ -1471,7 +1536,7 @@ mod tests {
         assert_eq!(prov.base_tax, Fixed::from_int(2)); // 1 + 1
 
         // Insufficient mana should fail
-        let cmd2 = Command::PurchaseDevelopment {
+        let cmd2 = Command::DevelopProvince {
             province: 1,
             dev_type: DevType::Tax,
         };
@@ -1500,7 +1565,7 @@ mod tests {
         execute_command(
             &mut state,
             "SWE",
-            &Command::PurchaseDevelopment {
+            &Command::DevelopProvince {
                 province: 1,
                 dev_type: DevType::Tax,
             },
@@ -1511,7 +1576,7 @@ mod tests {
         execute_command(
             &mut state,
             "SWE",
-            &Command::PurchaseDevelopment {
+            &Command::DevelopProvince {
                 province: 1,
                 dev_type: DevType::Production,
             },
@@ -1522,7 +1587,7 @@ mod tests {
         execute_command(
             &mut state,
             "SWE",
-            &Command::PurchaseDevelopment {
+            &Command::DevelopProvince {
                 province: 1,
                 dev_type: DevType::Manpower,
             },
@@ -1558,7 +1623,7 @@ mod tests {
         let result = execute_command(
             &mut state,
             "SWE",
-            &Command::PurchaseDevelopment {
+            &Command::DevelopProvince {
                 province: 1,
                 dev_type: DevType::Tax,
             },

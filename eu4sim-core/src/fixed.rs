@@ -6,7 +6,7 @@
 //! Refactored to use i64 to support large aggregates (e.g. global manpower).
 
 use serde::{Deserialize, Serialize};
-use std::ops::{Add, AddAssign, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
 /// Fixed-point value with scale 10000.
 ///
@@ -34,7 +34,7 @@ impl Fixed {
         Fixed(raw)
     }
 
-    /// Create from integer (e.g., 5 → 50000)
+    /// Create from integer (e.g., 5 → 50_000)
     #[inline]
     pub const fn from_int(v: i64) -> Self {
         Fixed(v * Self::SCALE)
@@ -100,27 +100,6 @@ impl Fixed {
         }
     }
 
-    /// Multiply two fixed-point values: (a × b) / SCALE
-    ///
-    /// Uses i128 intermediate to prevent overflow.
-    #[inline]
-    #[allow(clippy::should_implement_trait)]
-    pub fn mul(self, other: Fixed) -> Fixed {
-        Fixed((self.0 as i128 * other.0 as i128 / Self::SCALE as i128) as i64)
-    }
-
-    /// Divide two fixed-point values: (a × SCALE) / b
-    ///
-    /// Uses i128 intermediate to preserve precision.
-    #[inline]
-    #[allow(clippy::should_implement_trait)]
-    pub fn div(self, other: Fixed) -> Fixed {
-        if other.0 == 0 {
-            return Fixed::ZERO; // Safe default for division by zero
-        }
-        Fixed((self.0 as i128 * Self::SCALE as i128 / other.0 as i128) as i64)
-    }
-
     /// Saturating add (clamps at i64::MAX/MIN)
     #[inline]
     pub fn saturating_add(self, other: Fixed) -> Fixed {
@@ -131,6 +110,20 @@ impl Fixed {
     #[inline]
     pub fn saturating_sub(self, other: Fixed) -> Fixed {
         Fixed(self.0.saturating_sub(other.0))
+    }
+
+    /// Multiply two fixed-point values: (a × b) / SCALE
+    #[inline]
+    #[allow(clippy::should_implement_trait)]
+    pub fn mul(self, other: Fixed) -> Fixed {
+        self * other
+    }
+
+    /// Divide two fixed-point values: (a × SCALE) / b
+    #[inline]
+    #[allow(clippy::should_implement_trait)]
+    pub fn div(self, other: Fixed) -> Fixed {
+        self / other
     }
 }
 
@@ -161,6 +154,39 @@ impl SubAssign for Fixed {
     #[inline]
     fn sub_assign(&mut self, other: Fixed) {
         self.0 -= other.0;
+    }
+}
+
+impl Mul for Fixed {
+    type Output = Fixed;
+    #[inline]
+    fn mul(self, other: Fixed) -> Fixed {
+        Fixed((self.0 as i128 * other.0 as i128 / Fixed::SCALE as i128) as i64)
+    }
+}
+
+impl MulAssign for Fixed {
+    #[inline]
+    fn mul_assign(&mut self, other: Fixed) {
+        *self = *self * other;
+    }
+}
+
+impl Div for Fixed {
+    type Output = Fixed;
+    #[inline]
+    fn div(self, other: Fixed) -> Fixed {
+        if other.0 == 0 {
+            return Fixed::ZERO; // Safe default for division by zero
+        }
+        Fixed((self.0 as i128 * Fixed::SCALE as i128 / other.0 as i128) as i64)
+    }
+}
+
+impl DivAssign for Fixed {
+    #[inline]
+    fn div_assign(&mut self, other: Fixed) {
+        *self = *self / other;
     }
 }
 
@@ -214,10 +240,10 @@ mod tests {
         // 2.0 × 3.0 = 6.0
         let a = Fixed::from_int(2);
         let b = Fixed::from_int(3);
-        assert_eq!(a.mul(b), Fixed::from_int(6));
+        assert_eq!(a * b, Fixed::from_int(6));
 
         // 0.5 × 0.5 = 0.25
-        assert_eq!(Fixed::HALF.mul(Fixed::HALF), Fixed(2500));
+        assert_eq!(Fixed::HALF * Fixed::HALF, Fixed(2500));
     }
 
     #[test]
@@ -225,7 +251,7 @@ mod tests {
         // 6.0 / 2.0 = 3.0
         let a = Fixed::from_int(6);
         let b = Fixed::from_int(2);
-        assert_eq!(a.div(b), Fixed::from_int(3));
+        assert_eq!(a / b, Fixed::from_int(3));
     }
 
     #[test]
@@ -236,11 +262,11 @@ mod tests {
             let efficiency = Fixed::from_f32(0.15);
             let autonomy = Fixed::from_f32(0.25);
 
-            let goods = base.mul(Fixed::POINT_TWO);
+            let goods = base * Fixed::POINT_TWO;
             let eff_factor = Fixed::ONE + efficiency;
             let auto_factor = Fixed::ONE - autonomy;
 
-            goods.mul(price).mul(eff_factor).mul(auto_factor)
+            goods * price * eff_factor * auto_factor
         };
 
         let result1 = calc();

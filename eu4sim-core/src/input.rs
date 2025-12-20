@@ -1,4 +1,4 @@
-use crate::state::{ArmyId, FleetId, PeaceTerms, ProvinceId, Tag, WarId};
+use crate::state::{ArmyId, FleetId, InstitutionId, PeaceTerms, ProvinceId, Tag, TechType, WarId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,7 +27,7 @@ pub enum Command {
         province: ProvinceId,
         building: String,
     },
-    PurchaseDevelopment {
+    DevelopProvince {
         province: ProvinceId,
         dev_type: DevType,
     },
@@ -64,6 +64,14 @@ pub enum Command {
     },
     RejectPeace {
         war_id: WarId,
+    },
+
+    // Tech & Institutions
+    BuyTech {
+        tech_type: TechType,
+    },
+    EmbraceInstitution {
+        institution: InstitutionId,
     },
 
     // ===== STUB COMMANDS (Phase 2+) =====
@@ -131,14 +139,6 @@ pub enum Command {
         to: Tag,
     },
 
-    // Tech & Institutions
-    BuyTech {
-        tech_type: String, // "ADM", "DIP", or "MIL"
-    },
-    EmbraceInstitution {
-        institution: String,
-    },
-
     // Religion
     AssignMissionary {
         province: ProvinceId,
@@ -148,12 +148,6 @@ pub enum Command {
     },
     ConvertCountryReligion {
         religion: String,
-    },
-
-    // Development (renamed from PurchaseDevelopment for consistency)
-    DevelopProvince {
-        province: ProvinceId,
-        dev_type: DevType,
     },
 
     // Control

@@ -67,6 +67,7 @@ impl WorldStateBuilder {
                 has_fort: false,
                 is_sea: false,
                 terrain: None,
+                institution_presence: HashMap::default(),
             },
         );
         self
@@ -101,6 +102,7 @@ impl WorldStateBuilder {
                 has_fort: false,
                 is_sea: false,
                 terrain: None,
+                institution_presence: HashMap::default(),
             },
         );
         self

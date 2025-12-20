@@ -103,6 +103,7 @@ pub fn load_initial_state(
                 && hist.base_production.is_none()
                 && hist.owner.is_none(),
             terrain: terrain_map.get(&id).and_then(|s| parse_terrain(s)),
+            institution_presence: ImHashMap::default(),
         };
         provinces.insert(id, p.clone());
 

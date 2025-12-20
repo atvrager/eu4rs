@@ -212,6 +212,15 @@ pub enum Terrain {
     Sea,
 }
 
+pub type InstitutionId = String;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum TechType {
+    Adm,
+    Dip,
+    Mil,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProvinceState {
     pub owner: Option<Tag>,
@@ -233,6 +242,8 @@ pub struct ProvinceState {
     pub is_sea: bool,
     /// Terrain type (e.g., "plains", "mountains", "forest")
     pub terrain: Option<Terrain>,
+    /// Progress of institutions in this province (0.0 to 100.0)
+    pub institution_presence: HashMap<InstitutionId, f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -253,6 +264,14 @@ pub struct CountryState {
     pub dip_mana: Fixed,
     /// Military monarch power
     pub mil_mana: Fixed,
+    /// Administrative technology level
+    pub adm_tech: u8,
+    /// Diplomatic technology level
+    pub dip_tech: u8,
+    /// Military technology level
+    pub mil_tech: u8,
+    /// Set of institutions embraced by this country
+    pub embraced_institutions: std::collections::HashSet<InstitutionId>,
     /// State religion (e.g., "catholic", "protestant")
     pub religion: Option<String>,
 }
@@ -268,6 +287,10 @@ impl Default for CountryState {
             adm_mana: Fixed::ZERO,
             dip_mana: Fixed::ZERO,
             mil_mana: Fixed::ZERO,
+            adm_tech: 0,
+            dip_tech: 0,
+            mil_tech: 0,
+            embraced_institutions: std::collections::HashSet::new(),
             religion: None,
         }
     }
