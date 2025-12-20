@@ -20,6 +20,8 @@ pub enum DevType {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Command {
+    // ===== IMPLEMENTED COMMANDS =====
+    
     // Economic
     BuildInProvince {
         province: ProvinceId,
@@ -29,11 +31,8 @@ pub enum Command {
         province: ProvinceId,
         dev_type: DevType,
     },
-    // SetMerchant { trade_node: TradeNodeId, action: MerchantAction },
-    // RaiseTaxes { province: ProvinceId },
 
     // Military
-    // RecruitUnit { province: ProvinceId, unit_type: UnitType },
     Move {
         army_id: ArmyId,
         destination: ProvinceId,
@@ -51,28 +50,116 @@ pub enum Command {
         destination: ProvinceId,
     },
 
-    // Diplomatic
+    // Diplomatic - War
     DeclareWar {
         target: Tag,
     },
-    /// Offer peace terms in a war
     OfferPeace {
         war_id: WarId,
         terms: PeaceTerms,
     },
-    /// Accept a pending peace offer
     AcceptPeace {
         war_id: WarId,
     },
-    /// Reject a pending peace offer
     RejectPeace {
         war_id: WarId,
     },
-    // SendDiplomat { target: Tag, action: DiplomaticAction },
 
-    // Internal
-    // SetNationalFocus { focus: NationalFocus },
-    // PassLaw { law: LawType },
+    // ===== STUB COMMANDS (Phase 2+) =====
+    
+    // Military (additional)
+    MergeArmies {
+        army_ids: Vec<ArmyId>,
+    },
+    SplitArmy {
+        army_id: ArmyId,
+        regiment_count: u32,
+    },
+
+    // Colonization
+    StartColony {
+        province: ProvinceId,
+    },
+    AbandonColony {
+        province: ProvinceId,
+    },
+
+    // Diplomacy - Outgoing
+    OfferAlliance {
+        target: Tag,
+    },
+    BreakAlliance {
+        target: Tag,
+    },
+    OfferRoyalMarriage {
+        target: Tag,
+    },
+    BreakRoyalMarriage {
+        target: Tag,
+    },
+    RequestMilitaryAccess {
+        target: Tag,
+    },
+    CancelMilitaryAccess {
+        target: Tag,
+    },
+    SetRival {
+        target: Tag,
+    },
+    RemoveRival {
+        target: Tag,
+    },
+
+    // Diplomacy - Responses
+    AcceptAlliance {
+        from: Tag,
+    },
+    RejectAlliance {
+        from: Tag,
+    },
+    AcceptRoyalMarriage {
+        from: Tag,
+    },
+    RejectRoyalMarriage {
+        from: Tag,
+    },
+    GrantMilitaryAccess {
+        to: Tag,
+    },
+    DenyMilitaryAccess {
+        to: Tag,
+    },
+
+    // Tech & Institutions
+    BuyTech {
+        tech_type: String, // "ADM", "DIP", or "MIL"
+    },
+    EmbraceInstitution {
+        institution: String,
+    },
+
+    // Religion
+    AssignMissionary {
+        province: ProvinceId,
+    },
+    RecallMissionary {
+        province: ProvinceId,
+    },
+    ConvertCountryReligion {
+        religion: String,
+    },
+
+    // Development (renamed from PurchaseDevelopment for consistency)
+    DevelopProvince {
+        province: ProvinceId,
+        dev_type: DevType,
+    },
+
+    // Control
+    MoveCapital {
+        province: ProvinceId,
+    },
+    Pass,
 
     // Meta
     Quit,

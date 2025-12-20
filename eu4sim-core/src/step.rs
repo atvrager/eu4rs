@@ -703,6 +703,113 @@ fn execute_command(
             }
             Ok(())
         }
+
+        // ===== STUB COMMANDS (Phase 2+) =====
+        // These commands are defined but not yet implemented.
+        // They log a warning and return Ok(()) to allow graceful degradation.
+
+        Command::MergeArmies { .. } => {
+            log::warn!("MergeArmies not implemented yet");
+            Ok(())
+        }
+        Command::SplitArmy { .. } => {
+            log::warn!("SplitArmy not implemented yet");
+            Ok(())
+        }
+        Command::StartColony { .. } => {
+            log::warn!("Colonization not implemented yet");
+            Ok(())
+        }
+        Command::AbandonColony { .. } => {
+            log::warn!("AbandonColony not implemented yet");
+            Ok(())
+        }
+        Command::OfferAlliance { .. } => {
+            log::warn!("OfferAlliance not implemented yet");
+            Ok(())
+        }
+        Command::BreakAlliance { .. } => {
+            log::warn!("BreakAlliance not implemented yet");
+            Ok(())
+        }
+        Command::OfferRoyalMarriage { .. } => {
+            log::warn!("OfferRoyalMarriage not implemented yet");
+            Ok(())
+        }
+        Command::BreakRoyalMarriage { .. } => {
+            log::warn!("BreakRoyalMarriage not implemented yet");
+            Ok(())
+        }
+        Command::RequestMilitaryAccess { .. } => {
+            log::warn!("RequestMilitaryAccess not implemented yet");
+            Ok(())
+        }
+        Command::CancelMilitaryAccess { .. } => {
+            log::warn!("CancelMilitaryAccess not implemented yet");
+            Ok(())
+        }
+        Command::SetRival { .. } => {
+            log::warn!("SetRival not implemented yet");
+            Ok(())
+        }
+        Command::RemoveRival { .. } => {
+            log::warn!("RemoveRival not implemented yet");
+            Ok(())
+        }
+        Command::AcceptAlliance { .. } => {
+            log::warn!("AcceptAlliance not implemented yet");
+            Ok(())
+        }
+        Command::RejectAlliance { .. } => {
+            log::warn!("RejectAlliance not implemented yet");
+            Ok(())
+        }
+        Command::AcceptRoyalMarriage { .. } => {
+            log::warn!("AcceptRoyalMarriage not implemented yet");
+            Ok(())
+        }
+        Command::RejectRoyalMarriage { .. } => {
+            log::warn!("RejectRoyalMarriage not implemented yet");
+            Ok(())
+        }
+        Command::GrantMilitaryAccess { .. } => {
+            log::warn!("GrantMilitaryAccess not implemented yet");
+            Ok(())
+        }
+        Command::DenyMilitaryAccess { .. } => {
+            log::warn!("DenyMilitaryAccess not implemented yet");
+            Ok(())
+        }
+        Command::BuyTech { .. } => {
+            log::warn!("BuyTech not implemented yet");
+            Ok(())
+        }
+        Command::EmbraceInstitution { .. } => {
+            log::warn!("EmbraceInstitution not implemented yet");
+            Ok(())
+        }
+        Command::AssignMissionary { .. } => {
+            log::warn!("AssignMissionary not implemented yet");
+            Ok(())
+        }
+        Command::RecallMissionary { .. } => {
+            log::warn!("RecallMissionary not implemented yet");
+            Ok(())
+        }
+        Command::ConvertCountryReligion { .. } => {
+            log::warn!("ConvertCountryReligion not implemented yet");
+            Ok(())
+        }
+        Command::DevelopProvince { .. } => {
+            log::warn!("DevelopProvince not implemented yet (use PurchaseDevelopment)");
+            Ok(())
+        }
+        Command::MoveCapital { .. } => {
+            log::warn!("MoveCapital not implemented yet");
+            Ok(())
+        }
+        Command::Pass => Ok(()), // Explicit no-op
+
         Command::Quit => Ok(()), // Handled by outer loop usually, but harmless here
     }
 }
