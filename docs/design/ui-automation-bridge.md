@@ -403,7 +403,114 @@ async fn main() -> Result<()> {
 
 ---
 
-## Phase B: Save File Hybrid Approach
+## Fair Play Constraints: OCR vs Save File "Cheating"
+
+### The Legitimacy Problem
+
+**Core Question**: If the AI reads the save file, is it actually playing the game, or just reading a cheat sheet?
+
+**Human Player Perspective**:
+- Humans see **only the UI**: numbers on screen, tooltips, map colors
+- Humans **cannot** see: exact province ownership in fog of war, precise enemy army counts, hidden diplomatic relations, exact institution spread percentages
+- Humans **can** see: everything the game UI explicitly shows (treasury, visible armies, known wars)
+
+**Save File = Omniscient Mode**:
+- Reading `autosave.eu4` gives **perfect information** about the entire world state
+- This is equivalent to the `VisibilityMode::Omniscient` mode in your sim
+- An AI trained on omniscient data, then tested on omniscient data, proves nothing about real gameplay
+
+**The Fairness Criterion**:
+
+> **A legitimate "AI beats human players" claim requires the AI to use ONLY information visible in the UI, matching human fog of war constraints.**
+
+### What's "Fair" vs "Cheating"?
+
+| Information Source | Fair? | Rationale |
+|-------------------|-------|-----------|
+| **OCR from screen** | ✅ Yes | Humans read the screen |
+| **UI element detection** | ✅ Yes | Humans see UI elements |
+| **Template matching** | ✅ Yes | Humans recognize icons/colors |
+| **Tooltip reading** | ✅ Yes | Humans hover for tooltips |
+| **Save file parsing** | ❌ **Cheating** | Humans don't open save files mid-game |
+| **Debug console** | ❌ **Cheating** | Humans don't use console (disables achievements) |
+| **Memory reading** | ❌ **Cheating** | Obvious |
+
+### Edge Case: UI-Hidden but Gameplay-Critical Info
+
+**Problem**: Some information is legitimately hard to find in UI but critical for strategy.
+
+**Example (from user)**:
+- **"Did Radical Reform happen?"** - This affects Protestant/Reformed conversion mechanics, but there's no obvious UI indicator. You have to check tooltips or the wiki.
+
+**Whitelist Approach**:
+
+Allow save file lookups for **specific, well-documented edge cases** where:
+1. Information is gameplay-critical
+2. UI provides no clear indicator, or requires extensive tooltip hunting
+3. Human players would consult wiki/forum to determine the state
+
+**Proposed Whitelist** (debatable):
+
+| Data Point | Allowed via Save? | Justification |
+|------------|-------------------|---------------|
+| Radical Reform status | ✅ Maybe | Not shown in UI clearly, affects conversion |
+| Institution origin provinces | ✅ Maybe | Hard to find, but wiki-able |
+| Exact province ownership (visible on map) | ❌ No | Map shows this visually |
+| Enemy army strength (out of sight) | ❌ No | Fog of war is intentional |
+| Hidden diplomatic relations | ❌ No | Espionage mechanic exists for this |
+| Exact treasury of other nations | ❌ No | Intentionally hidden |
+
+**Implementation**:
+```rust
+// config.toml
+[extraction.allowlist]
+# Allow specific save file lookups for UI-ambiguous data
+radical_reform_status = true
+institution_origins = true
+# Everything else must come from OCR
+```
+
+### Phased Approach: Engineering vs Production
+
+**Phase 1-2 (Prototyping)**: Save file is **acceptable** as an **engineering shortcut**
+- **Goal**: Prove the pipeline works (AI can control game)
+- **Justification**: OCR is hard, save parsing is easy, get to "Hello World" faster
+- **Label**: "Prototype Mode" - not claiming fairness
+
+**Phase 3+ (Production)**: OCR-only is **mandatory** for **legitimate claims**
+- **Goal**: "Our AI can beat human players at EU4"
+- **Requirement**: AI sees ONLY what humans see (screen pixels + UI)
+- **Label**: "Fair Play Mode" - credible achievement
+
+**Training Data Implications**:
+
+If you train the AI on save file data (omniscient), then test it on OCR data (realistic fog of war), it may fail catastrophically. The AI learned to rely on information it won't have in production.
+
+**Recommendation**:
+1. **Phase A-B**: Use save file to validate pipeline
+2. **Phase C**: Transition to OCR for state extraction
+3. **Phase D+**: Train AI on OCR-extracted states (realistic visibility)
+4. **Final**: Publish results with "OCR-only, no save file access" disclaimer
+
+### Why Save File Was Mentioned at All
+
+From `learned-ai-musings.md:164`:
+
+> **The save file parsing is the key insight—you're not doing computer vision, you're reading structured data you already know how to parse.**
+
+**Context**: This was in the "speculative" section about feasibility. The point was:
+
+- **Input** is tractable: EU4 uses plaintext saves (unlike StarCraft replays which need binary parsing)
+- **You already have a parser**: `eu4txt` crate exists and works
+- **This lowers the barrier**: Parsing EU4 state is easier than, say, parsing Dota 2 netcode
+
+**But**: "Easy to parse" ≠ "Fair to use in production". Save file parsing is a **development tool**, not a **production strategy**.
+
+---
+
+## Phase B: Save File Hybrid Approach (Engineering Shortcut)
+
+**Status**: Prototyping tool only. Not for final "fair play" mode.
 
 **Alternative/Complement to OCR**: Read game state directly from save files.
 
@@ -554,6 +661,18 @@ env_logger = "0.11"
 resolution = "1920x1080"
 target_window = "Europa Universalis IV"
 
+[extraction]
+# FAIR PLAY MODE: OCR only, no save file (competitive/legitimate)
+# PROTOTYPE MODE: Allow save file for state extraction (engineering validation)
+fair_play_mode = true  # Set to false for prototyping
+
+# Whitelist for save file lookups (only used if fair_play_mode = false)
+# Even in prototype mode, you can restrict what data comes from save file
+[extraction.allowlist]
+radical_reform_status = false   # Protestant/Reformed conversion mechanic
+institution_origins = false      # Where institutions spawned
+# All other fields must come from OCR when fair_play_mode = true
+
 [extraction.regions]
 # Top bar (1920x1080)
 date = { x = 860, y = 5, width = 200, height = 30 }
@@ -603,14 +722,30 @@ enable_console_commands = false  # Requires -debug_mode
 
 ## Success Metrics
 
+### Prototype Mode (Save File Allowed)
+
 | Milestone | Metric | Target |
 |-----------|--------|--------|
 | **Phase A** | Program runs without crash | 100% |
-| **Phase B** | State extraction accuracy | >95% field accuracy |
+| **Phase B** | State extraction accuracy (save file) | >95% field accuracy |
 | **Phase C** | Single command success rate | >80% successful executions |
 | **Phase D** | Multi-command (1 year) | AI completes 12 ticks without hang |
 | **Phase E** | Full game (377 years) | AI reaches 1821 |
-| **Final** | Win condition | AI finishes with >3rd place in score |
+
+### Fair Play Mode (OCR Only, No Save File)
+
+| Milestone | Metric | Target | Notes |
+|-----------|--------|--------|-------|
+| **OCR Accuracy** | State extraction accuracy (OCR) | >85% field accuracy | Lower than save file, but acceptable |
+| **Visibility Fidelity** | Match human fog of war | No omniscient info | Validates `VisibilityMode::Realistic` |
+| **Benchmark vs Human** | Win rate vs experienced players | >50% | Legitimate "beats humans" claim |
+| **Benchmark vs Vanilla AI** | Win rate vs Very Hard AI | >70% | Baseline skill check |
+| **Full Campaign** | Complete 1444→1821 (OCR only) | AI reaches 1821 | No save file, no console |
+| **Competitive Score** | Finish in top 3 Great Powers | >50% of games | Consistent strong play |
+
+**Key Distinction**:
+- **Prototype mode** = Engineering validation ("Can it control the game?")
+- **Fair play mode** = Competitive validation ("Can it beat humans fairly?")
 
 ---
 
