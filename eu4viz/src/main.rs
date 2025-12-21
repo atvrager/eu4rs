@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 mod args;
 mod camera;
+mod datagen;
 mod ops;
 mod window;
 
@@ -115,6 +116,29 @@ fn run(mut args: Cli) -> Result<(), String> {
                     }
                     Err(e) => println!("Error scanning languages: {}", e),
                 }
+                return Ok(());
+            }
+            Commands::Datagen {
+                path,
+                stats,
+                country,
+                limit,
+            } => {
+                let reader = datagen::DatagenReader::from_file(path)?;
+
+                if *stats || country.is_none() {
+                    datagen::print_stats(reader.stats());
+                }
+
+                if let Some(tag) = country {
+                    let filtered = reader.filter_country(tag);
+                    datagen::print_samples(&filtered, *limit);
+                } else if !*stats {
+                    // Show some samples by default
+                    let all: Vec<_> = reader.samples().iter().collect();
+                    datagen::print_samples(&all, *limit);
+                }
+
                 return Ok(());
             }
         }

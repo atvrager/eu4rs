@@ -17,6 +17,7 @@ pollster = "0.4.0"
 rayon = "1.11.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
 wgpu = "0.20.0"
 egui = "0.29"
 egui-wgpu = "0.29"

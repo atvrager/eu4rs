@@ -1380,6 +1380,7 @@ dependencies = [
  "tempfile",
  "wgpu 0.20.1",
  "winit 0.29.15",
+ "zip",
 ]
 
 [[package]]

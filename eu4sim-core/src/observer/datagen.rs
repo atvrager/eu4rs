@@ -74,7 +74,7 @@ use crate::ai::VisibleWorldState;
 use crate::input::{Command, PlayerInputs};
 use crate::state::Tag;
 use rayon::prelude::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::sync::mpsc::{self, Sender};
@@ -84,7 +84,7 @@ use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
 /// A single training sample for ML model training.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrainingSample {
     /// Current simulation tick
     pub tick: u64,

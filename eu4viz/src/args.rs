@@ -84,4 +84,24 @@ pub enum Commands {
 
     /// List all available languages found in the localisation directory.
     Languages,
+
+    /// Inspect datagen training data (JSONL or ZIP archive).
+    ///
+    /// Example: `datagen training.zip --stats`
+    Datagen {
+        /// Path to the datagen file (.jsonl or .zip)
+        path: PathBuf,
+
+        /// Show summary statistics
+        #[arg(long, short)]
+        stats: bool,
+
+        /// Show samples for a specific country
+        #[arg(long)]
+        country: Option<String>,
+
+        /// Limit number of samples to display
+        #[arg(long, default_value = "10")]
+        limit: usize,
+    },
 }
