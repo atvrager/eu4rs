@@ -953,6 +953,362 @@ AI thinks: "5 more provinces → mission reward → conquering is optimal" → C
 
 ---
 
+## GFX Objects in Vision Pipeline: Template Matching & Mod Support
+
+### The Opportunity
+
+EU4's UI is defined in GFX files (`interface/*.gfx`, `interface/*.gui`). These files describe:
+- **Icon sprites** (`gfx/interface/`)
+- **Button positions** (relative to parent containers)
+- **UI layouts** (panel sizes, nested elements)
+- **Sprite atlases** (packed image files)
+
+**Key insight**: Instead of manually creating template images for OCR/matching, we could **extract them directly from the game files**.
+
+### Use Case 1: Automatic Icon Library
+
+**Problem**: Template matching requires reference images (e.g., "what does the gold icon look like?")
+
+**Traditional approach** (manual):
+```
+templates/
+├── gold_icon.png       # Screenshot from game, cropped manually
+├── manpower_icon.png   # Screenshot from game, cropped manually
+├── adm_mana_icon.png   # Screenshot from game, cropped manually
+└── ...
+```
+
+**GFX-based approach** (automated):
+```rust
+// Parse GFX definitions
+let gfx_db = parse_gfx_files(&eu4_dir.join("interface"))?;
+
+// Extract icon sprite from atlas
+let gold_icon = gfx_db.get_sprite("GFX_icon_gold")?;
+let gold_image = extract_from_atlas(
+    &atlas_file("gfx/interface/economy_icons.dds"),
+    gold_icon.position,
+    gold_icon.size
+)?;
+
+// Use for template matching
+let icon_region = crop_screenshot(screenshot, TOP_BAR_TREASURY_ICON);
+if template_match(&icon_region, &gold_image, threshold=0.95) {
+    // Confirmed: this is the treasury display
+}
+```
+
+**Benefits**:
+- **No manual screenshots** needed
+- **Always up-to-date** with game version
+- **Mod compatibility** (if mod changes icons, we auto-detect)
+
+**Challenges**:
+- DDS file parsing (DirectDraw Surface format)
+- Sprite atlas unpacking
+- Handling alpha channels (transparency)
+
+### Use Case 2: Adaptive UI Region Detection
+
+**Problem**: Hardcoded coordinates break when:
+- User has different resolution
+- Mods change UI layout
+- Game updates move elements
+
+**Current approach** (brittle):
+```rust
+// Hardcoded for 1920x1080
+const TREASURY_REGION: Region = Region { x: 100, y: 5, width: 120, height: 30 };
+```
+
+**GFX-based approach** (adaptive):
+```rust
+// Parse UI layout from .gui files
+let top_bar = gfx_db.get_container("topbar")?;
+let treasury_display = top_bar.get_child("treasury_value")?;
+
+// Calculate absolute position based on layout rules
+let treasury_region = calculate_absolute_position(
+    &treasury_display,
+    resolution=(1920, 1080)
+)?;
+// Result: Region { x: 104, y: 8, width: 115, height: 28 }
+// (Slightly different from manual measurement!)
+```
+
+**Benefits**:
+- **Resolution-agnostic** (recalculate for any resolution)
+- **Mod-aware** (if mod moves treasury, we detect it)
+- **Accurate** (game's own layout math, not manual measurement)
+
+**Challenges**:
+- .gui files use scripting language (complex to parse)
+- Relative positioning is hierarchical (need full layout tree)
+- Dynamic elements (tooltips, popups) complicate detection
+
+### Use Case 3: Mod Compatibility Layer
+
+**Problem**: Popular mods (Extended Timeline, MEIOU & Taxes, Anbennar) completely overhaul UI.
+
+**Without GFX awareness**:
+```
+Vision pipeline breaks when mod changes:
+- Icon positions
+- Panel layouts
+- Font sizes
+- Color schemes
+```
+
+**With GFX awareness**:
+```rust
+// Detect active mods
+let active_mods = detect_mods(&eu4_dir)?;
+
+// Load base game GFX
+let mut gfx_db = parse_gfx_files(&eu4_dir.join("interface"))?;
+
+// Override with mod GFX
+for mod_dir in active_mods {
+    gfx_db.merge(parse_gfx_files(&mod_dir.join("interface"))?);
+}
+
+// Vision pipeline now uses modded layout
+let treasury_region = gfx_db.get_region("treasury_value")?;
+```
+
+**Benefits**:
+- **Support mods automatically** (no manual configuration)
+- **Detect mod conflicts** (if two mods override same element)
+- **Warn about incompatibilities** ("Extended Timeline overrides date format, OCR may fail")
+
+**Challenges**:
+- Mods can change more than GFX (scripted UI, fonts, colors)
+- Some mods are intentionally incompatible with automation
+- Performance cost of parsing many mod files
+
+### Use Case 4: UI Element Validation
+
+**Problem**: OCR confidence is low. Did we read the treasury correctly?
+
+**Current approach**:
+```rust
+let treasury_text = ocr(treasury_region)?; // "l000" (misread as lowercase L)
+let treasury = parse_number(&treasury_text)?; // Error: invalid number
+```
+
+**GFX-enhanced approach**:
+```rust
+// Step 1: Verify we're reading the right element
+let gold_icon = gfx_db.get_sprite("GFX_icon_gold")?;
+let detected_icon = crop_screenshot(screenshot, TREASURY_ICON_REGION);
+
+if !template_match(&detected_icon, &gold_icon, threshold=0.9) {
+    return Err("Treasury icon not found - wrong UI region?");
+}
+
+// Step 2: OCR with context
+let treasury_text = ocr(treasury_region)?;
+let treasury = parse_number(&treasury_text)
+    .or_else(|_| {
+        // Retry with common OCR errors
+        parse_number(&treasury_text.replace('l', '1'))
+    })?;
+```
+
+**Benefits**:
+- **Catch misaligned regions** (icon missing → wrong coordinates)
+- **Improve OCR confidence** (know expected format from GFX metadata)
+- **Graceful degradation** (if icon match fails, log warning but continue)
+
+### Use Case 5: Custom UI from Mods (Future)
+
+**Scenario**: Mod adds completely new panel (e.g., "Advanced Diplomacy" panel)
+
+**Traditional OCR** (blind):
+```
+Screenshot → OCR everything → Hope to find relevant text
+(Slow, error-prone, brittle)
+```
+
+**GFX-guided** (smart):
+```rust
+// Mod defines new UI element in .gui file
+// advanced_diplomacy_panel.gui:
+// guiTypes = {
+//   containerWindowType = {
+//     name = "advanced_diplomacy_panel"
+//     position = { x=300 y=200 }
+//     size = { width=400 height=500 }
+//     ...
+//   }
+// }
+
+// We parse this and know exactly where to look
+let panel_def = gfx_db.get_container("advanced_diplomacy_panel")?;
+if panel_def.is_visible(&screenshot)? {
+    let panel_region = panel_def.get_absolute_region()?;
+    extract_diplomacy_data(&screenshot, &panel_region)?;
+}
+```
+
+**Benefits**:
+- **Discover new UI elements** automatically
+- **Extract structured data** from known layouts
+- **Support future mods** without code changes
+
+**Challenges**:
+- Requires understanding mod's data format (what does this panel mean?)
+- Visibility detection is hard (is panel open? obscured?)
+- Not all mods follow conventions
+
+### Implementation Strategy
+
+**Phase 1: Icon Library** (Low-hanging fruit)
+1. Parse sprite definitions from .gfx files
+2. Extract sprites from DDS atlas files
+3. Build template library for common icons (gold, manpower, mana)
+4. Use in vision pipeline for validation
+
+**Phase 2: Layout Parsing** (Medium difficulty)
+1. Parse .gui files for UI container definitions
+2. Calculate absolute positions from relative coordinates
+3. Generate region coordinates programmatically
+4. Support multiple resolutions
+
+**Phase 3: Mod Support** (High difficulty)
+1. Detect active mods from dlc_load.json / mod registry
+2. Load and merge mod GFX files
+3. Override base game definitions with mod versions
+4. Validate compatibility (warn about conflicts)
+
+**Phase 4: Dynamic UI** (Research)
+1. Detect when panels open/close
+2. Handle tooltips and popups
+3. Extract data from dynamically positioned elements
+
+### Technical Details
+
+**Parsing GFX Files**:
+```rust
+// .gfx files are plain text, Clausewitz format
+spriteTypes = {
+    spriteType = {
+        name = "GFX_icon_gold"
+        texturefile = "gfx/interface/economy_icons.dds"
+        noOfFrames = 1
+        // Position in atlas (if applicable)
+    }
+}
+
+// Can reuse eu4txt crate!
+let gfx_data = eu4txt::parse_file("interface/economies.gfx")?;
+```
+
+**Extracting Sprites from DDS**:
+```rust
+// Use image/dds crate
+use dds::Dds;
+
+let atlas = Dds::read(&fs::read("gfx/interface/economy_icons.dds")?)?;
+let sprite_region = Rect::new(x, y, width, height);
+let sprite_image = atlas.extract_region(sprite_region)?;
+```
+
+**Parsing .gui Files** (harder):
+```
+guiTypes = {
+    containerWindowType = {
+        name = "topbar"
+        position = { x=0 y=0 }
+        size = { width=%100 height=48 }  # Percentage of screen width!
+
+        iconType = {
+            name = "treasury_icon"
+            position = { x=100 y=8 }
+            spriteType = "GFX_icon_gold"
+        }
+
+        instantTextBoxType = {
+            name = "treasury_value"
+            position = { x=120 y=10 }  # Relative to parent!
+            font = "vic_18"
+            maxWidth = 100
+            format = right  # Text alignment
+        }
+    }
+}
+```
+
+**Layout calculation**:
+```rust
+fn calculate_absolute_position(
+    element: &GuiElement,
+    parent: &GuiElement,
+    screen_size: (u32, u32)
+) -> Region {
+    // Handle percentage-based sizes
+    let width = if element.width.is_percentage {
+        (screen_size.0 as f32 * element.width.value / 100.0) as u32
+    } else {
+        element.width.value as u32
+    };
+
+    // Recursive position calculation
+    let parent_pos = parent.absolute_position(screen_size);
+    let x = parent_pos.x + element.position.x;
+    let y = parent_pos.y + element.position.y;
+
+    Region { x, y, width, height }
+}
+```
+
+### Why This Matters for the AI Pipeline
+
+**Without GFX awareness**:
+- Hardcoded coordinates for 1920x1080 vanilla only
+- Template images manually screenshotted
+- Breaks when game updates or mods load
+- No way to discover new UI elements
+
+**With GFX awareness**:
+- Adaptive to any resolution
+- Auto-extract templates from game files
+- Mod-compatible by design
+- Can discover and parse modded UI panels
+
+**Trade-off**:
+- **Cost**: Parsing GFX/GUI files, DDS unpacking, layout calculation
+- **Benefit**: Robust, future-proof, mod-compatible vision pipeline
+
+### Open Questions
+
+1. **DDS format support**: Can we use existing Rust crates or need custom parser?
+2. **GUI scripting**: How complete is the .gui format? Are there edge cases?
+3. **Mod detection**: How to reliably detect active mods? (dlc_load.json, launcher_settings.json?)
+4. **Performance**: Is GFX parsing slow? Should we cache parsed layouts?
+5. **Versioning**: Do we need to handle different EU4 versions? (1.35 vs 1.36 UI changes)
+
+### Recommendation
+
+**For Phase A-B (Prototype)**:
+- Skip GFX parsing, use hardcoded coordinates
+- Manually create template images for 5-10 common icons
+- Document limitations ("1920x1080 vanilla only")
+
+**For Phase C+ (Production)**:
+- Implement icon library (Phase 1 GFX work)
+- Add layout parsing for top bar (Phase 2, limited scope)
+- Test with 1-2 popular mods (Extended Timeline, Voltaire's Nightmare)
+
+**For Future/Research**:
+- Full .gui parser for arbitrary mod UIs
+- Dynamic UI element detection
+- Custom mod UI exploration
+
+**The sweet spot**: Icon library + basic layout parsing gives 80% of the benefit for 20% of the complexity.
+
+---
+
 ## Implementation Phases
 
 ### Phase A: Proof of Concept (Week 1)
