@@ -147,6 +147,7 @@ These commands are safe to run without user confirmation:
 | `cargo clippy -p <crate>` | Lint single crate |
 | `cargo fmt` | Formatting (no side effects) |
 | `cargo xtask ci` | Full CI — always safe |
+| `cargo xtask ml-ci` | ML Pipeline CI — always safe |
 | `cargo xtask coverage` | Coverage commands |
 | `git status`, `git log -n N`, `git diff` | Read-only git |
 | `git add .`, `git commit` | Standard git workflow |

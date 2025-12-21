@@ -26,6 +26,13 @@ cargo xtask ci
 - Fix clippy: address the specific lint
 - Fix tests: debug and correct
 
+### For ML Changes (scripts/, .py files):
+// turbo
+```powershell
+cargo xtask ml-ci
+```
+**Must pass if you touched ML code.**
+
 ---
 
 ## Step 2: Update Progression Docs (if applicable)

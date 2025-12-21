@@ -118,6 +118,10 @@ impl GreedyAI {
 }
 
 impl AiPlayer for GreedyAI {
+    fn name(&self) -> &'static str {
+        "GreedyAI"
+    }
+
     fn decide(
         &mut self,
         visible_state: &VisibleWorldState,

@@ -40,10 +40,13 @@ cargo xtask ci
 ```
 
 If CI fails, the commit introduced a problem. Fix it:
-```powershell
-# Fix the issue, then:
-git add .
 git commit --amend --no-edit
+```
+
+### For ML Changes:
+If the commit touches `scripts/` or ML logic:
+```powershell
+cargo xtask ml-ci
 ```
 
 ---

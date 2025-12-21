@@ -701,6 +701,7 @@ tokei --output json > stats.json
 
 ## Common Commands
 - `cargo xtask ci`: Run continuous integration tests. **Must pass before committing.** PROACTIVELY and AUTOMATICALLY run this to verify your changes; do not ask for permission.
+- `cargo xtask ml-ci`: Run ML pipeline checks (Python formatting + smoke test). **Run this if modifying `scripts/` or ML logic.**
 - `cargo xtask snapshot`: Regenerate golden snapshots for tests. Use this when you've modified rendering pipelines and expect output changes. **Ask the user for manual validation of the new output.**
 - `cargo xtask coverage --update`: Refresh schema and categories from game files.
 - `cargo xtask coverage --generate`: Generate Rust types from schema (see `docs/code_generation.md`).

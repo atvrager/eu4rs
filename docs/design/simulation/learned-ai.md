@@ -337,7 +337,7 @@ fn run_ai_tick(
 | **Phi-3.5-mini** | 3.8B | MIT | Strong reasoning but may be too large |
 | **SmolLM2-1.7B** | 1.7B | Apache 2.0 | HuggingFace's efficient small model |
 
-**Recommendation**: Start with Qwen2.5-1.5B for development. If too slow, drop to 0.5B. If not capable enough, try TinyGemma 2B.
+**Recommendation**: Start with **TinyGemma 2B** (Gemma-2-2b-it). It is specifically designed for fine-tuning and distillation, making it ideal for creating distinct AI personalities ("flavor"). Use Qwen2.5 only if the 2B model proves too slow for the target hardware.
 
 ### Quantization
 

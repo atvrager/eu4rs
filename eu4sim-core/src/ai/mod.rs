@@ -100,6 +100,9 @@ pub type AvailableCommands = Vec<Command>;
 ///
 /// See [`crate::ai`] module docs and `docs/design/simulation/learned-ai.md`.
 pub trait AiPlayer: Send + Sync {
+    /// Returns the name of this AI type (for debugging and pool management)
+    fn name(&self) -> &'static str;
+
     /// Choose commands for this tick.
     ///
     /// - `visible_state`: What the AI can "see" (respects fog of war in Realistic mode)
@@ -127,6 +130,10 @@ impl RandomAi {
 }
 
 impl AiPlayer for RandomAi {
+    fn name(&self) -> &'static str {
+        "RandomAi"
+    }
+
     fn decide(
         &mut self,
         _visible_state: &VisibleWorldState,

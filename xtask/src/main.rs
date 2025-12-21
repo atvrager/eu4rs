@@ -6,6 +6,7 @@ use std::env;
 use std::process::{Command, Stdio};
 
 mod personalize;
+mod train;
 
 #[derive(Parser)]
 #[command(name = "xtask")]
@@ -50,6 +51,41 @@ enum Commands {
 
     /// Generate a persona based on MAL history
     Personalize,
+
+    /// Train the AI using Python/UV pipeline
+    Train {
+        /// Path to training data (.jsonl)
+        #[arg(long, default_value = "training_data.jsonl")]
+        data: String,
+        /// Base model to use
+        #[arg(long, default_value = "google/gemma-2-2b-it")]
+        model: String,
+        /// Output directory for adapter
+        #[arg(long, default_value = "models/adapter")]
+        output: String,
+        /// Number of training epochs
+        #[arg(long, default_value_t = 1)]
+        epochs: u32,
+    },
+
+    /// Inspect generated training data (.zip or .jsonl)
+    Inspect {
+        /// Path to file
+        path: String,
+    },
+
+    /// Run a quick smoke test of the ML pipeline
+    VerifyPipeline,
+
+    /// Format Python scripts using ruff
+    FormatPython {
+        /// Check only, don't write changes
+        #[arg(long)]
+        check: bool,
+    },
+
+    /// Run full ML CI pipeline (Formatting + Smoke Test)
+    MlCi,
 }
 
 fn main() -> Result<()> {
@@ -75,6 +111,16 @@ fn main() -> Result<()> {
 
         Commands::MalLogin => personalize::run_login(),
         Commands::Personalize => personalize::run_personalize(),
+        Commands::Train {
+            data,
+            model,
+            output,
+            epochs,
+        } => train::run(&data, &model, &output, epochs),
+        Commands::Inspect { path } => train::inspect(&path),
+        Commands::VerifyPipeline => train::verify_pipeline(),
+        Commands::FormatPython { check } => train::format_python(check),
+        Commands::MlCi => train::verify_pipeline(),
     }
 }
 

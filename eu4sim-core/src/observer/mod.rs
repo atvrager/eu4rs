@@ -249,6 +249,13 @@ impl Default for ObserverRegistry {
     }
 }
 
+impl Drop for ObserverRegistry {
+    fn drop(&mut self) {
+        // Ensure all observers are properly shut down (flush buffers, finalize archives)
+        self.shutdown();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

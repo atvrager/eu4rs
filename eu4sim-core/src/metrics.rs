@@ -12,6 +12,10 @@ pub struct SimMetrics {
     pub economy_time: Duration, // monthly systems combined
     pub ai_time: Duration,
     pub war_score_time: Duration,
+    /// Time spent in observers (datagen, event log, etc.)
+    pub observer_time: Duration,
+    /// Wall clock time from first tick to last
+    pub wall_time: Duration,
 }
 
 impl SimMetrics {

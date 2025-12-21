@@ -20,3 +20,10 @@ eu4data/src/generated/types/*
 
 # Observer output files
 *.jsonl
+
+# Machine Learning
+models/
+scripts/.venv/
+scripts/__pycache__/
+*.zip
+*.safetensors

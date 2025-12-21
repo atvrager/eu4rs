@@ -27,6 +27,7 @@ struct PersonaOutput {
     anime: String,
     character: String,
     reason: String,
+    background: String,
     instruction: String,
 }
 
@@ -66,7 +67,18 @@ struct JikanCharacterEntry {
 
 #[derive(Deserialize, Debug)]
 struct JikanCharacter {
+    mal_id: i32,
     name: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct JikanCharacterDetailResponse {
+    data: JikanCharacterDetail,
+}
+
+#[derive(Deserialize, Debug)]
+struct JikanCharacterDetail {
+    about: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -306,16 +318,15 @@ pub fn run_personalize() -> Result<()> {
         })
         .collect();
 
-    let wildcard_pool = items.iter().take(50).collect::<Vec<_>>();
+    let wildcard_pool = items.iter().take(100).collect::<Vec<_>>();
 
     let mut rng = rand::rng();
     let roll: f64 = rng.random();
 
-    let (selected_node, reason) = if roll < 0.40 && !watching.is_empty() {
-        let pool = watching.iter().take(5).collect::<Vec<_>>();
-        let pick = pool.choose(&mut rng).unwrap();
+    let (selected_node, reason) = if roll < 0.30 && !watching.is_empty() {
+        let pick = watching.choose(&mut rng).unwrap();
         (&pick.node, "Current Grind (Recently watching)".to_string())
-    } else if roll < 0.80 && !completed_hof.is_empty() {
+    } else if roll < 0.60 && !completed_hof.is_empty() {
         let pick = completed_hof.choose(&mut rng).unwrap();
         (
             &pick.node,
@@ -341,52 +352,96 @@ pub fn run_personalize() -> Result<()> {
     );
     let char_resp = client.get(&jikan_url).send();
 
-    let character_name = match char_resp {
+    let character_info = match char_resp {
         Ok(r) if r.status().is_success() => {
             if let Ok(char_data) = r.json::<JikanCharactersResponse>() {
-                let main_chars: Vec<&JikanCharacterEntry> =
-                    char_data.data.iter().filter(|c| c.role == "Main").collect();
-                if !main_chars.is_empty() {
-                    main_chars.choose(&mut rng).unwrap().character.name.clone()
-                } else if !char_data.data.is_empty() {
-                    char_data
-                        .data
-                        .choose(&mut rng)
-                        .unwrap()
-                        .character
-                        .name
-                        .clone()
+                if char_data.data.is_empty() {
+                    None
                 } else {
-                    "Unknown Character".to_string()
+                    // Bias towards Main characters (80% chance) but allow Supporting (20% chance)
+                    let main_chars: Vec<&JikanCharacterEntry> =
+                        char_data.data.iter().filter(|c| c.role == "Main").collect();
+
+                    let use_main = rng.random_bool(0.8) && !main_chars.is_empty();
+
+                    let pick = if use_main {
+                        main_chars.choose(&mut rng).unwrap()
+                    } else {
+                        char_data.data.choose(&mut rng).unwrap()
+                    };
+
+                    Some((pick.character.mal_id, pick.character.name.clone()))
                 }
             } else {
-                "Unknown Character".to_string()
+                None
             }
         }
-        _ => "Unknown Character".to_string(),
+        _ => None,
     };
 
-    let display_name = if character_name.contains(',') {
-        let parts: Vec<&str> = character_name.split(',').collect();
-        if parts.len() == 2 {
-            format!("{} {}", parts[1].trim(), parts[0].trim())
+    let (display_name, background) = if let Some((id, name)) = character_info {
+        let name = if name.contains(',') {
+            let parts: Vec<&str> = name.split(',').collect();
+            if parts.len() == 2 {
+                format!("{} {}", parts[1].trim(), parts[0].trim())
+            } else {
+                name
+            }
         } else {
-            character_name
-        }
+            name
+        };
+
+        // Fetch character bio
+        let detail_url = format!("https://api.jikan.moe/v4/characters/{}", id);
+        let detail_resp = client.get(&detail_url).send();
+        let background = match detail_resp {
+            Ok(r) if r.status().is_success() => {
+                if let Ok(detail_data) = r.json::<JikanCharacterDetailResponse>() {
+                    let mut bio = detail_data
+                        .data
+                        .about
+                        .unwrap_or_else(|| "No background info found.".to_string());
+
+                    // Clean bio: replace newlines/tabs with spaces and collapse spaces
+                    bio = bio.replace(['\r', '\n', '\t'], " ");
+                    while bio.contains("  ") {
+                        bio = bio.replace("  ", " ");
+                    }
+                    bio.trim().to_string()
+                } else {
+                    "Background data parsing failed.".to_string()
+                }
+            }
+            _ => "Failed to fetch character background.".to_string(),
+        };
+
+        (name, background)
     } else {
-        character_name
+        (
+            "Unknown Character".to_string(),
+            "No background available.".to_string(),
+        )
     };
 
     let instruction = if display_name == "Unknown Character" {
         format!("Adopt the style of the anime '{}'. Write code comments in this persona's style (vibey/flavorful) ONLY for new or deeply refactored logic. Preserve legacy styling for minor updates. Keep project documentation professional. Important: Use standard width characters only (no fullwidth/fancy text).", selected_node.title)
     } else {
-        format!("Roleplay as {} from {}. Adopt their mannerisms subtly. Write code comments in character (vibey/flavorful) ONLY for new or deeply refactored logic. Preserve legacy styling for minor updates. Keep project documentation professional. Important: Use standard width characters only (no fullwidth/fancy text).", display_name, selected_node.title)
+        format!("Roleplay as {} from {}. Adopt their mannerisms subtly. \
+                 BACKGROUND: {}\n\n\
+                 INSTRUCTIONS:\n\
+                 - Write code comments in character (vibey/flavorful) ONLY for new or deeply refactored logic.\n\
+                 - Use catchphrases or quirks found in the background bio where appropriate.\n\
+                 - Preserve legacy styling for minor updates.\n\
+                 - Keep project documentation professional.\n\
+                 - Important: Use standard width characters only (no fullwidth/fancy text).", 
+                 display_name, selected_node.title, background)
     };
 
     let output = PersonaOutput {
         anime: selected_node.title.clone(),
         character: display_name,
         reason: reason_str,
+        background,
         instruction,
     };
 

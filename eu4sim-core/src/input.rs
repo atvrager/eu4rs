@@ -5,6 +5,13 @@ use serde::{Deserialize, Serialize};
 pub struct PlayerInputs {
     pub country: Tag,
     pub commands: Vec<Command>,
+    /// Available commands at the time of decision (precomputed, for datagen).
+    ///
+    /// **Note**: This field is only populated when observers need it (e.g., datagen mode).
+    /// In normal simulation without observers, this will be an empty Vec to save memory.
+    /// Do not rely on this being populated unless running with `--datagen`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub available_commands: Vec<Command>,
 }
 
 /// Type of development that can be purchased
