@@ -14,7 +14,39 @@ BASE_MODEL = "google/gemma-2-2b-it"
 OUTPUT_DIR = "models/adapter"
 
 
-def load_training_dataset(data_path: Path):
+def detect_device():
+    """Detect best available device: CUDA > DirectML > CPU.
+
+    Returns:
+        Tuple of (device, device_name, use_cpu_flag)
+        - device: torch device or DirectML device object
+        - device_name: human-readable name for logging
+        - use_cpu_flag: whether to set use_cpu=True in SFTConfig
+    """
+    # Try CUDA first (NVIDIA)
+    if torch.cuda.is_available():
+        device_name = torch.cuda.get_device_name(0)
+        return "cuda", f"CUDA ({device_name})", False
+
+    # Try DirectML (AMD/Intel on Windows)
+    try:
+        import torch_directml
+
+        dml_device = torch_directml.device()
+        # Verify it actually works
+        test_tensor = torch.zeros(1, device=dml_device)
+        del test_tensor
+        return dml_device, "DirectML (AMD/Intel GPU)", False
+    except ImportError:
+        pass
+    except Exception as e:
+        print(f"DirectML available but failed: {e}")
+
+    # Fallback to CPU
+    return "cpu", "CPU", True
+
+
+def load_training_dataset(data_path: Path, eager: bool = False):
     """Load training data from JSON or Cap'n Proto binary format.
 
     Supports:
@@ -23,7 +55,12 @@ def load_training_dataset(data_path: Path):
       - .zip files (Cap'n Proto binary archive)
       - .jsonl files (legacy JSON format)
 
-    Returns a HuggingFace Dataset with 'text' column ready for SFT.
+    Args:
+        data_path: Path to training data file
+        eager: If True, load all data into memory (slower but allows shuffling).
+               If False (default), use streaming for better memory efficiency.
+
+    Returns a HuggingFace Dataset or IterableDataset with 'text' column ready for SFT.
     """
     path_str = str(data_path).lower()
 
@@ -33,18 +70,27 @@ def load_training_dataset(data_path: Path):
         or path_str.endswith(".cpb")
         or (data_path.suffix.lower() == ".zip" and not path_str.endswith(".jsonl.zip"))
     ):
-        # Cap'n Proto binary format (preferred)
-        from load_training_data import load_training_file, to_huggingface_dataset
+        if eager:
+            # Eager mode: load all into memory (slower, allows full shuffle)
+            from load_training_data import load_training_file, to_huggingface_dataset
 
-        print(f"Loading Cap'n Proto binary: {data_path}")
-        samples = load_training_file(data_path)
-        dataset = to_huggingface_dataset(samples)
+            print(f"Loading Cap'n Proto binary (eager): {data_path}")
+            samples = load_training_file(data_path)
+            dataset = to_huggingface_dataset(samples)
 
-        # Combine prompt + completion into 'text' for SFT
-        def combine_text(example):
-            return {"text": example["prompt"] + "\n" + example["completion"]}
+            # Combine prompt + completion into 'text' for SFT
+            def combine_text(example):
+                return {"text": example["prompt"] + "\n" + example["completion"]}
 
-        dataset = dataset.map(combine_text)
+            dataset = dataset.map(combine_text)
+            print(f"Loaded {len(dataset)} samples")
+        else:
+            # Streaming mode (default): memory-efficient, starts immediately
+            from load_training_data import to_huggingface_dataset_streaming
+
+            print(f"Loading Cap'n Proto binary (streaming): {data_path}")
+            dataset = to_huggingface_dataset_streaming(data_path)
+            print("Streaming enabled - training will start immediately")
 
     elif data_path.suffix.lower() in (".jsonl", ".json"):
         # Legacy JSON format
@@ -66,12 +112,12 @@ def load_training_dataset(data_path: Path):
                 raise ValueError(
                     f"JSON file must have 'text' column or 'prompt'+'completion' columns"
                 )
+        print(f"Loaded {len(dataset)} samples")
     else:
         raise ValueError(
             f"Unsupported file format: {data_path.suffix}. Use .cpb.zip, .cpb, or .jsonl"
         )
 
-    print(f"Loaded {len(dataset)} samples")
     return dataset
 
 
@@ -81,7 +127,7 @@ def main():
         "--data",
         required=True,
         type=Path,
-        help="Path to training data (.bin for Cap'n Proto, .jsonl for JSON)",
+        help="Path to training data (.cpb.zip, .cpb, or .jsonl)",
     )
     parser.add_argument(
         "--base-model", default=BASE_MODEL, help="Base HuggingFace model"
@@ -90,10 +136,28 @@ def main():
         "--output", default=OUTPUT_DIR, help="Output directory for adapter"
     )
     parser.add_argument(
-        "--epochs", type=int, default=1, help="Number of training epochs"
+        "--epochs",
+        type=int,
+        default=1,
+        help="Number of training epochs (eager mode only)",
+    )
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=None,
+        help="Max training steps (required for streaming, overrides --epochs)",
+    )
+    parser.add_argument(
+        "--eager",
+        action="store_true",
+        help="Force eager loading (slower, allows full shuffle)",
     )
 
     args = parser.parse_args()
+
+    # Detect best available device
+    device, device_name, use_cpu = detect_device()
+    print(f"Using device: {device_name}")
 
     print(f"Loading base model: {args.base_model}")
 
@@ -103,17 +167,25 @@ def main():
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # Load Model (Quantized if possible, but CPU support varies)
-    # For simplicity on generic hardware, load standard float32 or bfloat16
-    # If CUDA is available, use it.
-    device_map = "auto" if torch.cuda.is_available() else "cpu"
-    print(f"Using device: {device_map}")
+    # Load Model
+    # DirectML requires manual device placement, CUDA can use device_map="auto"
+    is_directml = device not in ("cuda", "cpu")
 
-    model = AutoModelForCausalLM.from_pretrained(
-        args.base_model,
-        device_map=device_map,
-        torch_dtype=torch.float32,  # CPU friendly
-    )
+    if is_directml:
+        # DirectML: load to CPU first, then move to DML device
+        model = AutoModelForCausalLM.from_pretrained(
+            args.base_model,
+            torch_dtype=torch.float32,
+        )
+        model = model.to(device)
+    else:
+        # CUDA or CPU: use device_map
+        device_map = "auto" if device == "cuda" else "cpu"
+        model = AutoModelForCausalLM.from_pretrained(
+            args.base_model,
+            device_map=device_map,
+            torch_dtype=torch.float32,
+        )
 
     # Configure LoRA
     peft_config = LoraConfig(
@@ -133,19 +205,36 @@ def main():
     model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
 
-    # Load Dataset (supports both .bin and .jsonl)
-    dataset = load_training_dataset(args.data)
+    # Load Dataset (streaming by default, --eager for full load)
+    dataset = load_training_dataset(args.data, eager=args.eager)
+    is_streaming = not args.eager
+
+    # Streaming mode requires max_steps (no len() available)
+    if is_streaming and args.max_steps is None:
+        print("Warning: Streaming mode without --max-steps. Defaulting to 1000 steps.")
+        max_steps = 1000
+    else:
+        max_steps = args.max_steps
 
     # Configure SFT Args (inherits from TrainingArguments)
+    # CUDA supports bf16 mixed precision; DirectML and CPU do not
+    use_bf16 = device == "cuda"
+    
     sft_config = SFTConfig(
         output_dir=args.output,
-        num_train_epochs=args.epochs,
+        # Use max_steps for streaming, epochs for eager
+        num_train_epochs=args.epochs if not is_streaming else 1,
+        max_steps=max_steps if is_streaming else -1,
         per_device_train_batch_size=1,
         gradient_accumulation_steps=4,
         learning_rate=2e-4,
         logging_steps=10,
-        save_strategy="epoch",
-        use_cpu=not torch.cuda.is_available(),
+        save_strategy="steps" if is_streaming else "epoch",
+        save_steps=max_steps // 2 if is_streaming and max_steps else 500,
+        use_cpu=use_cpu,  # True only for CPU, False for CUDA and DirectML
+        # Mixed precision: bf16 for CUDA, fp32 for DirectML/CPU
+        bf16=use_bf16,
+        fp16=False,  # Prefer bf16 over fp16 when available
         dataset_text_field="text",
     )
 

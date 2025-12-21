@@ -25,6 +25,7 @@ eu4data/src/generated/types/*
 # Machine Learning
 models/
 scripts/.venv/
+scripts/.venv-dml/
 scripts/__pycache__/
 *.zip
 *.safetensors
