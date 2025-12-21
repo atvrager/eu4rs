@@ -16,6 +16,162 @@ use std::sync::Arc;
 
 mod loader;
 
+/// Create minimal mock state for CI testing (no game files needed)
+fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGraph) {
+    use eu4sim_core::state::{Army, CountryState, ProvinceState, Regiment, RegimentType, Terrain};
+    use eu4sim_core::{BoundedFixed, BoundedInt, Fixed};
+
+    // Create 3 mock countries with adjacent provinces
+    let mut provinces = std::collections::HashMap::new();
+    let mut countries = std::collections::HashMap::new();
+    let mut armies = std::collections::HashMap::new();
+
+    // Country AAA: Provinces 1, 2
+    countries.insert(
+        "AAA".to_string(),
+        CountryState {
+            treasury: Fixed::from_int(100),
+            manpower: Fixed::from_int(10),
+            stability: BoundedInt::new(1, -3, 3),
+            prestige: BoundedFixed::new(
+                Fixed::from_int(50),
+                Fixed::from_int(-100),
+                Fixed::from_int(100),
+            ),
+            adm_mana: Fixed::from_int(100),
+            dip_mana: Fixed::from_int(100),
+            mil_mana: Fixed::from_int(100),
+            religion: Some("catholic".to_string()),
+            ..Default::default()
+        },
+    );
+
+    // Country BBB: Provinces 3, 4
+    countries.insert(
+        "BBB".to_string(),
+        CountryState {
+            treasury: Fixed::from_int(80),
+            manpower: Fixed::from_int(8),
+            stability: BoundedInt::new(0, -3, 3),
+            prestige: BoundedFixed::new(
+                Fixed::from_int(30),
+                Fixed::from_int(-100),
+                Fixed::from_int(100),
+            ),
+            adm_mana: Fixed::from_int(50),
+            dip_mana: Fixed::from_int(50),
+            mil_mana: Fixed::from_int(50),
+            religion: Some("sunni".to_string()),
+            ..Default::default()
+        },
+    );
+
+    // Country CCC: Province 5
+    countries.insert(
+        "CCC".to_string(),
+        CountryState {
+            treasury: Fixed::from_int(50),
+            manpower: Fixed::from_int(5),
+            stability: BoundedInt::new(-1, -3, 3),
+            prestige: BoundedFixed::new(
+                Fixed::from_int(10),
+                Fixed::from_int(-100),
+                Fixed::from_int(100),
+            ),
+            adm_mana: Fixed::from_int(20),
+            dip_mana: Fixed::from_int(20),
+            mil_mana: Fixed::from_int(20),
+            religion: Some("orthodox".to_string()),
+            ..Default::default()
+        },
+    );
+
+    // Create provinces (1-2: AAA, 3-4: BBB, 5: CCC)
+    for id in 1..=5 {
+        let owner = match id {
+            1 | 2 => "AAA",
+            3 | 4 => "BBB",
+            5 => "CCC",
+            _ => unreachable!(),
+        };
+        provinces.insert(
+            id,
+            ProvinceState {
+                owner: Some(owner.to_string()),
+                controller: Some(owner.to_string()),
+                religion: countries[owner].religion.clone(),
+                culture: Some("test_culture".to_string()),
+                trade_goods_id: None,
+                base_tax: Fixed::from_int(5),
+                base_production: Fixed::from_int(5),
+                base_manpower: Fixed::from_int(3),
+                has_fort: id == 1 || id == 3,
+                is_sea: false,
+                terrain: Some(Terrain::Plains),
+                institution_presence: Default::default(),
+            },
+        );
+    }
+
+    // Create one army per country
+    armies.insert(
+        1,
+        Army {
+            id: 1,
+            name: "AAA Army".to_string(),
+            owner: "AAA".to_string(),
+            location: 1,
+            regiments: vec![Regiment {
+                type_: RegimentType::Infantry,
+                strength: Fixed::from_int(1000),
+            }],
+            movement: None,
+            embarked_on: None,
+        },
+    );
+    armies.insert(
+        2,
+        Army {
+            id: 2,
+            name: "BBB Army".to_string(),
+            owner: "BBB".to_string(),
+            location: 3,
+            regiments: vec![Regiment {
+                type_: RegimentType::Infantry,
+                strength: Fixed::from_int(1000),
+            }],
+            movement: None,
+            embarked_on: None,
+        },
+    );
+
+    // Create adjacency: 1-2 (AAA internal), 2-3 (AAA-BBB border), 3-4 (BBB internal), 4-5 (BBB-CCC border)
+    let mut adj = eu4data::adjacency::AdjacencyGraph::new();
+    adj.add_adjacency(1, 2);
+    adj.add_adjacency(2, 3);
+    adj.add_adjacency(3, 4);
+    adj.add_adjacency(4, 5);
+
+    let state = WorldState {
+        date: Date::new(1444, 11, 11),
+        rng_seed: seed,
+        rng_state: 0,
+        provinces: provinces.into(),
+        countries: countries.into(),
+        base_goods_prices: Default::default(),
+        modifiers: Default::default(),
+        diplomacy: Default::default(),
+        global: Default::default(),
+        armies: armies.into(),
+        next_army_id: 3,
+        fleets: Default::default(),
+        next_fleet_id: 1,
+        colonies: Default::default(),
+    };
+
+    (state, adj)
+}
+
 /// Calculate top N countries by total development
 fn calculate_top_countries(state: &WorldState, count: usize) -> HashSet<String> {
     let mut dev_by_country: HashMap<String, i64> = HashMap::new();
@@ -170,6 +326,10 @@ struct Args {
     /// Random seed for simulation reproducibility
     #[arg(long, default_value_t = 12345)]
     seed: u64,
+
+    /// Test mode: use minimal mock state instead of loading game files (for CI)
+    #[arg(long)]
+    test_mode: bool,
 }
 
 use eu4sim_core::SimMetrics;
@@ -196,12 +356,14 @@ fn main() -> Result<()> {
 
     log::info!("Starting eu4sim...");
 
-    // Resolve game path
-    let game_path = PathBuf::from(args.game_path);
-
-    // Initialize State
-    let (mut state, adjacency_raw) =
-        loader::load_initial_state(&game_path, Date::new(args.start_year, 11, 11), args.seed)?;
+    // Initialize State (either from game files or mock data for CI)
+    let (mut state, adjacency_raw) = if args.test_mode {
+        log::info!("Test mode: using mock state");
+        create_mock_state(args.seed)
+    } else {
+        let game_path = PathBuf::from(&args.game_path);
+        loader::load_initial_state(&game_path, Date::new(args.start_year, 11, 11), args.seed)?
+    };
     let adjacency = Arc::new(adjacency_raw);
 
     log::info!("Initial State Date: {}", state.date);

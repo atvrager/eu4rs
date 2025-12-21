@@ -72,7 +72,7 @@ pub fn verify_pipeline() -> Result<()> {
 
     let binary_data_path = "verify_data.cpb.zip";
 
-    // 1. Generate real training data via short simulation
+    // 1. Generate real training data via short simulation (using mock state for CI)
     println!("   Generating binary training data via simulation...");
     let sim_status = Command::new("cargo")
         .args([
@@ -83,6 +83,8 @@ pub fn verify_pipeline() -> Result<()> {
             "--ticks",
             "5",
             "--headless",
+            "--observer",
+            "--test-mode",
             "--datagen",
             binary_data_path,
         ])
