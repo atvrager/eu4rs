@@ -10,6 +10,9 @@ candle-core = "0.8"
 candle-nn = "0.8"
 candle-transformers = "0.8"
 
+# Model downloading from HuggingFace
+hf-hub = "0.3"
+
 # Tokenization
 tokenizers = "0.21"
 
@@ -26,6 +29,9 @@ thiserror = "2.0"
 
 # Logging
 log = "0.4"
+
+# Sampling
+rand = "0.8"
 
 # Local crates
 eu4sim-core = { path = "../eu4sim-core" }

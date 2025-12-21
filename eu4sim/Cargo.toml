@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 eu4sim-core = { path = "../eu4sim-core" }
+eu4sim-ai = { path = "../eu4sim-ai" }
 eu4data = { path = "../eu4data" }
 clap = { version = "4.0", features = ["derive"] }
 anyhow = "1.0"

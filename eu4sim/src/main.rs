@@ -330,6 +330,11 @@ struct Args {
     /// Test mode: use minimal mock state instead of loading game files (for CI)
     #[arg(long)]
     test_mode: bool,
+
+    /// Use LLM AI for the top Great Power. Provide path to LoRA adapter directory.
+    /// Downloads base model from HuggingFace on first run (~700MB).
+    #[arg(long, value_name = "ADAPTER_PATH")]
+    llm_ai: Option<PathBuf>,
 }
 
 use eu4sim_core::SimMetrics;
@@ -397,11 +402,42 @@ fn main() -> Result<()> {
             _ => HashSet::new(), // random mode: no greedy
         };
 
-        state
-            .countries
-            .keys()
-            .map(|tag| {
-                let ai: Box<dyn eu4sim_core::AiPlayer> = if greedy_tags.contains(tag) {
+        // Find the top GP for LLM AI if specified
+        let llm_tag: Option<String> = if args.llm_ai.is_some() {
+            let top = calculate_top_countries(&state, 1);
+            top.into_iter().next()
+        } else {
+            None
+        };
+
+        // Initialize LLM AI if requested (do this before the loop to avoid lifetime issues)
+        let llm_ai: Option<Box<dyn eu4sim_core::AiPlayer>> =
+            if let Some(adapter_path) = &args.llm_ai {
+                eprintln!("Loading LLM AI with adapter: {:?}", adapter_path);
+                match eu4sim_ai::LlmAi::with_adapter(adapter_path.clone()) {
+                    Ok(ai) => {
+                        eprintln!("LLM AI loaded successfully for: {:?}", llm_tag);
+                        Some(Box::new(ai))
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to load LLM AI: {}. Falling back to GreedyAI.", e);
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
+        // Build AI map
+        let mut ai_map: BTreeMap<String, Box<dyn eu4sim_core::AiPlayer>> = BTreeMap::new();
+        let mut llm_ai = llm_ai; // Make it mutable so we can take() from it
+
+        for tag in state.countries.keys() {
+            let ai: Box<dyn eu4sim_core::AiPlayer> =
+                if llm_tag.as_ref() == Some(tag) && llm_ai.is_some() {
+                    // Use LLM AI for the top GP
+                    llm_ai.take().unwrap()
+                } else if greedy_tags.contains(tag) {
                     Box::new(eu4sim_core::GreedyAI::new())
                 } else {
                     // Hash tag into seed for diversity
@@ -409,9 +445,9 @@ fn main() -> Result<()> {
                     let seed = args.seed.wrapping_add(tag_hash);
                     Box::new(eu4sim_core::RandomAi::new(seed))
                 };
-                (tag.clone(), ai)
-            })
-            .collect()
+            ai_map.insert(tag.clone(), ai);
+        }
+        ai_map
     } else {
         BTreeMap::new()
     };
