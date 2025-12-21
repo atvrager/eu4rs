@@ -1611,10 +1611,12 @@ name = "eu4sim-ai"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytemuck",
  "candle-core",
  "candle-nn",
  "candle-transformers",
  "eu4sim-core",
+ "half",
  "hf-hub",
  "log",
  "rand 0.8.5",

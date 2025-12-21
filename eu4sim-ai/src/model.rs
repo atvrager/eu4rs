@@ -4,11 +4,13 @@
 //! applies LoRA adapters, and runs inference on CPU.
 
 use anyhow::{Context, Result};
-use candle_core::{DType, Device, Tensor};
+use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::llama::{Cache, Config, Llama, LlamaConfig};
 use hf_hub::{Repo, RepoType, api::sync::Api};
 use rand::Rng;
+use safetensors::SafeTensors;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokenizers::Tokenizer;
 
@@ -87,10 +89,12 @@ pub struct LoraConfig {
 /// Unified model wrapper for EU4 AI inference.
 pub struct Eu4AiModel {
     model: Llama,
+    #[allow(dead_code)]
     cache: Cache,
     tokenizer: Tokenizer,
     config: Config,
     device: Device,
+    dtype: DType,
     #[allow(dead_code)]
     arch: ModelArch,
 }
@@ -101,6 +105,7 @@ impl Eu4AiModel {
     /// Downloads the base model from HuggingFace Hub if not cached,
     /// then applies the LoRA adapter weights.
     pub fn load(config: ModelConfig) -> Result<Self> {
+        let load_start = std::time::Instant::now();
         log::info!("Loading base model: {}", config.base_model);
 
         // Download base model files from HuggingFace
@@ -132,21 +137,34 @@ impl Eu4AiModel {
         let tokenizer = Tokenizer::from_file(&tokenizer_path)
             .map_err(|e| anyhow::anyhow!("Failed to load tokenizer: {}", e))?;
 
-        // Load base model weights
-        log::info!("Loading base model weights...");
-        let base_vb = unsafe {
-            VarBuilder::from_mmaped_safetensors(&[weights_path], config.dtype, &config.device)?
-        };
-
-        // Load LoRA adapter if provided
-        if !config.adapter_path.as_os_str().is_empty() {
+        // Load and optionally merge LoRA weights
+        let vb = if !config.adapter_path.as_os_str().is_empty() {
             log::info!("Loading LoRA adapter from {:?}", config.adapter_path);
-            Self::log_lora_info(&config.adapter_path)?;
-            // TODO: Implement actual LoRA weight merging
-            // For now, we log the adapter info but use base model
-            log::warn!("LoRA weight merging not yet implemented - using base model only");
-        }
-        let vb = base_vb;
+
+            // Load base weights into memory for merging
+            log::info!("Loading base model weights for LoRA merge...");
+            let base_weights =
+                Self::load_base_weights(&weights_path, &config.device, config.dtype)?;
+
+            // Load LoRA config and merge weights
+            let lora_config = Self::load_lora_config(&config.adapter_path)?;
+            let merged_weights = Self::merge_lora_weights(
+                base_weights,
+                &config.adapter_path,
+                &lora_config,
+                &config.device,
+                config.dtype,
+            )?;
+
+            log::warn!("LoRA merge complete - creating model from merged weights");
+            VarBuilder::from_tensors(merged_weights, config.dtype, &config.device)
+        } else {
+            // No adapter - use base model directly (memory-mapped for efficiency)
+            log::info!("Loading base model weights...");
+            unsafe {
+                VarBuilder::from_mmaped_safetensors(&[weights_path], config.dtype, &config.device)?
+            }
+        };
 
         // Build the model
         let model = Llama::load(vb, &model_config).context("Failed to load Llama model")?;
@@ -154,7 +172,13 @@ impl Eu4AiModel {
         // Create KV cache
         let cache = Cache::new(true, config.dtype, &model_config, &config.device)?;
 
-        log::info!("Model loaded successfully");
+        let load_time = load_start.elapsed();
+        log::warn!(
+            "Model loaded in {:.2}s (device: {:?}, dtype: {:?})",
+            load_time.as_secs_f64(),
+            config.device,
+            config.dtype
+        );
 
         Ok(Self {
             model,
@@ -162,13 +186,13 @@ impl Eu4AiModel {
             tokenizer,
             config: model_config,
             device: config.device,
+            dtype: config.dtype,
             arch,
         })
     }
 
-    /// Log information about the LoRA adapter.
-    fn log_lora_info(adapter_path: &Path) -> Result<()> {
-        // Load LoRA config
+    /// Load LoRA config from adapter directory.
+    fn load_lora_config(adapter_path: &Path) -> Result<LoraConfig> {
         let lora_config_path = adapter_path.join("adapter_config.json");
         let lora_config: LoraConfig = serde_json::from_str(
             &std::fs::read_to_string(&lora_config_path)
@@ -183,18 +207,177 @@ impl Eu4AiModel {
             lora_config.target_modules
         );
 
-        // Check weights exist
+        Ok(lora_config)
+    }
+
+    /// Merge LoRA weights into base model weights.
+    ///
+    /// LoRA formula: W' = W + (B @ A) * (alpha / r)
+    /// Where A is [r, in_features] and B is [out_features, r]
+    fn merge_lora_weights(
+        base_weights: HashMap<String, Tensor>,
+        adapter_path: &Path,
+        lora_config: &LoraConfig,
+        device: &Device,
+        dtype: DType,
+    ) -> Result<HashMap<String, Tensor>> {
         let lora_weights_path = adapter_path.join("adapter_model.safetensors");
-        if lora_weights_path.exists() {
-            let metadata = std::fs::metadata(&lora_weights_path)?;
-            log::info!(
-                "LoRA weights: {} ({:.1} MB)",
-                lora_weights_path.display(),
-                metadata.len() as f64 / 1_000_000.0
+        let lora_data = std::fs::read(&lora_weights_path)
+            .context("Failed to read adapter_model.safetensors")?;
+        let lora_tensors =
+            SafeTensors::deserialize(&lora_data).context("Failed to parse LoRA safetensors")?;
+
+        // Log LoRA weight info
+        let lora_keys: Vec<String> = lora_tensors.names().iter().map(|s| s.to_string()).collect();
+        log::info!("LoRA adapter has {} weight tensors", lora_keys.len());
+        log::debug!("LoRA keys: {:?}", &lora_keys[..lora_keys.len().min(10)]);
+
+        // Scaling factor for LoRA
+        let scale = lora_config.lora_alpha as f64 / lora_config.r as f64;
+        log::info!("LoRA scale factor: {:.2}", scale);
+
+        let mut merged = base_weights;
+        let mut merge_count = 0;
+
+        // Find LoRA A/B pairs and merge them with corresponding base weights
+        // LoRA keys typically look like: base_model.model.layers.0.self_attn.q_proj.lora_A.weight
+        // Base keys look like: model.layers.0.self_attn.q_proj.weight
+        for lora_key in &lora_keys {
+            if !lora_key.ends_with(".lora_A.weight") {
+                continue;
+            }
+
+            // Extract the base name (e.g., "base_model.model.layers.0.self_attn.q_proj")
+            let base_prefix = lora_key
+                .strip_suffix(".lora_A.weight")
+                .expect("Already checked suffix");
+
+            // Construct B key
+            let lora_b_key = format!("{}.lora_B.weight", base_prefix);
+            if !lora_keys.iter().any(|k| k == &lora_b_key) {
+                log::warn!("Missing LoRA B for {}", lora_key);
+                continue;
+            }
+
+            // Map LoRA key to base model key
+            // PEFT format: "base_model.model.model.layers.0.self_attn.q_proj"
+            // Base model:  "model.layers.0.self_attn.q_proj.weight"
+            let base_key = {
+                let mut key = base_prefix.to_string();
+                // Strip "base_model." prefix if present
+                if let Some(rest) = key.strip_prefix("base_model.") {
+                    key = rest.to_string();
+                }
+                // Strip extra "model." prefix if present (PEFT adds this)
+                if let Some(rest) = key.strip_prefix("model.") {
+                    key = rest.to_string();
+                }
+                format!("{}.weight", key)
+            };
+
+            // Check if base weight exists
+            if !merged.contains_key(&base_key) {
+                log::debug!("No base weight for LoRA target: {}", base_key);
+                continue;
+            }
+
+            // Load LoRA tensors
+            let lora_a_view = lora_tensors
+                .tensor(lora_key)
+                .context("Failed to get LoRA A")?;
+            let lora_b_view = lora_tensors
+                .tensor(&lora_b_key)
+                .context("Failed to get LoRA B")?;
+
+            // Convert to candle tensors
+            let lora_a = Self::view_to_tensor(&lora_a_view, device, dtype)?;
+            let lora_b = Self::view_to_tensor(&lora_b_view, device, dtype)?;
+
+            log::debug!(
+                "Merging {}: A{:?} x B{:?} into {:?}",
+                base_key,
+                lora_a.dims(),
+                lora_b.dims(),
+                merged[&base_key].dims()
             );
+
+            // Compute delta = B @ A * scale
+            // LoRA A is [r, in_features], B is [out_features, r]
+            // delta = B @ A gives [out_features, in_features]
+            let delta = lora_b.matmul(&lora_a)?;
+            let delta = (delta * scale)?;
+
+            // Merge: W' = W + delta
+            let base_weight = merged.remove(&base_key).unwrap();
+            let merged_weight = (&base_weight + &delta)?;
+            merged.insert(base_key, merged_weight);
+            merge_count += 1;
         }
 
-        Ok(())
+        if merge_count > 0 {
+            log::warn!("Merged {} LoRA weight pairs into base model", merge_count);
+        } else {
+            log::error!("No LoRA weights were merged! Check key mapping.");
+        }
+        Ok(merged)
+    }
+
+    /// Convert safetensors TensorView to candle Tensor.
+    fn view_to_tensor(
+        view: &safetensors::tensor::TensorView,
+        device: &Device,
+        dtype: DType,
+    ) -> Result<Tensor> {
+        let shape: Vec<usize> = view.shape().to_vec();
+        let data = view.data();
+
+        // SafeTensors stores in the dtype specified in the file
+        // For PEFT LoRA, this is typically F32 or BF16
+        let tensor = match view.dtype() {
+            safetensors::Dtype::F32 => {
+                let floats: &[f32] = bytemuck::cast_slice(data);
+                Tensor::from_slice(floats, shape.as_slice(), device)?
+            }
+            safetensors::Dtype::F16 => {
+                let halfs: &[half::f16] = bytemuck::cast_slice(data);
+                let floats: Vec<f32> = halfs.iter().map(|h| h.to_f32()).collect();
+                Tensor::from_slice(&floats, shape.as_slice(), device)?
+            }
+            safetensors::Dtype::BF16 => {
+                let bhalfs: &[half::bf16] = bytemuck::cast_slice(data);
+                let floats: Vec<f32> = bhalfs.iter().map(|h| h.to_f32()).collect();
+                Tensor::from_slice(&floats, shape.as_slice(), device)?
+            }
+            other => anyhow::bail!("Unsupported LoRA dtype: {:?}", other),
+        };
+
+        // Convert to target dtype if needed
+        if dtype != DType::F32 {
+            tensor.to_dtype(dtype).context("Failed to convert dtype")
+        } else {
+            Ok(tensor)
+        }
+    }
+
+    /// Load base model weights into a HashMap.
+    fn load_base_weights(
+        weights_path: &Path,
+        device: &Device,
+        dtype: DType,
+    ) -> Result<HashMap<String, Tensor>> {
+        let data = std::fs::read(weights_path).context("Failed to read model.safetensors")?;
+        let tensors =
+            SafeTensors::deserialize(&data).context("Failed to parse base safetensors")?;
+
+        let mut weights = HashMap::new();
+        for name in tensors.names() {
+            let view = tensors.tensor(name)?;
+            let tensor = Self::view_to_tensor(&view, device, dtype)?;
+            weights.insert(name.to_string(), tensor);
+        }
+
+        log::info!("Loaded {} base model tensors", weights.len());
+        Ok(weights)
     }
 
     /// Run inference on a prompt and return the chosen action index.
@@ -202,6 +385,15 @@ impl Eu4AiModel {
     /// The prompt should end with `<|choice|>` and the model will generate
     /// a single digit (0-9) representing the chosen action.
     pub fn choose_action(&mut self, prompt: &str) -> Result<usize> {
+        let infer_start = std::time::Instant::now();
+
+        // Log prompt at debug level (use --log-level debug to see full prompts)
+        log::debug!(
+            "=== LLM PROMPT ({} chars) ===\n{}\n=== END ===",
+            prompt.len(),
+            prompt
+        );
+
         // Tokenize
         let encoding = self
             .tokenizer
@@ -209,27 +401,44 @@ impl Eu4AiModel {
             .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
         let tokens = encoding.get_ids();
 
-        log::debug!("Prompt tokens: {} tokens", tokens.len());
+        if tokens.is_empty() {
+            anyhow::bail!("Tokenization produced empty sequence");
+        }
+
+        log::debug!("Tokenized to {} tokens", tokens.len());
 
         // Convert to tensor
         let input_ids = Tensor::new(tokens, &self.device)?.unsqueeze(0)?;
 
-        // Note: Cache is reused for KV caching during generation
-        // For single-shot inference, we create fresh cache each time
+        // Create fresh cache for each inference (no clear() method available)
+        let mut cache = Cache::new(true, self.dtype, &self.config, &self.device)
+            .context("Failed to create KV cache")?;
 
         // Forward pass
         let logits = self
             .model
-            .forward(&input_ids, 0, &mut self.cache)
+            .forward(&input_ids, 0, &mut cache)
             .context("Forward pass failed")?;
 
-        // Get logits for next token
-        let logits = logits.squeeze(0)?; // Remove batch dimension
+        // The model returns [batch, vocab] for the last position already
+        // (or [batch, seq, vocab] for full sequence - check dimensions)
+        let logits = if logits.dims().len() == 3 {
+            let seq_len = logits.dim(1)?;
+            logits.i((.., seq_len - 1, ..))?.squeeze(0)?
+        } else {
+            logits.squeeze(0)?
+        };
 
         // Sample from digit tokens (0-9)
         let action = self.sample_digit(&logits)?;
 
-        log::debug!("Model chose action: {}", action);
+        let infer_time = infer_start.elapsed();
+        log::debug!(
+            "LLM chose action {} in {:.0}ms ({} tokens)",
+            action,
+            infer_time.as_secs_f64() * 1000.0,
+            tokens.len()
+        );
         Ok(action)
     }
 

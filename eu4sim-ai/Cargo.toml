@@ -18,6 +18,8 @@ tokenizers = "0.21"
 
 # Model weights
 safetensors = "0.5"
+bytemuck = "1.14"
+half = "2.4"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

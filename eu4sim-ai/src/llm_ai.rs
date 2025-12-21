@@ -40,9 +40,14 @@ impl LlmAi {
         })
     }
 
-    /// Create with default SmolLM2 base model.
+    /// Create with default SmolLM2 base model and LoRA adapter.
     pub fn with_adapter(adapter_path: PathBuf) -> Result<Self> {
         Self::new("HuggingFaceTB/SmolLM2-360M", Some(adapter_path))
+    }
+
+    /// Create with default SmolLM2 base model (no adapter, uses pretrained weights only).
+    pub fn with_base_model() -> Result<Self> {
+        Self::new("HuggingFaceTB/SmolLM2-360M", None)
     }
 
     /// Format the visible state as a text description for the prompt.
@@ -99,6 +104,42 @@ impl LlmAi {
 
         s
     }
+
+    /// Format a command for brief logging output.
+    fn format_command_brief(cmd: &Command) -> String {
+        match cmd {
+            Command::Move {
+                army_id,
+                destination,
+            } => {
+                format!("Move Army {} → {}", army_id, destination)
+            }
+            Command::MoveFleet {
+                fleet_id,
+                destination,
+            } => {
+                format!("Move Fleet {} → {}", fleet_id, destination)
+            }
+            Command::DeclareWar { target, cb } => {
+                if let Some(cb) = cb {
+                    format!("War on {} ({})", target, cb)
+                } else {
+                    format!("War on {}", target)
+                }
+            }
+            Command::OfferPeace { war_id, .. } => format!("Peace in war {}", war_id),
+            Command::OfferAlliance { target } => format!("Alliance → {}", target),
+            Command::BuyTech { tech_type } => format!("Tech {:?}", tech_type),
+            Command::BuildInProvince { province, building } => {
+                format!("Build {} in {}", building, province)
+            }
+            Command::DevelopProvince { province, dev_type } => {
+                format!("Dev {:?} in {}", dev_type, province)
+            }
+            Command::Pass => "Pass".to_string(),
+            other => format!("{:?}", other),
+        }
+    }
 }
 
 impl AiPlayer for LlmAi {
@@ -111,17 +152,16 @@ impl AiPlayer for LlmAi {
         visible_state: &VisibleWorldState,
         available_commands: &AvailableCommands,
     ) -> Vec<Command> {
-        if available_commands.is_empty() {
-            return vec![];
-        }
-
-        // Limit actions to prevent huge prompts
-        let max_actions = 10;
-        let commands: Vec<Command> = available_commands
-            .iter()
-            .take(max_actions)
-            .cloned()
-            .collect();
+        // Always include Pass as action 0, then up to 9 other actions
+        let max_other_actions = 9;
+        let mut commands: Vec<Command> = vec![Command::Pass];
+        commands.extend(
+            available_commands
+                .iter()
+                .filter(|c| **c != Command::Pass)
+                .take(max_other_actions)
+                .cloned(),
+        );
 
         // Build the prompt
         let state_text = Self::format_state(visible_state);
@@ -133,16 +173,23 @@ impl AiPlayer for LlmAi {
         match self.model.choose_action(prompt) {
             Ok(action_idx) => {
                 if action_idx < commands.len() {
-                    log::debug!(
-                        "LlmAi chose action {}: {:?}",
+                    let cmd = &commands[action_idx];
+                    // Always log the decision with action index and description
+                    log::warn!(
+                        "[LLM] {} @ {}.{}.{} → [{}] {}",
+                        visible_state.observer,
+                        visible_state.date.year,
+                        visible_state.date.month,
+                        visible_state.date.day,
                         action_idx,
-                        commands[action_idx]
+                        Self::format_command_brief(cmd)
                     );
-                    vec![commands[action_idx].clone()]
+                    vec![cmd.clone()]
                 } else {
                     log::warn!(
-                        "LlmAi returned invalid action index {}, passing",
-                        action_idx
+                        "LlmAi returned invalid action index {} (only {} actions available)",
+                        action_idx,
+                        commands.len()
                     );
                     vec![]
                 }

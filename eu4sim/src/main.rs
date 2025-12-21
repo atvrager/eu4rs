@@ -197,12 +197,31 @@ fn reassign_hybrid_ais(
 ) -> bool {
     let new_greedy = calculate_top_countries(state, greedy_count);
 
-    // Find current greedy tags
+    // Extract LlmAi if present (we'll reassign it to a random GP)
+    let llm_ai: Option<(String, Box<dyn eu4sim_core::AiPlayer>)> = {
+        let llm_tag = ais
+            .iter()
+            .find(|(_, ai)| ai.name() == "LlmAi")
+            .map(|(t, _)| t.clone());
+        llm_tag.map(|tag| (tag.clone(), ais.remove(&tag).unwrap()))
+    };
+
+    // Pick a deterministic "random" GP for the LlmAi using seed + year
+    let llm_target: Option<String> = if llm_ai.is_some() && !new_greedy.is_empty() {
+        let greedy_vec: Vec<_> = new_greedy.iter().cloned().collect();
+        let idx = (base_seed.wrapping_add(state.date.year as u64) as usize) % greedy_vec.len();
+        Some(greedy_vec[idx].clone())
+    } else {
+        None
+    };
+
+    // Find current greedy tags (excluding LlmAi which we extracted)
     let mut changes = Vec::new();
 
     for (tag, ai) in ais.iter() {
         let is_greedy = ai.name() == "GreedyAI";
-        let should_be_greedy = new_greedy.contains(tag);
+        // Should be greedy if in new_greedy AND not the LlmAi target
+        let should_be_greedy = new_greedy.contains(tag) && llm_target.as_ref() != Some(tag);
 
         if is_greedy != should_be_greedy {
             changes.push((tag.clone(), should_be_greedy));
@@ -211,7 +230,7 @@ fn reassign_hybrid_ais(
 
     // Handle new countries that don't have an AI yet
     for tag in state.countries.keys() {
-        if !ais.contains_key(tag) {
+        if !ais.contains_key(tag) && llm_target.as_ref() != Some(tag) {
             let should_be_greedy = new_greedy.contains(tag);
             changes.push((tag.clone(), should_be_greedy));
         }
@@ -227,11 +246,21 @@ fn reassign_hybrid_ais(
         ais.remove(tag);
     }
 
-    if changes.is_empty() && dead_tags.is_empty() {
+    // Track if LlmAi needs reassignment
+    let llm_changed = llm_ai
+        .as_ref()
+        .map(|(old_tag, _)| llm_target.as_ref() != Some(old_tag))
+        .unwrap_or(false);
+
+    if changes.is_empty() && dead_tags.is_empty() && !llm_changed {
+        // Put LlmAi back if no changes needed
+        if let Some((tag, ai)) = llm_ai {
+            ais.insert(tag, ai);
+        }
         return false;
     }
 
-    // Apply changes
+    // Apply changes for GreedyAI/RandomAi
     for (tag, should_be_greedy) in changes {
         let ai: Box<dyn eu4sim_core::AiPlayer> = if should_be_greedy {
             Box::new(eu4sim_core::GreedyAI::new())
@@ -241,6 +270,19 @@ fn reassign_hybrid_ais(
             Box::new(eu4sim_core::RandomAi::new(seed))
         };
         ais.insert(tag, ai);
+    }
+
+    // Reassign LlmAi to the randomly chosen GP
+    if let Some((old_tag, llm)) = llm_ai {
+        if let Some(ref target_tag) = llm_target {
+            ais.insert(target_tag.clone(), llm);
+            if old_tag != *target_tag {
+                eprintln!("LlmAi transferred: {} → {}", old_tag, target_tag);
+            }
+        } else {
+            // No valid GP, put it back where it was
+            ais.insert(old_tag, llm);
+        }
     }
 
     eprintln!("AI pool updated: GreedyAI → {:?}", new_greedy);
@@ -402,19 +444,37 @@ fn main() -> Result<()> {
             _ => HashSet::new(), // random mode: no greedy
         };
 
-        // Find the top GP for LLM AI if specified
-        let llm_tag: Option<String> = if args.llm_ai.is_some() {
+        // In hybrid mode, always include 1 LLM AI; pick a random GP for it
+        let llm_tag: Option<String> = if args.ai == "hybrid" {
+            let top = calculate_top_countries(&state, args.greedy_count);
+            if !top.is_empty() {
+                // Deterministically pick one GP for the LLM AI
+                let top_vec: Vec<_> = top.iter().cloned().collect();
+                let idx = (args.seed as usize) % top_vec.len();
+                Some(top_vec[idx].clone())
+            } else {
+                None
+            }
+        } else if args.llm_ai.is_some() {
+            // Non-hybrid mode with explicit --llm-ai: use top GP
             let top = calculate_top_countries(&state, 1);
             top.into_iter().next()
         } else {
             None
         };
 
-        // Initialize LLM AI if requested (do this before the loop to avoid lifetime issues)
+        // Initialize LLM AI (in hybrid mode or if explicitly requested)
         let llm_ai: Option<Box<dyn eu4sim_core::AiPlayer>> =
-            if let Some(adapter_path) = &args.llm_ai {
-                eprintln!("Loading LLM AI with adapter: {:?}", adapter_path);
-                match eu4sim_ai::LlmAi::with_adapter(adapter_path.clone()) {
+            if args.ai == "hybrid" || args.llm_ai.is_some() {
+                let result = if let Some(adapter_path) = &args.llm_ai {
+                    eprintln!("Loading LLM AI with adapter: {:?}", adapter_path);
+                    eu4sim_ai::LlmAi::with_adapter(adapter_path.clone())
+                } else {
+                    eprintln!("Loading LLM AI with base model (no adapter)");
+                    eu4sim_ai::LlmAi::with_base_model()
+                };
+
+                match result {
                     Ok(ai) => {
                         eprintln!("LLM AI loaded successfully for: {:?}", llm_tag);
                         Some(Box::new(ai))

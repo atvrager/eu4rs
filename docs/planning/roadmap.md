@@ -198,6 +198,7 @@ Parallel development track for rendering and debugging.
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| **0.1.9** | 2025-12-21 | LLM AI with LoRA inference, hybrid mode integration, training pipeline |
 | **0.1.8** | 2025-12-20 | Timeline replay with event log, 367ms map regeneration, FPS profiling |
 | **0.1.7** | 2025-12-19 | Truce system, AI war declaration filtering, checksum integration |
 | **0.1.6** | 2025-12-19 | Personalization System, agent personas, Claude Code protocols |
@@ -227,30 +228,27 @@ Before starting work on a feature:
 
 Ideas worth exploring but not on the critical path:
 
-### Learned AI (LLM-Trained)
+### Learned AI (LLM-Trained) ✅ **PHASE 1-2 COMPLETE**
 
-Train small language models (1.5-2B params) to play EU4. See [Learned AI Design](../design/simulation/learned-ai.md).
+Train small language models (360M-2B params) to play EU4. See [Learned AI Design](../design/simulation/learned-ai.md).
 
-**Prerequisites** (from Phase 6):
-- GreedyBot (generates training data)
-- `available_commands` API (defines action space)
-- AI crate extraction (`eu4sim-ai`)
+**Completed** (v0.1.9):
+- ✅ `eu4sim-ai` crate with Candle inference
+- ✅ SmolLM2-360M base model loading from HuggingFace
+- ✅ LoRA adapter merging (160 weight pairs)
+- ✅ Integrated into hybrid mode (1 LlmAi + N GreedyAIs)
+- ✅ Training pipeline: Colab notebook with CUDA training
+- ✅ Cap'n Proto binary format for training data
 
-**Training Pipeline**:
-1. Generate gameplay data with GreedyBot (Rust → JSONL)
-2. Fine-tune base model with LoRA (Python, trl/peft)
-3. RL improvement via self-play (Python + Rust game env)
+**Performance** (CPU, F32):
+- Model load: ~1.0s (with LoRA merge)
+- Inference: 600-1000ms per prompt
+- Prompt size: ~220-340 tokens
 
-**Inference Pipeline** (Rust):
-- Candle for CPU inference
-- Quantized models (4-bit) for speed
-- Shared backbone, LoRA adapters for personalities (aggressive, diplomatic, etc.)
-
-**Why this is exciting**:
-- One trained model can serve all AI countries (shared backbone)
-- Different personalities via cheap LoRA adapters (~20MB each)
-- Action-index output = no parsing errors, deterministic
-- Reuse GreedyBot heuristics for prompt action filtering
+**Next Steps**:
+- [ ] RL improvement via self-play (Python + Rust game env)
+- [ ] Quantized models (4-bit) for faster inference
+- [ ] Multiple personality adapters (aggressive, diplomatic, etc.)
 
 ### TUI Rendering Mode
 Play EU4 in your terminal! A text-based interface using `ratatui` or similar:
@@ -267,4 +265,4 @@ Play EU4 in your terminal! A text-based interface using `ratatui` or similar:
 
 ---
 
-*Last updated: 2025-12-20* (v0.1.8)
+*Last updated: 2025-12-21* (v0.1.9)

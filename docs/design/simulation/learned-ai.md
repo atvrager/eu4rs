@@ -2,6 +2,41 @@
 
 This document describes the architecture for training and deploying LLM-based AI players in eu4sim.
 
+## Implementation Status
+
+**Phase 1-2 COMPLETE** (as of 2025-12-21)
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Base model loading | ✅ Done | SmolLM2-360M from HuggingFace Hub |
+| LoRA adapter merging | ✅ Done | 160 weight pairs merged at load time |
+| Inference pipeline | ✅ Done | Candle ML, CPU F32, ~600-1000ms/prompt |
+| Prompt builder | ✅ Done | Country/state/actions format |
+| `AiPlayer` integration | ✅ Done | `LlmAi` type in `eu4sim-ai` crate |
+| CLI integration | ✅ Done | `--llm-ai <adapter_path>` flag |
+| Training notebook | ✅ Done | Colab with CUDA, streaming data loader |
+| Phase 3 (RL) | ❌ Not started | Requires self-play infrastructure |
+
+**Performance Benchmarks (CPU, F32, SmolLM2-360M):**
+
+| Metric | Value |
+|--------|-------|
+| Model Load | ~1.0s |
+| LoRA Merge | 160 weight pairs |
+| Inference | 600-1000ms per prompt |
+| Prompt Size | ~220-340 tokens |
+
+**Usage:**
+```bash
+# Run with LLM AI on top Great Power
+cargo run -p eu4sim --release -- --observer --llm-ai models/adapter/run1 --ticks 100
+
+# See full prompts (debug mode)
+cargo run -p eu4sim --release -- --observer --llm-ai models/adapter/run1 --log-level debug
+```
+
+---
+
 ## Overview
 
 The system uses small language models (2B parameters or less) fine-tuned to play EU4 through the existing `AiPlayer` trait interface. The approach follows an "Imitate, then Improve" strategy:
