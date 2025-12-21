@@ -93,6 +93,29 @@ enum Commands {
         #[arg(long)]
         check: bool,
     },
+
+    /// Generate batch training data (multiple simulations with different seeds)
+    Datagen {
+        /// Number of simulations to run
+        #[arg(short = 'n', long, default_value_t = 10)]
+        count: u32,
+
+        /// Number of ticks per simulation
+        #[arg(short, long, default_value_t = 365)]
+        ticks: u32,
+
+        /// Output pattern (use {seed} placeholder, e.g., "data/run_{seed}.cpb.zip")
+        #[arg(short, long, default_value = "training_data/run_{seed}.cpb.zip")]
+        output: String,
+
+        /// Base seed (each simulation uses base_seed + run_index)
+        #[arg(long, default_value_t = 1)]
+        base_seed: u64,
+
+        /// Number of top countries using GreedyAI in hybrid mode
+        #[arg(long, default_value_t = 8)]
+        greedy_count: usize,
+    },
 }
 
 fn main() -> Result<()> {
@@ -129,6 +152,13 @@ fn main() -> Result<()> {
         Commands::FormatPython { check } => train::format_python(check),
         Commands::MlCi => train::verify_pipeline(),
         Commands::Schema { check } => run_schema(check),
+        Commands::Datagen {
+            count,
+            ticks,
+            output,
+            base_seed,
+            greedy_count,
+        } => run_datagen(count, ticks, &output, base_seed, greedy_count),
     }
 }
 
@@ -601,6 +631,108 @@ fn run_verify_commit() -> Result<()> {
     } else {
         anyhow::bail!("Verification failed. Please amend commit.");
     }
+
+    Ok(())
+}
+
+fn run_datagen(
+    count: u32,
+    ticks: u32,
+    output_pattern: &str,
+    base_seed: u64,
+    greedy_count: usize,
+) -> Result<()> {
+    println!("🎮 Batch Training Data Generation\n");
+    println!("Simulations: {}", count);
+    println!(
+        "Ticks each:  {} (~{:.1} years)",
+        ticks,
+        ticks as f64 / 365.0
+    );
+    println!("Output:      {}", output_pattern);
+    println!("Base seed:   {}", base_seed);
+    println!("Greedy AIs:  {}\n", greedy_count);
+
+    // Create output directory if needed
+    if let Some(parent) = std::path::Path::new(output_pattern)
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent).context("Failed to create output directory")?;
+    }
+
+    // Build the release binary first (for consistent, fast runs)
+    println!("Building eu4sim (release)...");
+    run_command("cargo", &["build", "-p", "eu4sim", "--release"])?;
+    println!();
+
+    let start = std::time::Instant::now();
+    let mut total_samples = 0u64;
+
+    for i in 0..count {
+        let seed = base_seed + i as u64;
+        let output_path = output_pattern.replace("{seed}", &seed.to_string());
+
+        println!("[{}/{}] Seed {} → {}", i + 1, count, seed, output_path);
+
+        // Run simulation
+        let status = Command::new("cargo")
+            .args([
+                "run",
+                "-p",
+                "eu4sim",
+                "--release",
+                "--",
+                "--headless",
+                "--observer",
+                "--benchmark",
+                "--ticks",
+                &ticks.to_string(),
+                "--seed",
+                &seed.to_string(),
+                "--greedy-count",
+                &greedy_count.to_string(),
+                "--datagen",
+                &output_path,
+            ])
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()
+            .context("Failed to run eu4sim")?;
+
+        if !status.success() {
+            anyhow::bail!("Simulation {} failed with seed {}", i + 1, seed);
+        }
+
+        // Get file size and estimate samples
+        if let Ok(meta) = std::fs::metadata(&output_path) {
+            let size_mb = meta.len() as f64 / (1024.0 * 1024.0);
+            // Rough estimate: ~80 bytes per sample compressed
+            let est_samples = meta.len() / 80;
+            total_samples += est_samples;
+            println!(
+                "       Output: {:.1} MB (~{}k samples)\n",
+                size_mb,
+                est_samples / 1000
+            );
+        }
+    }
+
+    let elapsed = start.elapsed();
+    let total_ticks = count as u64 * ticks as u64;
+    let years = total_ticks as f64 / 365.0;
+
+    println!("═══════════════════════════════════════════════════════");
+    println!("✅ Batch complete!");
+    println!("   Simulations: {}", count);
+    println!("   Total ticks: {} ({:.1} sim-years)", total_ticks, years);
+    println!(
+        "   Time:        {:.1}s ({:.1} ticks/sec)",
+        elapsed.as_secs_f64(),
+        total_ticks as f64 / elapsed.as_secs_f64()
+    );
+    println!("   Est samples: ~{}k", total_samples / 1000);
+    println!("═══════════════════════════════════════════════════════");
 
     Ok(())
 }

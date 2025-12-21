@@ -37,6 +37,7 @@ fn reassign_hybrid_ais(
     ais: &mut BTreeMap<String, Box<dyn eu4sim_core::AiPlayer>>,
     state: &WorldState,
     greedy_count: usize,
+    base_seed: u64,
 ) -> bool {
     let new_greedy = calculate_top_countries(state, greedy_count);
 
@@ -79,7 +80,6 @@ fn reassign_hybrid_ais(
         let ai: Box<dyn eu4sim_core::AiPlayer> = if should_be_greedy {
             Box::new(eu4sim_core::GreedyAI::new())
         } else {
-            let base_seed = 12345u64;
             let tag_hash: u64 = tag.as_bytes().iter().map(|&b| b as u64).sum();
             let seed = base_seed.wrapping_add(tag_hash);
             Box::new(eu4sim_core::RandomAi::new(seed))
@@ -166,6 +166,10 @@ struct Args {
     /// Headless mode: disable TUI, keyboard input, and console observer
     #[arg(long)]
     headless: bool,
+
+    /// Random seed for simulation reproducibility
+    #[arg(long, default_value_t = 12345)]
+    seed: u64,
 }
 
 use eu4sim_core::SimMetrics;
@@ -197,7 +201,7 @@ fn main() -> Result<()> {
 
     // Initialize State
     let (mut state, adjacency_raw) =
-        loader::load_initial_state(&game_path, Date::new(args.start_year, 11, 11), 12345)?;
+        loader::load_initial_state(&game_path, Date::new(args.start_year, 11, 11), args.seed)?;
     let adjacency = Arc::new(adjacency_raw);
 
     log::info!("Initial State Date: {}", state.date);
@@ -239,9 +243,8 @@ fn main() -> Result<()> {
                     Box::new(eu4sim_core::GreedyAI::new())
                 } else {
                     // Hash tag into seed for diversity
-                    let base_seed = 12345u64;
                     let tag_hash: u64 = tag.as_bytes().iter().map(|&b| b as u64).sum();
-                    let seed = base_seed.wrapping_add(tag_hash);
+                    let seed = args.seed.wrapping_add(tag_hash);
                     Box::new(eu4sim_core::RandomAi::new(seed))
                 };
                 (tag.clone(), ai)
@@ -372,20 +375,56 @@ fn main() -> Result<()> {
         if args.observer {
             let ai_start = std::time::Instant::now();
 
-            // Pre-compute country strength once (O(armies), shared across all AIs)
-            let known_country_strength: std::collections::HashMap<String, u32> = state
-                .armies
-                .values()
-                .fold(std::collections::HashMap::new(), |mut acc, army| {
+            // Pre-compute global army strength (O(armies), shared across all AIs)
+            let global_strength: HashMap<String, u32> =
+                state.armies.values().fold(HashMap::new(), |mut acc, army| {
                     *acc.entry(army.owner.clone()).or_default() += army.regiments.len() as u32;
                     acc
                 });
+
+            // Pre-compute neighbor countries for each country (fog of war)
+            // A country "knows" another if they share a province border
+            let neighbor_countries: HashMap<String, HashSet<String>> = {
+                // First, get owned provinces per country
+                let mut country_provinces: HashMap<String, Vec<u32>> = HashMap::new();
+                for (prov_id, prov) in &state.provinces {
+                    if let Some(owner) = &prov.owner {
+                        country_provinces
+                            .entry(owner.clone())
+                            .or_default()
+                            .push(*prov_id);
+                    }
+                }
+
+                // Then find neighbors via adjacency graph
+                let mut neighbors: HashMap<String, HashSet<String>> = HashMap::new();
+                for (tag, provs) in &country_provinces {
+                    let mut known = HashSet::new();
+                    for &prov_id in provs {
+                        for neighbor_id in adjacency.neighbors(prov_id) {
+                            if let Some(neighbor_prov) = state.provinces.get(&neighbor_id) {
+                                if let Some(neighbor_owner) = &neighbor_prov.owner {
+                                    if neighbor_owner != tag {
+                                        known.insert(neighbor_owner.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    neighbors.insert(tag.clone(), known);
+                }
+                neighbors
+            };
 
             // Generate AI commands for all countries (parallel)
             // Returns PlayerInputs for ALL countries so datagen can use precomputed available_commands
             inputs = ais
                 .par_iter_mut()
                 .map(|(tag, ai)| {
+                    // Start with neighbor countries (fog of war baseline)
+                    let mut known_countries: HashSet<String> =
+                        neighbor_countries.get(tag).cloned().unwrap_or_default();
+
                     // Check if this country is at war with anyone
                     let at_war = state
                         .diplomacy
@@ -401,6 +440,11 @@ fn main() -> Result<()> {
                         let is_defender = war.defenders.contains(tag);
 
                         if is_attacker || is_defender {
+                            // Add all war participants to known countries
+                            for participant in war.attackers.iter().chain(war.defenders.iter()) {
+                                known_countries.insert(participant.clone());
+                            }
+
                             // Calculate relative war score (positive = winning, negative = losing)
                             let score = if is_attacker {
                                 eu4sim_core::fixed::Fixed::from_int(war.attacker_score as i64)
@@ -411,7 +455,7 @@ fn main() -> Result<()> {
                             };
                             our_war_score.insert(war.id, score);
 
-                            // Collect enemy provinces
+                            // Collect enemy provinces (only for known enemies)
                             let enemy_tags: Vec<&String> = if is_attacker {
                                 war.defenders.iter().collect()
                             } else {
@@ -428,15 +472,22 @@ fn main() -> Result<()> {
                         }
                     }
 
-                    // Build visible state with full intelligence
+                    // Filter strength to only known countries (fog of war)
+                    let known_country_strength: HashMap<String, u32> = global_strength
+                        .iter()
+                        .filter(|(country, _)| known_countries.contains(*country))
+                        .map(|(k, v)| (k.clone(), *v))
+                        .collect();
+
+                    // Build visible state with fog-of-war filtered intelligence
                     let visible_state = eu4sim_core::ai::VisibleWorldState {
                         date: state.date,
                         observer: tag.clone(),
                         own_country: state.countries.get(tag).cloned().unwrap_or_default(),
                         at_war,
-                        known_countries: vec![], // Could populate with neighbors/contacts
+                        known_countries: known_countries.into_iter().collect(),
                         enemy_provinces,
-                        known_country_strength: known_country_strength.clone(),
+                        known_country_strength,
                         our_war_score,
                     };
 
@@ -478,7 +529,7 @@ fn main() -> Result<()> {
         // Yearly AI pool reassignment in hybrid mode
         if args.ai == "hybrid" && state.date.year > last_reassign_year {
             last_reassign_year = state.date.year;
-            reassign_hybrid_ais(&mut ais, &state, args.greedy_count);
+            reassign_hybrid_ais(&mut ais, &state, args.greedy_count, args.seed);
         }
 
         // Notify observers with post-step state and inputs that were processed
@@ -625,7 +676,7 @@ mod tests {
         }
 
         // Reassign with greedy_count = 3
-        reassign_hybrid_ais(&mut ais, &state, 3);
+        reassign_hybrid_ais(&mut ais, &state, 3, 12345);
 
         // Count GreedyAIs
         let greedy_count = ais.values().filter(|ai| ai.name() == "GreedyAI").count();
@@ -651,7 +702,7 @@ mod tests {
         }
 
         // Reassign with greedy_count = 5 (more than available)
-        reassign_hybrid_ais(&mut ais, &state, 5);
+        reassign_hybrid_ais(&mut ais, &state, 5, 12345);
 
         let greedy_count = ais.values().filter(|ai| ai.name() == "GreedyAI").count();
         assert_eq!(
@@ -676,7 +727,7 @@ mod tests {
             Box::new(eu4sim_core::RandomAi::new(12345)),
         );
 
-        reassign_hybrid_ais(&mut ais, &state, 1);
+        reassign_hybrid_ais(&mut ais, &state, 1, 12345);
 
         assert!(ais.contains_key("FRA"));
         assert!(!ais.contains_key("DEAD"), "Dead country should be removed");
