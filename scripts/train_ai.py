@@ -194,6 +194,12 @@ def main():
         help="Dataloader workers for parallel data loading (default: 0)",
     )
     parser.add_argument(
+        "--grad-accum",
+        type=int,
+        default=2,
+        help="Gradient accumulation steps (default: 2)",
+    )
+    parser.add_argument(
         "--chunk-size",
         type=int,
         default=0,
@@ -209,6 +215,12 @@ def main():
         "--eager",
         action="store_true",
         help="Force eager loading (slower, allows full shuffle)",
+    )
+    parser.add_argument(
+        "--resume-from",
+        type=Path,
+        default=None,
+        help="Resume training from a checkpoint directory",
     )
 
     args = parser.parse_args()
@@ -300,7 +312,7 @@ def main():
         num_train_epochs=args.epochs if not needs_max_steps else 1,
         max_steps=max_steps if needs_max_steps else -1,
         per_device_train_batch_size=args.batch_size,
-        gradient_accumulation_steps=4,
+        gradient_accumulation_steps=args.grad_accum,
         learning_rate=2e-4,
         logging_steps=10,
         save_strategy="steps" if needs_max_steps else "epoch",
@@ -320,7 +332,11 @@ def main():
     )
 
     print("Starting training...")
-    trainer.train()
+    if args.resume_from:
+        print(f"Resuming from checkpoint: {args.resume_from}")
+        trainer.train(resume_from_checkpoint=str(args.resume_from))
+    else:
+        trainer.train()
 
     print(f"Saving adapter to {args.output}")
     trainer.save_model(args.output)
