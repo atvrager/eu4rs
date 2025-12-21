@@ -42,7 +42,7 @@ use crate::input::Command;
 use crate::state::{CountryState, Date, ProvinceId, Tag, WarId};
 use rand::Rng;
 use rand::SeedableRng;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 /// Visibility mode for AI and UI filtering
@@ -58,7 +58,7 @@ pub enum VisibilityMode {
 ///
 /// In Omniscient mode, this is a direct copy of relevant fields.
 /// In Realistic mode, this would be filtered (future work).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct VisibleWorldState {
     pub date: Date,
     pub observer: Tag,

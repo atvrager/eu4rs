@@ -448,6 +448,7 @@ fn main() -> Result<()> {
                         country: tag.clone(),
                         commands: cmds,
                         available_commands: available,
+                        visible_state: Some(visible_state),
                     }
                 })
                 .collect();
@@ -460,6 +461,7 @@ fn main() -> Result<()> {
                 country: "SWE".to_string(),
                 commands: vec![],
                 available_commands: vec![], // Not computed in non-observer mode
+                visible_state: None,
             });
         }
 

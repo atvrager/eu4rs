@@ -1338,6 +1338,7 @@ dependencies = [
  "multiversion",
  "proptest",
  "rand 0.8.5",
+ "rayon",
  "serde",
  "serde_json",
  "thiserror 1.0.69",

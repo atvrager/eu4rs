@@ -1,3 +1,4 @@
+use crate::ai::VisibleWorldState;
 use crate::state::{ArmyId, FleetId, InstitutionId, PeaceTerms, ProvinceId, Tag, TechType, WarId};
 use serde::{Deserialize, Serialize};
 
@@ -12,6 +13,11 @@ pub struct PlayerInputs {
     /// Do not rely on this being populated unless running with `--datagen`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub available_commands: Vec<Command>,
+    /// Visible world state at decision time (precomputed, for datagen).
+    ///
+    /// **Note**: Only populated in datagen mode to avoid recomputing in observers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visible_state: Option<VisibleWorldState>,
 }
 
 /// Type of development that can be purchased

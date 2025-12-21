@@ -1331,6 +1331,7 @@ mod tests {
                 building: "temple".to_string(),
             }],
             available_commands: vec![],
+            visible_state: None,
         }];
 
         // This should log (we can't easily assert logs without a capture, but we know it runs)
@@ -1392,6 +1393,7 @@ mod tests {
                 cb: None,
             }],
             available_commands: vec![],
+            visible_state: None,
         }];
 
         let new_state = step_world(
@@ -1423,6 +1425,7 @@ mod tests {
                 cb: None,
             }],
             available_commands: vec![],
+            visible_state: None,
         }];
 
         let new_state = step_world(
@@ -1453,6 +1456,7 @@ mod tests {
                 cb: None,
             }],
             available_commands: vec![],
+            visible_state: None,
         }];
 
         state = step_world(
@@ -1472,6 +1476,7 @@ mod tests {
                 cb: None,
             }],
             available_commands: vec![],
+            visible_state: None,
         }];
 
         let new_state = step_world(
@@ -1500,6 +1505,7 @@ mod tests {
                 cb: None,
             }],
             available_commands: vec![],
+            visible_state: None,
         }];
 
         let new_state = step_world(
