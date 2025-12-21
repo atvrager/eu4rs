@@ -440,7 +440,7 @@ async fn main() -> Result<()> {
 **Problem**: Some information is legitimately hard to find in UI but critical for strategy.
 
 **Example (from user)**:
-- **"Did Radical Reform happen?"** - This affects Protestant/Reformed conversion mechanics, but there's no obvious UI indicator. You have to check tooltips or the wiki.
+- **"Did Radical Reforms happen?"** - Overpowered one-time event. No obvious UI indicator after it fires. Players might check save file to see if it already triggered.
 
 **Whitelist Approach**:
 
@@ -453,7 +453,7 @@ Allow save file lookups for **specific, well-documented edge cases** where:
 
 | Data Point | Allowed via Save? | Justification |
 |------------|-------------------|---------------|
-| Radical Reform status | ✅ Maybe | Not shown in UI clearly, affects conversion |
+| Radical Reforms event (fired?) | ✅ Maybe | One-time event, no UI indicator after it fires |
 | Institution origin provinces | ✅ Maybe | Hard to find, but wiki-able |
 | Exact province ownership (visible on map) | ❌ No | Map shows this visually |
 | Enemy army strength (out of sight) | ❌ No | Fog of war is intentional |
@@ -465,8 +465,8 @@ Allow save file lookups for **specific, well-documented edge cases** where:
 // config.toml
 [extraction.allowlist]
 # Allow specific save file lookups for UI-ambiguous data
-radical_reform_status = true
-institution_origins = true
+radical_reforms_fired = true   # One-time event, no UI indicator
+institution_origins = true      # Hard to find in UI
 # Everything else must come from OCR
 ```
 
@@ -669,8 +669,8 @@ fair_play_mode = true  # Set to false for prototyping
 # Whitelist for save file lookups (only used if fair_play_mode = false)
 # Even in prototype mode, you can restrict what data comes from save file
 [extraction.allowlist]
-radical_reform_status = false   # Protestant/Reformed conversion mechanic
-institution_origins = false      # Where institutions spawned
+radical_reforms_fired = false   # One-time event, no UI indicator after firing
+institution_origins = false      # Where institutions spawned (hard to find in UI)
 # All other fields must come from OCR when fair_play_mode = true
 
 [extraction.regions]
