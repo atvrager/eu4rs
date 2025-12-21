@@ -510,7 +510,9 @@ From `learned-ai-musings.md:164`:
 
 ## Phase B: Save File Hybrid Approach (Engineering Shortcut)
 
-**Status**: Prototyping tool only. Not for final "fair play" mode.
+**Status**: Theoretical/future work. Not currently implemented.
+
+> **Reality check**: As of 2025-12-21, save file parsing for real EU4 is just a design idea. Even if we wanted to "cheat" this way, it would require non-trivial implementation work. The `eu4txt` crate parses EU4 files, but integrating it into the live automation loop is not free.
 
 **Alternative/Complement to OCR**: Read game state directly from save files.
 
@@ -539,6 +541,415 @@ From `learned-ai-musings.md:164`:
 This is the approach mentioned in `learned-ai-musings.md:164`:
 
 > **The save file parsing is the key insight—you're not doing computer vision, you're reading structured data you already know how to parse.**
+
+---
+
+## Static Game Data: What's Fair and Where to Use It
+
+### The Distinction: Runtime State vs Static Game Rules
+
+**Static game data** (✅ **Always fair**):
+- Province definitions (`map/definition.csv`)
+- Trade goods (`common/tradegoods/`)
+- Buildings (`common/buildings/`)
+- Technologies (`common/technologies/`)
+- Ideas (`common/ideas/`)
+- Mission trees (`missions/`)
+- Events (`events/`)
+- Modifiers (`common/static_modifiers/`)
+- Government types (`common/governments/`)
+
+**Runtime state** (❌ **Save file = cheating**, ✅ **UI/OCR = fair**):
+- Current treasury, manpower, mana
+- Army positions and strength
+- Diplomatic relations
+- War scores
+- Province ownership
+
+**Why static data is fair**:
+- Humans consult the wiki (which is just formatted game files)
+- Knowing "what does Quantity ideas do?" is not cheating
+- Knowing "what's my next mission?" is reading the mission tree
+- Knowing "Grain has base price 2 ducats" is game knowledge
+
+### Where to Use Static Game Data
+
+#### 1. Prompt Construction (eu4sim-ai)
+
+**Enrich the prompt with relevant game knowledge:**
+
+```rust
+// Current minimal prompt
+<|state|>
+Treasury: 523 ducats
+Manpower: 45,000
+<|/state|>
+
+// Enhanced prompt with static data
+<|state|>
+Treasury: 523 ducats
+Manpower: 45,000
+
+National Ideas (France):
+- Elan! (+20% morale of armies)
+- French Musketeers (+10% infantry combat ability)
+
+Active Missions:
+- "Secure the Throne" ✓ (completed)
+- "Consolidate Power" (requires 20 provinces, currently 15/20)
+- "Italian Ambition" (locked until previous complete)
+
+<|/state|>
+```
+
+**Benefits**:
+- AI understands **why** certain actions are valuable (missions guide strategy)
+- AI knows **what bonuses** it has (morale boost → aggressive military)
+- AI can plan **long-term** (mission trees are multi-step goals)
+
+**Where to source**:
+- Load mission files from EU4 game directory: `<EU4_DIR>/missions/`
+- Load idea files: `<EU4_DIR>/common/ideas/`
+- Parse with `eu4txt` crate (you already have the parser!)
+
+**Fair play check**: ✅ Humans see this in the UI (Missions tab, Ideas tab)
+
+#### 2. State Extraction Validation (eu4-bridge)
+
+**Cross-reference OCR results with static game data:**
+
+```rust
+// Province color detection
+let rgb = sample_province_color(screenshot, province_centroid);
+let province_id = lookup_province_by_color(rgb, &definition_csv)?;
+
+// Trade good icon recognition
+let icon = crop_province_panel(screenshot, "trade_good_icon");
+let trade_good = match_template(icon, &tradegood_icons)?;
+let base_price = lookup_tradegood_price(&trade_good, &tradegoods_data);
+```
+
+**Benefits**:
+- Validate OCR results (if treasury reads as "l000" instead of "1000", catch it)
+- Resolve ambiguous UI elements (icon → trade good → price)
+- Convert UI visuals to structured data (color → province ID)
+
+**Where to source**:
+- `map/definition.csv` for province RGB → ID mapping
+- `gfx/interface/` for icon templates
+- `common/tradegoods/` for trade good effects
+
+**Fair play check**: ✅ This is just interpreting the UI correctly
+
+#### 3. Available Commands Filtering (eu4sim-core)
+
+**Use game rules to determine legal actions:**
+
+```rust
+// Can we build a Cathedral?
+fn can_build_cathedral(province: &Province, country: &Country, buildings_data: &BuildingsDB) -> bool {
+    let cathedral = &buildings_data["cathedral"];
+
+    // Check prerequisites from game files
+    if province.religion != country.religion {
+        return false; // Can't build wrong-religion building
+    }
+    if !country.has_tech(cathedral.required_adm_tech) {
+        return false; // Tech requirement not met
+    }
+    if province.has_building("temple") {
+        return false; // Conflicts with existing building
+    }
+    true
+}
+```
+
+**Benefits**:
+- Filter out impossible commands (AI doesn't waste time considering them)
+- Accurate action space (better training signal)
+- Validate AI outputs (if AI picks invalid action, log warning)
+
+**Where to source**:
+- `common/buildings/` for building prerequisites
+- `common/technologies/` for tech unlocks
+- Mission tree files for mission prerequisites
+
+**Fair play check**: ✅ Humans can't issue illegal commands either (UI grays out unavailable buttons)
+
+#### 4. Training Data Annotation (eu4sim)
+
+**Label training samples with game context:**
+
+```jsonl
+{
+  "state": { "treasury": 523, "manpower": 45000 },
+  "available": [ "DevelopParis", "BuyAdmTech", "Pass" ],
+  "chosen": "DevelopParis",
+  "context": {
+    "missions": {
+      "active": "Consolidate Power",
+      "progress": "15/20 provinces"
+    },
+    "ideas": {
+      "unlocked": ["Elan!", "French Musketeers"],
+      "next": "Diplomatic Corps"
+    },
+    "province_info": {
+      "Paris": {
+        "trade_good": "Grain",
+        "base_price": 2.0,
+        "current_dev": 12
+      }
+    }
+  }
+}
+```
+
+**Benefits**:
+- Richer training signal (AI learns mission-guided strategy)
+- Better prompt diversity (context varies across games)
+- Debugging aid (why did AI pick this action? Check context.)
+
+**Where to source**:
+- Same as #1 (missions, ideas, trade goods)
+- Load once at sim startup, reuse across all ticks
+
+**Fair play check**: ✅ All this is UI-visible or wiki-able
+
+#### 5. Action Translation Helpers (eu4-bridge)
+
+**Use game data to generate UI click sequences:**
+
+```rust
+// Translate: DeclareWar { target: "ENG", cb: Some("Reconquest") }
+fn translate_declare_war(target: &str, cb: Option<&str>, cbs_data: &CasusbelliDB) -> Vec<UiAction> {
+    let mut actions = vec![
+        UiAction::Hotkey(Key::D),  // Open Diplomacy
+        UiAction::TypeText(target), // Search for England
+        UiAction::Click(Button::DeclareWar),
+    ];
+
+    if let Some(cb_name) = cb {
+        // Look up CB position in dropdown based on game files
+        let cb_index = cbs_data.get_index(cb_name)?;
+        actions.push(UiAction::ClickDropdown(cb_index));
+    }
+
+    actions.push(UiAction::Click(Button::Confirm));
+    actions
+}
+```
+
+**Benefits**:
+- Know what CBs exist (from `common/cb_types/`)
+- Know CB order in dropdown (alphabetical or file order)
+- Handle game updates (if CB names change, read from game files)
+
+**Where to source**:
+- `common/cb_types/` for casus belli definitions
+- UI layout files (if modding exposes them)
+
+**Fair play check**: ✅ This is just automating what humans click
+
+### Recommended Static Data Pipeline
+
+**At startup**:
+1. Detect EU4 game directory (Steam install path, or user config)
+2. Load static game files with `eu4txt`:
+   ```rust
+   let eu4_dir = detect_eu4_install()?;
+   let missions = parse_missions(&eu4_dir.join("missions"))?;
+   let ideas = parse_ideas(&eu4_dir.join("common/ideas"))?;
+   let tradegoods = parse_tradegoods(&eu4_dir.join("common/tradegoods"))?;
+   let buildings = parse_buildings(&eu4_dir.join("common/buildings"))?;
+   ```
+3. Pass to AI as context (part of `VisibleWorldState` or separate struct)
+
+**At each tick**:
+1. Extract runtime state via OCR
+2. Augment with relevant static data (active missions, unlocked ideas)
+3. Build enriched prompt
+4. Call AI inference
+5. Validate AI output against game rules
+
+### What NOT to Include
+
+**Avoid giving AI perfect information it shouldn't have:**
+- ❌ Event triggers (MTTH, conditions) - too much foresight
+- ❌ AI behavior scripts (how vanilla AI decides) - meta-gaming
+- ❌ Optimal builds (pre-computed strategies) - defeats the purpose
+- ✅ Event **effects** when they fire - humans see event popups
+- ✅ AI **weights** if visible in tooltips - humans see "AI likelihood: High"
+
+### Training vs Inference: Preventing Overfitting
+
+**The Problem**: If you provide too much static data during training, the AI might **memorize** specific scenarios rather than learn general strategy.
+
+**Example of overfitting**:
+```python
+# BAD: Training data includes full mission requirements
+{
+  "state": { "treasury": 523, "provinces": 15 },
+  "mission": "Consolidate Power requires 20 provinces",  # Too specific!
+  "chosen": "ConquerCalais"
+}
+
+# AI learns: "If mission says 'requires 20 provinces', always conquer"
+# This is memorization, not strategy
+```
+
+**Solution**: Distinguish **training-time** context (general knowledge) from **inference-time** context (specific guidance).
+
+#### Training Time: General Patterns Only
+
+**What to include in training data**:
+- ✅ Mission **exists** (France has a mission tree)
+- ✅ Mission **progress** (15/20 provinces)
+- ✅ Mission **reward** (+1 stability)
+- ❌ Mission **exact requirements** (which provinces to conquer)
+
+**Why**: You want the AI to learn "missions are important" and "progress toward missions is good", not "memorize every mission in the game".
+
+**Training prompt (good)**:
+```
+Active Mission: "Consolidate Power" (15/20 progress)
+Reward: +1 Stability on completion
+```
+
+The AI learns: "Being close to mission completion is valuable, actions that increase progress are good"
+
+#### Inference Time: Specific Context
+
+**What to provide only at inference** (not during training):
+- ✅ How to complete current mission (provinces needed, specific actions)
+- ✅ What buildings unlock at next tech level
+- ✅ Which ideas are available to unlock
+- ✅ Event chain context (if this event fires, expect followup)
+
+**Why**: This information changes per scenario. Providing it only at inference prevents memorization and allows the AI to generalize.
+
+**Inference prompt (enhanced)**:
+```
+Active Mission: "Consolidate Power" (15/20 progress)
+Requirements: Own 20 provinces (currently 15)
+Target provinces: Calais, Picardy, Normandy, Brittany, Gascony (all bordering)
+Reward: +1 Stability
+
+Available actions:
+0: Conquer Calais (counts toward mission)
+1: Develop Paris (does NOT count toward mission)
+2: Pass
+```
+
+**Benefit**: AI can plan strategically ("I'm 5 provinces short → conquering advances mission") without memorizing "France always conquers Calais".
+
+#### Implementation: Two-Stage Context
+
+```rust
+// Startup: Load static game rules (used for ALL training and inference)
+struct GameRules {
+    provinces: HashMap<ProvinceId, ProvinceDefinition>,
+    tradegoods: HashMap<TradegoodId, TradegoodData>,
+    buildings: HashMap<BuildingId, BuildingData>,
+    // General knowledge only
+}
+
+// Inference: Build scenario-specific context (used ONLY at inference)
+struct InferenceContext {
+    // Specific to this game state
+    current_mission_requirements: Vec<MissionRequirement>,
+    available_mission_targets: Vec<ProvinceId>,
+    next_unlocked_buildings: Vec<BuildingId>,
+    // Detailed, actionable guidance
+}
+
+fn build_prompt(
+    state: &VisibleWorldState,
+    rules: &GameRules,  // Training + inference
+    context: Option<&InferenceContext>,  // Inference only
+) -> String {
+    let mut prompt = format_state(state);
+
+    // Always include: mission progress (general)
+    prompt.push_str(&format!("Mission: {} ({}/{})\n",
+        state.current_mission, state.mission_progress, state.mission_target));
+
+    // Only at inference: specific guidance
+    if let Some(ctx) = context {
+        prompt.push_str("Requirements:\n");
+        for req in &ctx.current_mission_requirements {
+            prompt.push_str(&format!("  - {}\n", req));
+        }
+        prompt.push_str("Target provinces: ");
+        prompt.push_str(&ctx.available_mission_targets.join(", "));
+        prompt.push_str("\n");
+    }
+
+    prompt
+}
+```
+
+**Training**: Call with `context = None` → AI learns general patterns
+**Inference**: Call with `context = Some(...)` → AI gets specific help
+
+#### Preventing Prompt Leakage
+
+**Risk**: If training data accidentally includes inference-time context, the AI learns to expect it.
+
+**Mitigation**:
+1. **Separate data pipelines**: Training data generator never calls `build_inference_context()`
+2. **Schema validation**: Training samples rejected if they contain inference-only fields
+3. **Prompt templates**: Use different templates for training vs inference (training is subset of inference)
+
+```rust
+// config.toml
+[training]
+include_mission_requirements = false  # Only mission progress
+include_building_unlocks = false      # Only current buildings
+include_idea_recommendations = false  # Only current ideas
+
+[inference]
+include_mission_requirements = true   # Full guidance
+include_building_unlocks = true       # What becomes available
+include_idea_recommendations = true   # Strategic suggestions
+```
+
+#### When Inference Context is Fair
+
+**Question**: Is providing detailed mission requirements "cheating"?
+
+**Answer**: No, because humans see this in the UI (Missions tab).
+
+**Fair play check**:
+- ✅ Mission requirements → visible in Missions panel
+- ✅ Building prerequisites → visible in tooltips
+- ✅ Idea effects → visible in Ideas panel
+- ❌ Future event triggers → NOT visible (cheating)
+
+**The rule**: If a human would click a UI button to see this info, it's fair to provide it in the prompt.
+
+### Example: Mission-Guided Strategy
+
+**Without static data:**
+```
+AI prompt:
+Treasury: 523 ducats
+Actions: DevelopParis, ConquerCalais, Pass
+
+AI thinks: "More dev is always good" → DevelopParis
+```
+
+**With mission tree:**
+```
+AI prompt:
+Treasury: 523 ducats
+Mission: "Consolidate Power" (15/20 provinces, reward: +1 stability)
+Actions: DevelopParis, ConquerCalais, Pass
+
+AI thinks: "5 more provinces → mission reward → conquering is optimal" → ConquerCalais
+```
+
+**Result**: AI follows historical expansion paths (missions guide it toward France's natural targets)
 
 ---
 
