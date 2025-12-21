@@ -273,4 +273,163 @@ mod tests {
         let result2 = calc();
         assert_eq!(result1, result2);
     }
+
+    // Property-based tests - exploring the input space like formal verification
+    mod properties {
+        use super::*;
+        use proptest::prelude::*;
+
+        // Strategy: Generate reasonable game values (-1M to 1M)
+        fn game_value() -> impl Strategy<Value = i64> {
+            -1_000_000..=1_000_000i64
+        }
+
+        proptest! {
+            /// Property: Multiplication never overflows (uses i128 intermediate)
+            #[test]
+            fn mul_never_panics(a in game_value(), b in game_value()) {
+                let x = Fixed::from_int(a);
+                let y = Fixed::from_int(b);
+                let _ = x * y; // Should never panic
+            }
+
+            /// Property: Multiplication is commutative (a × b = b × a)
+            #[test]
+            fn mul_is_commutative(a in game_value(), b in game_value()) {
+                let x = Fixed::from_int(a);
+                let y = Fixed::from_int(b);
+                prop_assert_eq!(x * y, y * x);
+            }
+
+            /// Property: Multiplication by ONE is identity (a × 1 = a)
+            #[test]
+            fn mul_one_is_identity(a in game_value()) {
+                let x = Fixed::from_int(a);
+                prop_assert_eq!(x * Fixed::ONE, x);
+            }
+
+            /// Property: Multiplication by ZERO always yields ZERO
+            #[test]
+            fn mul_zero_is_zero(a in game_value()) {
+                let x = Fixed::from_int(a);
+                prop_assert_eq!(x * Fixed::ZERO, Fixed::ZERO);
+            }
+
+            /// Property: Division never panics (handles div-by-zero gracefully)
+            #[test]
+            fn div_never_panics(a in game_value(), b in game_value()) {
+                let x = Fixed::from_int(a);
+                let y = Fixed::from_int(b);
+                let _ = x / y; // Should never panic, returns ZERO for div-by-zero
+            }
+
+            /// Property: Division by ONE is identity (a / 1 = a)
+            #[test]
+            fn div_one_is_identity(a in game_value()) {
+                let x = Fixed::from_int(a);
+                prop_assert_eq!(x / Fixed::ONE, x);
+            }
+
+            /// Property: Division by ZERO returns ZERO (safe fallback)
+            #[test]
+            fn div_zero_is_safe(a in game_value()) {
+                let x = Fixed::from_int(a);
+                prop_assert_eq!(x / Fixed::ZERO, Fixed::ZERO);
+            }
+
+            /// Property: Addition is commutative (a + b = b + a)
+            #[test]
+            fn add_is_commutative(a in game_value(), b in game_value()) {
+                let x = Fixed::from_int(a);
+                let y = Fixed::from_int(b);
+                // May overflow, but if both succeed, they're equal
+                if let (Some(r1), Some(r2)) = (x.0.checked_add(y.0), y.0.checked_add(x.0)) {
+                    prop_assert_eq!(Fixed(r1), Fixed(r2));
+                }
+            }
+
+            /// Property: Saturating operations never panic
+            #[test]
+            fn saturating_ops_never_panic(a in game_value(), b in game_value()) {
+                let x = Fixed::from_int(a);
+                let y = Fixed::from_int(b);
+                let _ = x.saturating_add(y);
+                let _ = x.saturating_sub(y);
+            }
+
+            /// Property: from_f32 never panics (handles NaN/Inf/overflow)
+            #[test]
+            fn from_f32_never_panics(f in proptest::num::f32::ANY) {
+                let _ = Fixed::from_f32(f);
+            }
+
+            /// Property: Round-trip through f32 is approximately stable
+            /// (within precision limits of f32 and Fixed's scale)
+            ///
+            /// f32 has 24-bit mantissa (~7 decimal digits). Large Fixed values
+            /// (e.g., -62689 * 10000 = -626,890,000) lose precision when converted.
+            #[test]
+            fn roundtrip_f32_stable(a in -100_000..=100_000i64) {
+                let original = Fixed::from_int(a);
+                let roundtrip = Fixed::from_f32(original.to_f32());
+                // f32 precision loss: allow ~0.01% error for large values
+                // Empirically: -62689 has diff=16, so allow up to 0.002% of raw value
+                let max_error = (original.0.abs() / 50000).max(1);
+                let diff = (original.0 - roundtrip.0).abs();
+                prop_assert!(diff <= max_error, "diff was {} (max allowed: {})", diff, max_error);
+            }
+        }
+    }
 }
+
+// Kani proofs (commented out - requires `cargo kani` with setup)
+// Uncomment when Kani environment is available
+/*
+#[cfg(kani)]
+mod kani_proofs {
+    use super::*;
+
+    /// Kani proof: Multiplication never overflows to an invalid state
+    ///
+    /// This exhaustively verifies that for ALL possible Fixed values,
+    /// multiplication produces a valid result without panic/overflow.
+    #[kani::proof]
+    fn verify_mul_no_overflow() {
+        let a: Fixed = kani::any();
+        let b: Fixed = kani::any();
+
+        // The operation must not panic
+        let result = a * b;
+
+        // Result must be a valid Fixed value (always true, but makes intent clear)
+        kani::assume(result.0 >= i64::MIN && result.0 <= i64::MAX);
+    }
+
+    /// Kani proof: Multiplication is commutative
+    #[kani::proof]
+    fn verify_mul_commutative() {
+        let a: Fixed = kani::any();
+        let b: Fixed = kani::any();
+
+        kani::assert(a * b == b * a, "Multiplication must be commutative");
+    }
+
+    /// Kani proof: Division by zero is safe (returns ZERO)
+    #[kani::proof]
+    fn verify_div_by_zero_safe() {
+        let a: Fixed = kani::any();
+
+        let result = a / Fixed::ZERO;
+        kani::assert(result == Fixed::ZERO, "Division by zero must return ZERO");
+    }
+
+    /// Kani proof: from_f32 handles all inputs without panic
+    #[kani::proof]
+    fn verify_from_f32_total() {
+        let f: f32 = kani::any();
+
+        // Must not panic for ANY f32 value (including NaN, Inf, etc.)
+        let _ = Fixed::from_f32(f);
+    }
+}
+*/
