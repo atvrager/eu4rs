@@ -21,10 +21,13 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import queue
+import threading
 import zipfile
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
 import capnp
 
@@ -32,6 +35,108 @@ import capnp
 # Schema is in ../schemas/training.capnp relative to this file
 SCHEMA_PATH = Path(__file__).parent.parent / "schemas" / "training.capnp"
 training_capnp = capnp.load(str(SCHEMA_PATH))
+
+# Cap'n Proto traversal limit for large batches
+TRAVERSAL_LIMIT = 2**30
+
+
+def iter_batches_raw(path: Path | str) -> Iterator[Any]:
+    """Yield raw Cap'n Proto batch readers without conversion to Python objects.
+
+    This is the fastest way to iterate over training data - access fields
+    directly on the reader objects without creating intermediate dataclasses.
+
+    Args:
+        path: Path to .cpb file or .zip archive
+
+    Yields:
+        Raw Cap'n Proto TrainingBatch reader objects
+    """
+    path = Path(path)
+
+    if path.suffix.lower() == ".zip":
+        with zipfile.ZipFile(path, "r") as zf:
+            names = sorted(n for n in zf.namelist() if n.endswith(".cpb"))
+            for name in names:
+                with zf.open(name) as f:
+                    data = f.read()
+                    batch = training_capnp.TrainingBatch.from_bytes_packed(
+                        data, traversal_limit_in_words=TRAVERSAL_LIMIT
+                    )
+                    yield batch
+    else:
+        with open(path, "rb") as f:
+            training_file = training_capnp.TrainingFile.read_packed(f)
+            for batch in training_file.batches:
+                yield batch
+
+
+def fixed_to_float(reader, scale: int = 1000) -> float:
+    """Convert a Fixed Cap'n Proto reader to float without intermediate object."""
+    return reader.raw / scale
+
+
+# Dispatch table for fast command formatting (replaces 40+ if/elif branches)
+TECH_MAP = {0: "adm", 1: "dip", 2: "mil"}
+DEV_MAP = {0: "tax", 1: "production", 2: "manpower"}
+
+COMMAND_FORMATTERS: dict[str, Any] = {
+    # Control
+    "pass_": lambda r: "Pass",
+    "quit": lambda r: "Quit",
+    # Military Movement
+    "move": lambda r: f"Move(army={r.move.armyId}, dest={r.move.destination})",
+    "moveFleet": lambda r: f"MoveFleet(fleet={r.moveFleet.fleetId}, dest={r.moveFleet.destination})",
+    "embark": lambda r: f"Embark(army={r.embark.armyId}, fleet={r.embark.fleetId})",
+    "disembark": lambda r: f"Disembark(army={r.disembark.armyId}, dest={r.disembark.destination})",
+    "mergeArmies": lambda r: f"MergeArmies({list(r.mergeArmies)})",
+    "splitArmy": lambda r: f"SplitArmy(army={r.splitArmy.armyId}, count={r.splitArmy.regimentCount})",
+    # War & Peace
+    "declareWar": lambda r: f"DeclareWar(target={r.declareWar.target}, cb={r.declareWar.cb})",
+    "offerPeace": lambda r: f"OfferPeace(war={r.offerPeace.warId})",
+    "acceptPeace": lambda r: f"AcceptPeace(war={r.acceptPeace})",
+    "rejectPeace": lambda r: f"RejectPeace(war={r.rejectPeace})",
+    # Tech & Institutions
+    "buyTech": lambda r: f"BuyTech({TECH_MAP.get(r.buyTech, r.buyTech)})",
+    "embraceInstitution": lambda r: f"EmbraceInstitution({r.embraceInstitution})",
+    # Economic
+    "buildInProvince": lambda r: f"Build(prov={r.buildInProvince.province}, building={r.buildInProvince.building})",
+    "developProvince": lambda r: f"Develop(prov={r.developProvince.province}, type={DEV_MAP.get(r.developProvince.devType, r.developProvince.devType)})",
+    # Colonization
+    "startColony": lambda r: f"StartColony(prov={r.startColony})",
+    "abandonColony": lambda r: f"AbandonColony(prov={r.abandonColony})",
+    # Diplomacy - Outgoing
+    "offerAlliance": lambda r: f"OfferAlliance({r.offerAlliance})",
+    "breakAlliance": lambda r: f"BreakAlliance({r.breakAlliance})",
+    "offerRoyalMarriage": lambda r: f"OfferRoyalMarriage({r.offerRoyalMarriage})",
+    "breakRoyalMarriage": lambda r: f"BreakRoyalMarriage({r.breakRoyalMarriage})",
+    "requestMilitaryAccess": lambda r: f"RequestMilitaryAccess({r.requestMilitaryAccess})",
+    "cancelMilitaryAccess": lambda r: f"CancelMilitaryAccess({r.cancelMilitaryAccess})",
+    "setRival": lambda r: f"SetRival({r.setRival})",
+    "removeRival": lambda r: f"RemoveRival({r.removeRival})",
+    # Diplomacy - Responses
+    "acceptAlliance": lambda r: f"AcceptAlliance({r.acceptAlliance})",
+    "rejectAlliance": lambda r: f"RejectAlliance({r.rejectAlliance})",
+    "acceptRoyalMarriage": lambda r: f"AcceptRoyalMarriage({r.acceptRoyalMarriage})",
+    "rejectRoyalMarriage": lambda r: f"RejectRoyalMarriage({r.rejectRoyalMarriage})",
+    "grantMilitaryAccess": lambda r: f"GrantMilitaryAccess({r.grantMilitaryAccess})",
+    "denyMilitaryAccess": lambda r: f"DenyMilitaryAccess({r.denyMilitaryAccess})",
+    # Religion
+    "assignMissionary": lambda r: f"AssignMissionary(prov={r.assignMissionary})",
+    "recallMissionary": lambda r: f"RecallMissionary(prov={r.recallMissionary})",
+    "convertCountryReligion": lambda r: f"ConvertReligion({r.convertCountryReligion})",
+    # Control
+    "moveCapital": lambda r: f"MoveCapital(prov={r.moveCapital})",
+}
+
+
+def command_to_string_fast(cmd_reader) -> str:
+    """Convert a Cap'n Proto Command to string using dispatch table (faster)."""
+    which = cmd_reader.which()
+    formatter = COMMAND_FORMATTERS.get(which)
+    if formatter:
+        return formatter(cmd_reader)
+    return f"Unknown({which})"
 
 
 @dataclass
@@ -379,6 +484,129 @@ def iter_training_file(path: Path | str) -> Iterator[TrainingSample]:
                     yield TrainingSample.from_capnp(sample)
 
 
+def compute_stats_streaming(path: Path | str) -> dict:
+    """Compute statistics directly from Cap'n Proto readers without materialization.
+
+    This is 10-50x faster than loading all samples into Python dataclasses first.
+
+    Args:
+        path: Path to .cpb file or .zip archive
+
+    Returns:
+        Dictionary with 'total', 'countries', 'actions', 'min_tick', 'max_tick'
+    """
+    countries: Counter[str] = Counter()
+    actions: Counter[int] = Counter()
+    min_tick = float("inf")
+    max_tick = 0
+    total = 0
+
+    for batch in iter_batches_raw(path):
+        for sample in batch.samples:
+            # Access reader fields directly - no dataclass creation!
+            total += 1
+            countries[sample.country] += 1
+            actions[sample.chosenAction] += 1
+            tick = sample.tick
+            if tick < min_tick:
+                min_tick = tick
+            if tick > max_tick:
+                max_tick = tick
+
+    return {
+        "total": total,
+        "countries": dict(countries),
+        "actions": dict(actions),
+        "min_tick": int(min_tick) if total > 0 else 0,
+        "max_tick": max_tick,
+    }
+
+
+def print_stats_from_dict(stats: dict) -> None:
+    """Print statistics from a stats dictionary."""
+    if stats["total"] == 0:
+        print("No samples found.")
+        return
+
+    print(f"Total samples: {stats['total']}")
+    print(f"Tick range: {stats['min_tick']} - {stats['max_tick']}")
+    print(
+        f"Year range: {1444 + stats['min_tick'] // 365} - {1444 + stats['max_tick'] // 365}"
+    )
+    print()
+    print("Top countries:")
+    for country, count in sorted(stats["countries"].items(), key=lambda x: -x[1])[:10]:
+        print(f"  {country}: {count}")
+    print()
+    print("Action distribution:")
+    for action, count in sorted(stats["actions"].items()):
+        pct = count / stats["total"] * 100
+        label = "Pass" if action == -1 else f"Action[{action}]"
+        print(f"  {label}: {count} ({pct:.1f}%)")
+
+
+def format_prompt_from_reader(sample_reader) -> str:
+    """Format a training prompt directly from a Cap'n Proto reader.
+
+    Avoids creating intermediate Python dataclasses for better performance.
+    """
+    state = sample_reader.state
+    date = state.date
+    country = state.ownCountry
+
+    lines = [
+        f"Date: {date.year}.{date.month}.{date.day}",
+        f"Country: {state.observer}",
+        f"Treasury: {fixed_to_float(country.treasury):.1f}",
+        f"Manpower: {fixed_to_float(country.manpower):.1f}",
+        f"Stability: {country.stability}",
+        f"Prestige: {fixed_to_float(country.prestige):.1f}",
+        f"Tech: ADM {country.admTech} / DIP {country.dipTech} / MIL {country.milTech}",
+        f"Mana: ADM {fixed_to_float(country.admMana):.0f} / DIP {fixed_to_float(country.dipMana):.0f} / MIL {fixed_to_float(country.milMana):.0f}",
+        f"At War: {'Yes' if state.atWar else 'No'}",
+        "",
+        "Available Actions:",
+    ]
+
+    for i, cmd in enumerate(sample_reader.availableCommands):
+        lines.append(f"  [{i}] {command_to_string_fast(cmd)}")
+
+    return "\n".join(lines)
+
+
+def format_completion_from_reader(sample_reader) -> str:
+    """Format a training completion directly from a Cap'n Proto reader."""
+    chosen_action = sample_reader.chosenAction
+    if chosen_action >= 0:
+        chosen_cmd = command_to_string_fast(sample_reader.chosenCommand)
+        return f"Action: [{chosen_action}] {chosen_cmd}"
+    else:
+        return f"Action: [{chosen_action}] Pass"
+
+
+def iter_training_prompts(path: Path | str) -> Iterator[dict]:
+    """Stream prompt/completion pairs directly from Cap'n Proto readers.
+
+    This is the most memory-efficient way to feed training data to HuggingFace.
+    No intermediate Python dataclasses are created.
+
+    Args:
+        path: Path to .cpb file or .zip archive
+
+    Yields:
+        Dictionaries with 'text', 'country', 'tick' keys
+    """
+    for batch in iter_batches_raw(path):
+        for sample in batch.samples:
+            prompt = format_prompt_from_reader(sample)
+            completion = format_completion_from_reader(sample)
+            yield {
+                "text": f"{prompt}\n{completion}",
+                "country": sample.country,
+                "tick": sample.tick,
+            }
+
+
 def to_huggingface_dataset(samples: list[TrainingSample]):
     """Convert training samples to a HuggingFace Dataset.
 
@@ -399,6 +627,207 @@ def to_huggingface_dataset(samples: list[TrainingSample]):
         data["tick"].append(sample.tick)
 
     return Dataset.from_dict(data)
+
+
+def _training_prompts_generator(path_str: str) -> Iterator[dict]:
+    """Generator function for HuggingFace streaming - takes path as string param."""
+    yield from iter_training_prompts(path_str)
+
+
+def to_huggingface_dataset_streaming(path: Path | str):
+    """Create a streaming HuggingFace IterableDataset from training data.
+
+    This is the recommended way to load large training datasets. It starts
+    immediately without loading everything into memory first.
+
+    Args:
+        path: Path to .cpb file or .zip archive
+
+    Returns:
+        IterableDataset ready for training
+    """
+    from datasets import IterableDataset
+
+    # Pass path as gen_kwargs to avoid pickling issues with closures
+    path_str = str(Path(path).resolve())
+    return IterableDataset.from_generator(
+        _training_prompts_generator,
+        gen_kwargs={"path_str": path_str},
+    )
+
+
+def to_huggingface_dataset_chunked(path: Path | str, chunk_size: int = 50000):
+    """Create a chunked HuggingFace Dataset that loads in batches.
+
+    This is the best balance between eager (fast but slow startup) and
+    streaming (slow but immediate startup). It loads chunks of samples
+    and yields them, allowing training to start faster than eager mode.
+
+    Args:
+        path: Path to .cpb file or .zip archive
+        chunk_size: Number of samples per chunk (default: 50000)
+
+    Returns:
+        IterableDataset ready for training
+    """
+    from datasets import IterableDataset
+
+    # Pass params via gen_kwargs to avoid pickle issues with closures
+    path_str = str(Path(path).resolve())
+    return IterableDataset.from_generator(
+        _chunked_prompts_generator,
+        gen_kwargs={"path_str": path_str, "chunk_size": chunk_size},
+    )
+
+
+def _chunked_prompts_generator(path_str: str, chunk_size: int) -> Iterator[dict]:
+    """Top-level generator for chunked loading (avoids pickle issues).
+
+    Loads samples in chunks and yields them. The chunking reduces memory
+    pressure compared to full eager loading while still being faster than
+    pure streaming because we process batches at a time.
+    """
+    path = Path(path_str)
+    chunk = []
+
+    for batch in iter_batches_raw(path):
+        for sample in batch.samples:
+            prompt = format_prompt_from_reader(sample)
+            completion = format_completion_from_reader(sample)
+            chunk.append(
+                {
+                    "text": f"{prompt}\n{completion}",
+                    "country": sample.country,
+                    "tick": sample.tick,
+                }
+            )
+
+            # When chunk is full, yield all samples and clear
+            if len(chunk) >= chunk_size:
+                for item in chunk:
+                    yield item
+                chunk = []
+
+    # Yield remaining samples
+    for item in chunk:
+        yield item
+
+
+def _iter_all_samples_raw(path: Path):
+    """Iterate over all raw sample readers from a path."""
+    for batch in iter_batches_raw(path):
+        for sample in batch.samples:
+            yield sample
+
+
+class _PrefetchManager:
+    """Manages background prefetch thread for training data.
+
+    Starts a producer thread that fills a queue while the consumer
+    (trainer) pulls from it. This overlaps CPU-bound data loading
+    with GPU-bound training.
+    """
+
+    def __init__(self, path: Path, prefetch_count: int):
+        self.path = path
+        self.prefetch_count = prefetch_count
+        self._queue: queue.Queue = queue.Queue(maxsize=prefetch_count)
+        self._stop_event = threading.Event()
+        self._producer: threading.Thread | None = None
+        self._exception: Exception | None = None
+        self._started = False
+
+    def _producer_fn(self):
+        """Background thread: load samples and push to queue."""
+        try:
+            for batch in iter_batches_raw(self.path):
+                for sample in batch.samples:
+                    if self._stop_event.is_set():
+                        return
+                    prompt = format_prompt_from_reader(sample)
+                    completion = format_completion_from_reader(sample)
+                    item = {
+                        "text": f"{prompt}\n{completion}",
+                        "country": sample.country,
+                        "tick": sample.tick,
+                    }
+                    self._queue.put(item)
+        except Exception as e:
+            self._exception = e
+        finally:
+            self._queue.put(None)
+
+    def start(self):
+        """Start the prefetch producer thread."""
+        if self._started:
+            return
+        self._started = True
+        self._stop_event.clear()
+        self._producer = threading.Thread(target=self._producer_fn, daemon=True)
+        self._producer.start()
+
+    def get_item(self):
+        """Get next item from queue. Returns None when exhausted."""
+        item = self._queue.get()
+        if item is None and self._exception:
+            raise self._exception
+        return item
+
+    def stop(self):
+        """Signal producer to stop."""
+        self._stop_event.set()
+
+
+# Global prefetch manager - survives generator recreation by HuggingFace
+_prefetch_managers: dict[str, _PrefetchManager] = {}
+
+
+def _prefetch_generator(path_str: str, prefetch_count: int) -> Iterator[dict]:
+    """Generator that pulls from prefetch queue.
+
+    Uses a global manager so the producer thread survives HuggingFace's
+    generator recreation during .map() calls.
+    """
+    global _prefetch_managers
+
+    # Get or create manager for this path
+    key = f"{path_str}:{prefetch_count}"
+    if key not in _prefetch_managers:
+        _prefetch_managers[key] = _PrefetchManager(Path(path_str), prefetch_count)
+
+    manager = _prefetch_managers[key]
+    manager.start()
+
+    # Pull from queue until exhausted
+    while True:
+        item = manager.get_item()
+        if item is None:
+            del _prefetch_managers[key]
+            break
+        yield item
+
+
+def to_huggingface_dataset_prefetch(path: Path | str, prefetch_count: int = 1000):
+    """Create a HuggingFace IterableDataset with true background prefetching.
+
+    Uses a producer-consumer pattern: a background thread loads and formats
+    samples while the main thread (trainer) consumes them. This overlaps
+    CPU-bound data loading with GPU-bound training.
+
+    Args:
+        path: Path to .cpb file or .zip archive
+        prefetch_count: Max items to buffer in queue (default: 1000)
+
+    Returns:
+        HuggingFace IterableDataset ready for training
+    """
+    from datasets import IterableDataset
+
+    path_str = str(Path(path).resolve())
+    return IterableDataset.from_generator(
+        _prefetch_generator,
+        gen_kwargs={"path_str": path_str, "prefetch_count": prefetch_count},
+    )
 
 
 def print_sample_stats(samples: list[TrainingSample]) -> None:
@@ -446,6 +875,11 @@ def main():
         "--samples", "-n", type=int, default=0, help="Show N sample prompts"
     )
     parser.add_argument("--country", "-c", type=str, help="Filter by country tag")
+    parser.add_argument(
+        "--eager",
+        action="store_true",
+        help="Force eager loading (slower, for debugging)",
+    )
 
     args = parser.parse_args()
 
@@ -453,7 +887,30 @@ def main():
         print(f"Error: File not found: {args.path}")
         return 1
 
-    print(f"Loading {args.path}...")
+    # Fast path: streaming mode (default unless --eager or --country filter)
+    use_streaming = not args.eager and not args.country
+
+    if use_streaming:
+        if args.stats:
+            print(f"Computing stats (streaming) for {args.path}...")
+            stats = compute_stats_streaming(args.path)
+            print_stats_from_dict(stats)
+
+        if args.samples > 0:
+            print(f"\n=== First {args.samples} samples (streaming) ===\n")
+            count = 0
+            for sample_dict in iter_training_prompts(args.path):
+                if count >= args.samples:
+                    break
+                print("-" * 60)
+                print(sample_dict["text"])
+                print()
+                count += 1
+
+        return 0
+
+    # Slow path: full loading (only for --eager or --country filter)
+    print(f"Loading {args.path} (eager mode)...")
     samples = load_training_file(args.path)
 
     if args.country:

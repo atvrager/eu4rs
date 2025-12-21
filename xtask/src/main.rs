@@ -54,8 +54,8 @@ enum Commands {
 
     /// Train the AI using Python/UV pipeline
     Train {
-        /// Path to training data (.jsonl)
-        #[arg(long, default_value = "training_data.jsonl")]
+        /// Path to training data (.cpb.zip or .jsonl)
+        #[arg(long, default_value = "training_data.cpb.zip")]
         data: String,
         /// Base model to use
         #[arg(long, default_value = "google/gemma-2-2b-it")]
@@ -63,9 +63,12 @@ enum Commands {
         /// Output directory for adapter
         #[arg(long, default_value = "models/adapter")]
         output: String,
-        /// Number of training epochs
+        /// Number of training epochs (only for eager mode)
         #[arg(long, default_value_t = 1)]
         epochs: u32,
+        /// Force eager loading (slower, allows full shuffle)
+        #[arg(long)]
+        eager: bool,
     },
 
     /// Inspect generated training data (.zip or .jsonl)
@@ -146,7 +149,8 @@ fn main() -> Result<()> {
             model,
             output,
             epochs,
-        } => train::run(&data, &model, &output, epochs),
+            eager,
+        } => train::run(&data, &model, &output, epochs, eager),
         Commands::Inspect { path } => train::inspect(&path),
         Commands::VerifyPipeline => train::verify_pipeline(),
         Commands::FormatPython { check } => train::format_python(check),

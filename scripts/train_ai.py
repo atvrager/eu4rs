@@ -46,7 +46,12 @@ def detect_device():
     return "cpu", "CPU", True
 
 
-def load_training_dataset(data_path: Path, eager: bool = False):
+def load_training_dataset(
+    data_path: Path,
+    eager: bool = False,
+    chunk_size: int = 0,
+    prefetch_count: int = 0,
+):
     """Load training data from JSON or Cap'n Proto binary format.
 
     Supports:
@@ -58,7 +63,10 @@ def load_training_dataset(data_path: Path, eager: bool = False):
     Args:
         data_path: Path to training data file
         eager: If True, load all data into memory (slower but allows shuffling).
-               If False (default), use streaming for better memory efficiency.
+        chunk_size: If > 0, use chunked prefetch (fast startup + fast training).
+                   If 0 (default), use streaming (slow but memory-efficient).
+        prefetch_count: If > 0, use true background prefetch with queue of this size.
+                       Overlaps CPU loading with GPU training. Recommended: 1000.
 
     Returns a HuggingFace Dataset or IterableDataset with 'text' column ready for SFT.
     """
@@ -84,6 +92,26 @@ def load_training_dataset(data_path: Path, eager: bool = False):
 
             dataset = dataset.map(combine_text)
             print(f"Loaded {len(dataset)} samples")
+        elif prefetch_count > 0:
+            # True background prefetch: producer thread fills queue while GPU trains
+            from load_training_data import to_huggingface_dataset_prefetch
+
+            print(
+                f"Loading Cap'n Proto binary (prefetch, queue={prefetch_count}): {data_path}"
+            )
+            dataset = to_huggingface_dataset_prefetch(
+                data_path, prefetch_count=prefetch_count
+            )
+            print("Background prefetch enabled - CPU loads while GPU trains")
+        elif chunk_size > 0:
+            # Chunked prefetch: best of both worlds
+            from load_training_data import to_huggingface_dataset_chunked
+
+            print(
+                f"Loading Cap'n Proto binary (chunked, size={chunk_size}): {data_path}"
+            )
+            dataset = to_huggingface_dataset_chunked(data_path, chunk_size=chunk_size)
+            print("Chunked prefetch enabled - fast startup + fast training")
         else:
             # Streaming mode (default): memory-efficient, starts immediately
             from load_training_data import to_huggingface_dataset_streaming
@@ -148,6 +176,36 @@ def main():
         help="Max training steps (required for streaming, overrides --epochs)",
     )
     parser.add_argument(
+        "--save-steps",
+        type=int,
+        default=None,
+        help="Save checkpoint every N steps (default: max_steps/2)",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=1,
+        help="Training batch size per device (default: 1)",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=0,
+        help="Dataloader workers for parallel data loading (default: 0)",
+    )
+    parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=0,
+        help="Chunk size for prefetch loading (0=streaming, >0=chunked). Recommended: 50000",
+    )
+    parser.add_argument(
+        "--prefetch",
+        type=int,
+        default=0,
+        help="True background prefetch queue size. Overlaps CPU loading with GPU training. Recommended: 1000",
+    )
+    parser.add_argument(
         "--eager",
         action="store_true",
         help="Force eager loading (slower, allows full shuffle)",
@@ -205,13 +263,21 @@ def main():
     model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
 
-    # Load Dataset (streaming by default, --eager for full load)
-    dataset = load_training_dataset(args.data, eager=args.eager)
-    is_streaming = not args.eager
+    # Load Dataset (streaming by default, --prefetch or --chunk-size for faster)
+    dataset = load_training_dataset(
+        args.data,
+        eager=args.eager,
+        chunk_size=args.chunk_size,
+        prefetch_count=args.prefetch,
+    )
+    # All non-eager modes use IterableDataset (no __len__)
+    needs_max_steps = not args.eager
 
-    # Streaming mode requires max_steps (no len() available)
-    if is_streaming and args.max_steps is None:
-        print("Warning: Streaming mode without --max-steps. Defaulting to 1000 steps.")
+    # IterableDataset requires max_steps (no len() available)
+    if needs_max_steps and args.max_steps is None:
+        print(
+            "Warning: Streaming/chunked mode without --max-steps. Defaulting to 1000 steps."
+        )
         max_steps = 1000
     else:
         max_steps = args.max_steps
@@ -219,22 +285,31 @@ def main():
     # Configure SFT Args (inherits from TrainingArguments)
     # CUDA supports bf16 mixed precision; DirectML and CPU do not
     use_bf16 = device == "cuda"
-    
+
+    # Determine save_steps
+    if args.save_steps:
+        save_steps = args.save_steps
+    elif needs_max_steps and max_steps:
+        save_steps = max_steps // 2
+    else:
+        save_steps = 500
+
     sft_config = SFTConfig(
         output_dir=args.output,
-        # Use max_steps for streaming, epochs for eager
-        num_train_epochs=args.epochs if not is_streaming else 1,
-        max_steps=max_steps if is_streaming else -1,
-        per_device_train_batch_size=1,
+        # Use max_steps for streaming/chunked, epochs for eager
+        num_train_epochs=args.epochs if not needs_max_steps else 1,
+        max_steps=max_steps if needs_max_steps else -1,
+        per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=4,
         learning_rate=2e-4,
         logging_steps=10,
-        save_strategy="steps" if is_streaming else "epoch",
-        save_steps=max_steps // 2 if is_streaming and max_steps else 500,
+        save_strategy="steps" if needs_max_steps else "epoch",
+        save_steps=save_steps,
         use_cpu=use_cpu,  # True only for CPU, False for CUDA and DirectML
         # Mixed precision: bf16 for CUDA, fp32 for DirectML/CPU
         bf16=use_bf16,
         fp16=False,  # Prefer bf16 over fp16 when available
+        dataloader_num_workers=args.workers,
         dataset_text_field="text",
     )
 

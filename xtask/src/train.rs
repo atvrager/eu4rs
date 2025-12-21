@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-pub fn run(data_path: &str, model: &str, output_dir: &str, epochs: u32) -> Result<()> {
+pub fn run(data_path: &str, model: &str, output_dir: &str, epochs: u32, eager: bool) -> Result<()> {
     println!("🚂 Cargo Orchestrator: Starting AI Training...");
     println!("   Data: {}", data_path);
     println!("   Base Model: {}", model);
@@ -24,8 +24,8 @@ pub fn run(data_path: &str, model: &str, output_dir: &str, epochs: u32) -> Resul
 
     // Run training script via uv
     // This uses the virtualenv managed by uv in scripts/.venv
-    let status = Command::new("uv")
-        .current_dir("scripts")
+    let mut cmd = Command::new("uv");
+    cmd.current_dir("scripts")
         .arg("run")
         .arg("train_ai.py")
         .arg("--data")
@@ -35,9 +35,13 @@ pub fn run(data_path: &str, model: &str, output_dir: &str, epochs: u32) -> Resul
         .arg("--output")
         .arg(output_rel)
         .arg("--epochs")
-        .arg(epochs.to_string())
-        .status()
-        .context("Failed to execute training script")?;
+        .arg(epochs.to_string());
+
+    if eager {
+        cmd.arg("--eager");
+    }
+
+    let status = cmd.status().context("Failed to execute training script")?;
 
     if status.success() {
         println!("✅ Training complete!");
@@ -128,10 +132,11 @@ pub fn verify_pipeline() -> Result<()> {
     println!("   {}", stdout.trim());
 
     // 3. Run Training with tiny model using binary data
+    // Use eager mode for CI smoke test (tiny dataset, avoid streaming complexity)
     let model = "HuggingFaceTB/SmolLM2-135M";
     let output = "models/verify_adapter";
     println!("   Running training smoke test (1 epoch)...");
-    run(binary_data_path, model, output, 1)?;
+    run(binary_data_path, model, output, 1, true)?;
 
     // 4. Inspect output
     println!("   Inspecting output adapter...");
