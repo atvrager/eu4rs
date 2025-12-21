@@ -1,11 +1,14 @@
 [workspace]
-members = [ "eu4data",
+members = [
+    "eu4data",
     "eu4data_derive",
     "eu4viz",
     "eu4txt",
     "xtask",
     "eu4sim",
-    "eu4sim-core", "game_pathfinding",
+    "eu4sim-core",
+    "eu4sim-ai",
+    "game_pathfinding",
 ]
 resolver = "2"
 

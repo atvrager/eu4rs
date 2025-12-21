@@ -1,0 +1,41 @@
+[package]
+name = "eu4sim-ai"
+version = "0.1.0"
+edition = "2024"
+description = "LLM-based AI inference for EU4 simulation"
+
+[dependencies]
+# Candle ML framework
+candle-core = "0.8"
+candle-nn = "0.8"
+candle-transformers = "0.8"
+
+# Tokenization
+tokenizers = "0.21"
+
+# Model weights
+safetensors = "0.5"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# Logging
+log = "0.4"
+
+# Local crates
+eu4sim-core = { path = "../eu4sim-core" }
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+default = []
+# GPU features removed - they fail CI on systems without the toolkit.
+# To enable GPU acceleration locally, use candle's features directly:
+#   CUDA:  cargo build -p eu4sim-ai --features candle-core/cuda,candle-nn/cuda,candle-transformers/cuda
+#   Metal: cargo build -p eu4sim-ai --features candle-core/metal,candle-nn/metal,candle-transformers/metal
