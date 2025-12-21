@@ -1,4 +1,3 @@
-import sys
 import argparse
 from pathlib import Path
 import torch
@@ -6,7 +5,6 @@ from datasets import load_dataset
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    BitsAndBytesConfig,
 )
 from peft import LoraConfig, get_peft_model, TaskType
 from trl import SFTTrainer, SFTConfig
@@ -16,9 +14,75 @@ BASE_MODEL = "google/gemma-2-2b-it"
 OUTPUT_DIR = "models/adapter"
 
 
+def load_training_dataset(data_path: Path):
+    """Load training data from JSON or Cap'n Proto binary format.
+
+    Supports:
+      - .cpb.zip files (Cap'n Proto binary archive - recommended)
+      - .cpb files (single Cap'n Proto binary file)
+      - .zip files (Cap'n Proto binary archive)
+      - .jsonl files (legacy JSON format)
+
+    Returns a HuggingFace Dataset with 'text' column ready for SFT.
+    """
+    path_str = str(data_path).lower()
+
+    # Check for Cap'n Proto formats
+    if (
+        path_str.endswith(".cpb.zip")
+        or path_str.endswith(".cpb")
+        or (data_path.suffix.lower() == ".zip" and not path_str.endswith(".jsonl.zip"))
+    ):
+        # Cap'n Proto binary format (preferred)
+        from load_training_data import load_training_file, to_huggingface_dataset
+
+        print(f"Loading Cap'n Proto binary: {data_path}")
+        samples = load_training_file(data_path)
+        dataset = to_huggingface_dataset(samples)
+
+        # Combine prompt + completion into 'text' for SFT
+        def combine_text(example):
+            return {"text": example["prompt"] + "\n" + example["completion"]}
+
+        dataset = dataset.map(combine_text)
+
+    elif data_path.suffix.lower() in (".jsonl", ".json"):
+        # Legacy JSON format
+        print(f"Loading JSON: {data_path}")
+        dataset = load_dataset("json", data_files=str(data_path), split="train")
+
+        # Check if we need to combine prompt/completion
+        if "text" not in dataset.column_names:
+            if (
+                "prompt" in dataset.column_names
+                and "completion" in dataset.column_names
+            ):
+
+                def combine_text(example):
+                    return {"text": example["prompt"] + "\n" + example["completion"]}
+
+                dataset = dataset.map(combine_text)
+            else:
+                raise ValueError(
+                    f"JSON file must have 'text' column or 'prompt'+'completion' columns"
+                )
+    else:
+        raise ValueError(
+            f"Unsupported file format: {data_path.suffix}. Use .cpb.zip, .cpb, or .jsonl"
+        )
+
+    print(f"Loaded {len(dataset)} samples")
+    return dataset
+
+
 def main():
     parser = argparse.ArgumentParser(description="Train EU4 AI using TRL/PEFT")
-    parser.add_argument("--data", required=True, help="Path to training data (.jsonl)")
+    parser.add_argument(
+        "--data",
+        required=True,
+        type=Path,
+        help="Path to training data (.bin for Cap'n Proto, .jsonl for JSON)",
+    )
     parser.add_argument(
         "--base-model", default=BASE_MODEL, help="Base HuggingFace model"
     )
@@ -69,18 +133,8 @@ def main():
     model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
 
-    # Load Dataset
-    print(f"Loading dataset: {args.data}")
-    dataset = load_dataset("json", data_files=args.data, split="train")
-
-    # Formatting function
-    column_names = dataset.column_names
-    if "text" not in column_names:
-
-        def formatting_func(example):
-            return {"text": example["prompt"] + example["completion"]}
-
-        dataset = dataset.map(formatting_func)
+    # Load Dataset (supports both .bin and .jsonl)
+    dataset = load_training_dataset(args.data)
 
     # Configure SFT Args (inherits from TrainingArguments)
     sft_config = SFTConfig(

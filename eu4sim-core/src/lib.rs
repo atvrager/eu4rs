@@ -1,6 +1,14 @@
 pub mod ai;
 pub mod bounded;
 pub mod config;
+
+// Cap'n Proto generated schema for training data serialization.
+// Included at crate root because capnpc generates self-referential code.
+#[allow(dead_code)]
+#[allow(clippy::all)]
+pub mod training_capnp {
+    include!(concat!(env!("OUT_DIR"), "/training_capnp.rs"));
+}
 pub mod fixed;
 pub mod input;
 pub mod metrics;

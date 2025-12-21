@@ -151,7 +151,7 @@ struct Args {
     #[arg(long)]
     event_log: Option<String>,
 
-    /// Write training data JSONL to file (use "-" for stdout)
+    /// Write training data to file (requires --observer). Use ".cpb.zip" for binary (recommended), ".zip" for JSON archive, or ".jsonl" for streaming
     #[arg(long)]
     datagen: Option<String>,
 

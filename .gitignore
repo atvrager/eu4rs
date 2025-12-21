@@ -20,6 +20,7 @@ eu4data/src/generated/types/*
 
 # Observer output files
 *.jsonl
+*.cpb
 
 # Machine Learning
 models/

@@ -1,13 +1,27 @@
 //! Training data generation observer for ML model training.
 //!
-//! Generates JSONL training samples containing:
+//! Generates training samples containing:
 //! - Current visible state
 //! - Available commands
 //! - Chosen action (index into available commands)
 //!
-//! # Output Format
+//! # Output Formats
 //!
-//! ## JSONL Mode (`.jsonl` extension)
+//! ## Binary Mode (`.cpb.zip` extension) - **Recommended**
+//! Creates a zip archive with Cap'n Proto binary files per year:
+//! ```text
+//! datagen.cpb.zip/
+//!   1444.cpb  (Cap'n Proto packed binary)
+//!   1445.cpb
+//!   ...
+//! ```
+//!
+//! Cap'n Proto binary format provides:
+//! - ~10x faster serialization than JSON
+//! - Zero-copy reads in Python (via pycapnp)
+//! - Schema-enforced type safety between Rust and Python
+//!
+//! ## JSONL Mode (`.jsonl` extension) - Legacy
 //! Each line is a JSON object:
 //! ```json
 //! {
@@ -20,41 +34,14 @@
 //! }
 //! ```
 //!
-//! ## Archive Mode (`.zip` extension)
-//! Creates a zip archive with deflate-compressed JSONL files per year:
-//! ```text
-//! datagen.zip/
-//!   1444.jsonl  (deflate compressed)
-//!   1445.jsonl
-//!   ...
-//! ```
-//!
-//! Archive mode uses a background writer thread for non-blocking I/O.
-//! Serialization happens in parallel on the main thread (via rayon), then
-//! pre-serialized bytes are sent to the background writer for compression.
+//! ## JSON Archive Mode (`.zip` extension)
+//! Creates a zip archive with deflate-compressed JSONL files per year.
 //!
 //! # Performance Notes
 //!
-//! The current implementation achieves ~10% I/O overhead (down from 66% before
-//! optimization). Key optimizations applied:
-//!
-//! 1. **Reuse precomputed state**: `VisibleWorldState` and `available_commands`
-//!    are computed once in the AI loop and passed through `PlayerInputs`.
-//!
-//! 2. **Parallel serialization**: JSON encoding uses rayon's `par_iter` to
-//!    utilize all CPU cores before sending to the writer thread.
-//!
-//! 3. **Pre-serialized channel**: Only raw bytes cross the channel boundary;
-//!    the writer thread does pure I/O (no CPU work).
-//!
-//! ## Future Improvements
-//!
-//! - **Binary format**: Replace JSON with bincode/MessagePack for 10-100x faster
-//!   serialization. Python can convert during training preprocessing.
-//!
-//! - **Pipelined backpressure**: Use bounded channels with multiple worker threads
-//!   for serialization, allowing the simulation to continue while serialization
-//!   catches up.
+//! Archive modes use a background writer thread for non-blocking I/O.
+//! Serialization happens in parallel on the main thread (via rayon), then
+//! pre-serialized bytes are sent to the background writer for compression.
 //!
 //! # Usage with Training Pipelines
 //!
@@ -69,6 +56,7 @@
 //! `WorldState::available_commands()`. This requires an adjacency graph
 //! for movement commands; pass `None` to skip movement-related commands.
 
+use super::capnp_serialize;
 use super::{ObserverConfig, ObserverError, SimObserver, Snapshot};
 use crate::ai::VisibleWorldState;
 use crate::input::{Command, PlayerInputs};
@@ -103,11 +91,17 @@ pub struct TrainingSample {
 
 /// Message sent to the background writer thread
 enum WriterMessage {
-    /// Pre-serialized JSONL data for a given year (one line per sample, newline-terminated)
+    /// Pre-serialized data for a given year
     SerializedBatch {
         year: i32,
-        /// Already-serialized JSONL bytes (parallel serialization happened on main thread)
+        /// Already-serialized bytes (parallel serialization happened on main thread)
         data: Vec<u8>,
+    },
+    /// Binary samples for a given year (will be serialized by writer thread)
+    BinarySamples {
+        year: i32,
+        /// Raw samples to serialize as Cap'n Proto
+        samples: Vec<TrainingSample>,
     },
     /// Shutdown signal - flush and finalize
     Shutdown,
@@ -117,8 +111,14 @@ enum WriterMessage {
 enum OutputMode {
     /// Streaming JSONL to a writer (synchronous, for stdout/simple files)
     Stream(Box<dyn Write + Send>),
-    /// Async archive mode with background writer thread
-    AsyncArchive {
+    /// Async JSON archive mode with background writer thread
+    AsyncJsonArchive {
+        sender: Sender<WriterMessage>,
+        /// Handle to join the writer thread on shutdown
+        handle: Option<JoinHandle<()>>,
+    },
+    /// Async binary (Cap'n Proto) archive mode with background writer thread
+    AsyncBinaryArchive {
         sender: Sender<WriterMessage>,
         /// Handle to join the writer thread on shutdown
         handle: Option<JoinHandle<()>>,
@@ -149,6 +149,9 @@ impl ArchiveWriter {
                     if let Err(e) = self.handle_batch(year, data) {
                         log::error!("ArchiveWriter error: {}", e);
                     }
+                }
+                WriterMessage::BinarySamples { .. } => {
+                    log::warn!("ArchiveWriter received binary samples, ignoring");
                 }
                 WriterMessage::Shutdown => {
                     if let Err(e) = self.finalize() {
@@ -221,6 +224,112 @@ impl ArchiveWriter {
     }
 }
 
+/// Background writer thread state for binary (Cap'n Proto) archives
+struct BinaryArchiveWriter {
+    zip: ZipWriter<std::fs::File>,
+    current_year: Option<i32>,
+    year_samples: Vec<TrainingSample>,
+}
+
+impl BinaryArchiveWriter {
+    fn new(file: std::fs::File) -> Self {
+        Self {
+            zip: ZipWriter::new(file),
+            current_year: None,
+            year_samples: Vec::with_capacity(10_000), // Expect ~10k samples per year
+        }
+    }
+
+    /// Process incoming messages until shutdown
+    fn run(mut self, receiver: mpsc::Receiver<WriterMessage>) {
+        while let Ok(msg) = receiver.recv() {
+            match msg {
+                WriterMessage::BinarySamples { year, samples } => {
+                    if let Err(e) = self.handle_samples(year, samples) {
+                        log::error!("BinaryArchiveWriter error: {}", e);
+                    }
+                }
+                WriterMessage::SerializedBatch { .. } => {
+                    log::warn!("BinaryArchiveWriter received JSON batch, ignoring");
+                }
+                WriterMessage::Shutdown => {
+                    if let Err(e) = self.finalize() {
+                        log::error!("BinaryArchiveWriter finalize error: {}", e);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Buffer samples for the current year
+    fn handle_samples(&mut self, year: i32, samples: Vec<TrainingSample>) -> Result<(), String> {
+        // Year transition - flush previous year
+        if let Some(prev_year) = self.current_year {
+            if year != prev_year {
+                self.flush_year(prev_year)?;
+                self.year_samples.clear();
+            }
+        }
+        self.current_year = Some(year);
+
+        // Collect samples
+        self.year_samples.extend(samples);
+
+        Ok(())
+    }
+
+    fn flush_year(&mut self, year: i32) -> Result<(), String> {
+        if self.year_samples.is_empty() {
+            return Ok(());
+        }
+
+        // Serialize all samples for this year to Cap'n Proto
+        let mut buf = Vec::with_capacity(1024 * 1024); // 1MB initial
+        capnp_serialize::serialize_batch(&mut buf, year as i16, &self.year_samples)
+            .map_err(|e| format!("Failed to serialize Cap'n Proto batch: {}", e))?;
+
+        // Write to ZIP archive with deflate compression
+        let filename = format!("{}.cpb", year);
+        let options = SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated)
+            .compression_level(Some(6));
+
+        self.zip
+            .start_file(&filename, options)
+            .map_err(|e| format!("Failed to start zip file: {}", e))?;
+        self.zip
+            .write_all(&buf)
+            .map_err(|e| format!("Failed to write to zip: {}", e))?;
+
+        log::debug!(
+            "Wrote {}.cpb to archive ({} samples, {} bytes)",
+            year,
+            self.year_samples.len(),
+            buf.len()
+        );
+
+        Ok(())
+    }
+
+    fn finalize(mut self) -> Result<(), String> {
+        // Flush any remaining year data
+        if let Some(year) = self.current_year {
+            if !self.year_samples.is_empty() {
+                self.flush_year(year)?;
+            }
+        }
+
+        // Finalize the archive
+        self.zip
+            .finish()
+            .map_err(|e| format!("Failed to finalize zip: {}", e))?;
+
+        log::info!("Binary archive finalized successfully");
+        Ok(())
+    }
+}
+
 /// Observer that generates training data for ML models.
 ///
 /// Outputs JSONL with one training sample per line, containing:
@@ -234,8 +343,11 @@ impl ArchiveWriter {
 /// // Generate training data to file (streaming)
 /// let observer = DataGenObserver::file("training.jsonl")?;
 ///
-/// // Generate to compressed archive (recommended for large runs)
+/// // Generate to JSON archive
 /// let observer = DataGenObserver::file("training.zip")?;
+///
+/// // Generate to binary archive (recommended for ML pipelines)
+/// let observer = DataGenObserver::file("training.cpb.zip")?;
 ///
 /// // Or to stdout for piping
 /// let observer = DataGenObserver::stdout();
@@ -257,13 +369,39 @@ impl DataGenObserver {
 
     /// Create observer writing to a file.
     ///
-    /// If the path ends with `.zip`, uses async archive mode with a background
-    /// writer thread for non-blocking I/O. Otherwise, uses streaming JSONL mode.
+    /// Output format is determined by file extension:
+    /// - `.cpb.zip`: Binary Cap'n Proto archive (recommended for ML pipelines)
+    /// - `.zip`: JSON archive (legacy, deflate compressed)
+    /// - `.jsonl`: Streaming JSONL (legacy)
     pub fn file(path: impl AsRef<Path>) -> std::io::Result<Self> {
         let path = path.as_ref();
+        let path_str = path.to_string_lossy();
 
-        if path.extension().map(|e| e == "zip").unwrap_or(false) {
-            // Async archive mode: spawn background writer thread
+        // Check for .cpb.zip (binary mode) first
+        if path_str.ends_with(".cpb.zip") {
+            // Binary archive mode: spawn background writer thread
+            let file = std::fs::File::create(path)?;
+            let (sender, receiver) = mpsc::channel();
+
+            let writer = BinaryArchiveWriter::new(file);
+            let handle = std::thread::Builder::new()
+                .name("datagen-binary-writer".into())
+                .spawn(move || writer.run(receiver))
+                .expect("Failed to spawn datagen binary writer thread");
+
+            Ok(Self {
+                output: Mutex::new(OutputMode::AsyncBinaryArchive {
+                    sender,
+                    handle: Some(handle),
+                }),
+                tracked_countries: vec![],
+                config: ObserverConfig {
+                    frequency: 1,
+                    notify_on_month_start: true,
+                },
+            })
+        } else if path.extension().map(|e| e == "zip").unwrap_or(false) {
+            // JSON archive mode: spawn background writer thread
             let file = std::fs::File::create(path)?;
             let (sender, receiver) = mpsc::channel();
 
@@ -274,7 +412,7 @@ impl DataGenObserver {
                 .expect("Failed to spawn datagen writer thread");
 
             Ok(Self {
-                output: Mutex::new(OutputMode::AsyncArchive {
+                output: Mutex::new(OutputMode::AsyncJsonArchive {
                     sender,
                     handle: Some(handle),
                 }),
@@ -416,7 +554,7 @@ impl SimObserver for DataGenObserver {
                     writeln!(writer)?;
                 }
             }
-            OutputMode::AsyncArchive { sender, .. } => {
+            OutputMode::AsyncJsonArchive { sender, .. } => {
                 // Parallelize JSON serialization across all CPU cores.
                 // Each sample serializes to its own buffer in parallel, then we flatten.
                 let buffers: Vec<Vec<u8>> = samples
@@ -446,6 +584,17 @@ impl SimObserver for DataGenObserver {
                     return Err(ObserverError::Render("Writer thread disconnected".into()));
                 }
             }
+            OutputMode::AsyncBinaryArchive { sender, .. } => {
+                // Send samples to background writer for Cap'n Proto serialization
+                if sender
+                    .send(WriterMessage::BinarySamples { year, samples })
+                    .is_err()
+                {
+                    return Err(ObserverError::Render(
+                        "Binary writer thread disconnected".into(),
+                    ));
+                }
+            }
         }
 
         Ok(())
@@ -469,7 +618,8 @@ impl SimObserver for DataGenObserver {
                 OutputMode::Stream(writer) => {
                     let _ = writer.flush();
                 }
-                OutputMode::AsyncArchive { sender, handle } => {
+                OutputMode::AsyncJsonArchive { sender, handle }
+                | OutputMode::AsyncBinaryArchive { sender, handle } => {
                     // Signal shutdown and wait for writer to finish
                     let _ = sender.send(WriterMessage::Shutdown);
 

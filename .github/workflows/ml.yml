@@ -5,12 +5,14 @@ on:
     branches: [ "main" ]
     paths:
       - 'scripts/**'
+      - 'schemas/**'
       - 'xtask/src/train.rs'
       - '.github/workflows/ml.yml'
   pull_request:
     branches: [ "main" ]
     paths:
       - 'scripts/**'
+      - 'schemas/**'
       - 'xtask/src/train.rs'
       - '.github/workflows/ml.yml'
 
@@ -26,6 +28,9 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Cap'n Proto
+        run: sudo apt-get update && sudo apt-get install -y capnproto
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4

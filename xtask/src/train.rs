@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
-use std::process::Command;
-
 use std::path::Path;
+use std::process::{Command, Stdio};
 
 pub fn run(data_path: &str, model: &str, output_dir: &str, epochs: u32) -> Result<()> {
     println!("🚂 Cargo Orchestrator: Starting AI Training...");
@@ -71,25 +70,68 @@ pub fn inspect(path: &str) -> Result<()> {
 pub fn verify_pipeline() -> Result<()> {
     println!("🧪 Verifying ML Pipeline...");
 
-    // 1. Create dummy data
-    println!("   Creating dummy data...");
-    let dummy_path = "verify_data.jsonl";
-    std::fs::write(
-        dummy_path,
-        r#"{"prompt": "Sit: War. Act:", "completion": " 1"}
-{"prompt": "Sit: Peace. Act:", "completion": " 0"}
-"#,
-    )?;
+    let binary_data_path = "verify_data.cpb.zip";
 
-    // 2. Run Training with tiny model
+    // 1. Generate real training data via short simulation
+    println!("   Generating binary training data via simulation...");
+    let sim_status = Command::new("cargo")
+        .args([
+            "run",
+            "-p",
+            "eu4sim",
+            "--",
+            "--ticks",
+            "5",
+            "--headless",
+            "--datagen",
+            binary_data_path,
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .context("Failed to run eu4sim for datagen")?;
+
+    if !sim_status.success() {
+        anyhow::bail!("Simulation failed to generate training data");
+    }
+
+    if !std::path::Path::new(binary_data_path).exists() {
+        anyhow::bail!("Training data file not created: {}", binary_data_path);
+    }
+
+    // 2. Verify Python can load the binary data
+    println!("   Verifying Python can load Cap'n Proto data...");
+    let py_load_check = Command::new("uv")
+        .current_dir("scripts")
+        .args([
+            "run",
+            "python",
+            "-c",
+            &format!(
+                "from load_training_data import load_training_file; \
+                 samples = load_training_file('../{}'); \
+                 print(f'Loaded {{len(samples)}} samples')",
+                binary_data_path
+            ),
+        ])
+        .output()
+        .context("Failed to run Python load check")?;
+
+    if !py_load_check.status.success() {
+        let stderr = String::from_utf8_lossy(&py_load_check.stderr);
+        anyhow::bail!("Python failed to load binary data: {}", stderr);
+    }
+
+    let stdout = String::from_utf8_lossy(&py_load_check.stdout);
+    println!("   {}", stdout.trim());
+
+    // 3. Run Training with tiny model using binary data
     let model = "HuggingFaceTB/SmolLM2-135M";
     let output = "models/verify_adapter";
     println!("   Running training smoke test (1 epoch)...");
+    run(binary_data_path, model, output, 1)?;
 
-    // Use existing run function, but maybe suppress some output? Or just let it print.
-    run(dummy_path, model, output, 1)?;
-
-    // 3. Inspect output
+    // 4. Inspect output
     println!("   Inspecting output adapter...");
     if !std::path::Path::new(output)
         .join("adapter_model.safetensors")
@@ -98,16 +140,16 @@ pub fn verify_pipeline() -> Result<()> {
         anyhow::bail!("Adapter file not created!");
     }
 
-    // 4. Cleanup
+    // 5. Cleanup
     println!("   Cleanup...");
-    let _ = std::fs::remove_file(dummy_path);
-    let _ = std::fs::remove_dir_all(output); // Simplify cleanup
+    let _ = std::fs::remove_file(binary_data_path);
+    let _ = std::fs::remove_dir_all(output);
 
-    // 5. Check formatting
+    // 6. Check formatting
     println!("   Checking python formatting...");
     format_python(true)?;
 
-    println!("✅ Pipeline Verified! (uv -> python -> peft -> adapter)");
+    println!("✅ Pipeline Verified! (simulation → .cpb.zip → pycapnp → peft → adapter)");
     Ok(())
 }
 

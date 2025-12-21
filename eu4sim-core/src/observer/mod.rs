@@ -31,6 +31,7 @@
 //! registry.notify(&snapshot);
 //! ```
 
+pub mod capnp_serialize;
 pub mod console;
 pub mod datagen;
 pub mod event_log;

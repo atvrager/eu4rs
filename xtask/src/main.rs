@@ -86,6 +86,13 @@ enum Commands {
 
     /// Run full ML CI pipeline (Formatting + Smoke Test)
     MlCi,
+
+    /// Compile Cap'n Proto schema for Rust and Python
+    Schema {
+        /// Verify schema compiles without generating (for CI)
+        #[arg(long)]
+        check: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -121,6 +128,7 @@ fn main() -> Result<()> {
         Commands::VerifyPipeline => train::verify_pipeline(),
         Commands::FormatPython { check } => train::format_python(check),
         Commands::MlCi => train::verify_pipeline(),
+        Commands::Schema { check } => run_schema(check),
     }
 }
 
@@ -594,6 +602,78 @@ fn run_verify_commit() -> Result<()> {
         anyhow::bail!("Verification failed. Please amend commit.");
     }
 
+    Ok(())
+}
+
+fn run_schema(check: bool) -> Result<()> {
+    println!("📐 Compiling Cap'n Proto schema...\n");
+
+    let schema_path = std::path::Path::new("schemas/training.capnp");
+    if !schema_path.exists() {
+        anyhow::bail!("Schema not found: {:?}", schema_path);
+    }
+
+    // Check if capnp compiler is available
+    let capnp_check = Command::new("capnp")
+        .arg("--version")
+        .output()
+        .context("capnp compiler not found. Install with: choco install capnproto (Windows) or brew install capnp (macOS)")?;
+
+    if !capnp_check.status.success() {
+        anyhow::bail!("capnp compiler check failed");
+    }
+
+    let version = String::from_utf8_lossy(&capnp_check.stdout);
+    println!("Using Cap'n Proto: {}", version.trim());
+
+    if check {
+        // Just verify the schema compiles
+        println!("Verifying schema syntax...");
+        let status = Command::new("capnp")
+            .args(["compile", "-o-", "schemas/training.capnp"])
+            .stdout(Stdio::null())
+            .status()
+            .context("Failed to run capnp compile")?;
+
+        if status.success() {
+            println!("✅ Schema is valid");
+        } else {
+            anyhow::bail!("Schema validation failed");
+        }
+    } else {
+        // For Rust: Just trigger a cargo build (build.rs handles capnpc)
+        println!("Compiling for Rust (via build.rs)...");
+        run_command("cargo", &["build", "-p", "eu4sim-core"])?;
+        println!("✅ Rust code generated in eu4sim-core target/");
+
+        // For Python: Check if pycapnp can load the schema
+        println!("\nVerifying Python schema loading...");
+        let py_check = Command::new("uv")
+            .current_dir("scripts")
+            .args([
+                "run",
+                "python",
+                "-c",
+                "import capnp; capnp.load('../schemas/training.capnp'); print('OK')",
+            ])
+            .output();
+
+        match py_check {
+            Ok(output) if output.status.success() => {
+                println!("✅ Python can load schema");
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                println!("⚠️  Python schema load failed: {}", stderr);
+                println!("   Run: cd scripts && uv sync");
+            }
+            Err(e) => {
+                println!("⚠️  Could not check Python: {}", e);
+            }
+        }
+    }
+
+    println!("\nSchema compilation complete! 🎉");
     Ok(())
 }
 

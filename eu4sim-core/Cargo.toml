@@ -16,6 +16,10 @@ rand = "0.8.5"
 im = { version = "15.1", features = ["serde"] }
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
 rayon = "1.10"
+capnp = "0.20"
+
+[build-dependencies]
+capnpc = "0.20"
 
 [dev-dependencies]
 proptest = "1.6"
