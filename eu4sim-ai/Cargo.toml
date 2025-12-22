@@ -5,10 +5,10 @@ edition = "2024"
 description = "LLM-based AI inference for EU4 simulation"
 
 [dependencies]
-# Candle ML framework
-candle-core = "0.8"
-candle-nn = "0.8"
-candle-transformers = "0.8"
+# Candle ML framework (0.9+ uses cudarc 0.18+ which supports CUDA 13)
+candle-core = "0.9"
+candle-nn = "0.9"
+candle-transformers = "0.9"
 
 # Model downloading from HuggingFace
 hf-hub = "0.3"
@@ -43,7 +43,22 @@ tempfile = "3"
 
 [features]
 default = []
-# GPU features removed - they fail CI on systems without the toolkit.
-# To enable GPU acceleration locally, use candle's features directly:
-#   CUDA:  cargo build -p eu4sim-ai --features candle-core/cuda,candle-nn/cuda,candle-transformers/cuda
-#   Metal: cargo build -p eu4sim-ai --features candle-core/metal,candle-nn/metal,candle-transformers/metal
+
+# Convenience feature flags for GPU acceleration.
+# These propagate through to candle crates automatically.
+# CI does NOT enable these (requires toolkit). Use for local testing only.
+cuda = [
+    "candle-core/cuda",
+    "candle-nn/cuda",
+    "candle-transformers/cuda",
+]
+metal = [
+    "candle-core/metal",
+    "candle-nn/metal",
+    "candle-transformers/metal",
+]
+
+# Usage:
+#   cargo test -p eu4sim-ai                    # CPU only (CI-safe)
+#   cargo test -p eu4sim-ai --features cuda    # With CUDA (local only)
+#   cargo test -p eu4sim-ai --features metal   # With Metal (macOS only)

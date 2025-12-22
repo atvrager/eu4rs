@@ -3,11 +3,12 @@
 //! Loads SmolLM2 or Gemma base models from HuggingFace Hub,
 //! applies LoRA adapters, and runs inference on CPU.
 
+use crate::device::{select_device, DevicePreference};
 use anyhow::{Context, Result};
 use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::llama::{Cache, Config, Llama, LlamaConfig};
-use hf_hub::{Repo, RepoType, api::sync::Api};
+use hf_hub::{api::sync::Api, Repo, RepoType};
 use rand::Rng;
 use safetensors::SafeTensors;
 use std::collections::HashMap;
@@ -59,8 +60,8 @@ pub struct ModelConfig {
     pub base_model: String,
     /// Path to LoRA adapter directory (contains adapter_model.safetensors)
     pub adapter_path: PathBuf,
-    /// Device to run inference on
-    pub device: Device,
+    /// Device preference (auto-selects best available device)
+    pub device_pref: DevicePreference,
     /// Data type for model weights (F32 for CPU compatibility)
     pub dtype: DType,
 }
@@ -70,7 +71,7 @@ impl Default for ModelConfig {
         Self {
             base_model: "HuggingFaceTB/SmolLM2-360M".to_string(),
             adapter_path: PathBuf::new(),
-            device: Device::Cpu,
+            device_pref: DevicePreference::default(),
             dtype: DType::F32,
         }
     }
@@ -106,6 +107,11 @@ impl Eu4AiModel {
     /// then applies the LoRA adapter weights.
     pub fn load(config: ModelConfig) -> Result<Self> {
         let load_start = std::time::Instant::now();
+
+        // Select device based on preference (auto-detects GPU)
+        let device = select_device(config.device_pref);
+        let dtype = config.dtype;
+
         log::info!("Loading base model: {}", config.base_model);
 
         // Download base model files from HuggingFace
@@ -143,8 +149,7 @@ impl Eu4AiModel {
 
             // Load base weights into memory for merging
             log::info!("Loading base model weights for LoRA merge...");
-            let base_weights =
-                Self::load_base_weights(&weights_path, &config.device, config.dtype)?;
+            let base_weights = Self::load_base_weights(&weights_path, &device, dtype)?;
 
             // Load LoRA config and merge weights
             let lora_config = Self::load_lora_config(&config.adapter_path)?;
@@ -152,32 +157,30 @@ impl Eu4AiModel {
                 base_weights,
                 &config.adapter_path,
                 &lora_config,
-                &config.device,
-                config.dtype,
+                &device,
+                dtype,
             )?;
 
             log::warn!("LoRA merge complete - creating model from merged weights");
-            VarBuilder::from_tensors(merged_weights, config.dtype, &config.device)
+            VarBuilder::from_tensors(merged_weights, dtype, &device)
         } else {
             // No adapter - use base model directly (memory-mapped for efficiency)
             log::info!("Loading base model weights...");
-            unsafe {
-                VarBuilder::from_mmaped_safetensors(&[weights_path], config.dtype, &config.device)?
-            }
+            unsafe { VarBuilder::from_mmaped_safetensors(&[weights_path], dtype, &device)? }
         };
 
         // Build the model
         let model = Llama::load(vb, &model_config).context("Failed to load Llama model")?;
 
         // Create KV cache
-        let cache = Cache::new(true, config.dtype, &model_config, &config.device)?;
+        let cache = Cache::new(true, dtype, &model_config, &device)?;
 
         let load_time = load_start.elapsed();
         log::warn!(
             "Model loaded in {:.2}s (device: {:?}, dtype: {:?})",
             load_time.as_secs_f64(),
-            config.device,
-            config.dtype
+            device,
+            dtype
         );
 
         Ok(Self {
@@ -185,8 +188,8 @@ impl Eu4AiModel {
             cache,
             tokenizer,
             config: model_config,
-            device: config.device,
-            dtype: config.dtype,
+            device,
+            dtype,
             arch,
         })
     }

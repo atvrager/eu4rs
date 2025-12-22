@@ -31,10 +31,12 @@
 //! cargo run -p eu4sim --release -- --observer --llm-ai models/adapter/run1 --ticks 10 --log-level debug
 //! ```
 
+pub mod device;
 pub mod llm_ai;
 pub mod model;
 pub mod prompt;
 
+pub use device::{cuda_available, select_device, DevicePreference};
 pub use llm_ai::LlmAi;
 pub use model::{Eu4AiModel, ModelConfig};
 pub use prompt::PromptBuilder;
