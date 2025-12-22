@@ -29,4 +29,3 @@ scripts/.venv-dml/
 scripts/__pycache__/
 *.zip
 *.safetensors
-captures/
