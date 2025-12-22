@@ -1,0 +1,27 @@
+[package]
+name = "eu4-bridge"
+version = "0.1.0"
+edition = "2024"
+description = "Bridge between real EU4 game and AI via screen capture"
+
+[dependencies]
+# Window capture (cross-platform: X11, Wayland, Windows, macOS)
+xcap = "0.0.14"
+
+# Image processing
+image = "0.25"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# Local crates (will add more as needed)
+# eu4sim-core = { path = "../eu4sim-core" }
+# eu4sim-ai = { path = "../eu4sim-ai" }

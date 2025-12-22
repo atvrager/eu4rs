@@ -8,6 +8,7 @@ members = [
     "eu4sim",
     "eu4sim-core",
     "eu4sim-ai",
+    "eu4-bridge",
     "game_pathfinding",
 ]
 resolver = "2"
