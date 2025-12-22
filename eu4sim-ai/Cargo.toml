@@ -5,10 +5,11 @@ edition = "2024"
 description = "LLM-based AI inference for EU4 simulation"
 
 [dependencies]
-# Candle ML framework (0.9+ uses cudarc 0.18+ which supports CUDA 13)
-candle-core = "0.9"
-candle-nn = "0.9"
-candle-transformers = "0.9"
+# Candle ML framework from git (main has cudarc 0.18+ for CUDA 13 support)
+# crates.io 0.9.1 uses cudarc 0.16.6 which doesn't support CUDA 13
+candle-core = { git = "https://github.com/huggingface/candle", branch = "main" }
+candle-nn = { git = "https://github.com/huggingface/candle", branch = "main" }
+candle-transformers = { git = "https://github.com/huggingface/candle", branch = "main" }
 
 # Model downloading from HuggingFace
 hf-hub = "0.3"

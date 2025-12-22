@@ -173,16 +173,11 @@ fn run_ci() -> Result<()> {
     run_command("cargo", &["fmt", "--", "--check"])?;
 
     println!("\n[2/4] Running Clippy...");
+    // Don't use --all-features: cuda/metal features are platform-specific
+    // and should only be enabled for local GPU testing, not CI
     run_command(
         "cargo",
-        &[
-            "clippy",
-            "--all-targets",
-            "--all-features",
-            "--",
-            "-D",
-            "warnings",
-        ],
+        &["clippy", "--all-targets", "--", "-D", "warnings"],
     )?;
 
     println!("\n[3/4] Running Tests...");

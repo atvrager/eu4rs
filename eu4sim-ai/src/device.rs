@@ -20,20 +20,15 @@
 use candle_core::Device;
 
 /// Preferred device order for inference.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DevicePreference {
     /// Use GPU if available, fallback to CPU
+    #[default]
     GpuPreferred,
     /// Force CPU (useful for testing/debugging)
     CpuOnly,
     /// Specific CUDA device index
     Cuda(usize),
-}
-
-impl Default for DevicePreference {
-    fn default() -> Self {
-        Self::GpuPreferred
-    }
 }
 
 /// Detect and create the best available device.
@@ -51,11 +46,7 @@ pub fn select_device(pref: DevicePreference) -> Device {
                 dev
             }
             Err(e) => {
-                log::warn!(
-                    "CUDA:{} unavailable ({}), falling back to CPU",
-                    ordinal,
-                    e
-                );
+                log::warn!("CUDA:{} unavailable ({}), falling back to CPU", ordinal, e);
                 Device::Cpu
             }
         },

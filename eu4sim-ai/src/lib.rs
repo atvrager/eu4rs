@@ -36,7 +36,7 @@ pub mod llm_ai;
 pub mod model;
 pub mod prompt;
 
-pub use device::{cuda_available, select_device, DevicePreference};
+pub use device::{DevicePreference, cuda_available, select_device};
 pub use llm_ai::LlmAi;
 pub use model::{Eu4AiModel, ModelConfig};
 pub use prompt::PromptBuilder;

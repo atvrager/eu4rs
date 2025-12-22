@@ -7,7 +7,7 @@
 //! 3. Device detection reports correctly
 
 use candle_core::{DType, Device, Tensor};
-use eu4sim_ai::{cuda_available, select_device, DevicePreference};
+use eu4sim_ai::{DevicePreference, cuda_available, select_device};
 
 #[test]
 fn test_cpu_device_works() {

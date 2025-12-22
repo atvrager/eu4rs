@@ -3,12 +3,12 @@
 //! Loads SmolLM2 or Gemma base models from HuggingFace Hub,
 //! applies LoRA adapters, and runs inference on CPU.
 
-use crate::device::{select_device, DevicePreference};
+use crate::device::{DevicePreference, select_device};
 use anyhow::{Context, Result};
 use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::llama::{Cache, Config, Llama, LlamaConfig};
-use hf_hub::{api::sync::Api, Repo, RepoType};
+use hf_hub::{Repo, RepoType, api::sync::Api};
 use rand::Rng;
 use safetensors::SafeTensors;
 use std::collections::HashMap;
