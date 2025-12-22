@@ -18,6 +18,69 @@ This document describes the architecture for a Rust bridge that connects a train
 
 ---
 
+## Core Principle: OCR From Day One
+
+> **We will not use save file parsing for state extraction, even during prototyping.**
+
+This is a deliberate design choice, not an engineering shortcut we'll "fix later."
+
+**Rationale:**
+
+1. **Legitimacy**: Any claim that "our AI plays EU4" requires human-equivalent information access. Humans read the screen; so will we.
+
+2. **No technical debt**: Building on save files creates a crutch. We'd optimize for parsed data, then face a painful transition to OCR later.
+
+3. **Transfer learning integrity**: If the AI trains on omniscient save-file data but deploys on OCR data, it will fail. Train as you fight.
+
+4. **The bar is achievable**: OCR for structured UI (numbers, dates) is a solved problem. EU4's top bar is clean, high-contrast, consistent.
+
+**What this means in practice:**
+
+| Phase | State Source | Acceptable |
+|-------|--------------|------------|
+| A (PoC) | OCR | ✅ |
+| B (Validation) | OCR | ✅ |
+| C+ (Production) | OCR | ✅ |
+| Any phase | Save file | ❌ Never |
+
+**Exceptions (static game data only):**
+
+- ✅ Province definitions (`map/definition.csv`) — for color→ID mapping
+- ✅ Building/tech prerequisites — for action filtering
+- ✅ Mission trees — for prompt enrichment
+- ❌ Runtime state (treasury, armies, diplomacy) — OCR only
+
+---
+
+## Platform Strategy
+
+| Activity | Platform | Notes |
+|----------|----------|-------|
+| **Development** | Linux (Arch) | Daily driver, Rust toolchain |
+| **Training** | Colab / Linux | GPU access (CUDA) |
+| **Playing real EU4** | Windows | Primary gaming setup, AMD 7900 XTX |
+
+**Cross-platform considerations:**
+
+1. **Screen capture**: `xcap` is cross-platform (X11, Wayland, Windows)
+2. **Input automation**: `enigo` is cross-platform
+3. **OCR**: Tesseract works on both (may need different install paths)
+4. **AI inference**: Candle is cross-platform (CPU works everywhere, ROCm for AMD on Windows)
+
+**Development workflow:**
+- Build and test core logic on Linux
+- CI tests on Linux
+- Periodic Windows builds to catch platform issues
+- Final "play real EU4" deployment on Windows
+
+**Windows-specific notes:**
+- EU4 window capture may need admin privileges or specific APIs
+- DirectX overlay games can be tricky to capture (EU4 uses Clausewitz engine, should be fine)
+- Input injection might need to handle Windows focus/foreground rules
+- ROCm 7.1.1 now supports PyTorch on Windows for AMD GPUs (for future GPU inference)
+
+---
+
 ## Architecture
 
 ```

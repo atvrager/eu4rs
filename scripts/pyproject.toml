@@ -9,7 +9,7 @@ dependencies = [
     "peft>=0.18.0",
     "pycapnp>=2.0.0",
     "safetensors>=0.7.0",
-    "torch>=2.9.1",
+    "torch>=2.5.0",  # PyTorch CUDA index has up to 2.6.0+cu124
     "transformers>=4.57.3",
     "trl>=0.26.2",
 ]
@@ -24,6 +24,18 @@ dependencies = [
 dev = [
     "ruff>=0.9.1",
 ]
+
+[tool.uv]
+# Driver 590+ supports CUDA 12.x; RTX 2060 is Turing (compute capability 7.5)
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true  # Only used for packages explicitly requesting it
+
+[tool.uv.sources]
+# Ensure torch comes from the CUDA index, not PyPI's CPU-only wheel
+torch = { index = "pytorch-cu124" }
 
 [project.scripts]
 train-ai = "train_ai:main"
