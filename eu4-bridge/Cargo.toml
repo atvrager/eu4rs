@@ -10,6 +10,7 @@ xcap = "0.0.14"
 
 # Image processing
 image = "0.25"
+imageproc = "0.25"  # For drawing calibration overlays
 
 # CLI
 clap = { version = "4", features = ["derive"] }

@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>EU4 Region Calibrator</title>
+    <style>
+        body { margin: 0; font-family: monospace; background: #222; color: #fff; }
+        #container { position: relative; display: inline-block; }
+        #screenshot { display: block; }
+        .region {
+            position: absolute;
+            border: 2px solid;
+            cursor: move;
+            box-sizing: border-box;
+            font-size: 10px;
+            padding: 1px 3px;
+            user-select: none;
+        }
+        .region .label {
+            background: rgba(0,0,0,0.8);
+            position: absolute;
+            top: -14px;
+            left: 0;
+            white-space: nowrap;
+            font-size: 9px;
+            padding: 1px 3px;
+        }
+        .region .resize {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 8px;
+            height: 8px;
+            background: rgba(255,255,255,0.5);
+            cursor: se-resize;
+        }
+        #panel {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.95);
+            padding: 10px;
+            border-radius: 5px;
+            max-height: 90vh;
+            overflow-y: auto;
+            cursor: move;
+            z-index: 1000;
+            min-width: 280px;
+        }
+        #panel.collapsed { max-height: 30px; overflow: hidden; }
+        #panel pre { margin: 0; font-size: 11px; line-height: 1.4; }
+        #panel button { margin: 3px 2px; padding: 4px 8px; cursor: pointer; font-size: 11px; }
+        .hint { color: #888; font-size: 10px; margin-bottom: 8px; }
+        #toggleBtn { position: absolute; top: 5px; right: 5px; }
+        .section { margin-top: 8px; padding-top: 8px; border-top: 1px solid #444; }
+        .section-title { color: #aaa; font-size: 10px; margin-bottom: 4px; }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <img id="screenshot" src="clean.png" />
+    </div>
+    <div id="panel">
+        <button id="toggleBtn" onclick="togglePanel()">−</button>
+        <div class="hint">Drag panel to move | Drag boxes to position | Corner to resize</div>
+        <div class="section">
+            <div class="section-title">COORDINATES</div>
+            <pre id="output"></pre>
+        </div>
+        <div class="section">
+            <button onclick="copyCoords()">Copy Coords</button>
+            <button onclick="exportRust()">Export Rust</button>
+            <button onclick="toggleLabels()">Toggle Labels</button>
+        </div>
+    </div>
+
+    <script>
+        const regions = [
+            // Row 1 - Top bar main resources
+            { name: "Treasury", x: 148, y: 8, w: 80, h: 24, color: "#00ff00" },
+            { name: "Manpower", x: 260, y: 8, w: 50, h: 24, color: "#0088ff" },
+            { name: "Sailors", x: 320, y: 8, w: 50, h: 24, color: "#00ffff" },
+
+            // Row 2 - Monarch points
+            { name: "ADM Mana", x: 148, y: 35, w: 40, h: 20, color: "#ff4444" },
+            { name: "DIP Mana", x: 200, y: 35, w: 40, h: 20, color: "#44ff44" },
+            { name: "MIL Mana", x: 252, y: 35, w: 40, h: 20, color: "#4444ff" },
+
+            // Stability/Corruption area
+            { name: "Stability", x: 350, y: 8, w: 30, h: 20, color: "#ffaa00" },
+            { name: "Corruption", x: 400, y: 8, w: 40, h: 20, color: "#ff00aa" },
+
+            // Prestige/Legitimacy area
+            { name: "Prestige", x: 350, y: 35, w: 50, h: 20, color: "#aaff00" },
+            { name: "Govt Strength", x: 420, y: 35, w: 50, h: 20, color: "#ffff00" },
+
+            // Power Projection
+            { name: "Power Proj", x: 500, y: 8, w: 50, h: 20, color: "#aa00ff" },
+
+            // Envoys (N/M format)
+            { name: "Merchants", x: 550, y: 8, w: 40, h: 20, color: "#ff8800" },
+            { name: "Colonists", x: 600, y: 8, w: 40, h: 20, color: "#88ff00" },
+            { name: "Diplomats", x: 550, y: 35, w: 40, h: 20, color: "#0088ff" },
+            { name: "Missionaries", x: 600, y: 35, w: 40, h: 20, color: "#ff0088" },
+
+            // Country/Age info (usually top-left or top-right)
+            { name: "Country", x: 70, y: 8, w: 70, h: 20, color: "#ffffff" },
+            { name: "Age", x: 200, y: 55, w: 120, h: 18, color: "#888888" },
+
+            // Date (top-right area)
+            { name: "Date", x: 1400, y: 8, w: 160, h: 24, color: "#ff0000" },
+        ];
+
+        const container = document.getElementById('container');
+        const panel = document.getElementById('panel');
+        let activeRegion = null;
+        let resizing = false;
+        let offsetX, offsetY;
+        let labelsVisible = true;
+
+        // Make panel draggable
+        let panelDragging = false;
+        let panelOffsetX, panelOffsetY;
+
+        panel.addEventListener('mousedown', (e) => {
+            if (e.target.tagName === 'BUTTON' || e.target.tagName === 'PRE') return;
+            panelDragging = true;
+            panelOffsetX = e.clientX - panel.offsetLeft;
+            panelOffsetY = e.clientY - panel.offsetTop;
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (panelDragging) {
+                panel.style.left = (e.clientX - panelOffsetX) + 'px';
+                panel.style.right = 'auto';
+                panel.style.top = (e.clientY - panelOffsetY) + 'px';
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            panelDragging = false;
+        });
+
+        function togglePanel() {
+            panel.classList.toggle('collapsed');
+            document.getElementById('toggleBtn').textContent = panel.classList.contains('collapsed') ? '+' : '−';
+        }
+
+        function toggleLabels() {
+            labelsVisible = !labelsVisible;
+            document.querySelectorAll('.region .label').forEach(l => {
+                l.style.display = labelsVisible ? 'block' : 'none';
+            });
+        }
+
+        regions.forEach((r, i) => {
+            const div = document.createElement('div');
+            div.className = 'region';
+            div.style.left = r.x + 'px';
+            div.style.top = r.y + 'px';
+            div.style.width = r.w + 'px';
+            div.style.height = r.h + 'px';
+            div.style.borderColor = r.color;
+            div.innerHTML = `<span class="label" style="color:${r.color}">${r.name}</span><div class="resize"></div>`;
+            div.dataset.index = i;
+
+            div.addEventListener('mousedown', (e) => {
+                if (e.target.classList.contains('resize')) {
+                    resizing = true;
+                } else {
+                    resizing = false;
+                }
+                activeRegion = div;
+                const rect = div.getBoundingClientRect();
+                offsetX = e.clientX - rect.left;
+                offsetY = e.clientY - rect.top;
+                e.preventDefault();
+                e.stopPropagation();
+            });
+
+            container.appendChild(div);
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!activeRegion) return;
+            const containerRect = container.getBoundingClientRect();
+            const idx = parseInt(activeRegion.dataset.index);
+
+            if (resizing) {
+                const newW = Math.max(20, e.clientX - containerRect.left - regions[idx].x);
+                const newH = Math.max(10, e.clientY - containerRect.top - regions[idx].y);
+                regions[idx].w = Math.round(newW);
+                regions[idx].h = Math.round(newH);
+                activeRegion.style.width = regions[idx].w + 'px';
+                activeRegion.style.height = regions[idx].h + 'px';
+            } else {
+                const newX = Math.max(0, e.clientX - containerRect.left - offsetX);
+                const newY = Math.max(0, e.clientY - containerRect.top - offsetY);
+                regions[idx].x = Math.round(newX);
+                regions[idx].y = Math.round(newY);
+                activeRegion.style.left = regions[idx].x + 'px';
+                activeRegion.style.top = regions[idx].y + 'px';
+            }
+            updateOutput();
+        });
+
+        document.addEventListener('mouseup', () => {
+            activeRegion = null;
+            resizing = false;
+        });
+
+        function updateOutput() {
+            const lines = regions.map(r =>
+                `${r.name.padEnd(14)} x=${String(r.x).padStart(4)}, y=${String(r.y).padStart(3)}, w=${String(r.w).padStart(3)}, h=${String(r.h).padStart(2)}`
+            );
+            document.getElementById('output').textContent = lines.join('\n');
+        }
+
+        function copyCoords() {
+            const text = document.getElementById('output').textContent;
+            navigator.clipboard.writeText(text);
+            alert('Copied!');
+        }
+
+        function exportRust() {
+            const lines = regions.map(r => {
+                const constName = r.name.toUpperCase().replace(/ /g, '_');
+                const rgb = hexToRgb(r.color);
+                return `pub const ${constName}: Region = Region::new("${r.name}", ${r.x}, ${r.y}, ${r.w}, ${r.h}, [${rgb.r}, ${rgb.g}, ${rgb.b}]);`;
+            });
+            const allRegions = regions.map(r => r.name.toUpperCase().replace(/ /g, '_')).join(', ');
+            const rust = lines.join('\n') + `\n\npub const ALL_REGIONS: &[Region] = &[${allRegions}];`;
+            navigator.clipboard.writeText(rust);
+            alert('Rust code copied to clipboard!');
+        }
+
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : {r: 255, g: 255, b: 255};
+        }
+
+        updateOutput();
+    </script>
+</body>
+</html>
