@@ -3,6 +3,7 @@
 //! Phase A: Screen capture and OCR proof of concept.
 
 mod capture;
+mod extraction;
 mod regions;
 
 use anyhow::Result;
@@ -86,6 +87,17 @@ enum Commands {
         /// Per-region Y offset: "name:offset" (e.g., "Treasury:10")
         #[arg(long = "ry", value_name = "NAME:DY")]
         region_dy: Vec<String>,
+    },
+
+    /// Extract text from UI regions using OCR
+    Extract {
+        /// Input screenshot file
+        #[arg(short, long)]
+        input: String,
+
+        /// Model directory (default: ~/.cache/ocrs/)
+        #[arg(long)]
+        model_dir: Option<String>,
     },
 }
 
@@ -200,7 +212,10 @@ fn main() -> Result<()> {
             let rx_map = parse_offsets(&region_dx);
             let ry_map = parse_offsets(&region_dy);
 
-            println!("Applying adjustments: dx={}, dy={}, scale={:.2}", dx, dy, scale);
+            println!(
+                "Applying adjustments: dx={}, dy={}, scale={:.2}",
+                dx, dy, scale
+            );
             println!();
 
             // Draw adjusted regions
@@ -242,6 +257,23 @@ fn main() -> Result<()> {
             println!("  Move all boxes down 10px:   --dy 10");
             println!("  Move just Date left 30px:   --rx date:-30");
             println!("  Scale all boxes 1.5x:       --scale 1.5");
+        }
+
+        Commands::Extract { input, model_dir } => {
+            // Load image
+            let image = image::open(&input)?;
+            println!("Loaded: {} ({}x{})", input, image.width(), image.height());
+
+            // Create extractor
+            let model_path = model_dir.as_ref().map(std::path::Path::new);
+            let extractor = extraction::Extractor::new(model_path)?;
+
+            // Extract all regions
+            println!("\nExtracting text from UI regions...\n");
+            let state = extractor.extract_all(&image);
+
+            // Print results
+            println!("{}", state);
         }
     }
 
