@@ -30,6 +30,9 @@ thiserror = "2.0"
 # Utilities
 dirs = "6.0"  # For finding cache directory
 
-# Local crates (will add more as needed)
-# eu4sim-core = { path = "../eu4sim-core" }
-# eu4sim-ai = { path = "../eu4sim-ai" }
+# Local crates
+eu4sim-core = { path = "../eu4sim-core" }
+eu4sim-ai = { path = "../eu4sim-ai" }
+
+# Keyboard/mouse input (cross-platform)
+enigo = "0.2"

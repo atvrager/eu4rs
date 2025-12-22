@@ -1,9 +1,13 @@
 //! EU4 Bridge - Connect trained AI to real Europa Universalis IV.
 //!
 //! Phase A: Screen capture and OCR proof of concept.
+//! Phase B: AI inference loop integration.
 
+mod bridge;
 mod capture;
 mod extraction;
+mod input;
+mod orchestrator;
 mod regions;
 
 use anyhow::Result;
@@ -106,6 +110,29 @@ enum Commands {
         /// Show raw OCR output for each region
         #[arg(short, long)]
         verbose: bool,
+    },
+
+    /// Run live AI decision loop against real EU4 game
+    Live {
+        /// EU4 window title substring
+        #[arg(short, long, default_value = "Europa Universalis")]
+        window: String,
+
+        /// Path to LoRA adapter directory
+        #[arg(short, long)]
+        adapter: Option<String>,
+
+        /// Seconds between AI decision ticks
+        #[arg(short = 't', long, default_value = "5")]
+        tick_delay: u64,
+
+        /// Run only one tick (for testing)
+        #[arg(long)]
+        once: bool,
+
+        /// Skip pause/unpause (for testing with already-paused game)
+        #[arg(long)]
+        no_pause: bool,
     },
 }
 
@@ -305,6 +332,33 @@ fn main() -> Result<()> {
                 println!();
             }
             println!("{}", state);
+        }
+
+        Commands::Live {
+            window,
+            adapter,
+            tick_delay,
+            once,
+            no_pause,
+        } => {
+            use std::time::Duration;
+
+            // Create orchestrator
+            let mut orch = if let Some(adapter_path) = adapter {
+                orchestrator::Orchestrator::new(&adapter_path)?
+            } else {
+                log::warn!("No adapter specified, using base model (untrained)");
+                orchestrator::Orchestrator::without_ai()?
+            };
+
+            orch.tick_delay = Duration::from_secs(tick_delay);
+            orch.skip_pause = no_pause;
+
+            if once {
+                orch.tick_once(&window)?;
+            } else {
+                orch.run_loop(&window)?;
+            }
         }
     }
 
