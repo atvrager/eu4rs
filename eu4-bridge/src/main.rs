@@ -98,6 +98,14 @@ enum Commands {
         /// Model directory (default: ~/.cache/ocrs/)
         #[arg(long)]
         model_dir: Option<String>,
+
+        /// Save cropped regions to debug/ directory
+        #[arg(long)]
+        debug: bool,
+
+        /// Show raw OCR output for each region
+        #[arg(short, long)]
+        verbose: bool,
     },
 }
 
@@ -259,20 +267,43 @@ fn main() -> Result<()> {
             println!("  Scale all boxes 1.5x:       --scale 1.5");
         }
 
-        Commands::Extract { input, model_dir } => {
+        Commands::Extract {
+            input,
+            model_dir,
+            debug,
+            verbose,
+        } => {
             // Load image
             let image = image::open(&input)?;
             println!("Loaded: {} ({}x{})", input, image.width(), image.height());
+
+            // Save cropped regions for debugging
+            if debug {
+                std::fs::create_dir_all("debug")?;
+                for region in regions::ALL_REGIONS {
+                    let cropped = image.crop_imm(region.x, region.y, region.width, region.height);
+                    let filename =
+                        format!("debug/{}.png", region.name.to_lowercase().replace(' ', "_"));
+                    cropped.save(&filename)?;
+                    println!("Saved: {}", filename);
+                }
+                println!();
+            }
 
             // Create extractor
             let model_path = model_dir.as_ref().map(std::path::Path::new);
             let extractor = extraction::Extractor::new(model_path)?;
 
             // Extract all regions
-            println!("\nExtracting text from UI regions...\n");
-            let state = extractor.extract_all(&image);
+            if verbose {
+                println!("Raw OCR output:");
+            }
+            let state = extractor.extract_all_verbose(&image, verbose);
 
             // Print results
+            if verbose {
+                println!();
+            }
             println!("{}", state);
         }
     }

@@ -1,6 +1,14 @@
 //! OCR extraction from calibrated UI regions.
 //!
 //! Uses `ocrs` (pure Rust) for text recognition.
+//!
+//! # Known Limitations
+//!
+//! - **Red text on dark background**: Negative stability values are displayed in
+//!   red, which has low luminance contrast against the dark EU4 UI. OCR may fail
+//!   to detect these values. Future improvement: extract red channel specifically.
+//! - **Very small single digits**: Isolated "0" values in small regions may not
+//!   be detected reliably.
 
 use crate::regions::{self, Region};
 use anyhow::{Context, Result};
@@ -56,7 +64,7 @@ impl Extractor {
         // Crop to region
         let cropped = image.crop_imm(region.x, region.y, region.width, region.height);
 
-        // Convert to format ocrs expects
+        // Convert to format ocrs expects (no scaling - let OCR handle as-is)
         let rgb = cropped.to_rgb8();
         let dims = rgb.dimensions(); // (u32, u32)
         let source = ImageSource::from_bytes(rgb.as_raw(), dims)?;
@@ -79,51 +87,67 @@ impl Extractor {
         Ok(result.trim().to_string())
     }
 
-    /// Extract all calibrated regions and return structured data.
-    pub fn extract_all(&self, image: &DynamicImage) -> ExtractedState {
+    /// Extract all calibrated regions with optional verbose output.
+    pub fn extract_all_verbose(&self, image: &DynamicImage, verbose: bool) -> ExtractedState {
         let mut state = ExtractedState::default();
 
-        // Extract each region
-        if let Ok(text) = self.extract_region(image, &regions::DATE) {
+        let extract = |region: &regions::Region| -> Option<String> {
+            match self.extract_region(image, region) {
+                Ok(text) => {
+                    if verbose {
+                        println!("  {:14} raw: {:?}", region.name, text);
+                    }
+                    Some(text)
+                }
+                Err(e) => {
+                    if verbose {
+                        println!("  {:14} err: {}", region.name, e);
+                    }
+                    None
+                }
+            }
+        };
+
+        if let Some(text) = extract(&regions::DATE) {
             state.date = Some(text);
         }
-        if let Ok(text) = self.extract_region(image, &regions::TREASURY) {
+        if let Some(text) = extract(&regions::TREASURY) {
             state.treasury = parse_number(&text);
         }
-        if let Ok(text) = self.extract_region(image, &regions::MANPOWER) {
+        if let Some(text) = extract(&regions::MANPOWER) {
             state.manpower = parse_suffixed_int(&text);
         }
-        if let Ok(text) = self.extract_region(image, &regions::SAILORS) {
+        if let Some(text) = extract(&regions::SAILORS) {
             state.sailors = parse_suffixed_int(&text);
         }
-        if let Ok(text) = self.extract_region(image, &regions::ADM_MANA) {
+        if let Some(text) = extract(&regions::ADM_MANA) {
             state.adm_mana = parse_int(&text);
         }
-        if let Ok(text) = self.extract_region(image, &regions::DIP_MANA) {
+        if let Some(text) = extract(&regions::DIP_MANA) {
             state.dip_mana = parse_int(&text);
         }
-        if let Ok(text) = self.extract_region(image, &regions::MIL_MANA) {
+        if let Some(text) = extract(&regions::MIL_MANA) {
             state.mil_mana = parse_int(&text);
         }
-        if let Ok(text) = self.extract_region(image, &regions::STABILITY) {
+        if let Some(text) = extract(&regions::STABILITY) {
             state.stability = parse_stability(&text);
         }
-        if let Ok(text) = self.extract_region(image, &regions::CORRUPTION) {
+        if let Some(text) = extract(&regions::CORRUPTION) {
             state.corruption = parse_number(&text);
         }
-        if let Ok(text) = self.extract_region(image, &regions::PRESTIGE) {
+        if let Some(text) = extract(&regions::PRESTIGE) {
             state.prestige = parse_number(&text);
         }
-        if let Ok(text) = self.extract_region(image, &regions::GOVT_STRENGTH) {
+        if let Some(text) = extract(&regions::GOVT_STRENGTH) {
             state.govt_strength = parse_number(&text);
         }
-        if let Ok(text) = self.extract_region(image, &regions::POWER_PROJ) {
+        if let Some(text) = extract(&regions::POWER_PROJ) {
             state.power_projection = parse_number(&text);
         }
-        if let Ok(text) = self.extract_region(image, &regions::COUNTRY) {
+        if let Some(text) = extract(&regions::COUNTRY) {
             state.country = Some(text);
         }
-        if let Ok(text) = self.extract_region(image, &regions::AGE) {
+        if let Some(text) = extract(&regions::AGE) {
             state.age = Some(text);
         }
 
@@ -190,9 +214,23 @@ impl std::fmt::Display for ExtractedState {
 // Parsing helpers
 // ============================================================================
 
+/// Normalize common OCR character confusions before parsing.
+fn normalize_ocr(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            'O' | 'o' => '0', // O often misread as 0
+            'l' | 'I' => '1', // l/I often misread as 1
+            'S' => '5',       // S sometimes misread as 5
+            'B' => '8',       // B sometimes misread as 8
+            _ => c,
+        })
+        .collect()
+}
+
 /// Parse a plain integer from OCR text.
 fn parse_int(s: &str) -> Option<i32> {
-    let cleaned: String = s
+    let normalized = normalize_ocr(s);
+    let cleaned: String = normalized
         .chars()
         .filter(|c| c.is_ascii_digit() || *c == '-')
         .collect();
@@ -201,7 +239,8 @@ fn parse_int(s: &str) -> Option<i32> {
 
 /// Parse a floating point number from OCR text.
 fn parse_number(s: &str) -> Option<f32> {
-    let cleaned: String = s
+    let normalized = normalize_ocr(s);
+    let cleaned: String = normalized
         .chars()
         .filter(|c| c.is_ascii_digit() || *c == '.' || *c == '-')
         .collect();
@@ -210,7 +249,7 @@ fn parse_number(s: &str) -> Option<f32> {
 
 /// Parse numbers with k/M suffix: "5.7k" -> 5700, "1.2M" -> 1200000
 fn parse_suffixed_int(s: &str) -> Option<i32> {
-    let s = s.trim().to_lowercase();
+    let s = normalize_ocr(s).trim().to_lowercase();
 
     if let Some(num_str) = s.strip_suffix('k') {
         let num: f32 = num_str
@@ -235,7 +274,8 @@ fn parse_suffixed_int(s: &str) -> Option<i32> {
 
 /// Parse stability: "+2", "-1", "2" -> i8
 fn parse_stability(s: &str) -> Option<i8> {
-    let cleaned: String = s
+    let normalized = normalize_ocr(s);
+    let cleaned: String = normalized
         .chars()
         .filter(|c| c.is_ascii_digit() || *c == '-' || *c == '+')
         .collect();

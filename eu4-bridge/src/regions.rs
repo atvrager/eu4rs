@@ -57,10 +57,10 @@ pub const MIL_MANA: Region = Region::new("MIL Mana", 639, 56, 34, 21, [68, 68, 2
 
 // Country stats
 pub const STABILITY: Region = Region::new("Stability", 419, 16, 30, 20, [255, 170, 0]);
-pub const CORRUPTION: Region = Region::new("Corruption", 478, 16, 40, 20, [255, 0, 170]);
+pub const CORRUPTION: Region = Region::new("Corruption", 485, 14, 50, 24, [255, 0, 170]);
 pub const PRESTIGE: Region = Region::new("Prestige", 545, 17, 37, 19, [170, 255, 0]);
 pub const GOVT_STRENGTH: Region = Region::new("Govt Strength", 615, 15, 37, 22, [255, 255, 0]);
-pub const POWER_PROJ: Region = Region::new("Power Proj", 678, 17, 45, 18, [170, 0, 255]);
+pub const POWER_PROJ: Region = Region::new("Power Proj", 700, 14, 40, 20, [170, 0, 255]);
 
 // Envoys (N/M format)
 pub const MERCHANTS: Region = Region::new("Merchants", 734, 32, 40, 20, [255, 136, 0]);
@@ -71,7 +71,7 @@ pub const MISSIONARIES: Region = Region::new("Missionaries", 859, 35, 34, 18, [2
 // Info displays
 pub const COUNTRY: Region = Region::new("Country", 146, 49, 344, 30, [255, 255, 255]);
 pub const AGE: Region = Region::new("Age", 740, 54, 160, 21, [136, 136, 136]);
-pub const DATE: Region = Region::new("Date", 1689, 16, 145, 21, [255, 0, 0]);
+pub const DATE: Region = Region::new("Date", 1697, 16, 132, 21, [255, 0, 0]);
 
 /// All defined regions for iteration.
 pub const ALL_REGIONS: &[Region] = &[
