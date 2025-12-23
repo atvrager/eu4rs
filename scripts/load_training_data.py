@@ -515,7 +515,9 @@ def compute_stats_streaming(path: Path | str) -> dict:
             # Access reader fields directly - no dataclass creation!
             total += 1
             countries[sample.country] += 1
-            actions[sample.chosenAction] += 1
+            # Multi-command: count each action in the list
+            for action_idx in sample.chosenActions:
+                actions[action_idx] += 1
             tick = sample.tick
             if tick < min_tick:
                 min_tick = tick
@@ -584,13 +586,22 @@ def format_prompt_from_reader(sample_reader) -> str:
 
 
 def format_completion_from_reader(sample_reader) -> str:
-    """Format a training completion directly from a Cap'n Proto reader."""
-    chosen_action = sample_reader.chosenAction
-    if chosen_action >= 0:
-        chosen_cmd = command_to_string_fast(sample_reader.chosenCommand)
-        return f"Action: [{chosen_action}] {chosen_cmd}"
-    else:
-        return f"Action: [{chosen_action}] Pass"
+    """Format a training completion directly from a Cap'n Proto reader.
+
+    Multi-command support: AI can issue multiple commands per tick.
+    """
+    actions = list(sample_reader.chosenActions)
+    commands = list(sample_reader.chosenCommands)
+
+    if not actions or (len(actions) == 1 and actions[0] < 0):
+        return "Action: Pass"
+
+    lines = []
+    for idx, cmd in zip(actions, commands):
+        cmd_str = command_to_string_fast(cmd)
+        lines.append(f"Action: [{idx}] {cmd_str}")
+
+    return "\n".join(lines)
 
 
 def iter_training_prompts(path: Path | str) -> Iterator[dict]:
