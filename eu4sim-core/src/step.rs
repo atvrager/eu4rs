@@ -451,6 +451,69 @@ pub fn available_commands(
         }
     }
 
+    // Recruitment & Generals - The sinews of war. ⚔️
+    let manpower_cost = Fixed::from_int(1000);
+    if country.manpower >= manpower_cost {
+        for (&prov_id, prov) in &state.provinces {
+            if prov.owner.as_deref() == Some(country_tag) {
+                // Infantry (10g)
+                if country.treasury >= Fixed::from_int(10) {
+                    available.push(Command::RecruitRegiment {
+                        province: prov_id,
+                        unit_type: crate::state::RegimentType::Infantry,
+                    });
+                }
+                // Cavalry (25g)
+                if country.treasury >= Fixed::from_int(25) {
+                    available.push(Command::RecruitRegiment {
+                        province: prov_id,
+                        unit_type: crate::state::RegimentType::Cavalry,
+                    });
+                }
+                // Artillery (30g + Tech 7)
+                if country.treasury >= Fixed::from_int(30)
+                    && country.mil_tech >= eu4data::defines::combat::ARTILLERY_TECH_REQUIRED
+                {
+                    available.push(Command::RecruitRegiment {
+                        province: prov_id,
+                        unit_type: crate::state::RegimentType::Artillery,
+                    });
+                }
+            }
+        }
+    }
+
+    // Recruit General (50 MIL)
+    if country.mil_mana >= Fixed::from_int(50) {
+        available.push(Command::RecruitGeneral);
+    }
+
+    // Assign General (Free, but requires general and unled army)
+    // Find unassigned generals
+    let unassigned_generals: Vec<crate::state::GeneralId> = state
+        .generals
+        .values()
+        .filter(|g| {
+            g.owner == country_tag && !state.armies.values().any(|a| a.general == Some(g.id))
+        })
+        .map(|g| g.id)
+        .collect();
+
+    if !unassigned_generals.is_empty() {
+        for (army_id, army) in &state.armies {
+            if army.owner == country_tag && army.general.is_none() {
+                // Offer assigning the first available general (simplification for AI)
+                // Listing all combinations would explode the action space
+                if let Some(&gen_id) = unassigned_generals.first() {
+                    available.push(Command::AssignGeneral {
+                        army: *army_id,
+                        general: gen_id,
+                    });
+                }
+            }
+        }
+    }
+
     // 3. Military Actions - Armies are the shields that guard our truth. 🛡️
     if let Some(graph) = adjacency {
         // Move: For each army, check adjacent provinces
