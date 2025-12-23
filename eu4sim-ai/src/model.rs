@@ -7,6 +7,7 @@ use crate::device::{DevicePreference, select_device};
 use anyhow::{Context, Result};
 use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_nn::VarBuilder;
+use candle_transformers::models::gemma3;
 use candle_transformers::models::llama::{Cache, Config, Llama, LlamaConfig};
 use hf_hub::{
     Repo, RepoType,
@@ -17,6 +18,21 @@ use safetensors::SafeTensors;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokenizers::Tokenizer;
+
+/// Internal model representation supporting multiple architectures.
+/// Size difference is acceptable - this enum is not copied frequently,
+/// and boxing would add indirection overhead on the hot inference path.
+#[allow(clippy::large_enum_variant)]
+enum ModelInner {
+    /// LLaMA-compatible models (SmolLM2, Gemma2)
+    Llama {
+        model: Llama,
+        cache: Cache,
+        config: Config,
+    },
+    /// Gemma 3 architecture (different cache handling)
+    Gemma3 { model: gemma3::Model },
+}
 
 /// Supported model architectures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,16 +110,76 @@ pub struct LoraConfig {
     pub lora_dropout: f64,
 }
 
+/// Gemma3 config as it appears in HuggingFace config.json.
+/// Handles field name differences from candle's expected format.
+#[derive(Debug, Clone, serde::Deserialize)]
+struct Gemma3ConfigJson {
+    pub attention_bias: bool,
+    pub head_dim: usize,
+    pub hidden_activation: String,
+    pub hidden_size: usize,
+    pub intermediate_size: usize,
+    pub num_attention_heads: usize,
+    pub num_hidden_layers: usize,
+    pub num_key_value_heads: usize,
+    pub rms_norm_eps: f64,
+    pub rope_theta: f64,
+    pub rope_local_base_freq: f64,
+    pub vocab_size: usize,
+    pub final_logit_softcapping: Option<f64>,
+    pub attn_logit_softcapping: Option<f64>,
+    pub query_pre_attn_scalar: usize,
+    pub sliding_window: usize,
+    #[serde(rename = "_sliding_window_pattern")]
+    pub sliding_window_pattern: usize,
+    pub max_position_embeddings: usize,
+}
+
+impl Gemma3ConfigJson {
+    /// Convert to candle's gemma3::Config.
+    fn into_candle_config(self) -> gemma3::Config {
+        use candle_nn::Activation;
+
+        // Map activation string to enum
+        let hidden_activation = match self.hidden_activation.as_str() {
+            "gelu_pytorch_tanh" | "gelu" => Activation::Gelu,
+            "silu" | "swiglu" => Activation::Silu,
+            "relu" => Activation::Relu,
+            other => {
+                log::warn!("Unknown activation '{}', defaulting to Gelu", other);
+                Activation::Gelu
+            }
+        };
+
+        gemma3::Config {
+            attention_bias: self.attention_bias,
+            head_dim: self.head_dim,
+            hidden_activation,
+            hidden_size: self.hidden_size,
+            intermediate_size: self.intermediate_size,
+            num_attention_heads: self.num_attention_heads,
+            num_hidden_layers: self.num_hidden_layers,
+            num_key_value_heads: self.num_key_value_heads,
+            rms_norm_eps: self.rms_norm_eps,
+            rope_theta: self.rope_theta,
+            rope_local_base_freq: self.rope_local_base_freq,
+            vocab_size: self.vocab_size,
+            final_logit_softcapping: self.final_logit_softcapping,
+            attn_logit_softcapping: self.attn_logit_softcapping,
+            query_pre_attn_scalar: self.query_pre_attn_scalar,
+            sliding_window: self.sliding_window,
+            sliding_window_pattern: self.sliding_window_pattern,
+            max_position_embeddings: self.max_position_embeddings,
+        }
+    }
+}
+
 /// Unified model wrapper for EU4 AI inference.
 pub struct Eu4AiModel {
-    model: Llama,
-    #[allow(dead_code)]
-    cache: Cache,
+    inner: ModelInner,
     tokenizer: Tokenizer,
-    config: Config,
     device: Device,
     dtype: DType,
-    #[allow(dead_code)]
     arch: ModelArch,
 }
 
@@ -148,48 +224,73 @@ impl Eu4AiModel {
         let arch = ModelArch::from_config(&config_path)?;
         log::info!("Detected architecture: {:?}", arch);
 
-        // Load model config
-        let llama_config: LlamaConfig = serde_json::from_str(
-            &std::fs::read_to_string(&config_path).context("Failed to read config")?,
-        )
-        .context("Failed to parse LlamaConfig")?;
-        let model_config = llama_config.into_config(false); // no flash attention on CPU
-
-        // Load tokenizer
+        // Load tokenizer (same for all architectures)
         let tokenizer = Tokenizer::from_file(&tokenizer_path)
             .map_err(|e| anyhow::anyhow!("Failed to load tokenizer: {}", e))?;
 
-        // Load and optionally merge LoRA weights
-        let vb = if !config.adapter_path.as_os_str().is_empty() {
-            log::info!("Loading LoRA adapter from {:?}", config.adapter_path);
+        // Load model based on detected architecture
+        let config_str = std::fs::read_to_string(&config_path).context("Failed to read config")?;
 
-            // Load base weights into memory for merging
-            log::info!("Loading base model weights for LoRA merge...");
-            let base_weights = Self::load_base_weights(&weights_path, &device, dtype)?;
+        let inner = match arch {
+            ModelArch::SmolLM2 | ModelArch::Gemma2 => {
+                // LLaMA-compatible loading path
+                let llama_config: LlamaConfig =
+                    serde_json::from_str(&config_str).context("Failed to parse LlamaConfig")?;
+                let model_config = llama_config.into_config(false); // no flash attention
 
-            // Load LoRA config and merge weights
-            let lora_config = Self::load_lora_config(&config.adapter_path)?;
-            let merged_weights = Self::merge_lora_weights(
-                base_weights,
-                &config.adapter_path,
-                &lora_config,
-                &device,
-                dtype,
-            )?;
+                // Load and optionally merge LoRA weights
+                let vb = if !config.adapter_path.as_os_str().is_empty() {
+                    log::info!("Loading LoRA adapter from {:?}", config.adapter_path);
 
-            log::warn!("LoRA merge complete - creating model from merged weights");
-            VarBuilder::from_tensors(merged_weights, dtype, &device)
-        } else {
-            // No adapter - use base model directly (memory-mapped for efficiency)
-            log::info!("Loading base model weights...");
-            unsafe { VarBuilder::from_mmaped_safetensors(&[weights_path], dtype, &device)? }
+                    let base_weights = Self::load_base_weights(&weights_path, &device, dtype)?;
+                    let lora_config = Self::load_lora_config(&config.adapter_path)?;
+                    let merged_weights = Self::merge_lora_weights(
+                        base_weights,
+                        &config.adapter_path,
+                        &lora_config,
+                        &device,
+                        dtype,
+                    )?;
+
+                    log::warn!("LoRA merge complete - creating model from merged weights");
+                    VarBuilder::from_tensors(merged_weights, dtype, &device)
+                } else {
+                    log::info!("Loading base model weights...");
+                    unsafe { VarBuilder::from_mmaped_safetensors(&[weights_path], dtype, &device)? }
+                };
+
+                let model = Llama::load(vb, &model_config).context("Failed to load Llama model")?;
+                let cache = Cache::new(true, dtype, &model_config, &device)?;
+
+                ModelInner::Llama {
+                    model,
+                    cache,
+                    config: model_config,
+                }
+            }
+            ModelArch::Gemma3 => {
+                // Gemma 3 loading path (different architecture)
+                // Use custom deserializer to handle HuggingFace config format differences
+                let gemma_config_json: Gemma3ConfigJson =
+                    serde_json::from_str(&config_str).context("Failed to parse Gemma3 config")?;
+                let gemma_config = gemma_config_json.into_candle_config();
+
+                // LoRA not yet supported for Gemma3
+                if !config.adapter_path.as_os_str().is_empty() {
+                    log::warn!("LoRA adapters not yet supported for Gemma3, using base model");
+                }
+
+                log::info!("Loading Gemma3 model weights...");
+                let vb = unsafe {
+                    VarBuilder::from_mmaped_safetensors(&[weights_path], dtype, &device)?
+                };
+
+                let model = gemma3::Model::new(false, &gemma_config, vb)
+                    .context("Failed to load Gemma3 model")?;
+
+                ModelInner::Gemma3 { model }
+            }
         };
-
-        // Build the model
-        let model = Llama::load(vb, &model_config).context("Failed to load Llama model")?;
-
-        // Create KV cache
-        let cache = Cache::new(true, dtype, &model_config, &device)?;
 
         let load_time = load_start.elapsed();
         log::warn!(
@@ -200,10 +301,8 @@ impl Eu4AiModel {
         );
 
         Ok(Self {
-            model,
-            cache,
+            inner,
             tokenizer,
-            config: model_config,
             device,
             dtype,
             arch,
@@ -429,15 +528,28 @@ impl Eu4AiModel {
         // Convert to tensor
         let input_ids = Tensor::new(tokens, &self.device)?.unsqueeze(0)?;
 
-        // Create fresh cache for each inference (no clear() method available)
-        let mut cache = Cache::new(true, self.dtype, &self.config, &self.device)
-            .context("Failed to create KV cache")?;
-
-        // Forward pass
-        let logits = self
-            .model
-            .forward(&input_ids, 0, &mut cache)
-            .context("Forward pass failed")?;
+        // Forward pass - dispatch based on model architecture
+        let logits = match &mut self.inner {
+            ModelInner::Llama {
+                model,
+                cache,
+                config,
+            } => {
+                // Create fresh cache for LLaMA (no clear() method available)
+                *cache = Cache::new(true, self.dtype, config, &self.device)
+                    .context("Failed to create KV cache")?;
+                model
+                    .forward(&input_ids, 0, cache)
+                    .context("LLaMA forward pass failed")?
+            }
+            ModelInner::Gemma3 { model } => {
+                // Gemma3 manages cache internally - clear before each inference
+                model.clear_kv_cache();
+                model
+                    .forward(&input_ids, 0)
+                    .context("Gemma3 forward pass failed")?
+            }
+        };
 
         // The model returns [batch, vocab] for the last position already
         // (or [batch, seq, vocab] for full sequence - check dimensions)
@@ -535,9 +647,12 @@ impl Eu4AiModel {
         &self.tokenizer
     }
 
-    /// Get the model config.
-    pub fn config(&self) -> &Config {
-        &self.config
+    /// Get the model config (LLaMA only, returns None for Gemma3).
+    pub fn llama_config(&self) -> Option<&Config> {
+        match &self.inner {
+            ModelInner::Llama { config, .. } => Some(config),
+            ModelInner::Gemma3 { .. } => None,
+        }
     }
 }
 

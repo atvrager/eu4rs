@@ -15,5 +15,33 @@ sim-watch-1yr = "run --release --package eu4sim --bin eu4sim -- --observer --tic
 cov = "llvm-cov --summary-only"
 cov-summary = "llvm-cov --summary-only"
 
+# ─── Benchmarks ───────────────────────────────────────────────────────────────
+# Quick 100-tick benchmark with timing (CPU by default)
+bench = "run --release --package eu4sim --bin eu4sim -- --ticks 100 --benchmark --observer --headless --log-level error --tags FRA,TUR,CAS,ENG"
+# Full year benchmark
+bench-1yr = "run --release --package eu4sim --bin eu4sim -- --ticks 360 --benchmark --observer --headless --log-level error --tags FRA,TUR,CAS,ENG"
+# CUDA-enabled benchmarks (faster AI inference)
+bench-cuda = "run --release --package eu4sim --bin eu4sim --features eu4sim-ai/cuda -- --ticks 100 --benchmark --observer --headless --log-level error --tags FRA,TUR,CAS,ENG"
+bench-1yr-cuda = "run --release --package eu4sim --bin eu4sim --features eu4sim-ai/cuda -- --ticks 360 --benchmark --observer --headless --log-level error --tags FRA,TUR,CAS,ENG"
+
+# ─── Training Data Generation ─────────────────────────────────────────────────
+# Generate 1-year training data (binary format, recommended)
+datagen = "run --release --package eu4sim --bin eu4sim -- --ticks 360 --observer --headless --log-level warn --datagen training_run.cpb.zip"
+# Generate 10-year training data
+datagen-10yr = "run --release --package eu4sim --bin eu4sim -- --ticks 3600 --observer --headless --log-level warn --datagen training_10yr.cpb.zip"
+
+# ─── LLM AI Benchmarks ────────────────────────────────────────────────────────
+# SmolLM2 base model (no adapter)
+llm-smollm = "run --release --package eu4sim --bin eu4sim -- --llm-ai-base smollm --ticks 100 --benchmark --observer --headless --log-level warn"
+llm-smollm-cuda = "run --release --package eu4sim --bin eu4sim --features eu4sim-ai/cuda -- --llm-ai-base smollm --ticks 100 --benchmark --observer --headless --log-level warn"
+# Gemma-3-270m base model (no adapter)
+llm-gemma3 = "run --release --package eu4sim --bin eu4sim -- --llm-ai-base gemma3 --ticks 100 --benchmark --observer --headless --log-level warn"
+llm-gemma3-cuda = "run --release --package eu4sim --bin eu4sim --features eu4sim-ai/cuda -- --llm-ai-base gemma3 --ticks 100 --benchmark --observer --headless --log-level warn"
+
+# ─── Build Variants ───────────────────────────────────────────────────────────
+# Build with CUDA support for AI inference
+build-cuda = "build --release --package eu4sim --features eu4sim-ai/cuda"
+check-cuda = "check --package eu4sim --features eu4sim-ai/cuda"
+
 [build]
 incremental = true
