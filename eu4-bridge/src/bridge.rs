@@ -145,6 +145,7 @@ impl ExtractedState {
             embraced_institutions: Default::default(),
             religion: None,
             trade: Default::default(),
+            income: Default::default(),
         };
 
         VisibleWorldState {

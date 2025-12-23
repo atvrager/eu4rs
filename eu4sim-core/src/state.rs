@@ -296,6 +296,22 @@ pub struct CountryState {
     /// Trade-related state (merchants, home node, embargoes).
     #[serde(default)]
     pub trade: CountryTradeState,
+    /// Income breakdown for last month (for display purposes).
+    #[serde(default)]
+    pub income: IncomeBreakdown,
+}
+
+/// Breakdown of monthly income by source.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct IncomeBreakdown {
+    /// Income from taxation
+    pub taxation: Fixed,
+    /// Income from trade
+    pub trade: Fixed,
+    /// Income from production (direct, if any)
+    pub production: Fixed,
+    /// Total expenses (maintenance, etc.)
+    pub expenses: Fixed,
 }
 
 impl Default for CountryState {
@@ -315,6 +331,7 @@ impl Default for CountryState {
             embraced_institutions: std::collections::HashSet::new(),
             religion: None,
             trade: CountryTradeState::default(),
+            income: IncomeBreakdown::default(),
         }
     }
 }

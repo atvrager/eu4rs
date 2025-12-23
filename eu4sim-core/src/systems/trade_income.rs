@@ -41,10 +41,11 @@ pub fn run_trade_income_tick(state: &mut WorldState) {
     // Collect income per country
     let income = calculate_trade_income(state);
 
-    // Apply income to treasuries
+    // Apply income to treasuries and record for display
     for (tag, amount) in income {
         if let Some(country) = state.countries.get_mut(&tag) {
             country.treasury += amount;
+            country.income.trade += amount;
             log::trace!("{} collected {} trade income", tag, amount.to_f32());
         }
     }

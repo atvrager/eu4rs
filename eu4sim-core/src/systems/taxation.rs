@@ -54,10 +54,11 @@ pub fn run_taxation_tick(state: &mut WorldState) {
         }
     }
 
-    // 2. Apply to Treasury
+    // 2. Apply to Treasury and record for display
     for (tag, delta) in income_deltas {
         if let Some(country) = state.countries.get_mut(&tag) {
             country.treasury += delta;
+            country.income.taxation += delta;
         }
     }
 }

@@ -155,14 +155,22 @@ impl SimObserver for ConsoleObserver {
                 let color_m = delta_color(delta_m);
                 let reset = "\x1b[0m";
 
+                // Income breakdown
+                let tax = country.income.taxation.to_f32();
+                let trade = country.income.trade.to_f32();
+                let expenses = country.income.expenses.to_f32();
+
                 writeln!(
                     handle,
-                    " {}: 💰{:>8.1}({}{:>+6.1}{}) 👥{:>6.0}({}{:>+5.0}{}) | 👑{:>3.0}/{:>3.0}/{:>3.0} | ⚔️{:>3}/{:>3}/{:>3} 🏰{:>2}    \r",
+                    " {}: 💰{:>8.1}({}{:>+6.1}{}) [T:{:.1} Tr:{:.1} E:-{:.1}] 👥{:>6.0}({}{:>+5.0}{}) | 👑{:>3.0}/{:>3.0}/{:>3.0} | ⚔️{:>3}/{:>3}/{:>3} 🏰{:>2}    \r",
                     tag,
                     country.treasury.to_f32(),
                     color_t,
                     delta_t,
                     reset,
+                    tax,
+                    trade,
+                    expenses,
                     country.manpower.to_f32(),
                     color_m,
                     delta_m,

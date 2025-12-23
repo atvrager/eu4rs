@@ -126,6 +126,14 @@ pub fn step_world(
         let econ_start = Instant::now();
         let economy_config = crate::systems::EconomyConfig::default();
 
+        // Reset income tracking for this month
+        let country_tags: Vec<String> = new_state.countries.keys().cloned().collect();
+        for tag in country_tags {
+            if let Some(country) = new_state.countries.get_mut(&tag) {
+                country.income = crate::state::IncomeBreakdown::default();
+            }
+        }
+
         // Monthly tick ordering:
         // 1. Production → Updates province output values
         // 2. Trade value → Calculates value in each trade node from production

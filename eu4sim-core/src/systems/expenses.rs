@@ -20,7 +20,7 @@ pub fn run_expenses_tick(state: &mut WorldState) {
         *army_costs.entry(army.owner.clone()).or_insert(Fixed::ZERO) += cost;
     }
 
-    // Apply Army Costs (with modifiers)
+    // Apply Army Costs (with modifiers) and record for display
     let country_tags: Vec<String> = state.countries.keys().cloned().collect();
     for tag in country_tags.clone() {
         if let Some(country) = state.countries.get_mut(&tag) {
@@ -36,6 +36,7 @@ pub fn run_expenses_tick(state: &mut WorldState) {
                 let final_cost = base_cost.mul(factor);
 
                 country.treasury -= final_cost;
+                country.income.expenses += final_cost;
             }
         }
     }
@@ -52,7 +53,7 @@ pub fn run_expenses_tick(state: &mut WorldState) {
         }
     }
 
-    // Apply Fort Costs
+    // Apply Fort Costs and record for display
     for tag in country_tags {
         if let Some(country) = state.countries.get_mut(&tag) {
             if let Some(&base_cost) = fort_costs.get(&tag) {
@@ -67,6 +68,7 @@ pub fn run_expenses_tick(state: &mut WorldState) {
                 let final_cost = base_cost.mul(factor);
 
                 country.treasury -= final_cost;
+                country.income.expenses += final_cost;
             }
         }
     }
