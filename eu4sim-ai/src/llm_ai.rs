@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 /// LLM-powered AI player.
 ///
-/// Uses a trained language model (SmolLM2 or Gemma with LoRA adapter)
+/// Uses a trained language model (SmolLM2, Gemma-3, or Gemma-2 with LoRA adapter)
 /// to make decisions based on game state.
 pub struct LlmAi {
     model: Eu4AiModel,
@@ -23,7 +23,7 @@ impl LlmAi {
     /// Create a new LLM AI with the given configuration.
     ///
     /// # Arguments
-    /// * `base_model` - HuggingFace model ID (e.g., "HuggingFaceTB/SmolLM2-360M")
+    /// * `base_model` - HuggingFace model ID (e.g., "HuggingFaceTB/SmolLM2-360M", "google/gemma-3-270m")
     /// * `adapter_path` - Path to LoRA adapter directory (optional)
     pub fn new(base_model: &str, adapter_path: Option<PathBuf>) -> Result<Self> {
         let config = ModelConfig {
@@ -40,12 +40,17 @@ impl LlmAi {
         })
     }
 
-    /// Create with default SmolLM2 base model and LoRA adapter.
+    /// Create with SmolLM2 base model and LoRA adapter.
     pub fn with_adapter(adapter_path: PathBuf) -> Result<Self> {
         Self::new("HuggingFaceTB/SmolLM2-360M", Some(adapter_path))
     }
 
-    /// Create with default SmolLM2 base model (no adapter, uses pretrained weights only).
+    /// Create with Gemma-3-270M base model and LoRA adapter.
+    pub fn with_gemma3_adapter(adapter_path: PathBuf) -> Result<Self> {
+        Self::new("google/gemma-3-270m", Some(adapter_path))
+    }
+
+    /// Create with SmolLM2 base model (no adapter, uses pretrained weights only).
     pub fn with_base_model() -> Result<Self> {
         Self::new("HuggingFaceTB/SmolLM2-360M", None)
     }

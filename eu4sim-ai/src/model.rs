@@ -1,7 +1,7 @@
 //! Model loading and inference for EU4 AI.
 //!
-//! Loads SmolLM2 or Gemma base models from HuggingFace Hub,
-//! applies LoRA adapters, and runs inference on CPU.
+//! Loads SmolLM2, Gemma-3, or Gemma-2 base models from HuggingFace Hub,
+//! applies LoRA adapters, and runs inference.
 
 use crate::device::{DevicePreference, select_device};
 use anyhow::{Context, Result};
@@ -22,6 +22,8 @@ pub enum ModelArch {
     SmolLM2,
     /// Google Gemma 2
     Gemma2,
+    /// Google Gemma 3 (270M-4B, newer architecture)
+    Gemma3,
 }
 
 impl ModelArch {
@@ -40,6 +42,7 @@ impl ModelArch {
         match model_type {
             "llama" | "mistral" => Ok(Self::SmolLM2),
             "gemma" | "gemma2" => Ok(Self::Gemma2),
+            "gemma3" => Ok(Self::Gemma3),
             other => anyhow::bail!("Unknown model type: {}", other),
         }
     }
@@ -49,6 +52,7 @@ impl ModelArch {
         match self {
             Self::SmolLM2 => "HuggingFaceTB/SmolLM2-360M",
             Self::Gemma2 => "google/gemma-2-2b-it",
+            Self::Gemma3 => "google/gemma-3-270m",
         }
     }
 }
@@ -542,11 +546,18 @@ mod tests {
             ModelArch::SmolLM2
         );
 
-        // Gemma config
+        // Gemma 2 config
         std::fs::write(&config_path, r#"{"model_type": "gemma2"}"#).unwrap();
         assert_eq!(
             ModelArch::from_config(&config_path).unwrap(),
             ModelArch::Gemma2
+        );
+
+        // Gemma 3 config
+        std::fs::write(&config_path, r#"{"model_type": "gemma3"}"#).unwrap();
+        assert_eq!(
+            ModelArch::from_config(&config_path).unwrap(),
+            ModelArch::Gemma3
         );
     }
 }

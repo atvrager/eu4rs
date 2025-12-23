@@ -5,7 +5,8 @@
 //! ## Supported Models
 //!
 //! - **SmolLM2-360M** (default): Lightweight LLaMA-based model from HuggingFace
-//! - **Gemma 2** (planned): Google's efficient language model
+//! - **Gemma-3-270M**: Google's compact model (6T tokens, 32K context)
+//! - **Gemma 2**: Google's larger instruction-tuned model
 //!
 //! ## LoRA Adapters
 //!
