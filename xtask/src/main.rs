@@ -416,42 +416,34 @@ fn run_quota() -> Result<()> {
     }
 
     // =========================================================================
-    // Antigravity Model Quotas (Windows only)
+    // Antigravity Model Quotas
     // =========================================================================
-    #[cfg(target_os = "windows")]
-    {
-        println!("\n📊 **Antigravity Model Quotas**\n");
-        match check_antigravity_quota() {
-            Ok(quotas) if !quotas.is_empty() => {
-                println!("| Model | Quota | Status | Refreshes |");
-                println!("|-------|-------|--------|----------|");
-                for q in &quotas {
-                    let refresh_str = q
-                        .reset_time
-                        .as_ref()
-                        .map(format_refresh_time)
-                        .unwrap_or_else(|| "Unknown".to_string());
-                    println!(
-                        "| {} | {}% | {} | {} |",
-                        q.label,
-                        q.percentage,
-                        quota_status_label(q.percentage),
-                        refresh_str
-                    );
-                }
-            }
-            Ok(_) => {
-                println!("ℹ️  Antigravity detected but no quota data available.");
-            }
-            Err(e) => {
-                println!("ℹ️  Antigravity not detected: {}", e);
+    println!("\n📊 **Antigravity Model Quotas**\n");
+    match check_antigravity_quota() {
+        Ok(quotas) if !quotas.is_empty() => {
+            println!("| Model | Quota | Status | Refreshes |");
+            println!("|-------|-------|--------|----------|");
+            for q in &quotas {
+                let refresh_str = q
+                    .reset_time
+                    .as_ref()
+                    .map(format_refresh_time)
+                    .unwrap_or_else(|| "Unknown".to_string());
+                println!(
+                    "| {} | {}% | {} | {} |",
+                    q.label,
+                    q.percentage,
+                    quota_status_label(q.percentage),
+                    refresh_str
+                );
             }
         }
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        println!("\nℹ️  Antigravity detection not available on this platform.");
+        Ok(_) => {
+            println!("ℹ️  Antigravity detected but no quota data available.");
+        }
+        Err(e) => {
+            println!("ℹ️  Antigravity not detected: {}", e);
+        }
     }
 
     // =========================================================================
@@ -837,7 +829,6 @@ fn run_schema(check: bool) -> Result<()> {
 }
 
 /// Returns a human-readable status based on quota percentage
-#[cfg(target_os = "windows")]
 fn quota_status_label(percentage: u8) -> &'static str {
     match percentage {
         0 => "🔴 Exhausted",
@@ -894,7 +885,6 @@ fn format_refresh_time_generic(reset_time: &chrono::DateTime<chrono::Utc>) -> St
 }
 
 /// Formats a reset time as a human-readable relative duration
-#[cfg(target_os = "windows")]
 fn format_refresh_time(reset_time: &chrono::DateTime<chrono::Utc>) -> String {
     use chrono::Utc;
     let now = Utc::now();
@@ -920,10 +910,9 @@ fn format_refresh_time(reset_time: &chrono::DateTime<chrono::Utc>) -> String {
 }
 
 // ============================================================================
-// Windows-only Antigravity Detection
+// Cross-platform Antigravity Detection
 // ============================================================================
 
-#[cfg(target_os = "windows")]
 mod antigravity {
     use anyhow::{anyhow, Result};
     use chrono::{DateTime, Utc};
@@ -966,7 +955,11 @@ mod antigravity {
         Err(anyhow!("Could not connect to Antigravity API"))
     }
 
-    /// Find the Antigravity language_server process and extract CSRF token
+    // =========================================================================
+    // Platform-specific process discovery
+    // =========================================================================
+
+    #[cfg(target_os = "windows")]
     fn find_antigravity_process() -> Result<(String, u32)> {
         let output = Command::new("powershell")
             .args([
@@ -1010,7 +1003,46 @@ mod antigravity {
         Err(anyhow!("Antigravity language_server not found"))
     }
 
-    /// Find listening TCP ports for a given PID
+    #[cfg(target_os = "linux")]
+    fn find_antigravity_process() -> Result<(String, u32)> {
+        // Use ps to find language_server_linux_x64 with antigravity in command line
+        let output = Command::new("ps")
+            .args(["aux"])
+            .output()?;
+
+        if !output.status.success() {
+            return Err(anyhow!("ps command failed"));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let token_re = Regex::new(r"--csrf_token\s+([a-f0-9\-]+)").unwrap();
+
+        for line in stdout.lines() {
+            // Look for the language server binary with antigravity app_data_dir
+            if line.contains("language_server_linux_x64") && line.contains("--app_data_dir antigravity") {
+                // Extract PID (second column in ps aux output)
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    if let Ok(pid) = parts[1].parse::<u32>() {
+                        // Extract CSRF token from command line
+                        if let Some(caps) = token_re.captures(line) {
+                            let token = caps.get(1).unwrap().as_str().to_string();
+                            return Ok((token, pid));
+                        }
+                    }
+                }
+            }
+        }
+
+        Err(anyhow!("Antigravity language_server not found"))
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    fn find_antigravity_process() -> Result<(String, u32)> {
+        Err(anyhow!("Platform not supported"))
+    }
+
+    #[cfg(target_os = "windows")]
     fn find_listening_ports(pid: u32) -> Result<Vec<u16>> {
         let output = Command::new("powershell")
             .args([
@@ -1053,6 +1085,47 @@ mod antigravity {
         ports.sort_by(|a, b| b.cmp(a));
         Ok(ports)
     }
+
+    #[cfg(target_os = "linux")]
+    fn find_listening_ports(pid: u32) -> Result<Vec<u16>> {
+        // Use ss (socket statistics) to find listening ports by PID
+        let output = Command::new("ss")
+            .args(["-tlnp"])
+            .output()?;
+
+        if !output.status.success() {
+            return Ok(vec![]);
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let pid_pattern = format!("pid={}", pid);
+        let port_re = Regex::new(r"127\.0\.0\.1:(\d+)").unwrap();
+
+        let mut ports = Vec::new();
+        for line in stdout.lines() {
+            if line.contains(&pid_pattern) {
+                // Extract port from address like "127.0.0.1:46277"
+                if let Some(caps) = port_re.captures(line) {
+                    if let Ok(port) = caps.get(1).unwrap().as_str().parse::<u16>() {
+                        ports.push(port);
+                    }
+                }
+            }
+        }
+
+        // Sort descending - higher ports are more likely to be the API
+        ports.sort_by(|a, b| b.cmp(a));
+        Ok(ports)
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    fn find_listening_ports(_pid: u32) -> Result<Vec<u16>> {
+        Ok(vec![])
+    }
+
+    // =========================================================================
+    // Shared API interaction logic
+    // =========================================================================
 
     /// Fetch user status from Antigravity API
     fn fetch_user_status(client: &Client, port: u16, csrf_token: &str) -> Result<Vec<ModelQuota>> {
@@ -1147,10 +1220,8 @@ mod antigravity {
     }
 }
 
-#[cfg(target_os = "windows")]
 use antigravity::{check_antigravity_quota, ModelQuota};
 
-#[cfg(target_os = "windows")]
 #[allow(dead_code)]
 type QuotaResult = Vec<ModelQuota>;
 
