@@ -13,6 +13,7 @@ pub mod reformation;
 pub mod stats;
 pub mod taxation;
 pub mod tech;
+pub mod trade_value;
 pub mod war_score;
 
 pub use colonization::run_colonization_tick;
@@ -28,4 +29,5 @@ pub use reformation::run_reformation_tick;
 pub use stats::run_stats_tick;
 pub use taxation::run_taxation_tick;
 pub use tech::buy_tech;
+pub use trade_value::run_trade_value_tick;
 pub use war_score::{award_battle_score, recalculate_war_scores, update_province_controller};
