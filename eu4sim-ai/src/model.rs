@@ -275,14 +275,25 @@ impl Eu4AiModel {
                     serde_json::from_str(&config_str).context("Failed to parse Gemma3 config")?;
                 let gemma_config = gemma_config_json.into_candle_config();
 
-                // LoRA not yet supported for Gemma3
-                if !config.adapter_path.as_os_str().is_empty() {
-                    log::warn!("LoRA adapters not yet supported for Gemma3, using base model");
-                }
+                // Load and optionally merge LoRA weights (same logic as LLaMA)
+                let vb = if !config.adapter_path.as_os_str().is_empty() {
+                    log::info!("Loading LoRA adapter from {:?}", config.adapter_path);
 
-                log::info!("Loading Gemma3 model weights...");
-                let vb = unsafe {
-                    VarBuilder::from_mmaped_safetensors(&[weights_path], dtype, &device)?
+                    let base_weights = Self::load_base_weights(&weights_path, &device, dtype)?;
+                    let lora_config = Self::load_lora_config(&config.adapter_path)?;
+                    let merged_weights = Self::merge_lora_weights(
+                        base_weights,
+                        &config.adapter_path,
+                        &lora_config,
+                        &device,
+                        dtype,
+                    )?;
+
+                    log::warn!("LoRA merge complete - creating model from merged weights");
+                    VarBuilder::from_tensors(merged_weights, dtype, &device)
+                } else {
+                    log::info!("Loading Gemma3 model weights...");
+                    unsafe { VarBuilder::from_mmaped_safetensors(&[weights_path], dtype, &device)? }
                 };
 
                 let model = gemma3::Model::new(false, &gemma_config, vb)

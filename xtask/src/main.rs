@@ -119,6 +119,28 @@ enum Commands {
         #[arg(long, default_value_t = 8)]
         greedy_count: usize,
     },
+
+    /// Run LLM AI benchmark with optional adapter
+    ///
+    /// Examples:
+    ///   cargo xtask llm smollm          # SmolLM2 base model
+    ///   cargo xtask llm gemma3          # Gemma-3-270M base model
+    ///   cargo xtask llm gemma3 run1     # Gemma3 + adapter matching *run1*
+    Llm {
+        /// Base model: "smollm" or "gemma3"
+        base: String,
+
+        /// Optional adapter name (fuzzy-matched against models/adapters/{base}*{name}*/)
+        adapter: Option<String>,
+
+        /// Number of ticks to simulate
+        #[arg(short, long, default_value_t = 100)]
+        ticks: u32,
+
+        /// Disable CUDA (use CPU only)
+        #[arg(long)]
+        no_cuda: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -163,6 +185,12 @@ fn main() -> Result<()> {
             base_seed,
             greedy_count,
         } => run_datagen(count, ticks, &output, base_seed, greedy_count),
+        Commands::Llm {
+            base,
+            adapter,
+            ticks,
+            no_cuda,
+        } => run_llm(&base, adapter.as_deref(), ticks, no_cuda),
     }
 }
 
@@ -1298,6 +1326,108 @@ fn check_gemini(client: &Client, key: &str) -> Result<String> {
         let text = resp.text().unwrap_or_default();
         Ok(format!("Failed (HTTP {}): {}", status, text))
     }
+}
+
+/// Run LLM AI benchmark with optional LoRA adapter.
+fn run_llm(base: &str, adapter: Option<&str>, ticks: u32, no_cuda: bool) -> Result<()> {
+    // Validate base model
+    let base_flag = match base.to_lowercase().as_str() {
+        "smollm" | "smollm2" => "smollm",
+        "gemma3" | "gemma" => "gemma3",
+        other => anyhow::bail!("Unknown base model '{}'. Use 'smollm' or 'gemma3'.", other),
+    };
+
+    // Find adapter path if specified
+    let adapter_path = if let Some(adapter_name) = adapter {
+        let adapters_dir = std::path::Path::new("models/adapters");
+        if !adapters_dir.exists() {
+            anyhow::bail!("models/adapters/ directory not found");
+        }
+
+        // Fuzzy match: look for directories matching {base}*{adapter_name}*
+        let pattern = format!("{}*{}*", base_flag, adapter_name);
+        let matches: Vec<_> = std::fs::read_dir(adapters_dir)?
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_dir())
+            .filter(|e| {
+                let name = e.file_name().to_string_lossy().to_lowercase();
+                name.contains(&base_flag.to_lowercase())
+                    && name.contains(&adapter_name.to_lowercase())
+            })
+            .collect();
+
+        match matches.len() {
+            0 => anyhow::bail!(
+                "No adapter found matching pattern '{}' in models/adapters/",
+                pattern
+            ),
+            1 => {
+                let path = matches[0].path();
+                println!("Using adapter: {}", path.display());
+                Some(path)
+            }
+            _ => {
+                let names: Vec<_> = matches
+                    .iter()
+                    .map(|e| e.file_name().to_string_lossy().to_string())
+                    .collect();
+                anyhow::bail!(
+                    "Multiple adapters match '{}': {:?}. Be more specific.",
+                    pattern,
+                    names
+                );
+            }
+        }
+    } else {
+        None
+    };
+
+    // Build cargo command
+    let mut args = vec!["run", "--release", "-p", "eu4sim"];
+
+    if !no_cuda {
+        args.extend(["--features", "eu4sim-ai/cuda"]);
+    }
+
+    args.push("--");
+
+    // Add model flags
+    args.extend(["--llm-ai-base", base_flag]);
+
+    // Add adapter if specified
+    let adapter_str;
+    if let Some(path) = &adapter_path {
+        adapter_str = path.to_string_lossy().to_string();
+        args.extend(["--llm-ai", &adapter_str]);
+    }
+
+    // Add common benchmark flags
+    let ticks_str = ticks.to_string();
+    args.extend([
+        "--ticks",
+        &ticks_str,
+        "--benchmark",
+        "--observer",
+        "--headless",
+        "--log-level",
+        "warn",
+    ]);
+
+    println!(
+        "Running: cargo {}",
+        args.iter()
+            .map(|s| {
+                if s.contains(' ') {
+                    format!("\"{}\"", s)
+                } else {
+                    s.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+
+    run_command("cargo", &args)
 }
 
 fn run_command(cmd: &str, args: &[&str]) -> Result<()> {
