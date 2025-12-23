@@ -3,9 +3,11 @@
 //! Uses `enigo` for cross-platform input simulation.
 
 use anyhow::Result;
-use enigo::{Direction, Enigo, Key, Keyboard, Settings};
+use enigo::{Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings};
 use std::thread;
 use std::time::Duration;
+
+use crate::regions::Region;
 
 /// Controller for sending keyboard/mouse input to the game.
 pub struct InputController {
@@ -56,5 +58,27 @@ impl InputController {
             .text(text)
             .map_err(|e| anyhow::anyhow!("Failed to type text: {:?}", e))?;
         Ok(())
+    }
+
+    /// Click at absolute screen coordinates.
+    pub fn click_at(&mut self, x: i32, y: i32) -> Result<()> {
+        self.enigo
+            .move_mouse(x, y, Coordinate::Abs)
+            .map_err(|e| anyhow::anyhow!("Failed to move mouse to ({}, {}): {:?}", x, y, e))?;
+        thread::sleep(Duration::from_millis(50)); // Let cursor settle
+
+        self.enigo
+            .button(Button::Left, Direction::Click)
+            .map_err(|e| anyhow::anyhow!("Failed to click at ({}, {}): {:?}", x, y, e))?;
+        thread::sleep(Duration::from_millis(100)); // Wait for UI response
+        Ok(())
+    }
+
+    /// Click at center of a Region.
+    pub fn click_region(&mut self, region: &Region) -> Result<()> {
+        let x = region.x as i32 + (region.width as i32 / 2);
+        let y = region.y as i32 + (region.height as i32 / 2);
+        log::debug!("Clicking region '{}' at ({}, {})", region.name, x, y);
+        self.click_at(x, y)
     }
 }

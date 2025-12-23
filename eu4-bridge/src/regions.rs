@@ -73,8 +73,28 @@ pub const COUNTRY: Region = Region::new("Country", 146, 49, 344, 30, [255, 255, 
 pub const AGE: Region = Region::new("Age", 740, 54, 160, 21, [136, 136, 136]);
 pub const DATE: Region = Region::new("Date", 1697, 16, 132, 21, [255, 0, 0]);
 
-/// All defined regions for iteration.
-pub const ALL_REGIONS: &[Region] = &[
+// ============================================================================
+// Province Panel Regions (when province selected)
+// Calibrated 2024-12 via calibrate.html against Vienna screenshot
+// ============================================================================
+
+// Province info (header area)
+pub const PROV_NAME: Region = Region::new("Prov Name", 106, 418, 157, 24, [255, 200, 0]);
+pub const PROV_STATE: Region = Region::new("Prov State", 269, 421, 171, 24, [200, 255, 0]);
+
+// Development values (below terrain image)
+pub const PROV_TAX: Region = Region::new("Prov Tax", 83, 552, 25, 18, [255, 100, 100]);
+pub const PROV_PROD: Region = Region::new("Prov Prod", 160, 554, 25, 18, [100, 255, 100]);
+pub const PROV_MANP: Region = Region::new("Prov Manp", 238, 553, 25, 18, [100, 100, 255]);
+
+// Development + buttons (clickable targets - to LEFT of dev values)
+pub const PROV_TAX_BTN: Region = Region::new("Tax +Btn", 48, 553, 22, 22, [255, 50, 50]);
+pub const PROV_PROD_BTN: Region = Region::new("Prod +Btn", 125, 557, 22, 22, [50, 255, 50]);
+pub const PROV_MANP_BTN: Region = Region::new("Manp +Btn", 204, 555, 22, 22, [50, 50, 255]);
+
+/// Top bar regions (always visible).
+#[allow(dead_code)]
+pub const TOP_BAR_REGIONS: &[Region] = &[
     TREASURY,
     MANPOWER,
     SAILORS,
@@ -93,6 +113,51 @@ pub const ALL_REGIONS: &[Region] = &[
     COUNTRY,
     AGE,
     DATE,
+];
+
+/// Province panel regions (when province selected).
+#[allow(dead_code)]
+pub const PROVINCE_PANEL_REGIONS: &[Region] = &[
+    PROV_NAME,
+    PROV_STATE,
+    PROV_TAX,
+    PROV_PROD,
+    PROV_MANP,
+    PROV_TAX_BTN,
+    PROV_PROD_BTN,
+    PROV_MANP_BTN,
+];
+
+/// All defined regions for iteration.
+pub const ALL_REGIONS: &[Region] = &[
+    // Top bar
+    TREASURY,
+    MANPOWER,
+    SAILORS,
+    ADM_MANA,
+    DIP_MANA,
+    MIL_MANA,
+    STABILITY,
+    CORRUPTION,
+    PRESTIGE,
+    GOVT_STRENGTH,
+    POWER_PROJ,
+    MERCHANTS,
+    COLONISTS,
+    DIPLOMATS,
+    MISSIONARIES,
+    COUNTRY,
+    AGE,
+    DATE,
+    // Province panel
+    PROV_NAME,
+    PROV_STATE,
+    PROV_TAX,
+    PROV_PROD,
+    PROV_MANP,
+    PROV_TAX_BTN,
+    PROV_PROD_BTN,
+    PROV_MANP_BTN,
 ];
 
 /// Print a legend of all regions to the console.

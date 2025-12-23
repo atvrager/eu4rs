@@ -1,7 +1,8 @@
 //! Main AI decision loop orchestrator.
 //!
-//! Coordinates: pause → capture → OCR → AI → log (→ execute in Phase C).
+//! Coordinates: pause → capture → OCR → AI → execute → unpause.
 
+use crate::actions::ActionExecutor;
 use crate::capture;
 use crate::extraction::Extractor;
 use crate::input::InputController;
@@ -23,6 +24,8 @@ pub struct Orchestrator {
     pub tick_delay: Duration,
     /// Whether to skip pause/unpause (for testing with screenshots).
     pub skip_pause: bool,
+    /// Whether to execute AI decisions (click buttons). Default: true.
+    pub execute_actions: bool,
 }
 
 impl Orchestrator {
@@ -45,6 +48,7 @@ impl Orchestrator {
             ai,
             tick_delay: Duration::from_secs(5),
             skip_pause: false,
+            execute_actions: true,
         })
     }
 
@@ -64,6 +68,7 @@ impl Orchestrator {
             ai,
             tick_delay: Duration::from_secs(5),
             skip_pause: false,
+            execute_actions: true,
         })
     }
 
@@ -73,7 +78,7 @@ impl Orchestrator {
     /// 2. Capture screen
     /// 3. Extract state via OCR
     /// 4. Call AI for decision
-    /// 5. Log decision (no execution in Phase B)
+    /// 5. Execute decisions (if `execute_actions` is true)
     /// 6. Unpause game
     pub fn tick_once(&mut self, window_title: &str) -> Result<()> {
         // 1. Pause game
@@ -130,9 +135,19 @@ impl Orchestrator {
         log::debug!("Calling AI...");
         let decisions = self.ai.decide(&visible_state, &available_commands);
 
-        // 6. Log decision (no execution in Phase B)
-        for cmd in &decisions {
-            log::info!("AI decision: {:?}", cmd);
+        // 6. Execute decisions (Phase C)
+        if self.execute_actions {
+            let mut executor = ActionExecutor::new(&mut self.input);
+            let executed = executor.execute_all(&decisions);
+            log::info!(
+                "AI decisions: {} total, {} executed",
+                decisions.len(),
+                executed
+            );
+        } else {
+            for cmd in &decisions {
+                log::info!("AI decision (no exec): {:?}", cmd);
+            }
         }
 
         // 7. Unpause game

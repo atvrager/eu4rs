@@ -3,6 +3,7 @@
 //! Phase A: Screen capture and OCR proof of concept.
 //! Phase B: AI inference loop integration.
 
+mod actions;
 mod bridge;
 mod capture;
 mod extraction;
@@ -133,6 +134,17 @@ enum Commands {
         /// Skip pause/unpause (for testing with already-paused game)
         #[arg(long)]
         no_pause: bool,
+
+        /// Don't execute AI decisions (log only, no clicks)
+        #[arg(long)]
+        no_exec: bool,
+    },
+
+    /// Test clicking a region (for calibration testing)
+    TestClick {
+        /// Region to click: tax, prod, manp
+        #[arg(short, long, default_value = "tax")]
+        region: String,
     },
 }
 
@@ -340,6 +352,7 @@ fn main() -> Result<()> {
             tick_delay,
             once,
             no_pause,
+            no_exec,
         } => {
             use std::time::Duration;
 
@@ -353,12 +366,39 @@ fn main() -> Result<()> {
 
             orch.tick_delay = Duration::from_secs(tick_delay);
             orch.skip_pause = no_pause;
+            orch.execute_actions = !no_exec;
 
             if once {
                 orch.tick_once(&window)?;
             } else {
                 orch.run_loop(&window)?;
             }
+        }
+
+        Commands::TestClick { region } => {
+            use crate::regions::{PROV_MANP_BTN, PROV_PROD_BTN, PROV_TAX_BTN};
+
+            let mut input = input::InputController::new()?;
+
+            let target = match region.to_lowercase().as_str() {
+                "tax" => &PROV_TAX_BTN,
+                "prod" | "production" => &PROV_PROD_BTN,
+                "manp" | "manpower" => &PROV_MANP_BTN,
+                _ => {
+                    anyhow::bail!("Unknown region: {}. Use: tax, prod, manp", region);
+                }
+            };
+
+            println!(
+                "Clicking {} at ({}, {}) in 2 seconds...",
+                target.name,
+                target.x + target.width / 2,
+                target.y + target.height / 2
+            );
+            std::thread::sleep(std::time::Duration::from_secs(2));
+
+            input.click_region(target)?;
+            println!("Clicked!");
         }
     }
 

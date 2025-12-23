@@ -74,40 +74,45 @@
     </div>
 
     <script>
+        // Synced with eu4-bridge/src/regions.rs
         const regions = [
-            // Row 1 - Top bar main resources
-            { name: "Treasury", x: 148, y: 8, w: 80, h: 24, color: "#00ff00" },
-            { name: "Manpower", x: 260, y: 8, w: 50, h: 24, color: "#0088ff" },
-            { name: "Sailors", x: 320, y: 8, w: 50, h: 24, color: "#00ffff" },
+            // Resources (top bar, row 1)
+            { name: "Treasury", x: 169, y: 13, w: 48, h: 21, color: "#00ff00" },
+            { name: "Manpower", x: 255, y: 12, w: 50, h: 24, color: "#0088ff" },
+            { name: "Sailors", x: 336, y: 11, w: 50, h: 24, color: "#00ffff" },
 
-            // Row 2 - Monarch points
-            { name: "ADM Mana", x: 148, y: 35, w: 40, h: 20, color: "#ff4444" },
-            { name: "DIP Mana", x: 200, y: 35, w: 40, h: 20, color: "#44ff44" },
-            { name: "MIL Mana", x: 252, y: 35, w: 40, h: 20, color: "#4444ff" },
+            // Monarch points (row 2)
+            { name: "ADM Mana", x: 520, y: 55, w: 34, h: 20, color: "#ff4444" },
+            { name: "DIP Mana", x: 577, y: 55, w: 33, h: 19, color: "#44ff44" },
+            { name: "MIL Mana", x: 639, y: 56, w: 34, h: 21, color: "#4444ff" },
 
-            // Stability/Corruption area
-            { name: "Stability", x: 350, y: 8, w: 30, h: 20, color: "#ffaa00" },
-            { name: "Corruption", x: 400, y: 8, w: 40, h: 20, color: "#ff00aa" },
-
-            // Prestige/Legitimacy area
-            { name: "Prestige", x: 350, y: 35, w: 50, h: 20, color: "#aaff00" },
-            { name: "Govt Strength", x: 420, y: 35, w: 50, h: 20, color: "#ffff00" },
-
-            // Power Projection
-            { name: "Power Proj", x: 500, y: 8, w: 50, h: 20, color: "#aa00ff" },
+            // Country stats
+            { name: "Stability", x: 419, y: 16, w: 30, h: 20, color: "#ffaa00" },
+            { name: "Corruption", x: 485, y: 14, w: 50, h: 24, color: "#ff00aa" },
+            { name: "Prestige", x: 545, y: 17, w: 37, h: 19, color: "#aaff00" },
+            { name: "Govt Strength", x: 615, y: 15, w: 37, h: 22, color: "#ffff00" },
+            { name: "Power Proj", x: 700, y: 14, w: 40, h: 20, color: "#aa00ff" },
 
             // Envoys (N/M format)
-            { name: "Merchants", x: 550, y: 8, w: 40, h: 20, color: "#ff8800" },
-            { name: "Colonists", x: 600, y: 8, w: 40, h: 20, color: "#88ff00" },
-            { name: "Diplomats", x: 550, y: 35, w: 40, h: 20, color: "#0088ff" },
-            { name: "Missionaries", x: 600, y: 35, w: 40, h: 20, color: "#ff0088" },
+            { name: "Merchants", x: 734, y: 32, w: 40, h: 20, color: "#ff8800" },
+            { name: "Colonists", x: 774, y: 39, w: 40, h: 13, color: "#88ff00" },
+            { name: "Diplomats", x: 816, y: 35, w: 37, h: 17, color: "#0088ff" },
+            { name: "Missionaries", x: 859, y: 35, w: 34, h: 18, color: "#ff0088" },
 
-            // Country/Age info (usually top-left or top-right)
-            { name: "Country", x: 70, y: 8, w: 70, h: 20, color: "#ffffff" },
-            { name: "Age", x: 200, y: 55, w: 120, h: 18, color: "#888888" },
+            // Info displays
+            { name: "Country", x: 146, y: 49, w: 344, h: 30, color: "#ffffff" },
+            { name: "Age", x: 740, y: 54, w: 160, h: 21, color: "#888888" },
+            { name: "Date", x: 1697, y: 16, w: 132, h: 21, color: "#ff0000" },
 
-            // Date (top-right area)
-            { name: "Date", x: 1400, y: 8, w: 160, h: 24, color: "#ff0000" },
+            // Province panel regions (calibrated 2024-12)
+            { name: "Prov Name", x: 106, y: 418, w: 157, h: 24, color: "#ffc800" },
+            { name: "Prov State", x: 269, y: 421, w: 171, h: 24, color: "#c8ff00" },
+            { name: "Prov Tax", x: 83, y: 552, w: 25, h: 18, color: "#ff6464" },
+            { name: "Prov Prod", x: 160, y: 554, w: 25, h: 18, color: "#64ff64" },
+            { name: "Prov Manp", x: 238, y: 553, w: 25, h: 18, color: "#6464ff" },
+            { name: "Tax +Btn", x: 48, y: 553, w: 22, h: 22, color: "#ff3232" },
+            { name: "Prod +Btn", x: 125, y: 557, w: 22, h: 22, color: "#32ff32" },
+            { name: "Manp +Btn", x: 204, y: 555, w: 22, h: 22, color: "#3232ff" },
         ];
 
         const container = document.getElementById('container');
