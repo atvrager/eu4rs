@@ -129,9 +129,12 @@ fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGra
             regiments: vec![Regiment {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
+                morale: Fixed::from_f32(eu4data::defines::combat::BASE_MORALE),
             }],
             movement: None,
             embarked_on: None,
+            general: None,
+            in_battle: None,
         },
     );
     armies.insert(
@@ -144,9 +147,12 @@ fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGra
             regiments: vec![Regiment {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
+                morale: Fixed::from_f32(eu4data::defines::combat::BASE_MORALE),
             }],
             movement: None,
             embarked_on: None,
+            general: None,
+            in_battle: None,
         },
     );
 
@@ -172,6 +178,11 @@ fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGra
         fleets: Default::default(),
         next_fleet_id: 1,
         colonies: Default::default(),
+        // Combat system
+        generals: Default::default(),
+        next_general_id: 1,
+        battles: Default::default(),
+        next_battle_id: 1,
         // Trade system
         trade_nodes: Default::default(),
         province_trade_node: Default::default(),

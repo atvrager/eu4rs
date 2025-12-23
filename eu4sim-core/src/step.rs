@@ -604,6 +604,142 @@ fn execute_command(
             building: _,
         } => {
             // Stub implementation
+            log::info!("Player {} building something (stub)", country_tag);
+            Ok(())
+        }
+        Command::RecruitRegiment {
+            province,
+            unit_type,
+        } => {
+            let country =
+                state
+                    .countries
+                    .get_mut(country_tag)
+                    .ok_or(ActionError::CountryNotFound {
+                        tag: country_tag.to_string(),
+                    })?;
+
+            // 1. Costs (Approximate: 10g + 1000 manpower)
+            // TODO: Use correct constants from defines/units
+            let gold_cost = match unit_type {
+                crate::state::RegimentType::Infantry => Fixed::from_int(10),
+                crate::state::RegimentType::Cavalry => Fixed::from_int(25),
+                crate::state::RegimentType::Artillery => Fixed::from_int(30),
+            };
+            let manpower_cost = Fixed::from_int(1000);
+
+            if country.treasury < gold_cost {
+                return Err(ActionError::InsufficientFunds {
+                    required: gold_cost.to_f32(),
+                    available: country.treasury.to_f32(),
+                });
+            }
+            // Manpower check omitted for now (allow deficit spending/debt or just negative manpower)
+            // if country.manpower < manpower_cost { ... }
+
+            // 2. Tech Check for Artillery
+            if *unit_type == crate::state::RegimentType::Artillery {
+                let required_tech = eu4data::defines::combat::ARTILLERY_TECH_REQUIRED;
+                if country.mil_tech < required_tech {
+                    // Fail silently or error? For now, simplistic error
+                    log::warn!(
+                        "{} tried to recruit artillery without tech {}",
+                        country_tag,
+                        required_tech
+                    );
+                    return Ok(()); // Invalid action but don't crash simulation
+                }
+            }
+
+            // 3. Deduct resources
+            country.treasury -= gold_cost;
+            country.manpower -= manpower_cost;
+
+            // 4. Create regiment/army
+            // Check if there's already an army in this province owned by this country
+            let existing_army_id = state.armies.iter().find_map(|(id, army)| {
+                if army.owner == country_tag
+                    && army.location == *province
+                    && army.in_battle.is_none()
+                {
+                    Some(*id)
+                } else {
+                    None
+                }
+            });
+
+            if let Some(army_id) = existing_army_id {
+                if let Some(army) = state.armies.get_mut(&army_id) {
+                    army.regiments.push(crate::state::Regiment {
+                        type_: *unit_type,
+                        strength: Fixed::from_int(1000),
+                        morale: Fixed::from_f32(eu4data::defines::combat::BASE_MORALE),
+                    });
+                }
+            } else {
+                // Create new army
+                let army_id = state.next_army_id;
+                state.next_army_id += 1;
+                state.armies.insert(
+                    army_id,
+                    crate::state::Army {
+                        id: army_id,
+                        name: format!("{} Army {}", country_tag, army_id),
+                        owner: country_tag.to_string(),
+                        location: *province,
+                        regiments: vec![crate::state::Regiment {
+                            type_: *unit_type,
+                            strength: Fixed::from_int(1000),
+                            morale: Fixed::from_f32(eu4data::defines::combat::BASE_MORALE),
+                        }],
+                        movement: None,
+                        embarked_on: None,
+                        general: None,
+                        in_battle: None,
+                    },
+                );
+            }
+
+            Ok(())
+        }
+        Command::RecruitGeneral => {
+            let country =
+                state
+                    .countries
+                    .get_mut(country_tag)
+                    .ok_or(ActionError::CountryNotFound {
+                        tag: country_tag.to_string(),
+                    })?;
+
+            let cost = Fixed::from_int(50);
+            if country.mil_mana < cost {
+                return Err(ActionError::InsufficientMana);
+            }
+
+            country.mil_mana -= cost;
+
+            // Generate General (Simple 1-6 random for now)
+            let general_id = state.next_general_id;
+            state.next_general_id += 1;
+
+            let general = crate::state::General {
+                id: general_id,
+                name: format!("General {}", general_id),
+                owner: country_tag.to_string(),
+                fire: 2, // TODO: Use RNG
+                shock: 2,
+                maneuver: 2,
+                siege: 0,
+            };
+
+            state.generals.insert(general_id, general);
+            // In a real game, this general would go into a "recruited pool" or be assigned immediately.
+            // For now, it just exists. The next command assigns it.
+            log::info!("{} recruited General {}", country_tag, general_id);
+
+            Ok(())
+        }
+        Command::AssignGeneral { general, army } => {
             let _country =
                 state
                     .countries
@@ -612,12 +748,41 @@ fn execute_command(
                         tag: country_tag.to_string(),
                     })?;
 
-            // Validate Logic (Check cost vs treasury)
-            // if country.treasury < cost ...
+            // Validate ownership
+            let army_entry = state
+                .armies
+                .get_mut(army)
+                .ok_or(ActionError::ArmyNotFound { army_id: *army })?;
 
-            // Apply Effect
-            log::info!("Player {} building something (stub)", country_tag);
+            if army_entry.owner != country_tag {
+                return Err(ActionError::ArmyNotOwned {
+                    army_id: *army,
+                    tag: country_tag.to_string(),
+                });
+            }
 
+            if !state.generals.contains_key(general) {
+                // Error: General not found
+                return Ok(());
+            }
+
+            army_entry.general = Some(*general);
+            Ok(())
+        }
+        Command::UnassignGeneral { army } => {
+            let army_entry = state
+                .armies
+                .get_mut(army)
+                .ok_or(ActionError::ArmyNotFound { army_id: *army })?;
+
+            if army_entry.owner != country_tag {
+                return Err(ActionError::ArmyNotOwned {
+                    army_id: *army,
+                    tag: country_tag.to_string(),
+                });
+            }
+
+            army_entry.general = None;
             Ok(())
         }
         Command::Move {

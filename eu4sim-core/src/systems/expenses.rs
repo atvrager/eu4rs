@@ -94,14 +94,18 @@ mod tests {
                 Regiment {
                     type_: RegimentType::Infantry,
                     strength: Fixed::from_int(1000),
+                    morale: Fixed::from_f32(eu4data::defines::combat::BASE_MORALE),
                 },
                 Regiment {
                     type_: RegimentType::Infantry,
                     strength: Fixed::from_int(1000),
+                    morale: Fixed::from_f32(eu4data::defines::combat::BASE_MORALE),
                 },
             ],
             movement: None,
             embarked_on: None,
+            general: None,
+            in_battle: None,
         };
         state.armies.insert(1, army);
 

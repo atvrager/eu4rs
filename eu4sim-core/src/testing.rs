@@ -26,6 +26,11 @@ impl WorldStateBuilder {
                 fleets: HashMap::default(),
                 next_fleet_id: 1,
                 colonies: HashMap::default(),
+                // Combat system
+                generals: HashMap::default(),
+                next_general_id: 1,
+                battles: HashMap::default(),
+                next_battle_id: 1,
                 // Trade system
                 trade_nodes: HashMap::default(),
                 province_trade_node: HashMap::default(),

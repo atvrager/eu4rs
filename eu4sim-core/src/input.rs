@@ -107,6 +107,30 @@ pub enum Command {
         province: ProvinceId,
     },
 
+    // Military Recruitment
+    /// Recruit a regiment at specified province.
+    /// Infantry: always available. Cavalry: always available.
+    /// Artillery: requires mil tech 7+ (see `can_recruit_artillery`).
+    /// Costs gold and uses manpower.
+    RecruitRegiment {
+        province: ProvinceId,
+        unit_type: crate::state::RegimentType,
+    },
+
+    /// Recruit a new general (costs MIL mana).
+    RecruitGeneral,
+
+    /// Assign a general to an army.
+    AssignGeneral {
+        general: crate::state::GeneralId,
+        army: ArmyId,
+    },
+
+    /// Remove a general from an army.
+    UnassignGeneral {
+        army: ArmyId,
+    },
+
     // ===== STUB COMMANDS (Phase 2+) =====
 
     // Military (additional)

@@ -236,6 +236,7 @@ pub fn load_initial_state(
                 regiments.push(Regiment {
                     type_: RegimentType::Infantry,
                     strength: reg_strength,
+                    morale: Fixed::from_f32(eu4data::defines::combat::BASE_MORALE),
                 });
             }
 
@@ -252,6 +253,8 @@ pub fn load_initial_state(
                     regiments,
                     movement: None,
                     embarked_on: None,
+                    general: None,
+                    in_battle: None,
                 },
             );
         }
@@ -276,6 +279,11 @@ pub fn load_initial_state(
             fleets: ImHashMap::default(),
             next_fleet_id: 1,
             colonies: ImHashMap::default(),
+            // Combat system
+            generals: ImHashMap::default(),
+            next_general_id: 1,
+            battles: ImHashMap::default(),
+            next_battle_id: 1,
             // Trade system
             trade_nodes: trade_nodes.into(),
             province_trade_node: province_trade_node.into(),

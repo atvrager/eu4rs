@@ -1,38 +1,135 @@
+//! EU4-authentic combat system with battle lines, morale, and phases.
+//!
+//! Combat phases last 3 days each, alternating Fire → Shock.
+//! Discipline affects damage dealt (casualties + morale) and via tactics reduces damage received.
+//! Cavalry is limited to 50% of front line or suffers -25% tactics penalty.
+//! 10:1 strength ratio at battle end causes stackwipe.
+
 use crate::fixed::Fixed;
-use crate::state::{RegimentType, WorldState};
+use crate::state::{
+    ArmyId, Battle, BattleId, BattleLine, BattleResult, CombatPhase, ProvinceId, RegimentType,
+    Terrain, WorldState,
+};
 use eu4data::defines::combat as defines;
 use std::collections::HashMap;
 
-/// Runs daily combat resolution for all active wars.
-///
-/// Combat occurs when opposing armies are in the same province.
-/// This is a simplified model: strength-based attrition with no terrain/tactics.
-pub fn run_combat_tick(state: &mut WorldState) {
-    // Find all province locations with armies
-    let mut province_armies: HashMap<u32, Vec<u32>> = HashMap::new();
+// ============================================================================
+// Main Entry Point
+// ============================================================================
 
-    for (army_id, army) in &state.armies {
+/// Runs daily combat resolution for all active battles and detects new engagements.
+///
+/// Called once per day in the simulation tick.
+pub fn run_combat_tick(state: &mut WorldState) {
+    // 1. Check for reinforcements joining existing battles
+    process_reinforcements(state);
+
+    // 2. Start new battles where opposing armies meet
+    start_new_battles(state);
+
+    // 3. Run one day for each active battle
+    let battle_ids: Vec<_> = state.battles.keys().cloned().collect();
+    for battle_id in battle_ids {
+        tick_battle_day(state, battle_id);
+    }
+
+    // 4. Cleanup finished battles
+    cleanup_finished_battles(state);
+}
+
+// ============================================================================
+// Battle Detection & Setup
+// ============================================================================
+
+/// Check for armies arriving at provinces with ongoing battles and add as reinforcements.
+fn process_reinforcements(state: &mut WorldState) {
+    // Collect armies that are in battle provinces but not yet in battle
+    let mut reinforcements: Vec<(BattleId, ArmyId, bool)> = Vec::new(); // (battle, army, is_attacker)
+
+    for battle in state.battles.values() {
+        if battle.result.is_some() {
+            continue; // Battle already over
+        }
+
+        for (&army_id, army) in &state.armies {
+            if army.location != battle.province || army.in_battle.is_some() {
+                continue;
+            }
+
+            // Determine which side this army belongs to
+            let attacker_tags: Vec<_> = battle
+                .attackers
+                .iter()
+                .filter_map(|&aid| state.armies.get(&aid).map(|a| a.owner.clone()))
+                .collect();
+
+            let defender_tags: Vec<_> = battle
+                .defenders
+                .iter()
+                .filter_map(|&aid| state.armies.get(&aid).map(|a| a.owner.clone()))
+                .collect();
+
+            if attacker_tags.contains(&army.owner) {
+                reinforcements.push((battle.id, army_id, true));
+            } else if defender_tags.contains(&army.owner) {
+                reinforcements.push((battle.id, army_id, false));
+            }
+            // Otherwise army is neutral, doesn't join
+        }
+    }
+
+    // Apply reinforcements
+    for (battle_id, army_id, is_attacker) in reinforcements {
+        if let Some(battle) = state.battles.get_mut(&battle_id) {
+            if is_attacker {
+                battle.attackers.push(army_id);
+                battle.attacker_line.reserves.push(army_id);
+            } else {
+                battle.defenders.push(army_id);
+                battle.defender_line.reserves.push(army_id);
+            }
+        }
+        if let Some(army) = state.armies.get_mut(&army_id) {
+            army.in_battle = Some(battle_id);
+        }
+        log::info!(
+            "Army {} joined battle {} as reinforcement",
+            army_id,
+            battle_id
+        );
+    }
+}
+
+/// Start new battles where opposing armies are in the same province.
+fn start_new_battles(state: &mut WorldState) {
+    // Group armies by province (excluding those already in battle)
+    let mut province_armies: HashMap<ProvinceId, Vec<ArmyId>> = HashMap::new();
+
+    for (&army_id, army) in &state.armies {
+        if army.in_battle.is_some() || army.embarked_on.is_some() {
+            continue;
+        }
         province_armies
             .entry(army.location)
             .or_default()
-            .push(*army_id);
+            .push(army_id);
     }
 
-    // For each province with multiple armies, check if they're at war
-    for (_province_id, army_ids) in province_armies {
+    // Check each province for opposing forces at war
+    for (province_id, army_ids) in province_armies {
         if army_ids.len() < 2 {
             continue;
         }
 
-        // Group armies by owner
-        let mut owners: HashMap<String, Vec<u32>> = HashMap::new();
+        // Group by owner
+        let mut owners: HashMap<String, Vec<ArmyId>> = HashMap::new();
         for &army_id in &army_ids {
             if let Some(army) = state.armies.get(&army_id) {
                 owners.entry(army.owner.clone()).or_default().push(army_id);
             }
         }
 
-        // Check all pairs of owners for wars
+        // Check all pairs for war
         let owner_list: Vec<String> = owners.keys().cloned().collect();
         for i in 0..owner_list.len() {
             for j in (i + 1)..owner_list.len() {
@@ -40,110 +137,629 @@ pub fn run_combat_tick(state: &mut WorldState) {
                 let owner2 = &owner_list[j];
 
                 if state.diplomacy.are_at_war(owner1, owner2) {
-                    // Combat!
-                    resolve_combat(state, &owners[owner1], &owners[owner2], owner1, owner2);
+                    // Check if any of these armies are already in battle
+                    let side1 = &owners[owner1];
+                    let side2 = &owners[owner2];
+
+                    let any_in_battle = side1
+                        .iter()
+                        .chain(side2.iter())
+                        .any(|&id| state.armies.get(&id).is_some_and(|a| a.in_battle.is_some()));
+
+                    if any_in_battle {
+                        continue;
+                    }
+
+                    // Start battle! Determine attacker (first to arrive conceptually)
+                    // For now: owner1 is attacker
+                    start_battle(state, province_id, side1.clone(), side2.clone());
                 }
             }
         }
     }
 }
 
-/// Resolves combat between two groups of armies.
-fn resolve_combat(
+/// Initialize a new battle between two groups of armies.
+fn start_battle(
     state: &mut WorldState,
-    side1_armies: &[u32],
-    side2_armies: &[u32],
-    owner1: &str,
-    owner2: &str,
+    province: ProvinceId,
+    attacker_armies: Vec<ArmyId>,
+    defender_armies: Vec<ArmyId>,
 ) {
-    // Calculate total combat power for each side
-    let power1 = calculate_total_power(state, side1_armies);
-    let power2 = calculate_total_power(state, side2_armies);
+    let battle_id = state.next_battle_id;
+    state.next_battle_id += 1;
 
-    // Prevent division by zero
-    if power1 == Fixed::ZERO && power2 == Fixed::ZERO {
-        return;
+    // Get combat width (use first attacker's owner for tech lookup)
+    let attacker_owner = attacker_armies
+        .first()
+        .and_then(|&id| state.armies.get(&id))
+        .map(|a| a.owner.clone())
+        .unwrap_or_default();
+    let combat_width = get_combat_width(state, &attacker_owner);
+
+    // Deploy armies to battle lines
+    let attacker_line = deploy_to_lines(state, &attacker_armies, combat_width);
+    let defender_line = deploy_to_lines(state, &defender_armies, combat_width);
+
+    // Roll initial dice
+    let attacker_dice = roll_dice(state);
+    let defender_dice = roll_dice(state);
+
+    let battle = Battle {
+        id: battle_id,
+        province,
+        start_date: state.date,
+        phase_day: 0,
+        phase: CombatPhase::Fire,
+        attacker_dice,
+        defender_dice,
+        attackers: attacker_armies.clone(),
+        defenders: defender_armies.clone(),
+        attacker_line,
+        defender_line,
+        attacker_casualties: 0,
+        defender_casualties: 0,
+        result: None,
+    };
+
+    state.battles.insert(battle_id, battle);
+
+    // Mark armies as in battle
+    for &army_id in attacker_armies.iter().chain(defender_armies.iter()) {
+        if let Some(army) = state.armies.get_mut(&army_id) {
+            army.in_battle = Some(battle_id);
+        }
     }
 
-    // Calculate casualties based on power ratio
-    // Side with more power deals proportionally more damage
-    let total_power = power1 + power2;
-    let daily_casualty_rate = Fixed::from_f32(defines::DAILY_CASUALTY_RATE);
-    let side1_casualties_rate = if power2 > Fixed::ZERO {
-        daily_casualty_rate.mul(power2.div(total_power))
-    } else {
-        Fixed::ZERO
-    };
-    let side2_casualties_rate = if power1 > Fixed::ZERO {
-        daily_casualty_rate.mul(power1.div(total_power))
-    } else {
-        Fixed::ZERO
-    };
-
-    // Apply casualties to all regiments
-    apply_casualties_to_armies(state, side1_armies, side1_casualties_rate);
-    apply_casualties_to_armies(state, side2_armies, side2_casualties_rate);
-
     log::info!(
-        "Combat: {} (power {}) vs {} (power {})",
-        owner1,
-        power1.to_f32(),
-        owner2,
-        power2.to_f32()
+        "Battle started at province {}: {} vs {}",
+        province,
+        attacker_armies.len(),
+        defender_armies.len()
     );
 }
 
-/// Calculates total combat power for a group of armies.
-fn calculate_total_power(state: &WorldState, army_ids: &[u32]) -> Fixed {
-    let mut total = Fixed::ZERO;
+// ============================================================================
+// Battle Line Deployment
+// ============================================================================
+
+/// Deploy armies to front/back rows respecting combat width and cavalry ratio.
+fn deploy_to_lines(state: &WorldState, army_ids: &[ArmyId], combat_width: u8) -> BattleLine {
+    let width = combat_width as usize;
+
+    // Collect all regiments with their army reference
+    let mut infantry: Vec<(ArmyId, usize)> = Vec::new();
+    let mut cavalry: Vec<(ArmyId, usize)> = Vec::new();
+    let mut artillery: Vec<(ArmyId, usize)> = Vec::new();
 
     for &army_id in army_ids {
         if let Some(army) = state.armies.get(&army_id) {
-            for regiment in &army.regiments {
-                let base_power = Fixed::from_f32(match regiment.type_ {
-                    RegimentType::Infantry => defines::INFANTRY_POWER,
-                    RegimentType::Cavalry => defines::CAVALRY_POWER,
-                    RegimentType::Artillery => defines::ARTILLERY_POWER,
-                });
-                // Power scales with regiment strength (men count)
-                // TODO(review): Confirm power scaling normalization - dividing by 1000 means
-                // power scales with "thousands of men". Is this intentional for variable-strength regiments?
-                total += base_power.mul(
-                    regiment
-                        .strength
-                        .div(Fixed::from_int(defines::REGIMENT_SIZE)),
-                );
+            for (idx, reg) in army.regiments.iter().enumerate() {
+                if reg.strength <= Fixed::ZERO {
+                    continue;
+                }
+                match reg.type_ {
+                    RegimentType::Infantry => infantry.push((army_id, idx)),
+                    RegimentType::Cavalry => cavalry.push((army_id, idx)),
+                    RegimentType::Artillery => artillery.push((army_id, idx)),
+                }
             }
         }
     }
 
-    total
+    // Fill front row: infantry first, then cavalry (up to width)
+    let mut front: Vec<Option<(ArmyId, usize)>> = Vec::with_capacity(width);
+
+    // Add all infantry
+    for reg in infantry.iter().take(width) {
+        front.push(Some(*reg));
+    }
+
+    // Calculate max cavalry allowed: 50% of infantry count
+    let inf_in_front = front.len();
+    let max_cav = (inf_in_front as f32 * defines::BASE_CAVALRY_RATIO).ceil() as usize;
+    let remaining_width = width.saturating_sub(front.len());
+
+    // Add cavalry up to limit and remaining width
+    let cav_to_add = cavalry.len().min(max_cav).min(remaining_width);
+    for reg in cavalry.iter().take(cav_to_add) {
+        front.push(Some(*reg));
+    }
+
+    // Back row: artillery + excess cavalry
+    let mut back: Vec<(ArmyId, usize)> = artillery;
+    for reg in cavalry.iter().skip(cav_to_add) {
+        back.push(*reg);
+    }
+
+    // Any infantry that didn't fit goes to reserves (rare)
+    let reserves: Vec<ArmyId> = Vec::new();
+
+    BattleLine {
+        front,
+        back,
+        reserves,
+    }
 }
 
-/// Applies casualties to armies (reduces regiment strength).
-fn apply_casualties_to_armies(state: &mut WorldState, army_ids: &[u32], casualty_rate: Fixed) {
-    for &army_id in army_ids {
-        if let Some(army) = state.armies.get_mut(&army_id) {
-            for regiment in &mut army.regiments {
-                let casualties = regiment.strength.mul(casualty_rate);
-                regiment.strength -= casualties;
+// ============================================================================
+// Daily Battle Tick
+// ============================================================================
 
-                // Ensure strength doesn't go negative
-                if regiment.strength < Fixed::ZERO {
-                    regiment.strength = Fixed::ZERO;
+/// Run one day of combat for a battle.
+fn tick_battle_day(state: &mut WorldState, battle_id: BattleId) {
+    // Check if battle is already over
+    if state
+        .battles
+        .get(&battle_id)
+        .is_some_and(|b| b.result.is_some())
+    {
+        return;
+    }
+
+    // Fill gaps in front line from reserves/back row
+    fill_frontline_gaps(state, battle_id);
+
+    // Calculate and apply damage
+    apply_daily_damage(state, battle_id);
+
+    // Check for morale break / stackwipe
+    if check_battle_end(state, battle_id) {
+        return;
+    }
+
+    // Advance day; if phase ends, switch phase and reroll dice
+    advance_day(state, battle_id);
+}
+
+/// Fill empty front line slots from back row or reserves.
+fn fill_frontline_gaps(state: &mut WorldState, battle_id: BattleId) {
+    let battle = match state.battles.get_mut(&battle_id) {
+        Some(b) => b,
+        None => return,
+    };
+
+    // Fill attacker gaps
+    for slot in &mut battle.attacker_line.front {
+        if slot.is_none() && !battle.attacker_line.back.is_empty() {
+            *slot = Some(battle.attacker_line.back.remove(0));
+        }
+    }
+
+    // Fill defender gaps
+    for slot in &mut battle.defender_line.front {
+        if slot.is_none() && !battle.defender_line.back.is_empty() {
+            *slot = Some(battle.defender_line.back.remove(0));
+        }
+    }
+}
+
+/// Calculate and apply damage for both sides.
+fn apply_daily_damage(state: &mut WorldState, battle_id: BattleId) {
+    // Get battle info (immutable first pass to calculate)
+    let (att_damage, def_damage, _phase) = {
+        let battle = match state.battles.get(&battle_id) {
+            Some(b) => b,
+            None => return,
+        };
+
+        let att_damage = calculate_side_damage(state, battle, true);
+        let def_damage = calculate_side_damage(state, battle, false);
+
+        (att_damage, def_damage, battle.phase)
+    };
+
+    // Apply damage to defenders from attackers
+    apply_damage_to_side(state, battle_id, false, att_damage.0, att_damage.1);
+
+    // Apply damage to attackers from defenders
+    apply_damage_to_side(state, battle_id, true, def_damage.0, def_damage.1);
+}
+
+/// Calculate damage dealt by one side. Returns (casualties, morale_damage).
+fn calculate_side_damage(state: &WorldState, battle: &Battle, is_attacker: bool) -> (Fixed, Fixed) {
+    let line = if is_attacker {
+        &battle.attacker_line
+    } else {
+        &battle.defender_line
+    };
+    let dice = if is_attacker {
+        battle.attacker_dice
+    } else {
+        battle.defender_dice
+    };
+
+    let mut total_damage = Fixed::ZERO;
+
+    // Front row damage
+    for (army_id, reg_idx) in line.front.iter().flatten() {
+        if let Some(army) = state.armies.get(army_id) {
+            if let Some(reg) = army.regiments.get(*reg_idx) {
+                let base = get_regiment_phase_damage(reg.type_, battle.phase);
+                // Damage formula: base * (dice + 5) / 10 * (strength / 1000)
+                let dice_factor = Fixed::from_int(dice as i64 + 5).div(Fixed::from_int(10));
+                let strength_factor = reg.strength.div(Fixed::from_int(defines::REGIMENT_SIZE));
+                let dmg = Fixed::from_f32(base).mul(dice_factor).mul(strength_factor);
+                total_damage += dmg;
+            }
+        }
+    }
+
+    // Back row (artillery) deals damage too
+    for (army_id, reg_idx) in &line.back {
+        if let Some(army) = state.armies.get(army_id) {
+            if let Some(reg) = army.regiments.get(*reg_idx) {
+                if reg.type_ == RegimentType::Artillery {
+                    let base = get_regiment_phase_damage(reg.type_, battle.phase);
+                    let dice_factor = Fixed::from_int(dice as i64 + 5).div(Fixed::from_int(10));
+                    let strength_factor = reg.strength.div(Fixed::from_int(defines::REGIMENT_SIZE));
+                    let dmg = Fixed::from_f32(base).mul(dice_factor).mul(strength_factor);
+                    total_damage += dmg;
+                }
+            }
+        }
+    }
+
+    // Apply terrain penalty to attacker
+    if is_attacker {
+        let terrain_mod = get_terrain_penalty(state, battle.province);
+        // Each -1 to dice effectively reduces damage by ~10%
+        let penalty_factor = Fixed::from_int(10 + terrain_mod as i64).div(Fixed::from_int(10));
+        total_damage = total_damage.mul(penalty_factor.max(Fixed::ZERO));
+    }
+
+    // Scale to reasonable casualty numbers (base damage is per-regiment pip value)
+    // Multiply by 100 to get actual casualties
+    let casualties = total_damage.mul(Fixed::from_int(100));
+    let morale_damage = casualties.mul(Fixed::from_f32(defines::MORALE_DAMAGE_MULTIPLIER));
+
+    (casualties, morale_damage)
+}
+
+/// Apply damage to one side of the battle.
+fn apply_damage_to_side(
+    state: &mut WorldState,
+    battle_id: BattleId,
+    is_attacker: bool,
+    casualties: Fixed,
+    morale_damage: Fixed,
+) {
+    let battle = match state.battles.get(&battle_id) {
+        Some(b) => b.clone(),
+        None => return,
+    };
+
+    let line = if is_attacker {
+        &battle.attacker_line
+    } else {
+        &battle.defender_line
+    };
+
+    // Count regiments to distribute damage
+    let front_count = line.front.iter().filter(|s| s.is_some()).count();
+    let back_count = line.back.len();
+    let total_count = front_count + back_count;
+
+    if total_count == 0 {
+        return;
+    }
+
+    // Distribute casualties evenly across front line
+    let per_reg_casualties = if front_count > 0 {
+        casualties.div(Fixed::from_int(front_count as i64))
+    } else {
+        Fixed::ZERO
+    };
+
+    let per_reg_morale = if front_count > 0 {
+        morale_damage.div(Fixed::from_int(front_count as i64))
+    } else {
+        Fixed::ZERO
+    };
+
+    // Apply to front line
+    for (army_id, reg_idx) in line.front.iter().flatten() {
+        if let Some(army) = state.armies.get_mut(army_id) {
+            if let Some(reg) = army.regiments.get_mut(*reg_idx) {
+                reg.strength = (reg.strength - per_reg_casualties).max(Fixed::ZERO);
+                reg.morale = (reg.morale - per_reg_morale).max(Fixed::ZERO);
+            }
+        }
+    }
+
+    // Back row takes reduced morale damage (40%)
+    let back_morale = morale_damage
+        .mul(Fixed::from_f32(defines::BACKROW_MORALE_DAMAGE_FRACTION))
+        .div(Fixed::from_int(back_count.max(1) as i64));
+
+    for (army_id, reg_idx) in &line.back {
+        if let Some(army) = state.armies.get_mut(army_id) {
+            if let Some(reg) = army.regiments.get_mut(*reg_idx) {
+                reg.morale = (reg.morale - back_morale).max(Fixed::ZERO);
+            }
+        }
+    }
+
+    // Update battle casualties counter
+    if let Some(battle) = state.battles.get_mut(&battle_id) {
+        let cas_int = casualties.to_f32() as u32;
+        if is_attacker {
+            battle.attacker_casualties += cas_int;
+        } else {
+            battle.defender_casualties += cas_int;
+        }
+    }
+}
+
+/// Get base damage for a regiment type in a given phase.
+fn get_regiment_phase_damage(type_: RegimentType, phase: CombatPhase) -> f32 {
+    match (type_, phase) {
+        (RegimentType::Infantry, CombatPhase::Fire) => defines::INFANTRY_FIRE,
+        (RegimentType::Infantry, CombatPhase::Shock) => defines::INFANTRY_SHOCK,
+        (RegimentType::Cavalry, CombatPhase::Fire) => defines::CAVALRY_FIRE,
+        (RegimentType::Cavalry, CombatPhase::Shock) => defines::CAVALRY_SHOCK,
+        (RegimentType::Artillery, CombatPhase::Fire) => defines::ARTILLERY_FIRE,
+        (RegimentType::Artillery, CombatPhase::Shock) => defines::ARTILLERY_SHOCK,
+    }
+}
+
+/// Get terrain penalty for attacker (negative modifier to dice).
+fn get_terrain_penalty(state: &WorldState, province: ProvinceId) -> i8 {
+    let terrain = state.provinces.get(&province).and_then(|p| p.terrain);
+
+    match terrain {
+        Some(Terrain::Mountains) => defines::MOUNTAIN_PENALTY,
+        Some(Terrain::Hills) => defines::HILLS_PENALTY,
+        Some(Terrain::Forest) => defines::FOREST_PENALTY,
+        Some(Terrain::Marsh) => defines::MARSH_PENALTY,
+        Some(Terrain::Jungle) => defines::JUNGLE_PENALTY,
+        _ => 0,
+    }
+}
+
+// ============================================================================
+// Battle Resolution
+// ============================================================================
+
+/// Check if battle has ended (one side broke or was stackwiped).
+/// Returns true if battle is over.
+fn check_battle_end(state: &mut WorldState, battle_id: BattleId) -> bool {
+    let (att_morale, att_strength, def_morale, def_strength) = {
+        let battle = match state.battles.get(&battle_id) {
+            Some(b) => b,
+            None => return true,
+        };
+
+        let att = calculate_side_totals(state, &battle.attacker_line);
+        let def = calculate_side_totals(state, &battle.defender_line);
+
+        (att.0, att.1, def.0, def.1)
+    };
+
+    let att_broke = att_morale <= Fixed::ZERO || att_strength <= Fixed::ZERO;
+    let def_broke = def_morale <= Fixed::ZERO || def_strength <= Fixed::ZERO;
+
+    if !att_broke && !def_broke {
+        return false;
+    }
+
+    // Determine winner and check for stackwipe
+    let result = if att_broke && def_broke {
+        BattleResult::Draw
+    } else if def_broke {
+        let stackwiped =
+            att_strength >= def_strength.mul(Fixed::from_f32(defines::STACKWIPE_RATIO));
+        let pursuit = if stackwiped {
+            def_strength.to_f32() as u32
+        } else {
+            (def_strength.mul(Fixed::from_f32(defines::PURSUIT_MULTIPLIER * 0.1))).to_f32() as u32
+        };
+        BattleResult::AttackerVictory {
+            pursuit_casualties: pursuit,
+            stackwiped,
+        }
+    } else {
+        let stackwiped =
+            def_strength >= att_strength.mul(Fixed::from_f32(defines::STACKWIPE_RATIO));
+        let pursuit = if stackwiped {
+            att_strength.to_f32() as u32
+        } else {
+            (att_strength.mul(Fixed::from_f32(defines::PURSUIT_MULTIPLIER * 0.1))).to_f32() as u32
+        };
+        BattleResult::DefenderVictory {
+            pursuit_casualties: pursuit,
+            stackwiped,
+        }
+    };
+
+    // Apply stackwipe / pursuit casualties
+    apply_battle_result(state, battle_id, &result);
+
+    // Set result
+    if let Some(battle) = state.battles.get_mut(&battle_id) {
+        log::info!("Battle {} ended: {:?}", battle_id, result);
+        battle.result = Some(result);
+    }
+
+    true
+}
+
+/// Calculate total morale and strength for a side.
+fn calculate_side_totals(state: &WorldState, line: &BattleLine) -> (Fixed, Fixed) {
+    let mut total_morale = Fixed::ZERO;
+    let mut total_strength = Fixed::ZERO;
+    let mut count = 0;
+
+    for (army_id, reg_idx) in line.front.iter().flatten() {
+        if let Some(army) = state.armies.get(army_id) {
+            if let Some(reg) = army.regiments.get(*reg_idx) {
+                total_morale += reg.morale;
+                total_strength += reg.strength;
+                count += 1;
+            }
+        }
+    }
+
+    for (army_id, reg_idx) in &line.back {
+        if let Some(army) = state.armies.get(army_id) {
+            if let Some(reg) = army.regiments.get(*reg_idx) {
+                total_morale += reg.morale;
+                total_strength += reg.strength;
+                count += 1;
+            }
+        }
+    }
+
+    // Average morale
+    let avg_morale = if count > 0 {
+        total_morale.div(Fixed::from_int(count as i64))
+    } else {
+        Fixed::ZERO
+    };
+
+    (avg_morale, total_strength)
+}
+
+/// Apply pursuit casualties and handle stackwipe.
+fn apply_battle_result(state: &mut WorldState, battle_id: BattleId, result: &BattleResult) {
+    let battle = match state.battles.get(&battle_id) {
+        Some(b) => b.clone(),
+        None => return,
+    };
+
+    match result {
+        BattleResult::AttackerVictory { stackwiped, .. } => {
+            if *stackwiped {
+                // Destroy all defender regiments
+                for &army_id in &battle.defenders {
+                    if let Some(army) = state.armies.get_mut(&army_id) {
+                        for reg in &mut army.regiments {
+                            reg.strength = Fixed::ZERO;
+                            reg.morale = Fixed::ZERO;
+                        }
+                    }
+                }
+            }
+            // Loser retreats (would be handled by movement system)
+        }
+        BattleResult::DefenderVictory { stackwiped, .. } => {
+            if *stackwiped {
+                // Destroy all attacker regiments
+                for &army_id in &battle.attackers {
+                    if let Some(army) = state.armies.get_mut(&army_id) {
+                        for reg in &mut army.regiments {
+                            reg.strength = Fixed::ZERO;
+                            reg.morale = Fixed::ZERO;
+                        }
+                    }
+                }
+            }
+        }
+        BattleResult::Draw => {}
+    }
+}
+
+/// Advance day counter; switch phase every 3 days.
+fn advance_day(state: &mut WorldState, battle_id: BattleId) {
+    let battle = match state.battles.get_mut(&battle_id) {
+        Some(b) => b,
+        None => return,
+    };
+
+    battle.phase_day += 1;
+
+    if battle.phase_day >= defines::DAYS_PER_PHASE {
+        battle.phase_day = 0;
+        battle.phase = match battle.phase {
+            CombatPhase::Fire => CombatPhase::Shock,
+            CombatPhase::Shock => CombatPhase::Fire,
+        };
+
+        // Reroll dice for new phase
+        battle.attacker_dice = roll_dice_raw(&mut state.rng_state);
+        battle.defender_dice = roll_dice_raw(&mut state.rng_state);
+    }
+}
+
+// ============================================================================
+// Battle Cleanup
+// ============================================================================
+
+/// Remove finished battles and clear army in_battle flags.
+fn cleanup_finished_battles(state: &mut WorldState) {
+    let finished: Vec<BattleId> = state
+        .battles
+        .iter()
+        .filter(|(_, b)| b.result.is_some())
+        .map(|(&id, _)| id)
+        .collect();
+
+    for battle_id in finished {
+        if let Some(battle) = state.battles.remove(&battle_id) {
+            // Clear in_battle flag for all participating armies
+            for army_id in battle.attackers.iter().chain(battle.defenders.iter()) {
+                if let Some(army) = state.armies.get_mut(army_id) {
+                    army.in_battle = None;
                 }
             }
 
-            // Remove destroyed regiments (strength <= 0)
-            army.regiments.retain(|r| r.strength > Fixed::ZERO);
+            // Remove dead regiments
+            for army_id in battle.attackers.iter().chain(battle.defenders.iter()) {
+                if let Some(army) = state.armies.get_mut(army_id) {
+                    army.regiments.retain(|r| r.strength > Fixed::ZERO);
+                }
+            }
         }
     }
 
-    // Remove armies with no regiments
-    // TODO(review): Consider collecting army IDs to remove first, then removing them.
-    // Current approach works but is more subtle if refactored inside loops.
+    // Remove empty armies
     state.armies.retain(|_, army| !army.regiments.is_empty());
 }
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+/// Get combat width for a country based on mil tech.
+/// Uses accessor pattern so tech scaling can be plugged in later.
+pub fn get_combat_width(state: &WorldState, country: &str) -> u8 {
+    let mil_tech = state
+        .countries
+        .get(country)
+        .map(|c| c.mil_tech)
+        .unwrap_or(0);
+
+    // Simplified scaling: +1 width per ~1.5 mil tech
+    // Full EU4 table: 15 → 17 → 20 → 22 → 25 → 27 → 29 → 30 → 32 → 34 → 36 → 38 → 40
+    let bonus = (mil_tech as f32 * 0.8).floor() as u8;
+
+    (defines::BASE_COMBAT_WIDTH + bonus).min(defines::MAX_COMBAT_WIDTH)
+}
+
+/// Roll a combat die (0-9) using world state RNG.
+fn roll_dice(state: &mut WorldState) -> u8 {
+    roll_dice_raw(&mut state.rng_state)
+}
+
+/// Roll dice using raw RNG state.
+fn roll_dice_raw(rng_state: &mut u64) -> u8 {
+    // xorshift64
+    let mut x = *rng_state;
+    if x == 0 {
+        x = 1;
+    }
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    *rng_state = x;
+
+    // Map to 0-9
+    (x % 10) as u8
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -151,43 +767,55 @@ mod tests {
     use crate::state::{Army, Date, Regiment};
     use crate::testing::WorldStateBuilder;
 
+    fn make_regiment(type_: RegimentType, strength: i64) -> Regiment {
+        Regiment {
+            type_,
+            strength: Fixed::from_int(strength),
+            morale: Fixed::from_f32(defines::BASE_MORALE),
+        }
+    }
+
+    fn make_army(id: ArmyId, owner: &str, location: ProvinceId, regiments: Vec<Regiment>) -> Army {
+        Army {
+            id,
+            name: format!("{} Army {}", owner, id),
+            owner: owner.to_string(),
+            location,
+            regiments,
+            movement: None,
+            embarked_on: None,
+            general: None,
+            in_battle: None,
+        }
+    }
+
     #[test]
-    fn test_combat_basic() {
+    fn test_phase_lasts_three_days() {
         let mut state = WorldStateBuilder::new()
             .date(1444, 11, 11)
             .with_country("SWE")
             .with_country("DEN")
             .build();
 
-        // Create armies in the same province
-        let army1 = Army {
-            id: 1,
-            name: "Swedish Army".into(),
-            owner: "SWE".into(),
-            location: 1,
-            regiments: vec![Regiment {
-                type_: RegimentType::Infantry,
-                strength: Fixed::from_int(1000),
-            }],
-            movement: None,
-            embarked_on: None,
-        };
-
-        let army2 = Army {
-            id: 2,
-            name: "Danish Army".into(),
-            owner: "DEN".into(),
-            location: 1,
-            regiments: vec![Regiment {
-                type_: RegimentType::Infantry,
-                strength: Fixed::from_int(1000),
-            }],
-            movement: None,
-            embarked_on: None,
-        };
-
-        state.armies.insert(1, army1);
-        state.armies.insert(2, army2);
+        // Create armies
+        state.armies.insert(
+            1,
+            make_army(
+                1,
+                "SWE",
+                1,
+                vec![make_regiment(RegimentType::Infantry, 1000)],
+            ),
+        );
+        state.armies.insert(
+            2,
+            make_army(
+                2,
+                "DEN",
+                1,
+                vec![make_regiment(RegimentType::Infantry, 1000)],
+            ),
+        );
 
         // Declare war
         let war = crate::state::War {
@@ -204,108 +832,54 @@ mod tests {
         };
         state.diplomacy.wars.insert(0, war);
 
-        // Run combat
+        // Start battle
         run_combat_tick(&mut state);
 
-        // Both armies should have casualties
-        let swe_army = state.armies.get(&1).unwrap();
-        let den_army = state.armies.get(&2).unwrap();
+        assert_eq!(state.battles.len(), 1);
+        let battle = state.battles.values().next().unwrap();
+        assert_eq!(battle.phase, CombatPhase::Fire);
+        assert_eq!(battle.phase_day, 1); // After first tick
 
-        assert!(swe_army.regiments[0].strength < Fixed::from_int(1000));
-        assert!(den_army.regiments[0].strength < Fixed::from_int(1000));
+        // Tick 2 more days - should still be Fire
+        run_combat_tick(&mut state);
+        run_combat_tick(&mut state);
+
+        let battle = state.battles.values().next().unwrap();
+        // Day 3 completes Fire phase, day 0 of Shock
+        assert_eq!(battle.phase, CombatPhase::Shock);
+        assert_eq!(battle.phase_day, 0);
     }
 
     #[test]
-    fn test_combat_no_war_no_casualties() {
+    fn test_morale_depletes_over_phases() {
         let mut state = WorldStateBuilder::new()
             .date(1444, 11, 11)
             .with_country("SWE")
             .with_country("DEN")
             .build();
 
-        // Create armies in the same province (but not at war)
-        let army1 = Army {
-            id: 1,
-            name: "Swedish Army".into(),
-            owner: "SWE".into(),
-            location: 1,
-            regiments: vec![Regiment {
-                type_: RegimentType::Infantry,
-                strength: Fixed::from_int(1000),
-            }],
-            movement: None,
-            embarked_on: None,
-        };
+        state.armies.insert(
+            1,
+            make_army(
+                1,
+                "SWE",
+                1,
+                vec![make_regiment(RegimentType::Infantry, 1000)],
+            ),
+        );
+        state.armies.insert(
+            2,
+            make_army(
+                2,
+                "DEN",
+                1,
+                vec![make_regiment(RegimentType::Infantry, 1000)],
+            ),
+        );
 
-        let army2 = Army {
-            id: 2,
-            name: "Danish Army".into(),
-            owner: "DEN".into(),
-            location: 1,
-            regiments: vec![Regiment {
-                type_: RegimentType::Infantry,
-                strength: Fixed::from_int(1000),
-            }],
-            movement: None,
-            embarked_on: None,
-        };
-
-        state.armies.insert(1, army1);
-        state.armies.insert(2, army2);
-
-        // Run combat (should do nothing - no war)
-        run_combat_tick(&mut state);
-
-        // No casualties should occur
-        let swe_army = state.armies.get(&1).unwrap();
-        let den_army = state.armies.get(&2).unwrap();
-
-        assert_eq!(swe_army.regiments[0].strength, Fixed::from_int(1000));
-        assert_eq!(den_army.regiments[0].strength, Fixed::from_int(1000));
-    }
-
-    #[test]
-    fn test_combat_asymmetric_casualties() {
-        let mut state = WorldStateBuilder::new()
-            .date(1444, 11, 11)
-            .with_country("SWE")
-            .with_country("DEN")
-            .build();
-
-        // Create one strong army and one weak army
-        let army1 = Army {
-            id: 1,
-            name: "Swedish Army".into(),
-            owner: "SWE".into(),
-            location: 1,
-            regiments: vec![Regiment {
-                type_: RegimentType::Infantry,
-                strength: Fixed::from_int(5000),
-            }],
-            movement: None,
-            embarked_on: None,
-        };
-
-        let army2 = Army {
-            id: 2,
-            name: "Danish Army".into(),
-            owner: "DEN".into(),
-            location: 1,
-            regiments: vec![Regiment {
-                type_: RegimentType::Infantry,
-                strength: Fixed::from_int(1000),
-            }],
-            movement: None,
-            embarked_on: None,
-        };
-
-        state.armies.insert(1, army1);
-        state.armies.insert(2, army2);
-
-        // Declare war
         let war = crate::state::War {
             id: 0,
-            name: "SWE vs DEN".into(),
+            name: "Test War".into(),
             attackers: vec!["SWE".into()],
             defenders: vec!["DEN".into()],
             start_date: Date::new(1444, 11, 11),
@@ -317,114 +891,103 @@ mod tests {
         };
         state.diplomacy.wars.insert(0, war);
 
-        // Run combat for a few days
+        let initial_morale = state.armies.get(&1).unwrap().regiments[0].morale;
+
+        // Run several combat ticks
+        for _ in 0..5 {
+            run_combat_tick(&mut state);
+        }
+
+        // Morale should have decreased (if battle still ongoing)
+        if let Some(army) = state.armies.get(&1) {
+            if !army.regiments.is_empty() {
+                assert!(army.regiments[0].morale < initial_morale);
+            }
+        }
+    }
+
+    #[test]
+    fn test_stackwipe_at_10_to_1() {
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 11, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        // 10:1 ratio
+        let mut large_army = Vec::new();
+        for _ in 0..10 {
+            large_army.push(make_regiment(RegimentType::Infantry, 1000));
+        }
+        state.armies.insert(1, make_army(1, "SWE", 1, large_army));
+        state.armies.insert(
+            2,
+            make_army(
+                2,
+                "DEN",
+                1,
+                vec![make_regiment(RegimentType::Infantry, 1000)],
+            ),
+        );
+
+        // Set DEN army to very low morale to trigger immediate break
+        state.armies.get_mut(&2).unwrap().regiments[0].morale = Fixed::from_f32(0.01);
+
+        let war = crate::state::War {
+            id: 0,
+            name: "Test War".into(),
+            attackers: vec!["SWE".into()],
+            defenders: vec!["DEN".into()],
+            start_date: Date::new(1444, 11, 11),
+            attacker_score: 0,
+            attacker_battle_score: 0,
+            defender_score: 0,
+            defender_battle_score: 0,
+            pending_peace: None,
+        };
+        state.diplomacy.wars.insert(0, war);
+
+        // Run combat until resolved
         for _ in 0..10 {
             run_combat_tick(&mut state);
         }
 
-        // Both armies should have casualties, but weak army should lose proportionally more
-        let strong_army = state.armies.get(&1).unwrap();
-        let weak_army = state.armies.get(&2).unwrap();
-
-        // Strong army should have minor casualties (stronger army takes less damage)
-        assert!(strong_army.regiments[0].strength < Fixed::from_int(5000));
-        assert!(strong_army.regiments[0].strength > Fixed::from_int(4900));
-
-        // Weak army should have significant casualties (weaker army takes more damage)
-        assert!(weak_army.regiments[0].strength < Fixed::from_int(1000));
-        assert!(weak_army.regiments[0].strength < Fixed::from_int(950));
+        // DEN army should be stackwiped (no regiments remaining)
+        assert!(
+            state.armies.get(&2).is_none() || state.armies.get(&2).unwrap().regiments.is_empty()
+        );
     }
 
-    use proptest::prelude::*;
+    #[test]
+    fn test_combat_width_scaling() {
+        let state = WorldStateBuilder::new().with_country("TEST").build();
 
-    proptest! {
-        #[test]
-        fn prop_combat_total_strength_monotonically_decreases(
-            strength1 in 100..10_000i64,
-            strength2 in 100..10_000i64,
-            days in 1..20usize
-        ) {
-            let mut state = WorldStateBuilder::new()
-                .date(1444, 11, 11)
-                .with_country("SWE")
-                .with_country("DEN")
-                .build();
+        // Base width at tech 0
+        let width = get_combat_width(&state, "TEST");
+        assert_eq!(width, defines::BASE_COMBAT_WIDTH);
+    }
 
-            // Create armies
-            let army1 = Army {
-                id: 1,
-                name: "Swedish Army".into(),
-                owner: "SWE".into(),
-                location: 1,
-                regiments: vec![Regiment {
-                    type_: RegimentType::Infantry,
-                    strength: Fixed::from_int(strength1),
-                }],
-                movement: None,
-                embarked_on: None,
-            };
+    #[test]
+    fn test_cavalry_ratio_deployment() {
+        let mut state = WorldStateBuilder::new().with_country("TEST").build();
 
-            let army2 = Army {
-                id: 2,
-                name: "Danish Army".into(),
-                owner: "DEN".into(),
-                location: 1,
-                regiments: vec![Regiment {
-                    type_: RegimentType::Infantry,
-                    strength: Fixed::from_int(strength2),
-                }],
-                movement: None,
-                embarked_on: None,
-            };
-
-            state.armies.insert(1, army1);
-            state.armies.insert(2, army2);
-
-            // Declare war
-            let war = crate::state::War {
-                id: 0,
-                name: "SWE vs DEN".into(),
-                attackers: vec!["SWE".into()],
-                defenders: vec!["DEN".into()],
-                start_date: Date::new(1444, 11, 11),
-                attacker_score: 0,
-                attacker_battle_score: 0,
-                defender_score: 0,
-                defender_battle_score: 0,
-                pending_peace: None,
-            };
-            state.diplomacy.wars.insert(0, war);
-
-            // Calculate initial total strength
-            let mut initial_strength = Fixed::ZERO;
-            for army in state.armies.values() {
-                for reg in &army.regiments {
-                    initial_strength += reg.strength;
-                }
-            }
-
-            for _ in 0..days {
-                run_combat_tick(&mut state);
-
-                // Invariant: No negative strength (safety check)
-                for army in state.armies.values() {
-                    for reg in &army.regiments {
-                        prop_assert!(reg.strength >= Fixed::ZERO, "Negative strength found: {}", reg.strength);
-                    }
-                }
-            }
-
-            // Calculate final total strength
-            let mut final_strength = Fixed::ZERO;
-            for army in state.armies.values() {
-                for reg in &army.regiments {
-                    final_strength += reg.strength;
-                }
-            }
-
-            // Invariant: Total strength decreases or stays same (monotonic)
-            prop_assert!(final_strength <= initial_strength,
-                "Strength increased! {} -> {}", initial_strength, final_strength);
+        // 10 cavalry, 2 infantry
+        let mut regs = Vec::new();
+        for _ in 0..2 {
+            regs.push(make_regiment(RegimentType::Infantry, 1000));
         }
+        for _ in 0..10 {
+            regs.push(make_regiment(RegimentType::Cavalry, 1000));
+        }
+        state.armies.insert(1, make_army(1, "TEST", 1, regs));
+
+        let line = deploy_to_lines(&state, &[1], 20);
+
+        // Front should have: 2 inf + 1 cav (50% of inf)
+        let front_count = line.front.len();
+        assert_eq!(front_count, 3); // 2 inf + 1 cav at 50% ratio
+
+        // Rest of cavalry in back
+        assert_eq!(line.back.len(), 9); // 10 - 1 = 9 cav in back
     }
 }

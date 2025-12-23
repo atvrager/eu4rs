@@ -89,6 +89,8 @@ pub type ProvinceId = u32;
 pub type ArmyId = u32;
 pub type WarId = u32;
 pub type FleetId = u32;
+pub type GeneralId = u32;
+pub type BattleId = u32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum RegimentType {
@@ -100,8 +102,11 @@ pub enum RegimentType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Regiment {
     pub type_: RegimentType,
-    /// Number of men (e.g. 1000.0)
+    /// Number of men (0-1000)
     pub strength: Fixed,
+    /// Current morale (0.0 to country's max morale, base ~2.0)
+    /// Depletes during combat; at 0, army routs.
+    pub morale: Fixed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -134,6 +139,10 @@ pub struct Army {
     pub movement: Option<MovementState>,
     /// Fleet this army is embarked on (None if on land)
     pub embarked_on: Option<FleetId>,
+    /// Assigned general (if any)
+    pub general: Option<GeneralId>,
+    /// Active battle this army is participating in (if any)
+    pub in_battle: Option<BattleId>,
 }
 
 /// Naval transport fleet.
@@ -159,6 +168,92 @@ pub struct Colony {
     pub settlers: u32,
 }
 
+// =========================================================================
+// Combat System Types
+// =========================================================================
+
+/// A military leader with combat pips.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct General {
+    pub id: GeneralId,
+    pub name: String,
+    pub owner: Tag,
+    /// Fire phase pip bonus (0-6)
+    pub fire: u8,
+    /// Shock phase pip bonus (0-6)
+    pub shock: u8,
+    /// Maneuver pip (affects terrain penalty negation, pursuit)
+    pub maneuver: u8,
+    /// Siege pip (not used in field battles)
+    pub siege: u8,
+}
+
+/// Combat phase: 3 days each, alternating Fire → Shock.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum CombatPhase {
+    #[default]
+    Fire,
+    Shock,
+}
+
+/// Deployment of regiments in a battle.
+/// Tracks which regiments are in front/back row.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BattleLine {
+    /// Front row slots: (army_id, regiment_index within that army)
+    /// Up to combat width. Slots can be None if unit died.
+    pub front: Vec<Option<(ArmyId, usize)>>,
+    /// Back row: artillery + overflow
+    pub back: Vec<(ArmyId, usize)>,
+    /// Reserve armies waiting to reinforce
+    pub reserves: Vec<ArmyId>,
+}
+
+/// Result of a completed battle.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum BattleResult {
+    AttackerVictory {
+        pursuit_casualties: u32,
+        stackwiped: bool,
+    },
+    DefenderVictory {
+        pursuit_casualties: u32,
+        stackwiped: bool,
+    },
+    /// Both sides broke simultaneously (very rare)
+    Draw,
+}
+
+/// An active battle between opposing armies.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Battle {
+    pub id: BattleId,
+    pub province: ProvinceId,
+    pub start_date: Date,
+    /// Current day within the current phase (0, 1, 2)
+    pub phase_day: u8,
+    /// Current phase (Fire or Shock)
+    pub phase: CombatPhase,
+    /// Dice roll for attacker this phase (set on phase start)
+    pub attacker_dice: u8,
+    /// Dice roll for defender this phase (set on phase start)
+    pub defender_dice: u8,
+    /// Attacker side armies
+    pub attackers: Vec<ArmyId>,
+    /// Defender side armies
+    pub defenders: Vec<ArmyId>,
+    /// Attacker battle line deployment
+    pub attacker_line: BattleLine,
+    /// Defender battle line deployment
+    pub defender_line: BattleLine,
+    /// Accumulated attacker casualties (for war score)
+    pub attacker_casualties: u32,
+    /// Accumulated defender casualties (for war score)
+    pub defender_casualties: u32,
+    /// Battle result (Some when resolved)
+    pub result: Option<BattleResult>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct WorldState {
     pub date: Date,
@@ -178,6 +273,16 @@ pub struct WorldState {
     pub fleets: HashMap<FleetId, Fleet>,
     pub next_fleet_id: u32,
     pub colonies: HashMap<ProvinceId, Colony>,
+
+    // =========================================================================
+    // Combat System
+    // =========================================================================
+    /// All generals in the game
+    pub generals: HashMap<GeneralId, General>,
+    pub next_general_id: GeneralId,
+    /// Active battles
+    pub battles: HashMap<BattleId, Battle>,
+    pub next_battle_id: BattleId,
 
     // =========================================================================
     // Trade System

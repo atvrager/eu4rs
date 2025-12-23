@@ -176,6 +176,7 @@ mod tests {
             regiments: vec![Regiment {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
+                morale: Fixed::from_f32(eu4data::defines::combat::BASE_MORALE),
             }],
             movement: Some(MovementState {
                 path: VecDeque::from(vec![2]),
@@ -183,6 +184,8 @@ mod tests {
                 required_progress: Fixed::from_int(1), // Instant move for test
             }),
             embarked_on: None,
+            general: None,
+            in_battle: None,
         };
 
         state.armies.insert(1, army);
@@ -214,6 +217,7 @@ mod tests {
             regiments: vec![Regiment {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
+                morale: Fixed::from_f32(eu4data::defines::combat::BASE_MORALE),
             }],
             movement: Some(MovementState {
                 path: VecDeque::from(vec![2, 3]),
@@ -221,6 +225,8 @@ mod tests {
                 required_progress: Fixed::from_int(1), // Instant
             }),
             embarked_on: None,
+            general: None,
+            in_battle: None,
         };
 
         state.armies.insert(1, army);
@@ -265,9 +271,12 @@ mod tests {
             regiments: vec![Regiment {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
+                morale: Fixed::from_f32(eu4data::defines::combat::BASE_MORALE),
             }],
             movement: None,
             embarked_on: None,
+            general: None,
+            in_battle: None,
         };
 
         state.armies.insert(1, army);
@@ -297,6 +306,7 @@ mod tests {
             regiments: vec![Regiment {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
+                morale: Fixed::from_f32(eu4data::defines::combat::BASE_MORALE),
             }],
             movement: Some(MovementState {
                 path: VecDeque::from(vec![2]),
@@ -304,6 +314,8 @@ mod tests {
                 required_progress: Fixed::from_int(10), // Standard cost
             }),
             embarked_on: None,
+            general: None,
+            in_battle: None,
         };
         state.armies.insert(1, army);
 
@@ -342,6 +354,7 @@ mod tests {
             regiments: vec![Regiment {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
+                morale: Fixed::from_f32(eu4data::defines::combat::BASE_MORALE),
             }],
             movement: Some(MovementState {
                 path: VecDeque::from(vec![2, 3]),
@@ -349,6 +362,8 @@ mod tests {
                 required_progress: Fixed::from_int(5), // Short leg 1
             }),
             embarked_on: None,
+            general: None,
+            in_battle: None,
         };
         state.armies.insert(1, army);
 
@@ -410,6 +425,8 @@ mod tests {
                     required_progress: cost_fixed,
                 }),
                 embarked_on: None,
+            general: None,
+            in_battle: None,
             };
             state.armies.insert(1, army);
 
