@@ -272,6 +272,26 @@ pub struct ProvinceState {
     /// Trade-related state (center of trade level, protecting ships).
     #[serde(default)]
     pub trade: ProvinceTradeState,
+    /// Countries that have cores on this province.
+    /// A core represents permanent ownership claim and removes autonomy/overextension.
+    #[serde(default)]
+    pub cores: std::collections::HashSet<Tag>,
+    /// In-progress coring (owner country working to establish a core).
+    #[serde(default)]
+    pub coring_progress: Option<CoringProgress>,
+}
+
+/// Progress towards establishing a core on a province.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CoringProgress {
+    /// Country establishing the core
+    pub coring_country: Tag,
+    /// Date coring started
+    pub start_date: Date,
+    /// Months of progress completed (0 to required)
+    pub progress: u8,
+    /// Total months required (base 36)
+    pub required: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -316,6 +336,11 @@ pub struct CountryState {
     /// Set after a peace offer is rejected; cleared when war ends.
     #[serde(default)]
     pub peace_offer_cooldowns: std::collections::HashMap<WarId, Date>,
+    /// Overextension percentage (1 dev = 1% OE).
+    /// Calculated from total development in owned provinces without cores.
+    /// High OE causes unrest and other penalties.
+    #[serde(default)]
+    pub overextension: Fixed,
 }
 
 /// Breakdown of monthly income by source.
@@ -351,6 +376,7 @@ impl Default for CountryState {
             income: IncomeBreakdown::default(),
             last_diplomatic_action: None,
             peace_offer_cooldowns: std::collections::HashMap::new(),
+            overextension: Fixed::ZERO,
         }
     }
 }

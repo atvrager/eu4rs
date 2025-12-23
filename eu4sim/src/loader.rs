@@ -140,7 +140,22 @@ pub fn load_initial_state(
             country_capitals.entry(tag.clone()).or_insert(id);
         }
 
-        // Create ProvinceState
+        // Create ProvinceState - load historical cores from province history
+        // This includes owner cores AND reconquest claims (e.g., France on English Normandy)
+        let mut cores = std::collections::HashSet::new();
+
+        // Add all historical cores from game data
+        if let Some(ref historical_cores) = hist.add_core {
+            for tag in historical_cores {
+                cores.insert(tag.clone());
+            }
+        }
+
+        // Ensure owner always has a core (fallback if not in add_core)
+        if let Some(tag) = &hist.owner {
+            cores.insert(tag.clone());
+        }
+
         let p = ProvinceState {
             owner: hist.owner.clone(),
             controller: hist.owner.clone(),
@@ -157,6 +172,8 @@ pub fn load_initial_state(
             terrain: terrain_map.get(&id).and_then(|s| parse_terrain(s)),
             institution_presence: ImHashMap::default(),
             trade: Default::default(),
+            cores,
+            coring_progress: None,
         };
         provinces.insert(id, p.clone());
 

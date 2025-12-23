@@ -73,12 +73,17 @@ pub fn run_production_tick(state: &mut WorldState, config: &EconomyConfig) {
 
         // Autonomy: (1 - autonomy)
         // Clamp to [0, 1] to prevent negative income
-        let raw_autonomy = state
+        // Uncored provinces have a 75% autonomy floor
+        let base_autonomy = state
             .modifiers
             .province_autonomy
             .get(&province_id)
             .copied()
             .unwrap_or(Fixed::ZERO);
+
+        // Apply coring-based floor: uncored = max(base, 75%)
+        let floor = crate::systems::coring::effective_autonomy(province, owner);
+        let raw_autonomy = base_autonomy.max(floor);
 
         let autonomy = raw_autonomy.clamp(Fixed::ZERO, Fixed::ONE);
         let autonomy_factor = Fixed::ONE - autonomy;
@@ -124,12 +129,16 @@ mod tests {
         );
 
         // Add a province with grain (id=0), base_production=5
+        // Include a core so it doesn't have the 75% autonomy penalty
+        let mut cores = std::collections::HashSet::new();
+        cores.insert("SWE".to_string());
         state.provinces.insert(
             1,
             ProvinceState {
                 owner: Some("SWE".to_string()),
                 trade_goods_id: Some(TradegoodId(0)),
                 base_production: Fixed::from_int(5),
+                cores,
                 ..Default::default()
             },
         );

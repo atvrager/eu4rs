@@ -28,12 +28,17 @@ pub fn run_taxation_tick(state: &mut WorldState) {
                 .unwrap_or(Fixed::ZERO);
 
             // Clamp autonomy to [0, 1] to prevent negative income or over-production
-            let raw_autonomy = state
+            // Uncored provinces have a 75% autonomy floor
+            let base_autonomy = state
                 .modifiers
                 .province_autonomy
                 .get(&province_id)
                 .copied()
                 .unwrap_or(Fixed::ZERO);
+
+            // Apply coring-based floor: uncored = max(base, 75%)
+            let floor = crate::systems::coring::effective_autonomy(province, owner);
+            let raw_autonomy = base_autonomy.max(floor);
 
             let autonomy = raw_autonomy.clamp(Fixed::ZERO, Fixed::ONE);
 
@@ -74,9 +79,12 @@ mod tests {
     fn test_taxation_basic() {
         // Setup: 1 province, base tax 12.0
         // Expected Monthly: 1.0
+        let mut cores = std::collections::HashSet::new();
+        cores.insert("SWE".to_string());
         let province = ProvinceState {
             base_tax: Fixed::from_f32(12.0),
             owner: Some("SWE".to_string()),
+            cores,
             ..Default::default()
         };
 
@@ -99,9 +107,12 @@ mod tests {
         // Setup: Base 12, +50% National, -50% Autonomy
         // Yearly: 12 * 1.5 * 0.5 = 9.0
         // Monthly: 0.75
+        let mut cores = std::collections::HashSet::new();
+        cores.insert("SWE".to_string());
         let province = ProvinceState {
             base_tax: Fixed::from_f32(12.0),
             owner: Some("SWE".to_string()),
+            cores,
             ..Default::default()
         };
 

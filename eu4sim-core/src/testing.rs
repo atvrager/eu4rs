@@ -57,6 +57,10 @@ impl WorldStateBuilder {
     }
 
     pub fn with_province(mut self, id: ProvinceId, owner_tag: Option<&str>) -> Self {
+        let mut cores = std::collections::HashSet::new();
+        if let Some(tag) = owner_tag {
+            cores.insert(tag.to_string());
+        }
         self.state.provinces.insert(
             id,
             ProvinceState {
@@ -73,6 +77,8 @@ impl WorldStateBuilder {
                 terrain: None,
                 institution_presence: HashMap::default(),
                 trade: ProvinceTradeState::default(),
+                cores,
+                coring_progress: None,
             },
         );
         self
@@ -93,6 +99,10 @@ impl WorldStateBuilder {
         trade_goods_id: Option<TradegoodId>,
         base_production: Fixed,
     ) -> Self {
+        let mut cores = std::collections::HashSet::new();
+        if let Some(tag) = owner_tag {
+            cores.insert(tag.to_string());
+        }
         self.state.provinces.insert(
             id,
             ProvinceState {
@@ -109,6 +119,8 @@ impl WorldStateBuilder {
                 terrain: None,
                 institution_presence: HashMap::default(),
                 trade: ProvinceTradeState::default(),
+                cores,
+                coring_progress: None,
             },
         );
         self

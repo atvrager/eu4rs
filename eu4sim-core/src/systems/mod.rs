@@ -2,6 +2,7 @@
 
 pub mod colonization;
 pub mod combat;
+pub mod coring;
 pub mod development;
 pub mod expenses;
 pub mod institutions;
@@ -20,6 +21,9 @@ pub mod war_score;
 
 pub use colonization::run_colonization_tick;
 pub use combat::run_combat_tick;
+pub use coring::{
+    calculate_coring_cost, effective_autonomy, recalculate_overextension, start_coring, tick_coring,
+};
 pub use development::develop_province;
 pub use expenses::run_expenses_tick;
 pub use institutions::{embrace_institution, tick_institution_spread};

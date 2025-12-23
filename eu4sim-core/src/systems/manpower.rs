@@ -16,12 +16,17 @@ pub fn run_manpower_tick(state: &mut WorldState) {
     for (&id, province) in &state.provinces {
         if let Some(owner) = &province.owner {
             // Clamp autonomy to [0, 1] to prevent negative contribution
-            let raw_autonomy = state
+            // Uncored provinces have a 75% autonomy floor
+            let base_autonomy = state
                 .modifiers
                 .province_autonomy
                 .get(&id)
                 .copied()
                 .unwrap_or(Fixed::ZERO);
+
+            // Apply coring-based floor: uncored = max(base, 75%)
+            let floor = crate::systems::coring::effective_autonomy(province, owner);
+            let raw_autonomy = base_autonomy.max(floor);
 
             let autonomy = raw_autonomy.clamp(Fixed::ZERO, Fixed::ONE);
 
@@ -74,9 +79,12 @@ mod tests {
         // Base Country = 10000
         // Total Max = 11000
         // Monthly Recovery = 11000 / 120 = 91.6666
+        let mut cores = std::collections::HashSet::new();
+        cores.insert("SWE".to_string());
         let province = ProvinceState {
             base_manpower: Fixed::from_f32(1.0),
             owner: Some("SWE".to_string()),
+            cores,
             ..Default::default()
         };
 

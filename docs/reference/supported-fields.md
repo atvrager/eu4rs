@@ -3746,7 +3746,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 - **Total Known Fields:** 37
 - **Parsed:** 36 (97.3%)
 - **Visualized:** 4 (10.8%)
-- **Simulated:** 4 (10.8%)
+- **Simulated:** 5 (13.5%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3756,7 +3756,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 | `trade_goods` | ✅ | ✅ | - |  |
 | `add_brahmins_or_church_effect` | ✅ | - | - |  |
 | `add_claim` | ✅ | - | - |  |
-| `add_core` | ✅ | - | - |  |
+| `add_core` | ✅ | - | ✅ |  |
 | `add_jains_or_burghers_effect` | ✅ | - | - |  |
 | `add_local_autonomy` | ✅ | - | - |  |
 | `add_nationalism` | ✅ | - | - |  |

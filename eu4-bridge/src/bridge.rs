@@ -148,6 +148,7 @@ impl ExtractedState {
             income: Default::default(),
             last_diplomatic_action: None,
             peace_offer_cooldowns: Default::default(),
+            overextension: Fixed::ZERO, // Can't extract from OCR yet
         };
 
         VisibleWorldState {

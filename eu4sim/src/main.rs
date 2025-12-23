@@ -94,6 +94,8 @@ fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGra
             5 => "CCC",
             _ => unreachable!(),
         };
+        let mut cores = std::collections::HashSet::new();
+        cores.insert(owner.to_string());
         provinces.insert(
             id,
             ProvinceState {
@@ -110,6 +112,8 @@ fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGra
                 terrain: Some(Terrain::Plains),
                 institution_presence: Default::default(),
                 trade: Default::default(),
+                cores,
+                coring_progress: None,
             },
         );
     }

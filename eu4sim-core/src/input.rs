@@ -100,6 +100,13 @@ pub enum Command {
         province: ProvinceId,
     },
 
+    // Province Administration
+    /// Start coring an owned province to reduce overextension and autonomy.
+    /// Costs 10 ADM per development, takes 36 months to complete.
+    Core {
+        province: ProvinceId,
+    },
+
     // ===== STUB COMMANDS (Phase 2+) =====
 
     // Military (additional)

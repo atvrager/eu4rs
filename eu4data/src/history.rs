@@ -68,7 +68,10 @@ pub struct ProvinceHistory {
     pub latent_trade_goods: Option<Vec<IgnoredAny>>,
 
     pub discovered_by: Option<Vec<IgnoredAny>>,
-    pub add_core: Option<Vec<IgnoredAny>>,
+    /// Historical cores on this province (countries that have permanent claims).
+    /// Includes both the owner and other countries with reconquest claims.
+    #[schema(simulated)]
+    pub add_core: Option<Vec<String>>,
     pub add_claim: Option<Vec<IgnoredAny>>,
 
     // Explicitly ignored complex fields

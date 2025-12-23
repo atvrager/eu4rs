@@ -82,6 +82,8 @@ pub enum ActionError {
     NoTradeRoute,
     #[error("Country has no home trade node configured")]
     NoHomeNode,
+    #[error("Coring failed: {message}")]
+    CoringFailed { message: String },
 }
 
 /// Advance the world by one tick.
@@ -183,6 +185,12 @@ pub fn step_world(
         crate::systems::run_colonization_tick(&mut new_state);
         crate::systems::tick_institution_spread(&mut new_state);
         crate::systems::run_reformation_tick(&mut new_state, adjacency);
+
+        // Coring - Progress active coring and complete after 36 months. 🛡️
+        crate::systems::tick_coring(&mut new_state);
+
+        // Recalculate overextension (uncored dev causes OE penalties)
+        crate::systems::recalculate_overextension(&mut new_state);
 
         // Recalculate war scores monthly
         crate::systems::recalculate_war_scores(&mut new_state);
@@ -426,6 +434,20 @@ pub fn available_commands(
         }
         for prov_id in colonizable {
             available.push(Command::StartColony { province: prov_id });
+        }
+    }
+
+    // Core - Establish permanent claim on owned provinces. Unlimited per turn.
+    // Available for any owned province without a core, if ADM is sufficient.
+    for (&prov_id, prov) in &state.provinces {
+        if prov.owner.as_deref() == Some(country_tag)
+            && !prov.cores.contains(country_tag)
+            && prov.coring_progress.is_none()
+        {
+            let cost = crate::systems::coring::calculate_coring_cost(prov);
+            if country.adm_mana >= cost {
+                available.push(Command::Core { province: prov_id });
+            }
         }
     }
 
@@ -1214,6 +1236,16 @@ fn execute_command(
                     log::info!("{} abandoned colony in province {}", country_tag, province);
                 }
             }
+            Ok(())
+        }
+        Command::Core { province } => {
+            crate::systems::coring::start_coring(
+                state,
+                country_tag.to_string(),
+                *province,
+                state.date,
+            )
+            .map_err(|e| ActionError::CoringFailed { message: e })?;
             Ok(())
         }
         Command::OfferAlliance { .. } => {
