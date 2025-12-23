@@ -8,7 +8,10 @@ use anyhow::{Context, Result};
 use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::llama::{Cache, Config, Llama, LlamaConfig};
-use hf_hub::{Repo, RepoType, api::sync::Api};
+use hf_hub::{
+    Repo, RepoType,
+    api::sync::{Api, ApiBuilder},
+};
 use rand::Rng;
 use safetensors::SafeTensors;
 use std::collections::HashMap;
@@ -42,7 +45,7 @@ impl ModelArch {
         match model_type {
             "llama" | "mistral" => Ok(Self::SmolLM2),
             "gemma" | "gemma2" => Ok(Self::Gemma2),
-            "gemma3" => Ok(Self::Gemma3),
+            "gemma3" | "gemma3_text" => Ok(Self::Gemma3),
             other => anyhow::bail!("Unknown model type: {}", other),
         }
     }
@@ -119,7 +122,16 @@ impl Eu4AiModel {
         log::info!("Loading base model: {}", config.base_model);
 
         // Download base model files from HuggingFace
-        let api = Api::new().context("Failed to create HuggingFace API")?;
+        // Use HF_TOKEN from environment for authenticated access to gated models (e.g., Gemma)
+        let api = if let Ok(token) = std::env::var("HF_TOKEN") {
+            log::info!("Using HF_TOKEN for authenticated access");
+            ApiBuilder::new()
+                .with_token(Some(token))
+                .build()
+                .context("Failed to create authenticated HuggingFace API")?
+        } else {
+            Api::new().context("Failed to create HuggingFace API")?
+        };
         let repo = api.repo(Repo::new(config.base_model.clone(), RepoType::Model));
 
         let config_path = repo

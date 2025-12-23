@@ -382,11 +382,19 @@ struct Args {
     /// Downloads base model from HuggingFace on first run (~700MB).
     #[arg(long, value_name = "ADAPTER_PATH")]
     llm_ai: Option<PathBuf>,
+
+    /// Base model for LLM AI (default: SmolLM2-360M).
+    /// Options: "smollm" (HuggingFaceTB/SmolLM2-360M), "gemma3" (google/gemma-3-270m)
+    #[arg(long, value_name = "MODEL")]
+    llm_ai_base: Option<String>,
 }
 
 use eu4sim_core::SimMetrics;
 
 fn main() -> Result<()> {
+    // Load .env file for HF_TOKEN and other config
+    let _ = dotenvy::dotenv();
+
     let args = Args::parse();
 
     if args.manifest {
@@ -470,13 +478,23 @@ fn main() -> Result<()> {
 
         // Initialize LLM AI (in hybrid mode or if explicitly requested)
         let llm_ai: Option<Box<dyn eu4sim_core::AiPlayer>> =
-            if args.ai == "hybrid" || args.llm_ai.is_some() {
+            if args.ai == "hybrid" || args.llm_ai.is_some() || args.llm_ai_base.is_some() {
+                // Resolve base model name to HuggingFace repo
+                let base_model = match args.llm_ai_base.as_deref() {
+                    Some("gemma3") | Some("gemma-3") => "google/gemma-3-270m",
+                    Some("smollm") | Some("smollm2") | None => "HuggingFaceTB/SmolLM2-360M",
+                    Some(other) => other, // Allow full repo IDs
+                };
+
                 let result = if let Some(adapter_path) = &args.llm_ai {
-                    eprintln!("Loading LLM AI with adapter: {:?}", adapter_path);
-                    eu4sim_ai::LlmAi::with_adapter(adapter_path.clone())
+                    eprintln!(
+                        "Loading LLM AI with adapter: {:?} (base: {})",
+                        adapter_path, base_model
+                    );
+                    eu4sim_ai::LlmAi::new(base_model, Some(adapter_path.clone()))
                 } else {
-                    eprintln!("Loading LLM AI with base model (no adapter)");
-                    eu4sim_ai::LlmAi::with_base_model()
+                    eprintln!("Loading LLM AI with base model: {}", base_model);
+                    eu4sim_ai::LlmAi::new(base_model, None)
                 };
 
                 match result {

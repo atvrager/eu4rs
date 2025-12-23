@@ -13,6 +13,7 @@ log = "0.4"
 env_logger = "0.10"
 crossterm = "0.29.0"
 rayon = "1.10"
+dotenvy = "0.15"
 
 [dev-dependencies]
 assert_cmd = "2.0"
