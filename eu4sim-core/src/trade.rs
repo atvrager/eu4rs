@@ -157,6 +157,10 @@ pub struct TradeTopology {
 
     /// End nodes (no outgoing edges) - automatic collection points.
     pub end_nodes: Vec<TradeNodeId>,
+
+    /// Outgoing edges: node → downstream nodes it flows to.
+    /// Populated from TradeNetwork during initialization.
+    pub edges: HashMap<TradeNodeId, Vec<TradeNodeId>>,
 }
 
 #[cfg(test)]

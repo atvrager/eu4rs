@@ -157,10 +157,11 @@ mod tests {
             },
         );
 
-        // Topological order
+        // Topological order (end node, no outgoing edges)
         state.trade_topology = TradeTopology {
             order: vec![node_a],
             end_nodes: vec![node_a],
+            edges: std::collections::HashMap::new(),
         };
 
         // Add country with home node

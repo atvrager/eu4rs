@@ -92,52 +92,88 @@ fn calculate_local_values(state: &mut WorldState) {
 ///
 /// For each node (sources → sinks):
 /// 1. total_value = local_value + incoming_value
-/// 2. Calculate retained vs forwarded based on power distribution
-/// 3. Distribute forwarded value to downstream nodes
+/// 2. Calculate retained vs forwarded based on collection power
+/// 3. Distribute forwarded value to downstream nodes (with steering magnification)
+///
+/// Steering mechanics (EU4):
+/// - Merchants steering toward a downstream node add +5% value magnification
+/// - Value is weighted toward nodes with more steering power
 fn propagate_trade_value(state: &mut WorldState) {
-    // Process in topological order (sources first)
-    // We need to iterate by index since we can't borrow mutably while iterating
+    use crate::trade::MerchantAction;
+
     let order = state.trade_topology.order.clone();
+    let edges = state.trade_topology.edges.clone();
 
     for &node_id in &order {
-        // Calculate total value
-        let (forwarded, downstream_nodes) = {
+        // Collect node data (avoiding borrow issues)
+        let (total_value, downstream_nodes, merchants) = {
             let Some(node) = state.trade_nodes.get(&node_id) else {
                 continue;
             };
-
-            // Total = local + incoming
             let total = node.local_value + node.incoming_value;
-
-            // For now (Phase 2), we use a simplified split:
-            // - If total power is zero, forward everything
-            // - Otherwise, we'll implement proper power-based split in Phase 3
-            //
-            // Temporary: forward 100% of value for testing
-            // Real logic in Phase 3 will calculate retention based on power shares
-            let retained = Fixed::ZERO;
-            let forwarded = total - retained;
-
-            // Get downstream nodes from the topology (we need to look at TradeNetwork)
-            // For now, collect downstream from node definition
-            // Note: In Phase 1 we stored outgoing in TradeNodeDef, but not in TradeNodeState
-            // We'll need to access the static network data
-            // For now, return empty - we'll fix this properly
-
-            (forwarded, Vec::new())
+            let downstream = edges.get(&node_id).cloned().unwrap_or_default();
+            let merchants = node.merchants.clone();
+            (total, downstream, merchants)
         };
 
         // Update total value
         if let Some(node) = state.trade_nodes.get_mut(&node_id) {
-            node.total_value = node.local_value + node.incoming_value;
+            node.total_value = total_value;
         }
 
-        // Distribute to downstream (Phase 3 will add proper steering weights)
-        if !downstream_nodes.is_empty() && forwarded > Fixed::ZERO {
-            let per_downstream = forwarded.div(Fixed::from_int(downstream_nodes.len() as i64));
-            for downstream_id in downstream_nodes {
-                if let Some(downstream) = state.trade_nodes.get_mut(&downstream_id) {
-                    downstream.incoming_value += per_downstream;
+        // Skip if nothing to forward
+        if downstream_nodes.is_empty() || total_value == Fixed::ZERO {
+            continue;
+        }
+
+        // Count steering merchants toward each downstream target
+        let mut steering_count: std::collections::HashMap<crate::trade::TradeNodeId, u32> =
+            std::collections::HashMap::new();
+        for merchant in &merchants {
+            if let MerchantAction::Steer { target } = &merchant.action {
+                if downstream_nodes.contains(target) {
+                    *steering_count.entry(*target).or_insert(0) += 1;
+                }
+            }
+        }
+
+        // Calculate forwarded value (for now: 100% flows downstream)
+        // TODO: In full implementation, power-based retention reduces this
+        let forwarded = total_value;
+
+        // Apply steering magnification: +5% per steering merchant
+        // Total magnified = forwarded × (1 + 0.05 × total_steering_merchants)
+        let total_steering: u32 = steering_count.values().sum();
+        let magnification = Fixed::ONE + Fixed::from_f32(0.05 * total_steering as f32);
+        let magnified_value = forwarded.mul(magnification);
+
+        // Distribute to downstream nodes
+        // Weight by steering: nodes with steering get proportionally more
+        if total_steering > 0 {
+            // Weighted distribution based on steering
+            let base_weight = 1u32; // Each node gets at least 1 weight
+            let total_weight: u32 = downstream_nodes
+                .iter()
+                .map(|id| base_weight + steering_count.get(id).copied().unwrap_or(0))
+                .sum();
+
+            for target_id in &downstream_nodes {
+                let weight = base_weight + steering_count.get(target_id).copied().unwrap_or(0);
+                let share = magnified_value
+                    .mul(Fixed::from_int(weight as i64))
+                    .div(Fixed::from_int(total_weight as i64));
+
+                if let Some(target_node) = state.trade_nodes.get_mut(target_id) {
+                    target_node.incoming_value += share;
+                }
+            }
+        } else {
+            // Equal distribution when no steering
+            let per_downstream =
+                magnified_value.div(Fixed::from_int(downstream_nodes.len() as i64));
+            for target_id in &downstream_nodes {
+                if let Some(target_node) = state.trade_nodes.get_mut(target_id) {
+                    target_node.incoming_value += per_downstream;
                 }
             }
         }
@@ -162,9 +198,14 @@ mod tests {
         state.trade_nodes.insert(node_b, TradeNodeState::default());
 
         // Topological order: A before B
+        // Edge: A → B
+        let mut edges = std::collections::HashMap::new();
+        edges.insert(node_a, vec![node_b]);
+
         state.trade_topology = TradeTopology {
             order: vec![node_a, node_b],
             end_nodes: vec![node_b],
+            edges,
         };
 
         // Map province 1 to node A
@@ -302,5 +343,130 @@ mod tests {
         // Note: goods_price_mods is additive (base + modifier)
         let node_a = &state.trade_nodes[&TradeNodeId(0)];
         assert_eq!(node_a.local_value, Fixed::from_f32(3.0));
+    }
+
+    #[test]
+    fn test_value_propagates_downstream() {
+        let mut state = setup_simple_trade_state();
+
+        run_trade_value_tick(&mut state);
+
+        // Node A has local value 2.5, which flows to node B
+        let node_b = &state.trade_nodes[&TradeNodeId(1)];
+        assert_eq!(node_b.incoming_value, Fixed::from_f32(2.5));
+        assert_eq!(node_b.total_value, Fixed::from_f32(2.5));
+    }
+
+    #[test]
+    fn test_steering_magnification() {
+        use crate::trade::{MerchantAction, MerchantState};
+
+        let mut state = setup_simple_trade_state();
+
+        // Add a merchant steering toward node B
+        if let Some(node_a) = state.trade_nodes.get_mut(&TradeNodeId(0)) {
+            node_a.merchants.push(MerchantState {
+                owner: "SWE".to_string(),
+                action: MerchantAction::Steer {
+                    target: TradeNodeId(1),
+                },
+            });
+        }
+
+        run_trade_value_tick(&mut state);
+
+        // Local value 2.5, magnified by +5% = 2.5 × 1.05 = 2.625
+        let node_b = &state.trade_nodes[&TradeNodeId(1)];
+        assert_eq!(node_b.incoming_value, Fixed::from_f32(2.625));
+    }
+
+    #[test]
+    fn test_steering_weighted_distribution() {
+        use crate::trade::{MerchantAction, MerchantState};
+
+        let mut state = WorldState::default();
+
+        // Create three nodes: A → B, A → C (two downstream options)
+        let node_a = TradeNodeId(0);
+        let node_b = TradeNodeId(1);
+        let node_c = TradeNodeId(2);
+
+        state.trade_nodes.insert(node_a, TradeNodeState::default());
+        state.trade_nodes.insert(node_b, TradeNodeState::default());
+        state.trade_nodes.insert(node_c, TradeNodeState::default());
+
+        // A has edges to both B and C
+        let mut edges = std::collections::HashMap::new();
+        edges.insert(node_a, vec![node_b, node_c]);
+
+        state.trade_topology = TradeTopology {
+            order: vec![node_a, node_b, node_c],
+            end_nodes: vec![node_b, node_c],
+            edges,
+        };
+
+        // Set local value directly for testing
+        if let Some(node) = state.trade_nodes.get_mut(&node_a) {
+            node.local_value = Fixed::from_int(100);
+            // Add 2 merchants steering toward B, none toward C
+            node.merchants.push(MerchantState {
+                owner: "SWE".to_string(),
+                action: MerchantAction::Steer { target: node_b },
+            });
+            node.merchants.push(MerchantState {
+                owner: "FRA".to_string(),
+                action: MerchantAction::Steer { target: node_b },
+            });
+        }
+
+        // Simulate propagation phase only (skip local value calculation)
+        propagate_trade_value(&mut state);
+
+        // 2 steering merchants = +10% magnification = 100 × 1.10 = 110
+        // Weights: B gets 1+2=3, C gets 1+0=1, total=4
+        // B's share: 110 × 3/4 = 82.5
+        // C's share: 110 × 1/4 = 27.5
+        let node_b_state = &state.trade_nodes[&node_b];
+        let node_c_state = &state.trade_nodes[&node_c];
+
+        assert_eq!(node_b_state.incoming_value, Fixed::from_f32(82.5));
+        assert_eq!(node_c_state.incoming_value, Fixed::from_f32(27.5));
+    }
+
+    #[test]
+    fn test_no_steering_equal_distribution() {
+        let mut state = WorldState::default();
+
+        // Create three nodes: A → B, A → C
+        let node_a = TradeNodeId(0);
+        let node_b = TradeNodeId(1);
+        let node_c = TradeNodeId(2);
+
+        state.trade_nodes.insert(node_a, TradeNodeState::default());
+        state.trade_nodes.insert(node_b, TradeNodeState::default());
+        state.trade_nodes.insert(node_c, TradeNodeState::default());
+
+        let mut edges = std::collections::HashMap::new();
+        edges.insert(node_a, vec![node_b, node_c]);
+
+        state.trade_topology = TradeTopology {
+            order: vec![node_a, node_b, node_c],
+            end_nodes: vec![node_b, node_c],
+            edges,
+        };
+
+        // Set local value directly, no merchants
+        if let Some(node) = state.trade_nodes.get_mut(&node_a) {
+            node.local_value = Fixed::from_int(100);
+        }
+
+        propagate_trade_value(&mut state);
+
+        // No steering = equal distribution: 100 / 2 = 50 each
+        let node_b_state = &state.trade_nodes[&node_b];
+        let node_c_state = &state.trade_nodes[&node_c];
+
+        assert_eq!(node_b_state.incoming_value, Fixed::from_int(50));
+        assert_eq!(node_c_state.incoming_value, Fixed::from_int(50));
     }
 }

@@ -171,10 +171,11 @@ mod tests {
         let node_a = TradeNodeId(0);
         state.trade_nodes.insert(node_a, TradeNodeState::default());
 
-        // Topological order
+        // Topological order (end node, no outgoing edges)
         state.trade_topology = TradeTopology {
             order: vec![node_a],
             end_nodes: vec![node_a],
+            edges: std::collections::HashMap::new(),
         };
 
         // Map province 1 to node A
