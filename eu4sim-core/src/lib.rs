@@ -1,3 +1,50 @@
+//! # EU4 Simulation Core
+//!
+//! Deterministic game simulation engine for Europa Universalis IV.
+//!
+//! This crate implements the core game loop: state → commands → state transitions.
+//! It is designed for lockstep multiplayer and replay determinism.
+//!
+//! ## Architecture
+//!
+//! ```text
+//! ┌─────────────┐     ┌──────────────┐     ┌─────────────┐
+//! │  AI Players │────▶│ PlayerInputs │────▶│ step_world  │
+//! │  (decide)   │     │ (commands)   │     │ (pure fn)   │
+//! └─────────────┘     └──────────────┘     └──────┬──────┘
+//!                                                 │
+//!                     ┌──────────────┐     ┌──────▼──────┐
+//!                     │  Observers   │◀────│ WorldState  │
+//!                     │  (side fx)   │     │ (new state) │
+//!                     └──────────────┘     └─────────────┘
+//! ```
+//!
+//! ## Key Types
+//!
+//! | Type | Purpose |
+//! |------|---------|
+//! | [`WorldState`] | Complete simulation state (countries, provinces, wars) |
+//! | [`Command`] | Player actions (Move, DeclareWar, BuyTech, etc.) |
+//! | [`step_world`] | Pure function: `(state, inputs) -> state` |
+//! | [`AiPlayer`] | Trait for AI decision making |
+//! | [`SimObserver`] | Trait for observing state changes (training data, metrics) |
+//!
+//! ## AI System
+//!
+//! Built-in AI implementations:
+//! - [`GreedyAI`]: Deterministic priority-based decisions
+//! - [`RandomAi`]: Randomized decisions for exploration
+//!
+//! Multi-command support: AI can submit multiple commands per tick via
+//! [`CommandCategory`](ai::CommandCategory) routing.
+//!
+//! ## Observers
+//!
+//! Side effects are isolated to the observer layer:
+//! - [`DataGenObserver`]: Generates ML training data (Cap'n Proto format)
+//! - [`EventLogObserver`]: Records game events for replay/debugging
+//! - [`SimMetrics`]: Performance and game statistics
+
 pub mod ai;
 pub mod bounded;
 pub mod config;

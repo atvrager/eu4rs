@@ -1,3 +1,44 @@
+//! # Game Pathfinding
+//!
+//! Generic A* pathfinding with pluggable cost functions.
+//!
+//! This crate provides a reusable pathfinding implementation that can be
+//! adapted to different graph types and cost models via the [`Graph`] trait.
+//!
+//! ## Usage
+//!
+//! ```
+//! use game_pathfinding::{AStar, Graph};
+//!
+//! struct MyGraph;
+//!
+//! impl Graph<u32, ()> for MyGraph {
+//!     fn neighbors(&self, node: u32, _ctx: &()) -> Vec<u32> {
+//!         // Return adjacent nodes
+//!         vec![node + 1]
+//!     }
+//!
+//!     fn cost(&self, _from: u32, _to: u32, _ctx: &()) -> u32 {
+//!         1  // Uniform cost
+//!     }
+//!
+//!     fn heuristic(&self, from: u32, target: u32, _ctx: &()) -> u32 {
+//!         target.saturating_sub(from)  // Distance estimate
+//!     }
+//! }
+//!
+//! let graph = MyGraph;
+//! if let Some((path, cost)) = AStar::find_path(&graph, 0, 5, &()) {
+//!     println!("Found path with cost {}", cost);
+//! }
+//! ```
+//!
+//! ## Context Parameter
+//!
+//! The `Ctx` generic allows passing runtime state to cost calculations.
+//! For EU4, this enables terrain-aware movement costs, diplomatic access
+//! checks, and other dynamic factors.
+
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::hash::Hash;
