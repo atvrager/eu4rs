@@ -463,36 +463,43 @@ pub fn available_commands(
     }
 
     // 4. Diplomatic Actions - Words can be as sharp as any blade. ✧
-    // Optimization: Only consider neighbors for war declaration to avoid O(N^2) scaling
-    if let Some(graph) = adjacency {
-        let mut potential_targets = std::collections::HashSet::new();
+    // First month immunity - don't offer war declarations in first 30 days
+    const START_DATE_EPOCH: i64 = 310; // 1444.11.11 in days from 1444.01.01
+    let tick = (state.date.days_from_epoch() - START_DATE_EPOCH) as u64;
+    let can_declare_war = tick >= 30;
 
-        // Find neighbors of all owned provinces
-        for (prov_id, prov) in &state.provinces {
-            if prov.owner.as_deref() == Some(country_tag) {
-                for neighbor_id in graph.neighbors(*prov_id) {
-                    if let Some(neighbor) = state.provinces.get(&neighbor_id) {
-                        if let Some(owner) = &neighbor.owner {
-                            if owner != country_tag {
-                                potential_targets.insert(owner.clone());
+    // Optimization: Only consider neighbors for war declaration to avoid O(N^2) scaling
+    if can_declare_war {
+        if let Some(graph) = adjacency {
+            let mut potential_targets = std::collections::HashSet::new();
+
+            // Find neighbors of all owned provinces
+            for (prov_id, prov) in &state.provinces {
+                if prov.owner.as_deref() == Some(country_tag) {
+                    for neighbor_id in graph.neighbors(*prov_id) {
+                        if let Some(neighbor) = state.provinces.get(&neighbor_id) {
+                            if let Some(owner) = &neighbor.owner {
+                                if owner != country_tag {
+                                    potential_targets.insert(owner.clone());
+                                }
                             }
                         }
                     }
                 }
             }
-        }
 
-        for target_tag in potential_targets {
-            if !state.diplomacy.are_at_war(country_tag, &target_tag)
-                && !state
-                    .diplomacy
-                    .has_active_truce(country_tag, &target_tag, state.date)
-            {
-                // DeclareWar - The ultimate test of an empire's foundation. 🛡️
-                available.push(Command::DeclareWar {
-                    target: target_tag,
-                    cb: None,
-                });
+            for target_tag in potential_targets {
+                if !state.diplomacy.are_at_war(country_tag, &target_tag)
+                    && !state
+                        .diplomacy
+                        .has_active_truce(country_tag, &target_tag, state.date)
+                {
+                    // DeclareWar - The ultimate test of an empire's foundation. 🛡️
+                    available.push(Command::DeclareWar {
+                        target: target_tag,
+                        cb: None,
+                    });
+                }
             }
         }
     }
