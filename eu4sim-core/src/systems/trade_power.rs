@@ -30,6 +30,57 @@ const COT_LEVEL_1_BONUS: i64 = 5;
 const COT_LEVEL_2_BONUS: i64 = 10;
 const COT_LEVEL_3_BONUS: i64 = 25;
 
+/// Processes merchant arrivals for all countries.
+///
+/// Merchants that were dispatched earlier arrive at their destination
+/// when the current date reaches their arrival_date. Should be called
+/// BEFORE trade power tick so arriving merchants participate in trade.
+pub fn run_merchant_arrivals(state: &mut WorldState) {
+    use crate::trade::MerchantState;
+
+    // Collect arrivals first to avoid borrow conflicts
+    let mut arrivals: Vec<(
+        String,
+        crate::trade::TradeNodeId,
+        crate::trade::MerchantAction,
+    )> = Vec::new();
+
+    for (tag, country) in state.countries.iter() {
+        for travel in &country.trade.merchants_en_route {
+            if state.date >= travel.arrival_date {
+                arrivals.push((tag.clone(), travel.destination, travel.action.clone()));
+            }
+        }
+    }
+
+    // Place arrived merchants at their destinations
+    for (owner, node_id, action) in arrivals {
+        if let Some(node) = state.trade_nodes.get_mut(&node_id) {
+            node.merchants.push(MerchantState {
+                owner: owner.clone(),
+                action,
+            });
+            log::info!(
+                "Merchant from {} arrives at trade node {:?}",
+                owner,
+                node_id
+            );
+        }
+    }
+
+    // Remove arrived merchants from en_route lists
+    let current_date = state.date;
+    let country_tags: Vec<_> = state.countries.keys().cloned().collect();
+    for tag in country_tags {
+        if let Some(country) = state.countries.get_mut(&tag) {
+            country
+                .trade
+                .merchants_en_route
+                .retain(|t| current_date < t.arrival_date);
+        }
+    }
+}
+
 /// Runs the monthly trade power tick.
 ///
 /// Call this BEFORE trade value tick so that value propagation can

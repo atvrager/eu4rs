@@ -78,6 +78,10 @@ pub enum ActionError {
         war_id: u32,
         until: crate::state::Date,
     },
+    #[error("No trade route exists from home node to destination")]
+    NoTradeRoute,
+    #[error("Country has no home trade node configured")]
+    NoHomeNode,
 }
 
 /// Advance the world by one tick.
@@ -157,10 +161,12 @@ pub fn step_world(
         // 11. War scores → Recalculates based on current occupation
         // 12. Auto-peace → Ends stalemate wars (10yr timeout)
         //
-        // Order matters: trade power → production → trade value → trade income.
+        // Order matters: merchant arrivals → trade power → production → trade value → trade income.
+        // Merchants must arrive first so they participate in power calculation.
         // Power must be calculated first so value propagation knows retention.
         // Trade income must come before taxation as both contribute to treasury.
         let trade_start = Instant::now();
+        crate::systems::run_merchant_arrivals(&mut new_state);
         crate::systems::run_trade_power_tick(&mut new_state);
         crate::systems::run_production_tick(&mut new_state, &economy_config);
         crate::systems::run_trade_value_tick(&mut new_state);
@@ -1288,46 +1294,79 @@ fn execute_command(
 
         // Trade commands
         Command::SendMerchant { node, action } => {
-            use crate::trade::MerchantState;
+            use crate::trade::{MerchantTravel, TradeNodeGraph};
+            use game_pathfinding::AStar;
 
-            // Validate country exists
-            let country =
-                state
-                    .countries
-                    .get_mut(country_tag)
-                    .ok_or(ActionError::CountryNotFound {
-                        tag: country_tag.to_string(),
-                    })?;
+            // Validate country exists and get home node
+            let home_node = state
+                .countries
+                .get(country_tag)
+                .ok_or(ActionError::CountryNotFound {
+                    tag: country_tag.to_string(),
+                })?
+                .trade
+                .home_node
+                .ok_or(ActionError::NoHomeNode)?;
 
             // Check if merchant is available
-            if country.trade.merchants_available == 0 {
+            if state.countries[country_tag].trade.merchants_available == 0 {
                 return Err(ActionError::InsufficientMana); // Reusing error for now
             }
 
             // Check if node exists
-            let node_state = state
-                .trade_nodes
-                .get_mut(node)
-                .ok_or(ActionError::InvalidProvinceId)?; // Reusing error
+            if !state.trade_nodes.contains_key(node) {
+                return Err(ActionError::InvalidProvinceId); // Reusing error
+            }
 
-            // Check if already have a merchant there
-            if node_state.merchants.iter().any(|m| m.owner == country_tag) {
+            // Check if already have a merchant there or en route
+            if state.trade_nodes[node]
+                .merchants
+                .iter()
+                .any(|m| m.owner == country_tag)
+            {
                 log::debug!("{} already has merchant at node {:?}", country_tag, node);
                 return Ok(());
             }
 
-            // Send merchant
+            if state.countries[country_tag]
+                .trade
+                .merchants_en_route
+                .iter()
+                .any(|t| t.destination == *node)
+            {
+                log::debug!(
+                    "{} already has merchant en route to node {:?}",
+                    country_tag,
+                    node
+                );
+                return Ok(());
+            }
+
+            // Calculate travel time using A* pathfinding
+            let graph = TradeNodeGraph::new(&state.trade_topology);
+            let (path, _cost) =
+                AStar::find_path(&graph, home_node, *node, &()).ok_or(ActionError::NoTradeRoute)?;
+
+            // Travel time = (hops - 1) * 15 days (path includes start node)
+            let hops = path.len().saturating_sub(1);
+            let travel_days = (hops * 15) as u32;
+            let arrival_date = state.date.add_days(travel_days);
+
+            // Decrement available merchants and queue for travel
+            let country = state.countries.get_mut(country_tag).unwrap();
             country.trade.merchants_available -= 1;
-            node_state.merchants.push(MerchantState {
-                owner: country_tag.to_string(),
+            country.trade.merchants_en_route.push(MerchantTravel {
+                destination: *node,
                 action: action.clone(),
+                arrival_date,
             });
 
             log::info!(
-                "{} sends merchant to trade node {:?} ({:?})",
+                "{} dispatches merchant to trade node {:?} ({:?}), arriving {}",
                 country_tag,
                 node,
-                action
+                action,
+                arrival_date
             );
             Ok(())
         }
@@ -1342,7 +1381,25 @@ fn execute_command(
                         tag: country_tag.to_string(),
                     })?;
 
-            // Check if node exists and has our merchant
+            // First check for merchant en route to this node (cancel travel)
+            let en_route_idx = country
+                .trade
+                .merchants_en_route
+                .iter()
+                .position(|t| t.destination == *node);
+
+            if let Some(idx) = en_route_idx {
+                country.trade.merchants_en_route.remove(idx);
+                country.trade.merchants_available += 1;
+                log::info!(
+                    "{} recalls merchant en route to trade node {:?}",
+                    country_tag,
+                    node
+                );
+                return Ok(());
+            }
+
+            // Check if node exists and has our merchant (stationed)
             let node_state = state
                 .trade_nodes
                 .get_mut(node)
@@ -1355,7 +1412,13 @@ fn execute_command(
 
             if let Some(idx) = merchant_idx {
                 node_state.merchants.remove(idx);
-                country.trade.merchants_available += 1;
+                // Re-borrow country after node_state borrow ends
+                state
+                    .countries
+                    .get_mut(country_tag)
+                    .unwrap()
+                    .trade
+                    .merchants_available += 1;
                 log::info!(
                     "{} recalls merchant from trade node {:?}",
                     country_tag,

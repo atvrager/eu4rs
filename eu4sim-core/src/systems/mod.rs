@@ -32,6 +32,6 @@ pub use stats::run_stats_tick;
 pub use taxation::run_taxation_tick;
 pub use tech::buy_tech;
 pub use trade_income::run_trade_income_tick;
-pub use trade_power::run_trade_power_tick;
+pub use trade_power::{run_merchant_arrivals, run_trade_power_tick};
 pub use trade_value::run_trade_value_tick;
 pub use war_score::{award_battle_score, recalculate_war_scores, update_province_controller};

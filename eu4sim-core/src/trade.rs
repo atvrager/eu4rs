@@ -11,7 +11,8 @@
 //! - **Collection Penalty**: -50% power when collecting outside home node
 
 use crate::fixed::Fixed;
-use crate::state::Tag;
+use crate::state::{Date, Tag};
+use game_pathfinding::Graph;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -98,6 +99,66 @@ pub enum MerchantAction {
     },
 }
 
+/// A merchant currently traveling to their destination.
+/// Merchants don't teleport - they traverse the trade network over time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MerchantTravel {
+    /// Trade node the merchant is heading to.
+    pub destination: TradeNodeId,
+    /// What the merchant will do when they arrive.
+    pub action: MerchantAction,
+    /// Date when the merchant will arrive and become active.
+    pub arrival_date: Date,
+}
+
+// =============================================================================
+// Trade Node Graph (for pathfinding)
+// =============================================================================
+
+/// Graph adapter for A* pathfinding through the trade network.
+/// Merchants travel both upstream and downstream (unlike trade value flow).
+pub struct TradeNodeGraph<'a> {
+    pub topology: &'a TradeTopology,
+}
+
+impl<'a> TradeNodeGraph<'a> {
+    /// Create a new graph adapter from a trade topology.
+    pub fn new(topology: &'a TradeTopology) -> Self {
+        Self { topology }
+    }
+}
+
+impl Graph<TradeNodeId, ()> for TradeNodeGraph<'_> {
+    fn neighbors(&self, node: TradeNodeId, _context: &()) -> Vec<TradeNodeId> {
+        let mut neighbors = Vec::new();
+
+        // Downstream neighbors (direct edges from this node)
+        if let Some(downstream) = self.topology.edges.get(&node) {
+            neighbors.extend(downstream.iter().copied());
+        }
+
+        // Upstream neighbors (nodes that have edges TO this node)
+        // Trade flows downstream, but merchants can travel upstream too
+        for (&source, targets) in &self.topology.edges {
+            if targets.contains(&node) {
+                neighbors.push(source);
+            }
+        }
+
+        neighbors
+    }
+
+    fn cost(&self, _from: TradeNodeId, _to: TradeNodeId, _context: &()) -> u32 {
+        // 15 days per trade node hop
+        15
+    }
+
+    fn heuristic(&self, _from: TradeNodeId, _target: TradeNodeId, _context: &()) -> u32 {
+        // No geographic heuristic for trade nodes (Dijkstra behavior)
+        0
+    }
+}
+
 // =============================================================================
 // Country-level trade state
 // =============================================================================
@@ -123,6 +184,11 @@ pub struct CountryTradeState {
     /// When implemented: reduces embargoed country's power in shared nodes.
     #[serde(default)]
     pub embargoed_by: Vec<Tag>,
+
+    /// Merchants currently traveling to their destination.
+    /// Arrival is processed during monthly tick.
+    #[serde(default)]
+    pub merchants_en_route: Vec<MerchantTravel>,
 }
 
 // =============================================================================
