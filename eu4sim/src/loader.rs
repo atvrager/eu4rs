@@ -3,6 +3,7 @@ use eu4sim_core::modifiers::TradegoodId;
 use eu4sim_core::state::{
     Army, CountryState, Date, HashMap as ImHashMap, ProvinceState, Regiment, RegimentType, Terrain,
 };
+use eu4sim_core::trade::{CountryTradeState, TradeNodeId, TradeNodeState, TradeTopology};
 use eu4sim_core::{Fixed, WorldState};
 use std::collections::HashMap as StdHashMap;
 use std::path::Path;
@@ -62,6 +63,57 @@ pub fn load_initial_state(
         .map_err(|e| anyhow::anyhow!("Failed to load terrain: {}", e))?;
     log::info!("Loaded {} terrain overrides", terrain_map.len());
 
+    // 2b. Load Trade Network
+    log::info!("Loading trade network...");
+    let trade_network = eu4data::tradenodes::load_trade_network(game_path)
+        .map_err(|e| anyhow::anyhow!("Failed to load trade network: {}", e))?;
+    log::info!(
+        "Loaded {} trade nodes, {} province mappings",
+        trade_network.nodes.len(),
+        trade_network.province_to_node.len()
+    );
+
+    // Build trade node states and topology
+    let mut trade_nodes = StdHashMap::new();
+    let mut edges = StdHashMap::new();
+
+    for node_def in &trade_network.nodes {
+        // Convert eu4data::tradenodes::TradeNodeId to eu4sim_core::trade::TradeNodeId
+        let node_id = TradeNodeId(node_def.id.0);
+        trade_nodes.insert(node_id, TradeNodeState::default());
+
+        // Store outgoing edges
+        if !node_def.outgoing.is_empty() {
+            let outgoing: Vec<TradeNodeId> = node_def
+                .outgoing
+                .iter()
+                .map(|id| TradeNodeId(id.0))
+                .collect();
+            edges.insert(node_id, outgoing);
+        }
+    }
+
+    let trade_topology = TradeTopology {
+        order: trade_network
+            .topological_order
+            .iter()
+            .map(|id| TradeNodeId(id.0))
+            .collect(),
+        end_nodes: trade_network
+            .end_nodes
+            .iter()
+            .map(|id| TradeNodeId(id.0))
+            .collect(),
+        edges,
+    };
+
+    // Province to trade node mapping
+    let province_trade_node: StdHashMap<u32, TradeNodeId> = trade_network
+        .province_to_node
+        .iter()
+        .map(|(&prov_id, &node_id)| (prov_id, TradeNodeId(node_id.0)))
+        .collect();
+
     // 3. Load Provinces
     log::info!("Loading province history...");
     let (province_history, _) = eu4data::history::load_province_history(game_path)
@@ -118,12 +170,28 @@ pub fn load_initial_state(
         }
     }
 
-    // Second pass: Set country religions based on capital province
+    // Second pass: Set country religions and home trade nodes based on capital province
     // (Country history not yet loaded, so we use capital's religion as proxy)
     for (tag, country) in &mut countries {
         if let Some(&capital_id) = country_capitals.get(tag) {
             if let Some(capital) = provinces.get(&capital_id) {
                 country.religion = capital.religion.clone();
+            }
+
+            // Set home trade node based on capital province
+            if let Some(&home_node) = province_trade_node.get(&capital_id) {
+                country.trade = CountryTradeState {
+                    home_node: Some(home_node),
+                    merchants_available: 2, // Starting merchants
+                    merchants_total: 2,
+                    ..Default::default()
+                };
+                log::debug!(
+                    "{}: capital {} -> home trade node {:?}",
+                    tag,
+                    capital_id,
+                    home_node
+                );
             }
         }
     }
@@ -192,9 +260,9 @@ pub fn load_initial_state(
             next_fleet_id: 1,
             colonies: ImHashMap::default(),
             // Trade system
-            trade_nodes: ImHashMap::default(),
-            province_trade_node: ImHashMap::default(),
-            trade_topology: Default::default(),
+            trade_nodes: trade_nodes.into(),
+            province_trade_node: province_trade_node.into(),
+            trade_topology,
         },
         adjacency,
     ))
