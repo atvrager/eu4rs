@@ -104,6 +104,7 @@ pub fn load_initial_state(
                 && hist.owner.is_none(),
             terrain: terrain_map.get(&id).and_then(|s| parse_terrain(s)),
             institution_presence: ImHashMap::default(),
+            trade: Default::default(),
         };
         provinces.insert(id, p.clone());
 
@@ -190,6 +191,10 @@ pub fn load_initial_state(
             fleets: ImHashMap::default(),
             next_fleet_id: 1,
             colonies: ImHashMap::default(),
+            // Trade system
+            trade_nodes: ImHashMap::default(),
+            province_trade_node: ImHashMap::default(),
+            trade_topology: Default::default(),
         },
         adjacency,
     ))

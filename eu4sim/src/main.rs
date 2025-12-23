@@ -109,6 +109,7 @@ fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGra
                 is_sea: false,
                 terrain: Some(Terrain::Plains),
                 institution_presence: Default::default(),
+                trade: Default::default(),
             },
         );
     }
@@ -167,6 +168,10 @@ fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGra
         fleets: Default::default(),
         next_fleet_id: 1,
         colonies: Default::default(),
+        // Trade system
+        trade_nodes: Default::default(),
+        province_trade_node: Default::default(),
+        trade_topology: Default::default(),
     };
 
     (state, adj)

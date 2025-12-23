@@ -1,6 +1,7 @@
 pub mod ai;
 pub mod bounded;
 pub mod config;
+pub mod trade;
 
 // Cap'n Proto generated schema for training data serialization.
 // Included at crate root because capnpc generates self-referential code.
@@ -32,6 +33,10 @@ pub use observer::{ObserverConfig, ObserverError, ObserverRegistry, SimObserver,
 pub use state::{InstitutionId, TechType, WorldState};
 pub use step::{step_world, ActionError};
 pub use systems::{run_production_tick, EconomyConfig};
+pub use trade::{
+    CountryTradeState, MerchantAction, MerchantState, ProvinceTradeState, TradeNodeId,
+    TradeNodeState, TradeTopology,
+};
 
 /// Check if a command can be executed in the current state.
 pub fn can_execute(_state: &WorldState, _country: &str, _cmd: &Command) -> Result<(), ActionError> {

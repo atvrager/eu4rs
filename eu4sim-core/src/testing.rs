@@ -1,7 +1,7 @@
 use crate::fixed::Fixed;
 use crate::modifiers::{GameModifiers, TradegoodId};
 use crate::state::{CountryState, Date, HashMap, ProvinceId, ProvinceState, Terrain, WorldState};
-// Removed std::collections::HashMap import
+use crate::trade::{ProvinceTradeState, TradeTopology};
 
 pub struct WorldStateBuilder {
     state: WorldState,
@@ -26,6 +26,10 @@ impl WorldStateBuilder {
                 fleets: HashMap::default(),
                 next_fleet_id: 1,
                 colonies: HashMap::default(),
+                // Trade system
+                trade_nodes: HashMap::default(),
+                province_trade_node: HashMap::default(),
+                trade_topology: TradeTopology::default(),
             },
         }
     }
@@ -68,6 +72,7 @@ impl WorldStateBuilder {
                 is_sea: false,
                 terrain: None,
                 institution_presence: HashMap::default(),
+                trade: ProvinceTradeState::default(),
             },
         );
         self
@@ -103,6 +108,7 @@ impl WorldStateBuilder {
                 is_sea: false,
                 terrain: None,
                 institution_presence: HashMap::default(),
+                trade: ProvinceTradeState::default(),
             },
         );
         self

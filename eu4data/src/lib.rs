@@ -16,6 +16,7 @@ pub mod path;
 pub mod religions;
 pub mod terrain;
 pub mod tradegoods;
+pub mod tradenodes;
 pub mod types;
 pub use types::*;
 

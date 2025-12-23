@@ -1,6 +1,9 @@
 use crate::bounded::{new_prestige, new_stability, new_tradition, BoundedFixed, BoundedInt};
 use crate::fixed::Fixed;
 use crate::modifiers::{GameModifiers, TradegoodId};
+use crate::trade::{
+    CountryTradeState, ProvinceTradeState, TradeNodeId, TradeNodeState, TradeTopology,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::hash::{Hash, Hasher};
@@ -166,6 +169,19 @@ pub struct WorldState {
     pub fleets: HashMap<FleetId, Fleet>,
     pub next_fleet_id: u32,
     pub colonies: HashMap<ProvinceId, Colony>,
+
+    // =========================================================================
+    // Trade System
+    // =========================================================================
+    /// Runtime state for each trade node (updated monthly).
+    pub trade_nodes: HashMap<TradeNodeId, TradeNodeState>,
+
+    /// Province to trade node mapping (which node a province belongs to).
+    pub province_trade_node: HashMap<ProvinceId, TradeNodeId>,
+
+    /// Cached topological order for trade propagation (computed once at init).
+    #[serde(skip)]
+    pub trade_topology: TradeTopology,
 }
 
 impl WorldState {
@@ -244,6 +260,9 @@ pub struct ProvinceState {
     pub terrain: Option<Terrain>,
     /// Progress of institutions in this province (0.0 to 100.0)
     pub institution_presence: HashMap<InstitutionId, f32>,
+    /// Trade-related state (center of trade level, protecting ships).
+    #[serde(default)]
+    pub trade: ProvinceTradeState,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -274,6 +293,9 @@ pub struct CountryState {
     pub embraced_institutions: std::collections::HashSet<InstitutionId>,
     /// State religion (e.g., "catholic", "protestant")
     pub religion: Option<String>,
+    /// Trade-related state (merchants, home node, embargoes).
+    #[serde(default)]
+    pub trade: CountryTradeState,
 }
 
 impl Default for CountryState {
@@ -292,6 +314,7 @@ impl Default for CountryState {
             mil_tech: 0,
             embraced_institutions: std::collections::HashSet::new(),
             religion: None,
+            trade: CountryTradeState::default(),
         }
     }
 }

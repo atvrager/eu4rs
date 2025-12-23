@@ -144,6 +144,7 @@ impl ExtractedState {
             mil_tech: 3,
             embraced_institutions: Default::default(),
             religion: None,
+            trade: Default::default(),
         };
 
         VisibleWorldState {
