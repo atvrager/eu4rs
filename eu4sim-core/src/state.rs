@@ -53,6 +53,15 @@ impl Date {
         }
     }
 
+    /// Calculates total days from an epoch (1444.01.01) using simplified 30-day months.
+    /// Used for determining tick counts and relative time differences.
+    pub fn days_from_epoch(&self) -> i64 {
+        let years_since = self.year as i64 - 1444;
+        let months_since = self.month as i64 - 1;
+        let days_since = self.day as i64 - 1;
+        years_since * 360 + months_since * 30 + days_since
+    }
+
     /// Adds years to the current date.
     pub fn add_years(&self, years: i32) -> Self {
         Self {

@@ -669,10 +669,12 @@ fn execute_command(
             Ok(())
         }
         Command::DeclareWar { target, cb } => {
-            // First month immunity - no war declarations in November 1444
-            // (EU4 starts paused, giving players time to set up before conflict)
-            if state.date.year == 1444 && state.date.month == 11 {
-                return Err(ActionError::FirstMonthImmunity { tick: 0 });
+            // First month immunity - no war declarations in first 30 days
+            // (EU4 starts paused on 1444.11.11, giving players time to set up before conflict)
+            const START_DATE_EPOCH: i64 = 310; // 1444.11.11 in days from 1444.01.01
+            let tick = (state.date.days_from_epoch() - START_DATE_EPOCH) as u64;
+            if tick < 30 {
+                return Err(ActionError::FirstMonthImmunity { tick });
             }
 
             // One diplomatic action per day - check if already acted today
@@ -1714,7 +1716,7 @@ mod tests {
     fn test_declare_war_success() {
         // Use December 1444 to bypass first-month immunity
         let state = WorldStateBuilder::new()
-            .date(1444, 12, 1)
+            .date(1444, 12, 11)
             .with_country("SWE")
             .with_country("DEN")
             .build();
@@ -1775,7 +1777,7 @@ mod tests {
     fn test_declare_war_on_self_fails() {
         // Use December 1444 to bypass first-month immunity
         let state = WorldStateBuilder::new()
-            .date(1444, 12, 1)
+            .date(1444, 12, 11)
             .with_country("SWE")
             .build();
 
@@ -1805,7 +1807,7 @@ mod tests {
     fn test_declare_war_twice_fails() {
         // Use December 1444 to bypass first-month immunity
         let mut state = WorldStateBuilder::new()
-            .date(1444, 12, 1)
+            .date(1444, 12, 11)
             .with_country("SWE")
             .with_country("DEN")
             .build();
@@ -1857,7 +1859,7 @@ mod tests {
     fn test_declare_war_nonexistent_country() {
         // Use December 1444 to bypass first-month immunity
         let state = WorldStateBuilder::new()
-            .date(1444, 12, 1)
+            .date(1444, 12, 11)
             .with_country("SWE")
             .build();
 
@@ -2051,7 +2053,7 @@ mod tests {
     fn test_truce_blocks_war_declaration() {
         // Use December 1444 to bypass first-month immunity
         let mut state = WorldStateBuilder::new()
-            .date(1444, 12, 1)
+            .date(1444, 12, 11)
             .with_country("A")
             .with_country("B")
             .build();
