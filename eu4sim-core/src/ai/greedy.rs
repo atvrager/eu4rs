@@ -96,6 +96,16 @@ impl GreedyAI {
                 }
             }
 
+            // Tier 5: Trade Actions - Steady income benefits. ✧
+            Command::SendMerchant { action, .. } => {
+                use crate::trade::MerchantAction;
+                match action {
+                    MerchantAction::Collect => 150,      // Collecting is good
+                    MerchantAction::Steer { .. } => 180, // Steering is slightly better (value magnification)
+                }
+            }
+            Command::RecallMerchant { .. } => -200, // Rarely want to recall
+
             // Negative or Low Priority
             Command::OfferPeace { war_id, .. } => {
                 // Offer peace if we're winning decisively (war_score > 50)

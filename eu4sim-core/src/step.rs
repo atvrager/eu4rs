@@ -487,6 +487,51 @@ pub fn available_commands(
         }
     }
 
+    // 6. Trade Actions - Merchants chart the course of empire's prosperity. ✧
+    if let Some(trade_state) = state.countries.get(country_tag).map(|c| &c.trade) {
+        // Only offer trade commands if merchants are available
+        if trade_state.merchants_available > 0 {
+            // Find nodes where this country has power (potential send targets)
+            for (&node_id, node) in &state.trade_nodes {
+                if node
+                    .country_power
+                    .get(country_tag)
+                    .copied()
+                    .unwrap_or(Fixed::ZERO)
+                    > Fixed::ZERO
+                {
+                    // Check if country already has a merchant here
+                    let has_merchant = node.merchants.iter().any(|m| m.owner == country_tag);
+
+                    if !has_merchant {
+                        // Offer Collect action
+                        available.push(Command::SendMerchant {
+                            node: node_id,
+                            action: crate::trade::MerchantAction::Collect,
+                        });
+
+                        // Offer Steer actions for each downstream node
+                        if let Some(downstream) = state.trade_topology.edges.get(&node_id) {
+                            for &target in downstream {
+                                available.push(Command::SendMerchant {
+                                    node: node_id,
+                                    action: crate::trade::MerchantAction::Steer { target },
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Recall merchant commands for nodes where country has a merchant
+        for (&node_id, node) in &state.trade_nodes {
+            if node.merchants.iter().any(|m| m.owner == country_tag) {
+                available.push(Command::RecallMerchant { node: node_id });
+            }
+        }
+    }
+
     available
 }
 
