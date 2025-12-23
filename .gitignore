@@ -13,6 +13,9 @@ commit_msg.txt
 # Claude Code local settings (machine-specific)
 .claude/settings.local.json
 
+# Agent persona (personal to each dev/session)
+.agent/persona.md
+
 # Auto-generated types
 eu4data/src/generated/types/*
 !eu4data/src/generated/types/mod.rs
