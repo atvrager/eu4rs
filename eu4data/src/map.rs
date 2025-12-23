@@ -63,6 +63,22 @@ pub struct DefaultMap {
     pub lakes: Vec<u32>,
 }
 
+/// Loads the default.map file to get sea zones and lake definitions
+pub fn load_default_map(game_path: &Path) -> Result<DefaultMap, Box<dyn Error>> {
+    use eu4txt::{DefaultEU4Txt, EU4Txt};
+
+    let path = game_path.join("map/default.map");
+    let tokens = DefaultEU4Txt::open_txt(path.to_str().ok_or("Invalid path")?)
+        .map_err(|e| format!("Failed to read default.map: {}", e))?;
+    let ast =
+        DefaultEU4Txt::parse(tokens).map_err(|e| format!("Failed to parse default.map: {}", e))?;
+
+    let default_map = eu4txt::from_node::<DefaultMap>(&ast)
+        .map_err(|e| format!("Failed to deserialize default.map: {}", e))?;
+
+    Ok(default_map)
+}
+
 pub struct ProvinceLookup {
     pub by_id: HashMap<u32, ProvinceDefinition>,
     pub by_color: HashMap<(u8, u8, u8), u32>,

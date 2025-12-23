@@ -114,7 +114,15 @@ pub fn load_initial_state(
         .map(|(&prov_id, &node_id)| (prov_id, TradeNodeId(node_id.0)))
         .collect();
 
-    // 3. Load Provinces
+    // 3. Load default map (for sea province detection)
+    log::info!("Loading default map...");
+    let default_map = eu4data::map::load_default_map(game_path)
+        .map_err(|e| anyhow::anyhow!("Failed to load default map: {}", e))?;
+    let sea_provinces: std::collections::HashSet<u32> =
+        default_map.sea_starts.iter().copied().collect();
+    log::info!("Loaded {} sea provinces", sea_provinces.len());
+
+    // 4. Load Provinces
     log::info!("Loading province history...");
     let (province_history, _) = eu4data::history::load_province_history(game_path)
         .map_err(|e| anyhow::anyhow!("Failed to load provinces: {}", e))?;
@@ -166,9 +174,7 @@ pub fn load_initial_state(
             base_production: Fixed::from_f32(hist.base_production.unwrap_or(0.0)),
             base_manpower: Fixed::from_f32(hist.base_manpower.unwrap_or(0.0)),
             has_fort: hist.fort_15th.unwrap_or(false),
-            is_sea: hist.base_tax.is_none()
-                && hist.base_production.is_none()
-                && hist.owner.is_none(),
+            is_sea: sea_provinces.contains(&id),
             terrain: terrain_map.get(&id).and_then(|s| parse_terrain(s)),
             institution_presence: ImHashMap::default(),
             trade: Default::default(),
