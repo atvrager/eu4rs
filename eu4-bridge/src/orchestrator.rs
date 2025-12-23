@@ -175,15 +175,26 @@ impl Orchestrator {
         }
     }
 
-    /// Get available commands for Phase B (hardcoded simple set).
+    /// Get available commands for the AI to choose from.
     ///
-    /// In later phases, this would be computed from game state.
+    /// For Phase C: DevelopProvince commands for the currently selected province.
+    /// Province ID is a placeholder (0) since we click whatever is selected.
     fn get_available_commands(&self) -> Vec<Command> {
-        // Pass is always available (do nothing)
-        // For Phase B, we just need some commands for the AI to choose from
+        use eu4sim_core::input::DevType;
         vec![
             Command::Pass,
-            // Add more as we implement execution in Phase C
+            Command::DevelopProvince {
+                province: 0,
+                dev_type: DevType::Tax,
+            },
+            Command::DevelopProvince {
+                province: 0,
+                dev_type: DevType::Production,
+            },
+            Command::DevelopProvince {
+                province: 0,
+                dev_type: DevType::Manpower,
+            },
         ]
     }
 }

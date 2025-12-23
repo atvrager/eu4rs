@@ -201,6 +201,11 @@ mod tests {
             power_projection: Some(0.0),
             country: Some("Austria".to_string()),
             age: Some("Age of Discovery".to_string()),
+            prov_name: None,
+            prov_state: None,
+            prov_tax: None,
+            prov_prod: None,
+            prov_manp: None,
         };
 
         let visible = extracted.to_visible_state();

@@ -151,6 +151,27 @@ impl Extractor {
             state.age = Some(text);
         }
 
+        // Province panel (may be empty if no province selected)
+        if let Some(text) = extract(&regions::PROV_NAME)
+            && !text.is_empty()
+        {
+            state.prov_name = Some(text);
+        }
+        if let Some(text) = extract(&regions::PROV_STATE)
+            && !text.is_empty()
+        {
+            state.prov_state = Some(text);
+        }
+        if let Some(text) = extract(&regions::PROV_TAX) {
+            state.prov_tax = parse_int(&text);
+        }
+        if let Some(text) = extract(&regions::PROV_PROD) {
+            state.prov_prod = parse_int(&text);
+        }
+        if let Some(text) = extract(&regions::PROV_MANP) {
+            state.prov_manp = parse_int(&text);
+        }
+
         state
     }
 }
@@ -158,6 +179,7 @@ impl Extractor {
 /// Parsed game state from OCR.
 #[derive(Debug, Default)]
 pub struct ExtractedState {
+    // Top bar
     pub date: Option<String>,
     pub treasury: Option<f32>,
     pub manpower: Option<i32>,
@@ -172,6 +194,12 @@ pub struct ExtractedState {
     pub power_projection: Option<f32>,
     pub country: Option<String>,
     pub age: Option<String>,
+    // Province panel (when a province is selected)
+    pub prov_name: Option<String>,
+    pub prov_state: Option<String>,
+    pub prov_tax: Option<i32>,
+    pub prov_prod: Option<i32>,
+    pub prov_manp: Option<i32>,
 }
 
 impl std::fmt::Display for ExtractedState {
@@ -206,6 +234,22 @@ impl std::fmt::Display for ExtractedState {
         writeln!(f, "Prestige:        {}", fmt_opt(&self.prestige))?;
         writeln!(f, "Govt Strength:   {}", fmt_opt(&self.govt_strength))?;
         writeln!(f, "Power Projection:{}", fmt_opt(&self.power_projection))?;
+
+        // Province panel (only show if any province data is present)
+        if self.prov_name.is_some() || self.prov_tax.is_some() {
+            writeln!(f, "--- Province ---")?;
+            writeln!(f, "Province:        {}", fmt_opt(&self.prov_name))?;
+            if self.prov_state.is_some() {
+                writeln!(f, "State:           {}", fmt_opt(&self.prov_state))?;
+            }
+            writeln!(
+                f,
+                "Development:     {}/{}/{}",
+                fmt_opt(&self.prov_tax),
+                fmt_opt(&self.prov_prod),
+                fmt_opt(&self.prov_manp)
+            )?;
+        }
         Ok(())
     }
 }
