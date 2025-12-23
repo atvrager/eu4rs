@@ -774,3 +774,30 @@ When generating types from EU4 data (via the auto-codegen system), follow these 
    - Generate `IgnoredAny` or `serde_json::Value` as placeholder
 
 See [`docs/type_system.md`](docs/type_system.md) for the full architecture including the Parse Layer vs Sim Layer design.
+
+## EU4 Domain Knowledge
+
+### Country Tags
+
+EU4 uses 3-letter tags for countries that don't always match modern conventions. This trips up agents and humans alike:
+
+| Tag | Country | Why It's Non-Obvious |
+|-----|---------|---------------------|
+| **TUR** | Ottomans | Not OTT (Turkish: Türkiye) |
+| **HAB** | Austria | Habsburg dynasty, not AUS |
+| **BRA** | Brandenburg | Not Brazil (BRZ when formed) |
+| **MOS** | Muscovy | RUS is formed Russia |
+| **CAS** | Castile | SPA is formed Spain |
+| **ENG** | England | GBR is formed Great Britain |
+| **BUR** | Burgundy | Not BRG |
+| **HOL** | Holland | NED is formed Netherlands |
+| **QAR** | Qara Qoyunlu | "Black Sheep" Turkoman |
+| **AQQ** | Aq Qoyunlu | "White Sheep" Turkoman |
+| **MCH** | Manchu | QNG is formed Qing |
+| **VIJ** | Vijayanagar | Major South Indian empire |
+| **TIM** | Timurids | MUG is formed Mughals |
+| **DAI** | Dai Viet | Vietnam (VIE doesn't exist at start) |
+| **AYU** | Ayutthaya | Thailand/Siam precursor |
+| **MAJ** | Majapahit | Indonesian empire |
+
+**Pattern:** Base game tags often use dynasty names (HAB = Habsburg) or historical names (TUR = Türk) rather than modern country codes.

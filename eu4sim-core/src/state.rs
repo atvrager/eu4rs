@@ -299,6 +299,14 @@ pub struct CountryState {
     /// Income breakdown for last month (for display purposes).
     #[serde(default)]
     pub income: IncomeBreakdown,
+    /// Last date a diplomatic action was taken (for one-per-day limit).
+    /// Diplomatic actions: war declarations, peace offers, alliances, etc.
+    #[serde(default)]
+    pub last_diplomatic_action: Option<Date>,
+    /// Cooldowns for peace offers per war (date when offer is allowed again).
+    /// Set after a peace offer is rejected; cleared when war ends.
+    #[serde(default)]
+    pub peace_offer_cooldowns: std::collections::HashMap<WarId, Date>,
 }
 
 /// Breakdown of monthly income by source.
@@ -332,6 +340,8 @@ impl Default for CountryState {
             religion: None,
             trade: CountryTradeState::default(),
             income: IncomeBreakdown::default(),
+            last_diplomatic_action: None,
+            peace_offer_cooldowns: std::collections::HashMap::new(),
         }
     }
 }

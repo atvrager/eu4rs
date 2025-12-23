@@ -146,6 +146,8 @@ impl ExtractedState {
             religion: None,
             trade: Default::default(),
             income: Default::default(),
+            last_diplomatic_action: None,
+            peace_offer_cooldowns: Default::default(),
         };
 
         VisibleWorldState {

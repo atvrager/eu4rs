@@ -213,8 +213,9 @@ impl EventLogObserver {
     /// Create observer writing to stdout.
     ///
     /// Useful for piping to tools like `jq` or other stream processors.
+    /// Uses buffered I/O to reduce syscall overhead during high-frequency logging.
     pub fn stdout() -> Self {
-        Self::new(Box::new(std::io::stdout()))
+        Self::new(Box::new(BufWriter::new(std::io::stdout())))
     }
 
     /// Create observer writing to a file.

@@ -69,6 +69,15 @@ pub enum ActionError {
     InstitutionNotPresent { institution: String },
     #[error("Already at max tech level")]
     MaxTechReached,
+    #[error("War declarations blocked during first month (tick {tick} < 30)")]
+    FirstMonthImmunity { tick: u64 },
+    #[error("Already performed a diplomatic action today")]
+    DiplomaticActionCooldown,
+    #[error("Peace offer on cooldown for war {war_id} until {until}")]
+    PeaceOfferOnCooldown {
+        war_id: u32,
+        until: crate::state::Date,
+    },
 }
 
 /// Advance the world by one tick.
@@ -257,6 +266,13 @@ fn auto_end_stale_wars(state: &mut WorldState) {
         // Create truces before removing war
         if let Some(war) = state.diplomacy.wars.get(&war_id).cloned() {
             create_war_truces(state, &war, state.date);
+
+            // Clear peace offer cooldowns for all participants
+            for tag in war.attackers.iter().chain(war.defenders.iter()) {
+                if let Some(country) = state.countries.get_mut(tag) {
+                    country.peace_offer_cooldowns.remove(&war_id);
+                }
+            }
         }
 
         // Restore province controllers
@@ -647,6 +663,19 @@ fn execute_command(
             Ok(())
         }
         Command::DeclareWar { target, cb } => {
+            // First month immunity - no war declarations in November 1444
+            // (EU4 starts paused, giving players time to set up before conflict)
+            if state.date.year == 1444 && state.date.month == 11 {
+                return Err(ActionError::FirstMonthImmunity { tick: 0 });
+            }
+
+            // One diplomatic action per day - check if already acted today
+            if let Some(country) = state.countries.get(country_tag) {
+                if country.last_diplomatic_action == Some(state.date) {
+                    return Err(ActionError::DiplomaticActionCooldown);
+                }
+            }
+
             // Validate attacker exists
             if !state.countries.contains_key(country_tag) {
                 return Err(ActionError::CountryNotFound {
@@ -716,6 +745,11 @@ fn execute_command(
             };
 
             state.diplomacy.wars.insert(war_id, war);
+
+            // Mark diplomatic action cooldown
+            if let Some(country) = state.countries.get_mut(country_tag) {
+                country.last_diplomatic_action = Some(state.date);
+            }
 
             log::info!("{} declared war on {}", country_tag, target);
 
@@ -976,6 +1010,25 @@ fn execute_command(
             Ok(())
         }
         Command::OfferPeace { war_id, terms } => {
+            // One diplomatic action per day - check if already acted today
+            if let Some(country) = state.countries.get(country_tag) {
+                if country.last_diplomatic_action == Some(state.date) {
+                    return Err(ActionError::DiplomaticActionCooldown);
+                }
+            }
+
+            // Check peace offer cooldown (30 days after rejection)
+            if let Some(country) = state.countries.get(country_tag) {
+                if let Some(&cooldown_until) = country.peace_offer_cooldowns.get(war_id) {
+                    if cooldown_until > state.date {
+                        return Err(ActionError::PeaceOfferOnCooldown {
+                            war_id: *war_id,
+                            until: cooldown_until,
+                        });
+                    }
+                }
+            }
+
             // Validate war exists
             let war = state
                 .diplomacy
@@ -1019,6 +1072,11 @@ fn execute_command(
                 war.pending_peace = Some(pending);
             }
 
+            // Mark diplomatic action cooldown
+            if let Some(country) = state.countries.get_mut(country_tag) {
+                country.last_diplomatic_action = Some(state.date);
+            }
+
             log::info!(
                 "{} offered peace in war {} with terms {:?}",
                 country_tag,
@@ -1053,6 +1111,13 @@ fn execute_command(
             // Create truces before removing war
             create_war_truces(state, &war, state.date);
 
+            // Clear peace offer cooldowns for all participants
+            for tag in war.attackers.iter().chain(war.defenders.iter()) {
+                if let Some(country) = state.countries.get_mut(tag) {
+                    country.peace_offer_cooldowns.remove(war_id);
+                }
+            }
+
             // Remove war
             state.diplomacy.wars.remove(war_id);
 
@@ -1060,6 +1125,28 @@ fn execute_command(
             Ok(())
         }
         Command::RejectPeace { war_id } => {
+            // Get the offerer before clearing the pending peace
+            if let Some(war) = state.diplomacy.wars.get(war_id).cloned() {
+                if let Some(pending) = &war.pending_peace {
+                    // Find the offerer's tag
+                    let offerer_tag = if pending.from_attacker {
+                        war.attackers.first().cloned()
+                    } else {
+                        war.defenders.first().cloned()
+                    };
+
+                    // Set 30-day cooldown on the offerer
+                    if let Some(tag) = offerer_tag {
+                        let cooldown_until = state.date.add_days(30);
+                        if let Some(country) = state.countries.get_mut(&tag) {
+                            country
+                                .peace_offer_cooldowns
+                                .insert(*war_id, cooldown_until);
+                        }
+                    }
+                }
+            }
+
             // Clear pending peace offer
             if let Some(war) = state.diplomacy.wars.get_mut(war_id) {
                 war.pending_peace = None;
@@ -1562,8 +1649,9 @@ mod tests {
 
     #[test]
     fn test_declare_war_success() {
+        // Use December 1444 to bypass first-month immunity
         let state = WorldStateBuilder::new()
-            .date(1444, 11, 11)
+            .date(1444, 12, 1)
             .with_country("SWE")
             .with_country("DEN")
             .build();
@@ -1594,9 +1682,37 @@ mod tests {
     }
 
     #[test]
-    fn test_declare_war_on_self_fails() {
-        let state = WorldStateBuilder::new()
+    fn test_first_month_immunity_blocks_war() {
+        // November 1444 (first month) should block all war declarations
+        let mut state = WorldStateBuilder::new()
             .date(1444, 11, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        let result = execute_command(
+            &mut state,
+            "SWE",
+            &Command::DeclareWar {
+                target: "DEN".to_string(),
+                cb: None,
+            },
+            None,
+        );
+        assert!(matches!(
+            result,
+            Err(ActionError::FirstMonthImmunity { .. })
+        ));
+
+        // No war should be created
+        assert_eq!(state.diplomacy.wars.len(), 0);
+    }
+
+    #[test]
+    fn test_declare_war_on_self_fails() {
+        // Use December 1444 to bypass first-month immunity
+        let state = WorldStateBuilder::new()
+            .date(1444, 12, 1)
             .with_country("SWE")
             .build();
 
@@ -1624,8 +1740,9 @@ mod tests {
 
     #[test]
     fn test_declare_war_twice_fails() {
+        // Use December 1444 to bypass first-month immunity
         let mut state = WorldStateBuilder::new()
-            .date(1444, 11, 11)
+            .date(1444, 12, 1)
             .with_country("SWE")
             .with_country("DEN")
             .build();
@@ -1675,8 +1792,9 @@ mod tests {
 
     #[test]
     fn test_declare_war_nonexistent_country() {
+        // Use December 1444 to bypass first-month immunity
         let state = WorldStateBuilder::new()
-            .date(1444, 11, 11)
+            .date(1444, 12, 1)
             .with_country("SWE")
             .build();
 
@@ -1868,7 +1986,9 @@ mod tests {
 
     #[test]
     fn test_truce_blocks_war_declaration() {
+        // Use December 1444 to bypass first-month immunity
         let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 1)
             .with_country("A")
             .with_country("B")
             .build();
