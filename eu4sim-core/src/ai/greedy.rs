@@ -1,4 +1,6 @@
-use crate::ai::{AiPlayer, AvailableCommands, VisibleWorldState};
+use crate::ai::{
+    categorize_command, AiPlayer, AvailableCommands, CommandCategory, VisibleWorldState,
+};
 use crate::input::{Command, DevType};
 use crate::state::TechType;
 
@@ -141,23 +143,57 @@ impl AiPlayer for GreedyAI {
             return vec![];
         }
 
-        // Find the best move
-        let mut best_cmd = None;
-        let mut best_score = -999999;
+        let mut result = Vec::new();
+
+        // Group commands by category
+        let mut diplomatic: Vec<(&Command, i32)> = Vec::new();
+        let mut military: Vec<(&Command, i32)> = Vec::new();
+        let mut economic: Vec<(&Command, i32)> = Vec::new();
+        let mut trade: Vec<(&Command, i32)> = Vec::new();
+        let mut colonization: Vec<(&Command, i32)> = Vec::new();
 
         for cmd in available_commands {
             let score = self.score_command(cmd, visible_state);
-            if score > best_score && score > 0 {
-                best_score = score;
-                best_cmd = Some(cmd.clone());
+            if score <= 0 {
+                continue; // Skip negative-value commands
+            }
+
+            match categorize_command(cmd) {
+                CommandCategory::Diplomatic => diplomatic.push((cmd, score)),
+                CommandCategory::Military => military.push((cmd, score)),
+                CommandCategory::Economic => economic.push((cmd, score)),
+                CommandCategory::Trade => trade.push((cmd, score)),
+                CommandCategory::Colonization => colonization.push((cmd, score)),
+                CommandCategory::Other => {} // Skip Pass, etc.
             }
         }
 
-        if let Some(cmd) = best_cmd {
-            vec![cmd]
-        } else {
-            vec![]
+        // 1. Pick ONE best diplomatic action (one per day limit)
+        if let Some((cmd, _)) = diplomatic.iter().max_by_key(|(_, score)| *score) {
+            result.push((*cmd).clone());
         }
+
+        // 2. Add ALL positive-score military moves (armies should move together)
+        for (cmd, _) in &military {
+            result.push((*cmd).clone());
+        }
+
+        // 3. Add ONE best economic action (mana management)
+        if let Some((cmd, _)) = economic.iter().max_by_key(|(_, score)| *score) {
+            result.push((*cmd).clone());
+        }
+
+        // 4. Add ALL positive-score trade actions
+        for (cmd, _) in &trade {
+            result.push((*cmd).clone());
+        }
+
+        // 5. Add ALL positive-score colonization
+        for (cmd, _) in &colonization {
+            result.push((*cmd).clone());
+        }
+
+        result
     }
 }
 
@@ -181,7 +217,7 @@ mod tests {
     }
 
     #[test]
-    fn test_greedy_priority() {
+    fn test_greedy_multi_category() {
         let mut ai = GreedyAI::new();
         let state = dummy_state();
 
@@ -193,9 +229,32 @@ mod tests {
         let available = vec![tech.clone(), colony.clone()];
         let decisions = ai.decide(&state, &available);
 
-        // Tech (4500) > Colony (3000)
+        // Multi-command: Tech (Economic) + Colony (Colonization) both returned
+        // since they're in different categories
+        assert_eq!(decisions.len(), 2);
+        assert!(decisions.contains(&tech));
+        assert!(decisions.contains(&colony));
+    }
+
+    #[test]
+    fn test_greedy_same_category_picks_best() {
+        let mut ai = GreedyAI::new();
+        let state = dummy_state();
+
+        // Two economic actions: should pick the higher-scored one (tech > dev)
+        let mil_tech = Command::BuyTech {
+            tech_type: TechType::Mil,
+        };
+        let adm_tech = Command::BuyTech {
+            tech_type: TechType::Adm,
+        };
+
+        let available = vec![mil_tech.clone(), adm_tech.clone()];
+        let decisions = ai.decide(&state, &available);
+
+        // Both are Economic category - picks ONE best (Mil tech = 4500 > Adm tech = 4200)
         assert_eq!(decisions.len(), 1);
-        assert_eq!(decisions[0], tech);
+        assert_eq!(decisions[0], mil_tech);
     }
 
     #[test]

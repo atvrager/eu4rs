@@ -79,6 +79,68 @@ pub struct VisibleWorldState {
 /// Available commands for a country
 pub type AvailableCommands = Vec<Command>;
 
+// =============================================================================
+// Command Categories (for multi-action AI decisions)
+// =============================================================================
+
+/// Categories of commands for AI decision-making.
+///
+/// Used to enforce "one diplomatic action per day" while allowing unlimited
+/// military moves, economic actions, etc. in the same tick.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandCategory {
+    /// Diplomatic actions: one per day max (DeclareWar, OfferPeace, etc.)
+    Diplomatic,
+    /// Military orders: unlimited (Move, MoveFleet, Embark, etc.)
+    Military,
+    /// Economic actions: unlimited (DevelopProvince, BuyTech, etc.)
+    Economic,
+    /// Trade actions: unlimited (SendMerchant, RecallMerchant)
+    Trade,
+    /// Colonization: unlimited (StartColony, AbandonColony)
+    Colonization,
+    /// Other actions: unlimited (Pass, religion, etc.)
+    Other,
+}
+
+/// Categorize a command for multi-action AI selection.
+pub fn categorize_command(cmd: &Command) -> CommandCategory {
+    match cmd {
+        // Diplomatic: one per day
+        Command::DeclareWar { .. }
+        | Command::OfferPeace { .. }
+        | Command::AcceptPeace { .. }
+        | Command::RejectPeace { .. } => CommandCategory::Diplomatic,
+
+        // Military: unlimited
+        Command::Move { .. }
+        | Command::MoveFleet { .. }
+        | Command::Embark { .. }
+        | Command::Disembark { .. }
+        | Command::MergeArmies { .. }
+        | Command::SplitArmy { .. } => CommandCategory::Military,
+
+        // Economic: unlimited
+        Command::DevelopProvince { .. }
+        | Command::BuyTech { .. }
+        | Command::EmbraceInstitution { .. }
+        | Command::BuildInProvince { .. } => CommandCategory::Economic,
+
+        // Trade: unlimited
+        Command::SendMerchant { .. }
+        | Command::RecallMerchant { .. }
+        | Command::UpgradeCenterOfTrade { .. } => CommandCategory::Trade,
+
+        // Colonization: unlimited
+        Command::StartColony { .. } | Command::AbandonColony { .. } => {
+            CommandCategory::Colonization
+        }
+
+        // Other: Pass, religion, etc.
+        _ => CommandCategory::Other,
+    }
+}
+
 /// AI decision-making trait.
 ///
 /// Implementations choose which commands to issue each tick based on visible game state
@@ -143,36 +205,65 @@ impl AiPlayer for RandomAi {
             return vec![];
         }
 
-        // Weighted selection:
-        // We assign a higher weight to strategic actions (war, peace, colonization)
-        // to prevent the AI from just moving armies aimlessly when it has many move options.
-        let weights: Vec<u32> = available_commands
-            .iter()
-            .map(|cmd| match cmd {
-                Command::DeclareWar { .. } => 100,
-                Command::AcceptPeace { .. } => 500, // AI should almost always accept peace if offered
-                Command::OfferPeace { .. } => 30,
-                Command::DevelopProvince { .. } => 20,
-                Command::BuyTech { .. } => 40,
-                Command::EmbraceInstitution { .. } => 40,
-                Command::StartColony { .. } => 50,
-                Command::Move { .. } => 1,
-                Command::MoveFleet { .. } => 1,
-                Command::RejectPeace { .. } => 1, // Pride is rarely worth the bloodshed
-                _ => 10,
-            })
-            .collect();
+        let mut result = Vec::new();
+        let mut used_diplomatic = false;
 
-        use rand::distributions::{Distribution, WeightedIndex};
-        if let Ok(dist) = WeightedIndex::new(&weights) {
-            // 50% chance to act this tick
-            if self.rng.gen_bool(0.5) {
-                let idx = dist.sample(&mut self.rng);
-                return vec![available_commands[idx].clone()];
+        // Multi-command selection: sample from each category independently
+        for cmd in available_commands {
+            let category = categorize_command(cmd);
+
+            match category {
+                // Diplomatic: 30% chance, max 1 per tick
+                CommandCategory::Diplomatic => {
+                    if !used_diplomatic {
+                        // Higher chance for AcceptPeace (almost always accept)
+                        let chance = match cmd {
+                            Command::AcceptPeace { .. } => 0.95,
+                            Command::DeclareWar { .. } => 0.15,
+                            Command::OfferPeace { .. } => 0.10,
+                            Command::RejectPeace { .. } => 0.02, // Pride is rarely worth it
+                            _ => 0.10,
+                        };
+                        if self.rng.gen_bool(chance) {
+                            result.push(cmd.clone());
+                            used_diplomatic = true;
+                        }
+                    }
+                }
+                // Military: 30% chance each (reduced from 50% to avoid spam)
+                CommandCategory::Military => {
+                    if self.rng.gen_bool(0.3) {
+                        result.push(cmd.clone());
+                    }
+                }
+                // Economic: 25% chance each
+                CommandCategory::Economic => {
+                    if self.rng.gen_bool(0.25) {
+                        result.push(cmd.clone());
+                    }
+                }
+                // Trade: 40% chance each
+                CommandCategory::Trade => {
+                    if self.rng.gen_bool(0.4) {
+                        result.push(cmd.clone());
+                    }
+                }
+                // Colonization: 50% chance each (colonies are valuable)
+                CommandCategory::Colonization => {
+                    if self.rng.gen_bool(0.5) {
+                        result.push(cmd.clone());
+                    }
+                }
+                // Other: 10% chance
+                CommandCategory::Other => {
+                    if self.rng.gen_bool(0.1) {
+                        result.push(cmd.clone());
+                    }
+                }
             }
         }
 
-        vec![]
+        result
     }
 }
 

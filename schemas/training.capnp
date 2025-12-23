@@ -204,8 +204,10 @@ struct TrainingSample {
   country @1 :Text;
   state @2 :VisibleWorldState;
   availableCommands @3 :List(Command);
-  chosenAction @4 :Int32;       # Index into availableCommands, -1 for Pass
-  chosenCommand @5 :Command;    # The actual command (for debugging)
+  # Multi-command support: AI can submit multiple commands per tick
+  # (e.g., 1 diplomatic + N military moves + 1 economic + N trade actions)
+  chosenActions @4 :List(Int32);    # Indices into availableCommands
+  chosenCommands @5 :List(Command); # The actual commands (for debugging)
 }
 
 # =============================================================================

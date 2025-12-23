@@ -68,7 +68,6 @@ fn write_sample(
 ) -> Result<(), capnp::Error> {
     s.set_tick(sample.tick);
     s.set_country(&sample.country);
-    s.set_chosen_action(sample.chosen_action);
 
     // Write visible state
     let mut state = s.reborrow().init_state();
@@ -83,10 +82,21 @@ fn write_sample(
         write_command(&mut c, cmd)?;
     }
 
-    // Write chosen command if present
-    if let Some(ref cmd) = sample.chosen_command {
-        let mut chosen = s.reborrow().init_chosen_command();
-        write_command(&mut chosen, cmd)?;
+    // Write chosen action indices (multi-command support)
+    let mut actions = s
+        .reborrow()
+        .init_chosen_actions(sample.chosen_actions.len() as u32);
+    for (i, &action_idx) in sample.chosen_actions.iter().enumerate() {
+        actions.set(i as u32, action_idx);
+    }
+
+    // Write chosen commands (multi-command support)
+    let mut chosen = s
+        .reborrow()
+        .init_chosen_commands(sample.chosen_commands.len() as u32);
+    for (i, cmd) in sample.chosen_commands.iter().enumerate() {
+        let mut c = chosen.reborrow().get(i as u32);
+        write_command(&mut c, cmd)?;
     }
 
     Ok(())
@@ -279,8 +289,9 @@ mod tests {
                     tech_type: TechType::Adm,
                 },
             ],
-            chosen_action: 0,
-            chosen_command: Some(Command::Pass),
+            // Multi-command: single Pass command chosen
+            chosen_actions: vec![0],
+            chosen_commands: vec![Command::Pass],
         }
     }
 

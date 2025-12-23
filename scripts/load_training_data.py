@@ -350,31 +350,34 @@ def command_to_string(cmd_reader) -> str:
 
 @dataclass
 class TrainingSample:
-    """A single training sample for ML."""
+    """A single training sample for ML.
+
+    Multi-command support: AI can submit multiple commands per tick.
+    - chosen_actions: List of indices into available_commands
+    - chosen_commands: List of command strings
+    Empty lists mean "Pass" (no action taken).
+    """
 
     tick: int
     country: str
     state: VisibleWorldState
     available_commands: list[str]
-    chosen_action: int
-    chosen_command: str | None
+    chosen_actions: list[int]
+    chosen_commands: list[str]
 
     @classmethod
     def from_capnp(cls, reader) -> "TrainingSample":
         available = [command_to_string(cmd) for cmd in reader.availableCommands]
-        chosen = (
-            command_to_string(reader.chosenCommand)
-            if reader.chosenAction >= 0
-            else None
-        )
+        actions = list(reader.chosenActions)
+        commands = [command_to_string(cmd) for cmd in reader.chosenCommands]
 
         return cls(
             tick=reader.tick,
             country=reader.country,
             state=VisibleWorldState.from_capnp(reader.state),
             available_commands=available,
-            chosen_action=reader.chosenAction,
-            chosen_command=chosen,
+            chosen_actions=actions,
+            chosen_commands=commands,
         )
 
     def to_prompt(self) -> str:
@@ -403,11 +406,17 @@ class TrainingSample:
         return "\n".join(lines)
 
     def to_completion(self) -> str:
-        """Format the chosen action as a completion."""
-        if self.chosen_command:
-            return f"Action: [{self.chosen_action}] {self.chosen_command}"
-        else:
-            return f"Action: [{self.chosen_action}] Pass"
+        """Format the chosen actions as a completion.
+
+        Multi-command format: each action on its own line.
+        """
+        if not self.chosen_commands:
+            return "Action: Pass"
+
+        lines = []
+        for idx, cmd in zip(self.chosen_actions, self.chosen_commands):
+            lines.append(f"Action: [{idx}] {cmd}")
+        return "\n".join(lines)
 
 
 def load_training_file(path: Path | str) -> list[TrainingSample]:

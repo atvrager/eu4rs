@@ -442,14 +442,35 @@ fn main() -> Result<()> {
     let mut ais: BTreeMap<String, Box<dyn eu4sim_core::AiPlayer>> = if args.observer {
         log::info!("Using AI: {}", args.ai);
 
-        // Determine which tags get GreedyAI
+        // In hybrid mode, include 1 LLM AI unless datagen is enabled (training data purity)
+        let use_llm = (args.ai == "hybrid" || args.llm_ai.is_some() || args.llm_ai_base.is_some())
+            && args.datagen.is_none(); // Skip LLM when generating training data
+
+        // When LLM is enabled: LLM gets #1 country, GreedyAI gets next greedy_count
+        // When LLM is disabled: GreedyAI gets top greedy_count countries
+        // This ensures greedy_count specifies exactly how many GreedyAIs we get
+        let llm_tag: Option<String> = if use_llm {
+            let top = calculate_top_countries(&state, 1);
+            top.into_iter().next()
+        } else {
+            None
+        };
+
+        // Determine which tags get GreedyAI (excluding the LLM tag if present)
         let greedy_tags: HashSet<String> = match args.ai.as_str() {
             "greedy" => state.countries.keys().cloned().collect(),
             "hybrid" => {
-                let top = calculate_top_countries(&state, args.greedy_count);
+                // Get top (greedy_count + 1 if LLM) countries, then exclude LLM tag
+                let extra = if use_llm { 1 } else { 0 };
+                let mut top = calculate_top_countries(&state, args.greedy_count + extra);
+                if let Some(ref llm) = llm_tag {
+                    top.remove(llm);
+                }
                 eprintln!(
-                    "Hybrid mode: {} countries use GreedyAI: {:?}",
+                    "Hybrid mode: {} GreedyAI + {} LLM = {} smart AIs: {:?}",
                     top.len(),
+                    if llm_tag.is_some() { 1 } else { 0 },
+                    top.len() + if llm_tag.is_some() { 1 } else { 0 },
                     top
                 );
                 top
@@ -457,59 +478,39 @@ fn main() -> Result<()> {
             _ => HashSet::new(), // random mode: no greedy
         };
 
-        // In hybrid mode, always include 1 LLM AI; pick a random GP for it
-        let llm_tag: Option<String> = if args.ai == "hybrid" {
-            let top = calculate_top_countries(&state, args.greedy_count);
-            if !top.is_empty() {
-                // Deterministically pick one GP for the LLM AI
-                let top_vec: Vec<_> = top.iter().cloned().collect();
-                let idx = (args.seed as usize) % top_vec.len();
-                Some(top_vec[idx].clone())
+        // Initialize LLM AI (in hybrid mode or if explicitly requested, but NOT for datagen)
+        let llm_ai: Option<Box<dyn eu4sim_core::AiPlayer>> = if use_llm {
+            // Resolve base model name to HuggingFace repo
+            let base_model = match args.llm_ai_base.as_deref() {
+                Some("gemma3") | Some("gemma-3") => "google/gemma-3-270m",
+                Some("smollm") | Some("smollm2") | None => "HuggingFaceTB/SmolLM2-360M",
+                Some(other) => other, // Allow full repo IDs
+            };
+
+            let result = if let Some(adapter_path) = &args.llm_ai {
+                eprintln!(
+                    "Loading LLM AI with adapter: {:?} (base: {})",
+                    adapter_path, base_model
+                );
+                eu4sim_ai::LlmAi::new(base_model, Some(adapter_path.clone()))
             } else {
-                None
+                eprintln!("Loading LLM AI with base model: {}", base_model);
+                eu4sim_ai::LlmAi::new(base_model, None)
+            };
+
+            match result {
+                Ok(ai) => {
+                    eprintln!("LLM AI loaded successfully for: {:?}", llm_tag);
+                    Some(Box::new(ai))
+                }
+                Err(e) => {
+                    eprintln!("Failed to load LLM AI: {}. Falling back to GreedyAI.", e);
+                    None
+                }
             }
-        } else if args.llm_ai.is_some() {
-            // Non-hybrid mode with explicit --llm-ai: use top GP
-            let top = calculate_top_countries(&state, 1);
-            top.into_iter().next()
         } else {
             None
         };
-
-        // Initialize LLM AI (in hybrid mode or if explicitly requested)
-        let llm_ai: Option<Box<dyn eu4sim_core::AiPlayer>> =
-            if args.ai == "hybrid" || args.llm_ai.is_some() || args.llm_ai_base.is_some() {
-                // Resolve base model name to HuggingFace repo
-                let base_model = match args.llm_ai_base.as_deref() {
-                    Some("gemma3") | Some("gemma-3") => "google/gemma-3-270m",
-                    Some("smollm") | Some("smollm2") | None => "HuggingFaceTB/SmolLM2-360M",
-                    Some(other) => other, // Allow full repo IDs
-                };
-
-                let result = if let Some(adapter_path) = &args.llm_ai {
-                    eprintln!(
-                        "Loading LLM AI with adapter: {:?} (base: {})",
-                        adapter_path, base_model
-                    );
-                    eu4sim_ai::LlmAi::new(base_model, Some(adapter_path.clone()))
-                } else {
-                    eprintln!("Loading LLM AI with base model: {}", base_model);
-                    eu4sim_ai::LlmAi::new(base_model, None)
-                };
-
-                match result {
-                    Ok(ai) => {
-                        eprintln!("LLM AI loaded successfully for: {:?}", llm_tag);
-                        Some(Box::new(ai))
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to load LLM AI: {}. Falling back to GreedyAI.", e);
-                        None
-                    }
-                }
-            } else {
-                None
-            };
 
         // Build AI map
         let mut ai_map: BTreeMap<String, Box<dyn eu4sim_core::AiPlayer>> = BTreeMap::new();

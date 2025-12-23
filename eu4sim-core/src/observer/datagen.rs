@@ -72,6 +72,12 @@ use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
 /// A single training sample for ML model training.
+///
+/// # Multi-Command Support
+///
+/// AI players can submit multiple commands per tick. For example: 1 diplomatic
+/// action, N military moves, 1 economic action, and N trade actions. The
+/// `chosen_actions` and `chosen_commands` fields store all commands issued.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrainingSample {
     /// Current simulation tick
@@ -82,11 +88,12 @@ pub struct TrainingSample {
     pub state: VisibleWorldState,
     /// All legal commands at this moment (action space)
     pub available_commands: Vec<Command>,
-    /// Index of chosen command in `available_commands`, or -1 for Pass
-    pub chosen_action: i32,
-    /// The actual command chosen (for debugging/analysis)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub chosen_command: Option<Command>,
+    /// Indices of chosen commands in `available_commands`
+    /// Empty vector means Pass (no commands issued)
+    pub chosen_actions: Vec<i32>,
+    /// The actual commands chosen (for debugging/analysis)
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub chosen_commands: Vec<Command>,
 }
 
 /// Message sent to the background writer thread
@@ -357,6 +364,8 @@ pub struct DataGenObserver {
     output: Mutex<OutputMode>,
     /// Countries to generate data for (empty = all AI countries)
     tracked_countries: Vec<Tag>,
+    /// Countries to exclude from data generation (e.g., LLM-controlled)
+    excluded_countries: Vec<Tag>,
     /// Observer configuration
     config: ObserverConfig,
 }
@@ -395,6 +404,7 @@ impl DataGenObserver {
                     handle: Some(handle),
                 }),
                 tracked_countries: vec![],
+                excluded_countries: vec![],
                 config: ObserverConfig {
                     frequency: 1,
                     notify_on_month_start: true,
@@ -417,6 +427,7 @@ impl DataGenObserver {
                     handle: Some(handle),
                 }),
                 tracked_countries: vec![],
+                excluded_countries: vec![],
                 config: ObserverConfig {
                     frequency: 1,
                     notify_on_month_start: true,
@@ -436,6 +447,7 @@ impl DataGenObserver {
         Self {
             output: Mutex::new(OutputMode::Stream(writer)),
             tracked_countries: vec![],
+            excluded_countries: vec![],
             config: ObserverConfig {
                 frequency: 1, // Every tick
                 notify_on_month_start: true,
@@ -446,6 +458,12 @@ impl DataGenObserver {
     /// Filter to specific countries (empty = track all).
     pub fn with_countries(mut self, countries: &[&str]) -> Self {
         self.tracked_countries = countries.iter().map(|s| s.to_string()).collect();
+        self
+    }
+
+    /// Exclude specific countries from data generation (e.g., LLM-controlled).
+    pub fn exclude_countries(mut self, countries: &[&str]) -> Self {
+        self.excluded_countries = countries.iter().map(|s| s.to_string()).collect();
         self
     }
 
@@ -466,10 +484,19 @@ impl DataGenObserver {
                 Some(self.tracked_countries.iter().map(|s| s.as_str()).collect())
             };
 
+        // Build exclusion set
+        let excluded_set: std::collections::HashSet<&str> =
+            self.excluded_countries.iter().map(|s| s.as_str()).collect();
+
         let mut samples = Vec::with_capacity(inputs.len());
 
         for input in inputs {
             let tag = input.country.as_str();
+
+            // Skip if in exclusion set (e.g., LLM-controlled countries)
+            if excluded_set.contains(tag) {
+                continue;
+            }
 
             // Skip if not in tracked set
             if let Some(ref tracked) = tracked_set {
@@ -488,33 +515,35 @@ impl DataGenObserver {
             // Use precomputed available_commands from PlayerInputs
             let available = &input.available_commands;
 
-            // Find chosen action index
-            let (chosen_action, chosen_command) = if let Some(first_cmd) = input.commands.first() {
-                let idx = available.iter().position(|c| c == first_cmd);
+            // Find indices for ALL chosen commands (multi-command support)
+            let mut chosen_actions = Vec::with_capacity(input.commands.len());
+            let mut chosen_commands = Vec::with_capacity(input.commands.len());
+
+            for cmd in &input.commands {
+                let idx = available.iter().position(|c| c == cmd);
                 match idx {
-                    Some(i) => (i as i32, Some(first_cmd.clone())),
+                    Some(i) => chosen_actions.push(i as i32),
                     None => {
-                        // Command was executed but not in our precomputed available list.
+                        // Command was executed but not in our precomputed available list
                         log::debug!(
                             "{}: Command {:?} not in available list ({} options)",
                             tag,
-                            first_cmd,
+                            cmd,
                             available.len()
                         );
-                        (-2, Some(first_cmd.clone()))
+                        chosen_actions.push(-2); // Mark as "not in list"
                     }
                 }
-            } else {
-                (-1, None) // Pass (empty command list)
-            };
+                chosen_commands.push(cmd.clone());
+            }
 
             samples.push(TrainingSample {
                 tick: snapshot.tick,
                 country: tag.to_string(),
                 state: visible_state,
                 available_commands: available.clone(),
-                chosen_action,
-                chosen_command,
+                chosen_actions,
+                chosen_commands,
             });
         }
 
@@ -713,10 +742,10 @@ mod tests {
 
         observer.on_tick_with_inputs(&snapshot, &inputs).unwrap();
 
-        // Check output indicates pass (-1)
+        // Check output indicates pass (empty chosen_actions array)
         let output_data = output.lock().unwrap();
         let output_str = String::from_utf8_lossy(output_data.get_ref());
-        assert!(output_str.contains("\"chosen_action\":-1"));
+        assert!(output_str.contains("\"chosen_actions\":[]"));
     }
 
     #[test]

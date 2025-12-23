@@ -38,10 +38,10 @@ impl DatagenStats {
         let year = 1444 + (sample.tick / 365) as i32;
         *self.samples_by_year.entry(year).or_default() += 1;
 
-        *self
-            .action_distribution
-            .entry(sample.chosen_action)
-            .or_default() += 1;
+        // Multi-command: count each chosen action
+        for &action_idx in &sample.chosen_actions {
+            *self.action_distribution.entry(action_idx).or_default() += 1;
+        }
 
         self.min_tick = self.min_tick.min(sample.tick);
         self.max_tick = self.max_tick.max(sample.tick);
@@ -204,15 +204,22 @@ pub fn print_samples(samples: &[&TrainingSample], limit: usize) {
     );
 
     for sample in samples.iter().take(limit) {
+        let action_count = sample.chosen_actions.len();
+        let action_str = if action_count == 0 {
+            "Pass".to_string()
+        } else {
+            format!("{} action(s): {:?}", action_count, sample.chosen_actions)
+        };
+
         println!(
-            "Tick {}: {} chose action {} ({} available)",
+            "Tick {}: {} chose {} ({} available)",
             sample.tick,
             sample.country,
-            sample.chosen_action,
+            action_str,
             sample.available_commands.len()
         );
 
-        if let Some(ref cmd) = sample.chosen_command {
+        for cmd in &sample.chosen_commands {
             println!("  Command: {:?}", cmd);
         }
     }
