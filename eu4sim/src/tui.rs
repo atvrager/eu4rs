@@ -280,12 +280,12 @@ fn render_map(f: &mut Frame, area: Rect, grid: &[Vec<u32>], state: &WorldState) 
 
 fn resolve_color(state: &WorldState, prov_id: u32) -> Color {
     if prov_id == 0 {
-        return Color::Indexed(226); // Bright yellow - for debugging unknown pixels
+        return Color::Indexed(240); // Gray for invalid/border pixels
     }
 
     let Some(prov) = state.provinces.get(&prov_id) else {
         // Province not in state (map edges, etc.)
-        return Color::Indexed(201); // Bright magenta - for debugging missing provinces
+        return Color::Indexed(240); // Gray for missing provinces
     };
 
     if prov.is_sea {
@@ -294,7 +294,7 @@ fn resolve_color(state: &WorldState, prov_id: u32) -> Color {
 
     match &prov.owner {
         Some(tag) => tag_to_color(tag),
-        None => Color::Indexed(228), // Bright yellow/tan for wasteland
+        None => Color::Indexed(180), // Tan/brown for wasteland
     }
 }
 
@@ -396,11 +396,11 @@ mod tests {
         let state = make_test_world();
         let color = resolve_color(&state, 3);
 
-        // Wasteland (no owner, not sea) should be bright yellow/tan
+        // Wasteland (no owner, not sea) should be tan/brown
         assert_eq!(
             color,
-            Color::Indexed(228),
-            "Wasteland should be bright yellow/tan (Color::Indexed(228))"
+            Color::Indexed(180),
+            "Wasteland should be tan/brown (Color::Indexed(180))"
         );
     }
 
@@ -409,11 +409,11 @@ mod tests {
         let state = make_test_world();
         let color = resolve_color(&state, 0);
 
-        // Province ID 0 (invalid/border pixels) should be bright yellow
+        // Province ID 0 (invalid/border pixels) should be gray
         assert_eq!(
             color,
-            Color::Indexed(226),
-            "Invalid province (ID 0) should be bright yellow (226)"
+            Color::Indexed(240),
+            "Invalid province (ID 0) should be gray (240)"
         );
     }
 
@@ -422,11 +422,11 @@ mod tests {
         let state = make_test_world();
         let color = resolve_color(&state, 999);
 
-        // Province not in state (map edges, etc.) should be bright magenta
+        // Province not in state (map edges, etc.) should be gray
         assert_eq!(
             color,
-            Color::Indexed(201),
-            "Missing province should be bright magenta (201)"
+            Color::Indexed(240),
+            "Missing province should be gray (240)"
         );
     }
 
