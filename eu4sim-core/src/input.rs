@@ -1,5 +1,6 @@
 use crate::ai::VisibleWorldState;
 use crate::state::{ArmyId, FleetId, InstitutionId, PeaceTerms, ProvinceId, Tag, TechType, WarId};
+use crate::trade::{MerchantAction, TradeNodeId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,6 +86,18 @@ pub enum Command {
     },
     EmbraceInstitution {
         institution: InstitutionId,
+    },
+
+    // Trade
+    SendMerchant {
+        node: TradeNodeId,
+        action: MerchantAction,
+    },
+    RecallMerchant {
+        node: TradeNodeId,
+    },
+    UpgradeCenterOfTrade {
+        province: ProvinceId,
     },
 
     // ===== STUB COMMANDS (Phase 2+) =====

@@ -128,17 +128,24 @@ pub fn step_world(
 
         // Monthly tick ordering:
         // 1. Production → Updates province output values
-        // 2. Taxation → Collects from updated production
-        // 3. Manpower → Regenerates military capacity
-        // 4. Expenses → Deducts costs (uses fresh manpower pool)
-        // 5. Mana → Generates monarch points
-        // 6. Colonization → Progresses active colonies
-        // 7. Reformation → Spreads Protestant/Reformed religions
-        // 8. War scores → Recalculates based on current occupation
-        // 9. Auto-peace → Ends stalemate wars (10yr timeout)
+        // 2. Trade value → Calculates value in each trade node from production
+        // 3. Trade power → Calculates power shares per country
+        // 4. Trade income → Countries collect based on power shares
+        // 5. Taxation → Collects from updated production
+        // 6. Manpower → Regenerates military capacity
+        // 7. Expenses → Deducts costs (uses fresh manpower pool)
+        // 8. Mana → Generates monarch points
+        // 9. Colonization → Progresses active colonies
+        // 10. Reformation → Spreads Protestant/Reformed religions
+        // 11. War scores → Recalculates based on current occupation
+        // 12. Auto-peace → Ends stalemate wars (10yr timeout)
         //
-        // Order matters for production→taxation. Other systems are independent.
+        // Order matters: production → trade value → trade power → trade income.
+        // Trade income must come before taxation as both contribute to treasury.
         crate::systems::run_production_tick(&mut new_state, &economy_config);
+        crate::systems::run_trade_value_tick(&mut new_state);
+        crate::systems::run_trade_power_tick(&mut new_state);
+        crate::systems::run_trade_income_tick(&mut new_state);
         crate::systems::run_taxation_tick(&mut new_state);
         crate::systems::run_manpower_tick(&mut new_state);
         crate::systems::run_expenses_tick(&mut new_state);
@@ -1132,6 +1139,122 @@ fn execute_command(
             log::warn!("MoveCapital not implemented yet");
             Ok(())
         }
+
+        // Trade commands
+        Command::SendMerchant { node, action } => {
+            use crate::trade::MerchantState;
+
+            // Validate country exists
+            let country =
+                state
+                    .countries
+                    .get_mut(country_tag)
+                    .ok_or(ActionError::CountryNotFound {
+                        tag: country_tag.to_string(),
+                    })?;
+
+            // Check if merchant is available
+            if country.trade.merchants_available == 0 {
+                return Err(ActionError::InsufficientMana); // Reusing error for now
+            }
+
+            // Check if node exists
+            let node_state = state
+                .trade_nodes
+                .get_mut(node)
+                .ok_or(ActionError::InvalidProvinceId)?; // Reusing error
+
+            // Check if already have a merchant there
+            if node_state.merchants.iter().any(|m| m.owner == country_tag) {
+                log::debug!("{} already has merchant at node {:?}", country_tag, node);
+                return Ok(());
+            }
+
+            // Send merchant
+            country.trade.merchants_available -= 1;
+            node_state.merchants.push(MerchantState {
+                owner: country_tag.to_string(),
+                action: action.clone(),
+            });
+
+            log::info!(
+                "{} sends merchant to trade node {:?} ({:?})",
+                country_tag,
+                node,
+                action
+            );
+            Ok(())
+        }
+
+        Command::RecallMerchant { node } => {
+            // Validate country exists
+            let country =
+                state
+                    .countries
+                    .get_mut(country_tag)
+                    .ok_or(ActionError::CountryNotFound {
+                        tag: country_tag.to_string(),
+                    })?;
+
+            // Check if node exists and has our merchant
+            let node_state = state
+                .trade_nodes
+                .get_mut(node)
+                .ok_or(ActionError::InvalidProvinceId)?;
+
+            let merchant_idx = node_state
+                .merchants
+                .iter()
+                .position(|m| m.owner == country_tag);
+
+            if let Some(idx) = merchant_idx {
+                node_state.merchants.remove(idx);
+                country.trade.merchants_available += 1;
+                log::info!(
+                    "{} recalls merchant from trade node {:?}",
+                    country_tag,
+                    node
+                );
+            } else {
+                log::debug!(
+                    "{} has no merchant at node {:?} to recall",
+                    country_tag,
+                    node
+                );
+            }
+
+            Ok(())
+        }
+
+        Command::UpgradeCenterOfTrade { province } => {
+            // Validate country owns province
+            let prov = state
+                .provinces
+                .get_mut(province)
+                .ok_or(ActionError::InvalidProvinceId)?;
+
+            if prov.owner.as_ref() != Some(&country_tag.to_string()) {
+                return Err(ActionError::NotOwned);
+            }
+
+            // Check current level and upgrade
+            let current_level = prov.trade.center_of_trade;
+            if current_level >= 3 {
+                log::debug!("Province {} already at max CoT level", province);
+                return Ok(());
+            }
+
+            // TODO: Check costs (diplo mana + ducats)
+            prov.trade.center_of_trade = current_level + 1;
+            log::info!(
+                "{} upgrades CoT in province {} to level {}",
+                country_tag,
+                province,
+                current_level + 1
+            );
+            Ok(())
+        }
+
         Command::Pass => Ok(()), // Explicit no-op
 
         Command::Quit => Ok(()), // Handled by outer loop usually, but harmless here
