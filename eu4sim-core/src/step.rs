@@ -148,12 +148,18 @@ pub fn step_world(
         // 11. War scores → Recalculates based on current occupation
         // 12. Auto-peace → Ends stalemate wars (10yr timeout)
         //
-        // Order matters: production → trade value → trade power → trade income.
+        // Order matters: trade power → production → trade value → trade income.
+        // Power must be calculated first so value propagation knows retention.
         // Trade income must come before taxation as both contribute to treasury.
+        let trade_start = Instant::now();
+        crate::systems::run_trade_power_tick(&mut new_state);
         crate::systems::run_production_tick(&mut new_state, &economy_config);
         crate::systems::run_trade_value_tick(&mut new_state);
-        crate::systems::run_trade_power_tick(&mut new_state);
         crate::systems::run_trade_income_tick(&mut new_state);
+        if let Some(m) = metrics.as_mut() {
+            m.trade_time += trade_start.elapsed();
+        }
+
         crate::systems::run_taxation_tick(&mut new_state);
         crate::systems::run_manpower_tick(&mut new_state);
         crate::systems::run_expenses_tick(&mut new_state);

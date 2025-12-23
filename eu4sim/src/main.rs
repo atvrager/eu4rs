@@ -868,6 +868,11 @@ fn main() -> Result<()> {
             m.economy_time.as_secs_f64() / cpu_time.as_secs_f64() * 100.0
         );
         println!(
+            "  Trade:      {:>7.3}ms ({:4.1}%)",
+            m.trade_time.as_secs_f64() * 1000.0 / total_ticks,
+            m.trade_time.as_secs_f64() / cpu_time.as_secs_f64() * 100.0
+        );
+        println!(
             "  AI:         {:>7.3}ms ({:4.1}%)",
             m.ai_time.as_secs_f64() * 1000.0 / total_ticks,
             m.ai_time.as_secs_f64() / cpu_time.as_secs_f64() * 100.0
@@ -875,7 +880,12 @@ fn main() -> Result<()> {
 
         let other_time = cpu_time
             .checked_sub(
-                m.movement_time + m.combat_time + m.occupation_time + m.economy_time + m.ai_time,
+                m.movement_time
+                    + m.combat_time
+                    + m.occupation_time
+                    + m.economy_time
+                    + m.trade_time
+                    + m.ai_time,
             )
             .unwrap_or_default();
 

@@ -106,14 +106,16 @@ fn propagate_trade_value(state: &mut WorldState) {
 
     for &node_id in &order {
         // Collect node data (avoiding borrow issues)
-        let (total_value, downstream_nodes, merchants) = {
+        let (total_value, downstream_nodes, merchants, country_power, total_power) = {
             let Some(node) = state.trade_nodes.get(&node_id) else {
                 continue;
             };
             let total = node.local_value + node.incoming_value;
             let downstream = edges.get(&node_id).cloned().unwrap_or_default();
             let merchants = node.merchants.clone();
-            (total, downstream, merchants)
+            let country_power = node.country_power.clone();
+            let total_power = node.total_power;
+            (total, downstream, merchants, country_power, total_power)
         };
 
         // Update total value
@@ -137,9 +139,42 @@ fn propagate_trade_value(state: &mut WorldState) {
             }
         }
 
-        // Calculate forwarded value (for now: 100% flows downstream)
-        // TODO: In full implementation, power-based retention reduces this
-        let forwarded = total_value;
+        // Calculate retention: countries collecting at this node retain their share.
+        // Collection = home node OR merchant with Collect action.
+        // Forwarded value = total × (1 - collection_power / total_power).
+        let mut collection_power = Fixed::ZERO;
+
+        for (tag, &power) in &country_power {
+            if power <= Fixed::ZERO {
+                continue;
+            }
+
+            // Check if this country is collecting here
+            let is_home = state
+                .countries
+                .get(tag)
+                .and_then(|c| c.trade.home_node)
+                .map(|h| h == node_id)
+                .unwrap_or(false);
+
+            let has_collect_merchant = merchants
+                .iter()
+                .any(|m| m.owner == *tag && matches!(m.action, MerchantAction::Collect));
+
+            if is_home || has_collect_merchant {
+                collection_power += power;
+            }
+        }
+
+        // Forwarded = total × (1 - retention_ratio)
+        // If 100% power is collecting (e.g., end node), nothing is forwarded.
+        let forwarded = if total_power > Fixed::ZERO {
+            let retention_ratio = collection_power.div(total_power);
+            total_value.mul(Fixed::ONE - retention_ratio)
+        } else {
+            // No power at this node, forward everything
+            total_value
+        };
 
         // Apply steering magnification: +5% per steering merchant
         // Total magnified = forwarded × (1 + 0.05 × total_steering_merchants)
@@ -468,5 +503,121 @@ mod tests {
 
         assert_eq!(node_b_state.incoming_value, Fixed::from_int(50));
         assert_eq!(node_c_state.incoming_value, Fixed::from_int(50));
+    }
+
+    #[test]
+    fn test_collection_power_reduces_forwarding() {
+        use crate::trade::CountryTradeState;
+
+        let mut state = WorldState::default();
+
+        // Create two nodes: A → B
+        let node_a = TradeNodeId(0);
+        let node_b = TradeNodeId(1);
+
+        // SWE has 50% of power, FRA has 50%
+        let mut country_power = std::collections::HashMap::new();
+        country_power.insert("SWE".to_string(), Fixed::from_int(50));
+        country_power.insert("FRA".to_string(), Fixed::from_int(50));
+
+        let node_a_state = TradeNodeState {
+            local_value: Fixed::from_int(100),
+            country_power,
+            total_power: Fixed::from_int(100),
+            ..Default::default()
+        };
+
+        state.trade_nodes.insert(node_a, node_a_state);
+        state.trade_nodes.insert(node_b, TradeNodeState::default());
+
+        let mut edges = std::collections::HashMap::new();
+        edges.insert(node_a, vec![node_b]);
+
+        state.trade_topology = TradeTopology {
+            order: vec![node_a, node_b],
+            end_nodes: vec![node_b],
+            edges,
+        };
+
+        // SWE's home is node A (collecting 50%), FRA's home is elsewhere (not collecting)
+        state.countries.insert(
+            "SWE".to_string(),
+            CountryState {
+                trade: CountryTradeState {
+                    home_node: Some(node_a),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+        state.countries.insert(
+            "FRA".to_string(),
+            CountryState {
+                trade: CountryTradeState {
+                    home_node: Some(node_b), // FRA collects at B, not A
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+
+        propagate_trade_value(&mut state);
+
+        // SWE collects 50% at node A → retention = 50%
+        // Forwarded = 100 × (1 - 0.5) = 50
+        let node_b_state = &state.trade_nodes[&node_b];
+        assert_eq!(node_b_state.incoming_value, Fixed::from_int(50));
+    }
+
+    #[test]
+    fn test_full_collection_no_forwarding() {
+        use crate::trade::CountryTradeState;
+
+        let mut state = WorldState::default();
+
+        // Create two nodes: A → B
+        let node_a = TradeNodeId(0);
+        let node_b = TradeNodeId(1);
+
+        // Only SWE has power, and they're collecting
+        let mut country_power = std::collections::HashMap::new();
+        country_power.insert("SWE".to_string(), Fixed::from_int(100));
+
+        let node_a_state = TradeNodeState {
+            local_value: Fixed::from_int(100),
+            country_power,
+            total_power: Fixed::from_int(100),
+            ..Default::default()
+        };
+
+        state.trade_nodes.insert(node_a, node_a_state);
+        state.trade_nodes.insert(node_b, TradeNodeState::default());
+
+        let mut edges = std::collections::HashMap::new();
+        edges.insert(node_a, vec![node_b]);
+
+        state.trade_topology = TradeTopology {
+            order: vec![node_a, node_b],
+            end_nodes: vec![node_b],
+            edges,
+        };
+
+        // SWE's home is node A (collecting 100%)
+        state.countries.insert(
+            "SWE".to_string(),
+            CountryState {
+                trade: CountryTradeState {
+                    home_node: Some(node_a),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+
+        propagate_trade_value(&mut state);
+
+        // SWE collects 100% at node A → nothing forwarded
+        let node_b_state = &state.trade_nodes[&node_b];
+        assert_eq!(node_b_state.incoming_value, Fixed::ZERO);
     }
 }

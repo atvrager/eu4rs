@@ -32,7 +32,8 @@ const COT_LEVEL_3_BONUS: i64 = 25;
 
 /// Runs the monthly trade power tick.
 ///
-/// Call this AFTER trade value tick, BEFORE collection.
+/// Call this BEFORE trade value tick so that value propagation can
+/// calculate retention based on collection power.
 ///
 /// # What it does
 /// 1. Resets all country power in all nodes

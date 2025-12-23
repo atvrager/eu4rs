@@ -9,7 +9,8 @@ pub struct SimMetrics {
     pub movement_time: Duration,
     pub combat_time: Duration,
     pub occupation_time: Duration,
-    pub economy_time: Duration, // monthly systems combined
+    pub economy_time: Duration, // monthly systems combined (excludes trade)
+    pub trade_time: Duration,   // trade systems (value + power + income)
     pub ai_time: Duration,
     pub war_score_time: Duration,
     /// Time spent in observers (datagen, event log, etc.)
