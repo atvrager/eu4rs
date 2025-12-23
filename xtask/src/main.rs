@@ -1006,9 +1006,7 @@ mod antigravity {
     #[cfg(target_os = "linux")]
     fn find_antigravity_process() -> Result<(String, u32)> {
         // Use ps to find language_server_linux_x64 with antigravity in command line
-        let output = Command::new("ps")
-            .args(["aux"])
-            .output()?;
+        let output = Command::new("ps").args(["aux"]).output()?;
 
         if !output.status.success() {
             return Err(anyhow!("ps command failed"));
@@ -1019,7 +1017,9 @@ mod antigravity {
 
         for line in stdout.lines() {
             // Look for the language server binary with antigravity app_data_dir
-            if line.contains("language_server_linux_x64") && line.contains("--app_data_dir antigravity") {
+            if line.contains("language_server_linux_x64")
+                && line.contains("--app_data_dir antigravity")
+            {
                 // Extract PID (second column in ps aux output)
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 2 {
@@ -1089,9 +1089,7 @@ mod antigravity {
     #[cfg(target_os = "linux")]
     fn find_listening_ports(pid: u32) -> Result<Vec<u16>> {
         // Use ss (socket statistics) to find listening ports by PID
-        let output = Command::new("ss")
-            .args(["-tlnp"])
-            .output()?;
+        let output = Command::new("ss").args(["-tlnp"]).output()?;
 
         if !output.status.success() {
             return Ok(vec![]);

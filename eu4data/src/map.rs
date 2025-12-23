@@ -63,6 +63,34 @@ pub struct DefaultMap {
     pub lakes: Vec<u32>,
 }
 
+pub struct ProvinceLookup {
+    pub by_id: HashMap<u32, ProvinceDefinition>,
+    pub by_color: HashMap<(u8, u8, u8), u32>,
+}
+
+impl ProvinceLookup {
+    pub fn load(path: &Path) -> Result<Self, Box<dyn Error>> {
+        let defs = load_definitions(path)?;
+        let mut by_color = HashMap::new();
+        for def in defs.values() {
+            by_color.insert((def.r, def.g, def.b), def.id);
+        }
+        Ok(Self {
+            by_id: defs,
+            by_color,
+        })
+    }
+}
+
+/// Loads the province map bitmap (provinces.bmp).
+pub fn load_province_map(game_path: &Path) -> Result<image::RgbaImage, Box<dyn Error>> {
+    let map_path = game_path.join("map/provinces.bmp");
+    let img = image::open(&map_path)
+        .map_err(|e| format!("Failed to open map file at {:?}: {}", map_path, e))?
+        .to_rgba8();
+    Ok(img)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

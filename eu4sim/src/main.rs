@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 mod loader;
+mod tui;
 
 /// Create minimal mock state for CI testing (no game files needed)
 fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGraph) {
@@ -297,7 +298,7 @@ fn reassign_hybrid_ais(
         if let Some(ref target_tag) = llm_target {
             ais.insert(target_tag.clone(), llm);
             if old_tag != *target_tag {
-                eprintln!("LlmAi transferred: {} → {}", old_tag, target_tag);
+                log::info!("LlmAi transferred: {} → {}", old_tag, target_tag);
             }
         } else {
             // No valid GP, put it back where it was
@@ -305,7 +306,7 @@ fn reassign_hybrid_ais(
         }
     }
 
-    eprintln!("AI pool updated: GreedyAI → {:?}", new_greedy);
+    log::info!("AI pool updated: GreedyAI → {:?}", new_greedy);
     true
 }
 
@@ -402,6 +403,10 @@ struct Args {
     /// Options: "smollm" (HuggingFaceTB/SmolLM2-360M), "gemma3" (google/gemma-3-270m)
     #[arg(long, value_name = "MODEL")]
     llm_ai_base: Option<String>,
+
+    /// Enable TUI mode
+    #[arg(long)]
+    tui: bool,
 }
 
 use eu4sim_core::SimMetrics;
@@ -424,10 +429,22 @@ fn main() -> Result<()> {
     };
 
     let level = std::str::FromStr::from_str(log_level).unwrap_or(log::LevelFilter::Info);
-    env_logger::Builder::new()
-        .filter_level(level)
-        .format_timestamp(None)
-        .init();
+
+    if args.tui {
+        use std::fs::File;
+        // Simple file logger for TUI mode
+        let target = Box::new(File::create("eu4sim.log").expect("Failed to create log file"));
+        env_logger::Builder::new()
+            .filter_level(level)
+            .format_timestamp(None)
+            .target(env_logger::Target::Pipe(target))
+            .init();
+    } else {
+        env_logger::Builder::new()
+            .filter_level(level)
+            .format_timestamp(None)
+            .init();
+    }
 
     log::info!("Starting eu4sim...");
 
@@ -481,7 +498,7 @@ fn main() -> Result<()> {
                 if let Some(ref llm) = llm_tag {
                     top.remove(llm);
                 }
-                eprintln!(
+                log::info!(
                     "Hybrid mode: {} GreedyAI + {} LLM = {} smart AIs: {:?}",
                     top.len(),
                     if llm_tag.is_some() { 1 } else { 0 },
@@ -503,23 +520,24 @@ fn main() -> Result<()> {
             };
 
             let result = if let Some(adapter_path) = &args.llm_ai {
-                eprintln!(
+                log::info!(
                     "Loading LLM AI with adapter: {:?} (base: {})",
-                    adapter_path, base_model
+                    adapter_path,
+                    base_model
                 );
                 eu4sim_ai::LlmAi::new(base_model, Some(adapter_path.clone()))
             } else {
-                eprintln!("Loading LLM AI with base model: {}", base_model);
+                log::info!("Loading LLM AI with base model: {}", base_model);
                 eu4sim_ai::LlmAi::new(base_model, None)
             };
 
             match result {
                 Ok(ai) => {
-                    eprintln!("LLM AI loaded successfully for: {:?}", llm_tag);
+                    log::info!("LLM AI loaded successfully for: {:?}", llm_tag);
                     Some(Box::new(ai))
                 }
                 Err(e) => {
-                    eprintln!("Failed to load LLM AI: {}. Falling back to GreedyAI.", e);
+                    log::error!("Failed to load LLM AI: {}. Falling back to GreedyAI.", e);
                     None
                 }
             }
@@ -557,10 +575,32 @@ fn main() -> Result<()> {
     // Note: available commands buffer is now allocated per-AI in parallel loop
 
     // Only enable TUI in interactive mode
-    let _guard = if args.headless {
+    let _guard = if args.headless && !args.tui {
         None
     } else {
         Some(RawModeGuard::new()?)
+    };
+
+    let mut tui_system = if args.tui {
+        let game_path = PathBuf::from(&args.game_path);
+        let map = match eu4data::map::load_province_map(&game_path) {
+            Ok(img) => Some(img),
+            Err(e) => {
+                log::warn!("Failed to load province map: {}", e);
+                None
+            }
+        };
+        let lookup = match eu4data::map::ProvinceLookup::load(&game_path.join("map/definition.csv"))
+        {
+            Ok(l) => Some(l),
+            Err(e) => {
+                log::warn!("Failed to load province definitions: {}", e);
+                None
+            }
+        };
+        Some(tui::TuiSystem::new(map, lookup, args.speed)?)
+    } else {
+        None
     };
     let mut speed = args.speed.clamp(1, 5) as usize;
     // Map speed 1..5 to delay in ms
@@ -580,9 +620,9 @@ fn main() -> Result<()> {
         .map(|s| s.trim().to_uppercase())
         .collect();
 
-    // Initialize observer registry (console observer only in interactive mode)
+    // Initialize observer registry (console observer only in interactive mode and NO TUI)
     let mut observers = ObserverRegistry::new();
-    if !args.headless {
+    if !args.headless && !args.tui {
         let tag_refs: Vec<&str> = tags.iter().map(|s| s.as_str()).collect();
         observers.register(Box::new(ConsoleObserver::new(&tag_refs)));
     }
@@ -614,11 +654,44 @@ fn main() -> Result<()> {
 
     // Wall clock timer for total runtime
     let wall_start = std::time::Instant::now();
+    // TUI frame counter for tick throttling
+    let mut tui_frame: u64 = 0;
 
     // Game Loop
-    while tick < args.ticks as u64 {
-        // Poll input (only in interactive mode)
-        if !args.headless {
+    while tick < args.ticks as u64
+        || (args.tui && tui_system.as_ref().is_some_and(|t| !t.should_quit))
+    {
+        // Poll input
+        if let Some(tui) = &mut tui_system {
+            tui.handle_events()?;
+            if tui.should_quit {
+                return Ok(());
+            }
+            speed = tui.speed as usize;
+            paused = tui.paused;
+            tui.render(&state, tick, args.ticks)?;
+
+            tui_frame += 1;
+
+            if paused {
+                std::thread::sleep(std::time::Duration::from_millis(16));
+                continue;
+            }
+
+            // Throttle simulation based on speed (frames per tick)
+            // Speed 5 = every frame, Speed 1 = every 60 frames (~1 second)
+            let frames_per_tick = match speed {
+                5 => 1,
+                4 => 3,
+                3 => 10,
+                2 => 30,
+                _ => 60,
+            };
+            if !tui_frame.is_multiple_of(frames_per_tick) {
+                std::thread::sleep(std::time::Duration::from_millis(16));
+                continue;
+            }
+        } else if !args.headless {
             while event::poll(std::time::Duration::ZERO)? {
                 if let Event::Key(key) = event::read()? {
                     if key.kind == event::KeyEventKind::Press {
@@ -833,8 +906,11 @@ fn main() -> Result<()> {
         let snapshot = Snapshot::new(state.clone(), tick, 0);
         observers.notify_with_inputs(&snapshot, &inputs);
 
-        // Speed control delay
-        if speed < 5 {
+        // Speed control delay (use short sleep for TUI to keep input responsive)
+        if args.tui {
+            // TUI mode: always short sleep, throttle via frame skipping below
+            std::thread::sleep(std::time::Duration::from_millis(16));
+        } else if speed < 5 {
             std::thread::sleep(std::time::Duration::from_millis(delays[speed - 1]));
         }
     }
