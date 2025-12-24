@@ -112,6 +112,35 @@ pub mod combat {
     pub const BACKROW_MORALE_DAMAGE_FRACTION: f32 = 0.4;
 }
 
+/// Siege constants
+pub mod siege {
+    /// Occupation time for unfortified provinces (instant)
+    pub const UNFORTIFIED_OCCUPATION_DAYS: u32 = 1;
+
+    /// Days per siege phase (one dice roll)
+    pub const SIEGE_PHASE_DAYS: u32 = 30;
+
+    /// Dice roll system (EU4-authentic)
+    pub const SIEGE_WIN_THRESHOLD: i32 = 20; // Roll + progress - fort_level >= 20 wins
+    pub const MAX_SIEGE_PROGRESS: i32 = 12; // Progress modifier caps here
+    pub const DISEASE_OUTBREAK_ROLL: u32 = 1; // Roll of 1 = disease (bad)
+    pub const WALL_BREACH_ROLL: u32 = 14; // Roll of 14 = breach
+
+    /// Bonuses
+    pub const ARTILLERY_BONUS_MAX: i32 = 5; // +5 max from cannons
+    pub const ARTILLERY_PER_BONUS: u32 = 1; // 1 artillery = +1 (up to max)
+    pub const GENERAL_SIEGE_PIP_BONUS: i32 = 1; // +1 per siege pip
+    pub const BLOCKADE_BONUS: i32 = 1; // +1 if coastal and blockaded
+
+    /// Garrison
+    pub const GARRISON_BASE_SIZE: u32 = 1000; // Per fort level
+    pub const GARRISON_SURRENDER_THRESHOLD: u32 = 100; // Garrison below 100 = surrender
+    pub const STARVATION_MONTHLY_LOSS_PERCENT: f32 = 10.0; // 10% garrison loss if blockaded
+
+    /// Regiment requirements
+    pub const REGIMENTS_PER_FORT_LEVEL: u32 = 3; // Need fort_level * 3 regiments
+}
+
 /// Economy constants
 pub mod economy {
     /// Goods produced per point of base production (EU4: 0.2)

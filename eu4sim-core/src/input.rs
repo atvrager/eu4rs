@@ -3,6 +3,13 @@ use crate::state::{ArmyId, FleetId, InstitutionId, PeaceTerms, ProvinceId, Tag, 
 use crate::trade::{MerchantAction, TradeNodeId};
 use serde::{Deserialize, Serialize};
 
+/// Which side to join in a war.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WarSide {
+    Attacker,
+    Defender,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlayerInputs {
     pub country: Tag,
@@ -77,6 +84,14 @@ pub enum Command {
         war_id: WarId,
     },
     RejectPeace {
+        war_id: WarId,
+    },
+    JoinWar {
+        war_id: WarId,
+        side: WarSide,
+    },
+    CallAllyToWar {
+        ally: Tag,
         war_id: WarId,
     },
 

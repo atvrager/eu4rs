@@ -173,7 +173,13 @@ pub fn load_initial_state(
             base_tax: Fixed::from_f32(hist.base_tax.unwrap_or(0.0)),
             base_production: Fixed::from_f32(hist.base_production.unwrap_or(0.0)),
             base_manpower: Fixed::from_f32(hist.base_manpower.unwrap_or(0.0)),
-            has_fort: hist.fort_15th.unwrap_or(false),
+            fort_level: if hist.fort_15th.unwrap_or(false) {
+                1
+            } else {
+                0
+            },
+            is_capital: hist.capital.is_some(),
+            is_mothballed: false,
             is_sea: sea_provinces.contains(&id),
             terrain: terrain_map.get(&id).and_then(|s| parse_terrain(s)),
             institution_presence: ImHashMap::default(),
@@ -290,6 +296,8 @@ pub fn load_initial_state(
             next_general_id: 1,
             battles: ImHashMap::default(),
             next_battle_id: 1,
+            sieges: ImHashMap::default(),
+            next_siege_id: 1,
             // Trade system
             trade_nodes: trade_nodes.into(),
             province_trade_node: province_trade_node.into(),

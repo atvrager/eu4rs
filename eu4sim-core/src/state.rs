@@ -91,6 +91,7 @@ pub type WarId = u32;
 pub type FleetId = u32;
 pub type GeneralId = u32;
 pub type BattleId = u32;
+pub type SiegeId = u32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum RegimentType {
@@ -254,6 +255,28 @@ pub struct Battle {
     pub result: Option<BattleResult>,
 }
 
+/// An active siege of a fortified province.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Siege {
+    pub id: SiegeId,
+    pub province: ProvinceId,
+    pub attacker: Tag,
+    pub besieging_armies: Vec<ArmyId>,
+    /// Fort level being sieged (1-8)
+    pub fort_level: u8,
+    /// Current garrison troops
+    pub garrison: u32,
+    /// Progress modifier (0-12, increases each failed phase)
+    pub progress_modifier: i32,
+    /// Days since last dice roll
+    pub days_in_phase: u32,
+    pub start_date: Date,
+    /// Adjacent sea controlled by enemy (affects garrison starvation)
+    pub is_blockaded: bool,
+    /// Wall breach (roll 14) - enables assault
+    pub breached: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct WorldState {
     pub date: Date,
@@ -283,6 +306,9 @@ pub struct WorldState {
     /// Active battles
     pub battles: HashMap<BattleId, Battle>,
     pub next_battle_id: BattleId,
+    /// Active sieges
+    pub sieges: HashMap<ProvinceId, Siege>,
+    pub next_siege_id: SiegeId,
 
     // =========================================================================
     // Trade System
@@ -326,6 +352,79 @@ impl WorldState {
         // Use upper 32 bits for better distribution, then modulo SCALE
         Fixed::from_raw(((x >> 32) % (Fixed::SCALE as u64)) as i64)
     }
+
+    /// Generate a random u64 using the deterministic RNG.
+    /// Uses xorshift64 to maintain replay compatibility.
+    pub fn random_u64(&mut self) -> u64 {
+        let mut x = self.rng_state;
+        if x == 0 {
+            x = 1;
+        }
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.rng_state = x;
+        x
+    }
+
+    /// Check if movement from `from` to `to` is blocked by enemy Zone of Control (ZoC).
+    ///
+    /// # ZoC Rules (EU4-authentic)
+    /// - Forts project ZoC to all adjacent provinces
+    /// - Cannot move through ZoC (e.g., from province A to B, if both are adjacent to enemy fort C)
+    /// - CAN move directly TO the fort to siege it
+    /// - Mothballed forts do NOT project ZoC (they fall instantly)
+    /// - Only applies during wartime
+    ///
+    /// # Returns
+    /// `true` if movement is blocked, `false` if allowed.
+    pub fn is_blocked_by_zoc(
+        &self,
+        from: ProvinceId,
+        to: ProvinceId,
+        mover: &str,
+        adjacency: Option<&eu4data::adjacency::AdjacencyGraph>,
+    ) -> bool {
+        let Some(graph) = adjacency else {
+            return false; // No adjacency data - cannot check ZoC
+        };
+
+        // Get provinces adjacent to `from` that might have enemy forts
+        for neighbor_id in graph.neighbors(from) {
+            // Direct move to the fort is always allowed (to siege it)
+            if neighbor_id == to {
+                continue;
+            }
+
+            let Some(province) = self.provinces.get(&neighbor_id) else {
+                continue;
+            };
+
+            // Must have a non-mothballed fort to project ZoC
+            if province.fort_level == 0 || province.is_mothballed {
+                continue;
+            }
+
+            // Must be enemy-controlled (use controller first, fallback to owner)
+            let controller = province.controller.as_ref().or(province.owner.as_ref());
+            let Some(ctrl) = controller else {
+                continue; // Unowned/uncontrolled province - no ZoC
+            };
+
+            // Only blocks if at war with the controller
+            if !self.diplomacy.are_at_war(mover, ctrl) {
+                continue;
+            }
+
+            // This fort projects ZoC - check if `to` is also adjacent to it
+            if graph.are_adjacent(neighbor_id, to) {
+                // Blocked: trying to move from A to B, both adjacent to enemy fort C
+                return true;
+            }
+        }
+
+        false // No ZoC blocking
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -366,8 +465,12 @@ pub struct ProvinceState {
     pub base_tax: Fixed,
     /// Base manpower development
     pub base_manpower: Fixed,
-    /// Has a level 2 fort (Castle)
-    pub has_fort: bool,
+    /// Fort level (0 = no fort, 1-8 = fort levels). Capital provinces get a free level-1 fort.
+    pub fort_level: u8,
+    /// Whether this province is the capital of its owner
+    pub is_capital: bool,
+    /// Whether the fort is mothballed (no ZoC, no garrison, reduced maintenance)
+    pub is_mothballed: bool,
     /// Whether this province is a sea province (for naval movement)
     pub is_sea: bool,
     /// Terrain type (e.g., "plains", "mountains", "forest")
@@ -441,6 +544,10 @@ pub struct CountryState {
     /// Set after a peace offer is rejected; cleared when war ends.
     #[serde(default)]
     pub peace_offer_cooldowns: std::collections::HashMap<WarId, Date>,
+    /// Pending call-to-arms offers from allies (war_id -> which side to join).
+    /// Defensive allies auto-join; offensive allies get a choice.
+    #[serde(default)]
+    pub pending_call_to_arms: std::collections::HashMap<WarId, crate::input::WarSide>,
     /// Overextension percentage (1 dev = 1% OE).
     /// Calculated from total development in owned provinces without cores.
     /// High OE causes unrest and other penalties.
@@ -481,6 +588,7 @@ impl Default for CountryState {
             income: IncomeBreakdown::default(),
             last_diplomatic_action: None,
             peace_offer_cooldowns: std::collections::HashMap::new(),
+            pending_call_to_arms: std::collections::HashMap::new(),
             overextension: Fixed::ZERO,
         }
     }
@@ -703,7 +811,9 @@ impl WorldState {
             p.base_production.0.hash(&mut hasher);
             p.base_tax.0.hash(&mut hasher);
             p.base_manpower.0.hash(&mut hasher);
-            p.has_fort.hash(&mut hasher);
+            p.fort_level.hash(&mut hasher);
+            p.is_capital.hash(&mut hasher);
+            p.is_mothballed.hash(&mut hasher);
             p.is_sea.hash(&mut hasher);
             p.terrain.hash(&mut hasher);
         }

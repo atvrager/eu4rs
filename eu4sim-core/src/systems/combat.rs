@@ -363,11 +363,20 @@ fn calculate_side_damage(state: &WorldState, battle: &Battle, is_attacker: bool)
     } else {
         &battle.defender_line
     };
+    let army_ids = if is_attacker {
+        &battle.attackers
+    } else {
+        &battle.defenders
+    };
     let dice = if is_attacker {
         battle.attacker_dice
     } else {
         battle.defender_dice
     };
+
+    // Add general pip to dice (capped at 9)
+    let general_bonus = get_general_bonus(state, army_ids, battle.phase);
+    let effective_dice = ((dice as i8 + general_bonus).clamp(0, 9)) as u8;
 
     let mut total_damage = Fixed::ZERO;
 
@@ -376,8 +385,9 @@ fn calculate_side_damage(state: &WorldState, battle: &Battle, is_attacker: bool)
         if let Some(army) = state.armies.get(army_id) {
             if let Some(reg) = army.regiments.get(*reg_idx) {
                 let base = get_regiment_phase_damage(reg.type_, battle.phase);
-                // Damage formula: base * (dice + 5) / 10 * (strength / 1000)
-                let dice_factor = Fixed::from_int(dice as i64 + 5).div(Fixed::from_int(10));
+                // Damage formula: base * (effective_dice + 5) / 10 * (strength / 1000)
+                let dice_factor =
+                    Fixed::from_int(effective_dice as i64 + 5).div(Fixed::from_int(10));
                 let strength_factor = reg.strength.div(Fixed::from_int(defines::REGIMENT_SIZE));
                 let dmg = Fixed::from_f32(base).mul(dice_factor).mul(strength_factor);
                 total_damage += dmg;
@@ -391,7 +401,8 @@ fn calculate_side_damage(state: &WorldState, battle: &Battle, is_attacker: bool)
             if let Some(reg) = army.regiments.get(*reg_idx) {
                 if reg.type_ == RegimentType::Artillery {
                     let base = get_regiment_phase_damage(reg.type_, battle.phase);
-                    let dice_factor = Fixed::from_int(dice as i64 + 5).div(Fixed::from_int(10));
+                    let dice_factor =
+                        Fixed::from_int(effective_dice as i64 + 5).div(Fixed::from_int(10));
                     let strength_factor = reg.strength.div(Fixed::from_int(defines::REGIMENT_SIZE));
                     let dmg = Fixed::from_f32(base).mul(dice_factor).mul(strength_factor);
                     total_damage += dmg;
@@ -400,9 +411,10 @@ fn calculate_side_damage(state: &WorldState, battle: &Battle, is_attacker: bool)
         }
     }
 
-    // Apply terrain penalty to attacker
+    // Apply terrain penalty to attacker (considers maneuver difference)
     if is_attacker {
-        let terrain_mod = get_terrain_penalty(state, battle.province);
+        let terrain_mod =
+            get_terrain_penalty(state, battle.province, &battle.attackers, &battle.defenders);
         // Each -1 to dice effectively reduces damage by ~10%
         let penalty_factor = Fixed::from_int(10 + terrain_mod as i64).div(Fixed::from_int(10));
         total_damage = total_damage.mul(penalty_factor.max(Fixed::ZERO));
@@ -504,17 +516,65 @@ fn get_regiment_phase_damage(type_: RegimentType, phase: CombatPhase) -> f32 {
 }
 
 /// Get terrain penalty for attacker (negative modifier to dice).
-fn get_terrain_penalty(state: &WorldState, province: ProvinceId) -> i8 {
+/// Maneuver difference between attacker and defender can negate terrain penalties.
+fn get_terrain_penalty(
+    state: &WorldState,
+    province: ProvinceId,
+    attacker_armies: &[ArmyId],
+    defender_armies: &[ArmyId],
+) -> i8 {
     let terrain = state.provinces.get(&province).and_then(|p| p.terrain);
 
-    match terrain {
+    let base_penalty = match terrain {
         Some(Terrain::Mountains) => defines::MOUNTAIN_PENALTY,
         Some(Terrain::Hills) => defines::HILLS_PENALTY,
         Some(Terrain::Forest) => defines::FOREST_PENALTY,
         Some(Terrain::Marsh) => defines::MARSH_PENALTY,
         Some(Terrain::Jungle) => defines::JUNGLE_PENALTY,
         _ => 0,
+    };
+
+    // Maneuver difference can negate terrain penalty
+    let atk_maneuver = get_maneuver_bonus(state, attacker_armies);
+    let def_maneuver = get_maneuver_bonus(state, defender_armies);
+    let mitigation = (atk_maneuver - def_maneuver).max(0); // Can't go negative
+
+    (base_penalty + mitigation).min(0) // Can negate penalty, never provide bonus
+}
+
+/// Get the highest general pip bonus for a specific combat phase.
+/// Returns the best fire or shock pip among all generals in the army list.
+fn get_general_bonus(state: &WorldState, army_ids: &[ArmyId], phase: CombatPhase) -> i8 {
+    let mut best_bonus: i8 = 0;
+    for &army_id in army_ids {
+        if let Some(army) = state.armies.get(&army_id) {
+            if let Some(gen_id) = army.general {
+                if let Some(general) = state.generals.get(&gen_id) {
+                    let pip = match phase {
+                        CombatPhase::Fire => general.fire,
+                        CombatPhase::Shock => general.shock,
+                    };
+                    best_bonus = best_bonus.max(pip as i8);
+                }
+            }
+        }
     }
+    best_bonus
+}
+
+/// Get the highest maneuver pip among all generals in the army list.
+fn get_maneuver_bonus(state: &WorldState, army_ids: &[ArmyId]) -> i8 {
+    let mut best_maneuver: i8 = 0;
+    for &army_id in army_ids {
+        if let Some(army) = state.armies.get(&army_id) {
+            if let Some(gen_id) = army.general {
+                if let Some(general) = state.generals.get(&gen_id) {
+                    best_maneuver = best_maneuver.max(general.maneuver as i8);
+                }
+            }
+        }
+    }
+    best_maneuver
 }
 
 // ============================================================================
@@ -989,5 +1049,248 @@ mod tests {
 
         // Rest of cavalry in back
         assert_eq!(line.back.len(), 9); // 10 - 1 = 9 cav in back
+    }
+
+    #[test]
+    fn test_general_fire_pip_bonus() {
+        use crate::state::General;
+
+        let mut state = WorldStateBuilder::new()
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        // Create general with 3 fire pips
+        let general = General {
+            id: 1,
+            name: "Gustav Vasa".to_string(),
+            owner: "SWE".to_string(),
+            fire: 3,
+            shock: 1,
+            maneuver: 2,
+            siege: 1,
+        };
+        state.generals.insert(1, general);
+
+        // Create army with general
+        let mut army = make_army(
+            1,
+            "SWE",
+            1,
+            vec![make_regiment(RegimentType::Infantry, 1000)],
+        );
+        army.general = Some(1);
+        state.armies.insert(1, army);
+
+        // Enemy army without general
+        state.armies.insert(
+            2,
+            make_army(
+                2,
+                "DEN",
+                1,
+                vec![make_regiment(RegimentType::Infantry, 1000)],
+            ),
+        );
+
+        // Get general bonus for Fire phase
+        let bonus = get_general_bonus(&state, &[1], CombatPhase::Fire);
+        assert_eq!(bonus, 3);
+
+        // Shock phase should return 1
+        let shock_bonus = get_general_bonus(&state, &[1], CombatPhase::Shock);
+        assert_eq!(shock_bonus, 1);
+
+        // No general should return 0
+        let no_general = get_general_bonus(&state, &[2], CombatPhase::Fire);
+        assert_eq!(no_general, 0);
+    }
+
+    #[test]
+    fn test_maneuver_negates_terrain() {
+        use crate::state::General;
+
+        let mut state = WorldStateBuilder::new()
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        // Create province with Mountains terrain (-2 penalty)
+        state.provinces.insert(
+            1,
+            crate::state::ProvinceState {
+                terrain: Some(Terrain::Mountains),
+                ..Default::default()
+            },
+        );
+
+        // Attacker with 3 maneuver general
+        let attacker_general = General {
+            id: 1,
+            name: "Attacker".to_string(),
+            owner: "SWE".to_string(),
+            fire: 1,
+            shock: 1,
+            maneuver: 3,
+            siege: 0,
+        };
+        state.generals.insert(1, attacker_general);
+
+        let mut atk_army = make_army(
+            1,
+            "SWE",
+            1,
+            vec![make_regiment(RegimentType::Infantry, 1000)],
+        );
+        atk_army.general = Some(1);
+        state.armies.insert(1, atk_army);
+
+        // Defender with 1 maneuver general
+        let defender_general = General {
+            id: 2,
+            name: "Defender".to_string(),
+            owner: "DEN".to_string(),
+            fire: 1,
+            shock: 1,
+            maneuver: 1,
+            siege: 0,
+        };
+        state.generals.insert(2, defender_general);
+
+        let mut def_army = make_army(
+            2,
+            "DEN",
+            1,
+            vec![make_regiment(RegimentType::Infantry, 1000)],
+        );
+        def_army.general = Some(2);
+        state.armies.insert(2, def_army);
+
+        // Mountain penalty is -2, maneuver difference is 3-1=2
+        // Final penalty should be -2 + 2 = 0 (fully negated)
+        let penalty = get_terrain_penalty(&state, 1, &[1], &[2]);
+        assert_eq!(penalty, 0);
+    }
+
+    #[test]
+    fn test_maneuver_partial_negation() {
+        use crate::state::General;
+
+        let mut state = WorldStateBuilder::new()
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        // Mountains = -2
+        state.provinces.insert(
+            1,
+            crate::state::ProvinceState {
+                terrain: Some(Terrain::Mountains),
+                ..Default::default()
+            },
+        );
+
+        // Attacker: 1 maneuver
+        let attacker_general = General {
+            id: 1,
+            name: "Attacker".to_string(),
+            owner: "SWE".to_string(),
+            fire: 1,
+            shock: 1,
+            maneuver: 1,
+            siege: 0,
+        };
+        state.generals.insert(1, attacker_general);
+
+        let mut atk_army = make_army(
+            1,
+            "SWE",
+            1,
+            vec![make_regiment(RegimentType::Infantry, 1000)],
+        );
+        atk_army.general = Some(1);
+        state.armies.insert(1, atk_army);
+
+        // Defender: 0 maneuver (no general)
+        state.armies.insert(
+            2,
+            make_army(
+                2,
+                "DEN",
+                1,
+                vec![make_regiment(RegimentType::Infantry, 1000)],
+            ),
+        );
+
+        // Mountain penalty -2, maneuver difference 1-0=1
+        // Final: -2 + 1 = -1
+        let penalty = get_terrain_penalty(&state, 1, &[1], &[2]);
+        assert_eq!(penalty, -1);
+    }
+
+    #[test]
+    fn test_defender_high_maneuver_prevents_mitigation() {
+        use crate::state::General;
+
+        let mut state = WorldStateBuilder::new()
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        // Mountains = -2
+        state.provinces.insert(
+            1,
+            crate::state::ProvinceState {
+                terrain: Some(Terrain::Mountains),
+                ..Default::default()
+            },
+        );
+
+        // Attacker: 2 maneuver
+        let attacker_general = General {
+            id: 1,
+            name: "Attacker".to_string(),
+            owner: "SWE".to_string(),
+            fire: 1,
+            shock: 1,
+            maneuver: 2,
+            siege: 0,
+        };
+        state.generals.insert(1, attacker_general);
+
+        let mut atk_army = make_army(
+            1,
+            "SWE",
+            1,
+            vec![make_regiment(RegimentType::Infantry, 1000)],
+        );
+        atk_army.general = Some(1);
+        state.armies.insert(1, atk_army);
+
+        // Defender: 4 maneuver (higher!)
+        let defender_general = General {
+            id: 2,
+            name: "Defender".to_string(),
+            owner: "DEN".to_string(),
+            fire: 1,
+            shock: 1,
+            maneuver: 4,
+            siege: 0,
+        };
+        state.generals.insert(2, defender_general);
+
+        let mut def_army = make_army(
+            2,
+            "DEN",
+            1,
+            vec![make_regiment(RegimentType::Infantry, 1000)],
+        );
+        def_army.general = Some(2);
+        state.armies.insert(2, def_army);
+
+        // Maneuver difference: 2-4 = -2, clamped to 0
+        // Penalty stays at -2 (no mitigation)
+        let penalty = get_terrain_penalty(&state, 1, &[1], &[2]);
+        assert_eq!(penalty, -2);
     }
 }

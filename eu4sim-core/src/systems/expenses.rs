@@ -45,10 +45,12 @@ pub fn run_expenses_tick(state: &mut WorldState) {
     let mut fort_costs = std::collections::HashMap::new();
 
     for province in state.provinces.values() {
-        if province.has_fort {
+        if province.fort_level > 0 && !province.is_mothballed {
             if let Some(owner) = &province.owner {
-                *fort_costs.entry(owner.clone()).or_insert(Fixed::ZERO) +=
-                    Fixed::from_f32(defines::BASE_FORT_COST);
+                // Fort cost scales with fort level
+                let cost = Fixed::from_f32(defines::BASE_FORT_COST)
+                    .mul(Fixed::from_int(province.fort_level as i64));
+                *fort_costs.entry(owner.clone()).or_insert(Fixed::ZERO) += cost;
             }
         }
     }
@@ -127,7 +129,8 @@ mod tests {
                 1,
                 ProvinceState {
                     owner: Some("SWE".into()),
-                    has_fort: true,
+                    fort_level: 1,
+                    is_mothballed: false,
                     base_tax: Fixed::ONE,
                     base_production: Fixed::ONE,
                     base_manpower: Fixed::ONE,

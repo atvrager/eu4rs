@@ -147,7 +147,7 @@ impl SimObserver for ConsoleObserver {
                 let forts = world
                     .provinces
                     .values()
-                    .filter(|p| p.owner.as_ref() == Some(tag) && p.has_fort)
+                    .filter(|p| p.owner.as_ref() == Some(tag) && p.fort_level > 0)
                     .count();
 
                 // ANSI color codes

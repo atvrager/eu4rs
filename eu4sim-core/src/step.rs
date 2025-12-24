@@ -1,7 +1,9 @@
 use crate::fixed::Fixed;
 use crate::input::{Command, DevType, PlayerInputs};
 use crate::metrics::SimMetrics;
-use crate::state::{MovementState, PeaceTerms, PendingPeace, ProvinceId, TechType, WorldState};
+use crate::state::{
+    ArmyId, MovementState, PeaceTerms, PendingPeace, ProvinceId, TechType, WorldState,
+};
 use std::time::Instant;
 use thiserror::Error;
 
@@ -129,7 +131,14 @@ pub fn step_world(
         m.combat_time += combat_start.elapsed();
     }
 
-    // Update occupation (armies in enemy territory take control)
+    // Siege runs daily (progress siege phases and dice rolls)
+    let siege_start = Instant::now();
+    crate::systems::run_siege_tick(&mut new_state);
+    if let Some(m) = metrics.as_mut() {
+        m.combat_time += siege_start.elapsed(); // Count as combat time
+    }
+
+    // Update occupation and sieges (armies in enemy territory start sieges or occupy instantly)
     let occ_start = Instant::now();
     update_occupation(&mut new_state);
     if let Some(m) = metrics.as_mut() {
@@ -227,35 +236,80 @@ pub fn step_world(
 }
 
 /// Updates province controllers based on army presence.
-/// If an army is in a province owned by an enemy (during war), the army's owner becomes controller.
+/// If an army is in a province owned by an enemy (during war), start siege or occupy instantly.
+/// For unfortified provinces: instant occupation (like before).
+/// For fortified provinces or capitals: start/join siege (handled by siege system).
 fn update_occupation(state: &mut WorldState) {
-    // Collect updates first to avoid borrow issues
-    let mut updates: Vec<(u32, String)> = Vec::new();
+    // Collect armies in enemy territory
+    let mut enemy_occupations: Vec<(ProvinceId, ArmyId, String)> = Vec::new();
 
-    for army in state.armies.values() {
+    for (&army_id, army) in state.armies.iter() {
+        // Skip armies in combat or embarked
+        if army.in_battle.is_some() || army.embarked_on.is_some() {
+            continue;
+        }
+
         let province_id = army.location;
         if let Some(province) = state.provinces.get(&province_id) {
             if let Some(owner) = &province.owner {
                 // Check if army owner is at war with province owner
                 if owner != &army.owner && state.diplomacy.are_at_war(&army.owner, owner) {
-                    // Army is in enemy territory during war - occupy!
-                    if province.controller.as_ref() != Some(&army.owner) {
-                        updates.push((province_id, army.owner.clone()));
-                    }
+                    enemy_occupations.push((province_id, army_id, army.owner.clone()));
                 }
             }
         }
     }
 
-    // Apply updates
-    for (province_id, new_controller) in updates {
-        if let Some(province) = state.provinces.get_mut(&province_id) {
+    // Process occupations: instant for unfortified, sieges for fortified
+    for (province_id, army_id, attacker) in enemy_occupations.iter() {
+        crate::systems::start_occupation(state, *province_id, attacker, *army_id);
+    }
+
+    // Clean up abandoned sieges (no armies left besieging)
+    cleanup_abandoned_sieges(state);
+}
+
+/// Remove sieges that have no besieging armies (armies withdrew or were destroyed).
+fn cleanup_abandoned_sieges(state: &mut WorldState) {
+    let mut sieges_to_remove: Vec<ProvinceId> = Vec::new();
+    let mut sieges_to_update: Vec<(ProvinceId, Vec<ArmyId>)> = Vec::new();
+
+    for (&province_id, siege) in state.sieges.iter() {
+        // Check if any besieging armies still exist and are at the siege location
+        let active_armies: Vec<ArmyId> = siege
+            .besieging_armies
+            .iter()
+            .filter(|&&army_id| {
+                state
+                    .armies
+                    .get(&army_id)
+                    .map(|a| a.location == province_id && a.in_battle.is_none())
+                    .unwrap_or(false)
+            })
+            .copied()
+            .collect();
+
+        if active_armies.is_empty() {
+            sieges_to_remove.push(province_id);
             log::info!(
-                "Province {} now occupied by {}",
-                province_id,
-                new_controller
+                "Siege at province {} abandoned (no armies left)",
+                province_id
             );
-            province.controller = Some(new_controller);
+        } else if active_armies.len() < siege.besieging_armies.len() {
+            // Some armies left - need to update the list
+            sieges_to_update.push((province_id, active_armies));
+        }
+    }
+
+    // Remove abandoned sieges
+    for province_id in sieges_to_remove {
+        state.sieges.remove(&province_id);
+    }
+
+    // Update besieging army lists for remaining sieges
+    for (province_id, active_armies) in sieges_to_update {
+        if let Some(siege) = state.sieges.get_mut(&province_id) {
+            siege.besieging_armies = active_armies;
         }
     }
 }
@@ -281,12 +335,18 @@ fn auto_end_stale_wars(state: &mut WorldState) {
         if let Some(war) = state.diplomacy.wars.get(&war_id).cloned() {
             create_war_truces(state, &war, state.date);
 
-            // Clear peace offer cooldowns for all participants
+            // Clear peace offer cooldowns and pending call-to-arms for all participants
             for tag in war.attackers.iter().chain(war.defenders.iter()) {
                 if let Some(country) = state.countries.get_mut(tag) {
                     country.peace_offer_cooldowns.remove(&war_id);
+                    country.pending_call_to_arms.remove(&war_id);
                 }
             }
+        }
+
+        // Clear pending call-to-arms for all countries
+        for (_tag, country) in state.countries.iter_mut() {
+            country.pending_call_to_arms.remove(&war_id);
         }
 
         // Restore province controllers
@@ -300,6 +360,87 @@ fn auto_end_stale_wars(state: &mut WorldState) {
                 STALEMATE_YEARS
             );
         }
+    }
+}
+
+/// Call allies to join a war.
+///
+/// - Defensive allies (defender's allies) auto-join immediately
+/// - Offensive allies (attacker's allies) receive a pending call-to-arms to decide
+fn call_allies_to_war(
+    state: &mut WorldState,
+    war_id: crate::state::WarId,
+    declarer: &str,
+    is_attacker: bool,
+) {
+    use crate::input::WarSide;
+    use crate::state::RelationType;
+
+    // Find all allies of the declarer
+    let allies: Vec<String> = state
+        .diplomacy
+        .relations
+        .iter()
+        .filter_map(|((a, b), rel)| {
+            if *rel == RelationType::Alliance {
+                if a == declarer {
+                    Some(b.clone())
+                } else if b == declarer {
+                    Some(a.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    for ally in allies {
+        if !is_attacker {
+            // Defensive war - allies auto-join to defend
+            join_war(state, &ally, war_id, WarSide::Defender);
+            log::info!("{} auto-joins war {} to defend {}", ally, war_id, declarer);
+        } else {
+            // Offensive war - create pending call-to-arms (ally chooses)
+            if let Some(country) = state.countries.get_mut(&ally) {
+                country
+                    .pending_call_to_arms
+                    .insert(war_id, WarSide::Attacker);
+                log::info!(
+                    "{} received call-to-arms from {} for war {}",
+                    ally,
+                    declarer,
+                    war_id
+                );
+            }
+        }
+    }
+}
+
+/// Add a country to a war on the specified side.
+fn join_war(
+    state: &mut WorldState,
+    country: &str,
+    war_id: crate::state::WarId,
+    side: crate::input::WarSide,
+) {
+    use crate::input::WarSide;
+
+    if let Some(war) = state.diplomacy.wars.get_mut(&war_id) {
+        let list = match side {
+            WarSide::Attacker => &mut war.attackers,
+            WarSide::Defender => &mut war.defenders,
+        };
+        if !list.contains(&country.to_string()) {
+            list.push(country.to_string());
+            log::info!("{} joined war {} as {:?}", country, war_id, side);
+        }
+    }
+
+    // Clear pending call-to-arms if it exists
+    if let Some(country_state) = state.countries.get_mut(country) {
+        country_state.pending_call_to_arms.remove(&war_id);
     }
 }
 
@@ -521,10 +662,18 @@ pub fn available_commands(
             if army.owner == country_tag && army.movement.is_none() && army.embarked_on.is_none() {
                 for neighbor in graph.neighbors(army.location) {
                     if can_army_enter(state, country_tag, neighbor) {
-                        available.push(Command::Move {
-                            army_id: *army_id,
-                            destination: neighbor,
-                        });
+                        // Check Zone of Control - forts block movement through adjacent provinces
+                        if !state.is_blocked_by_zoc(
+                            army.location,
+                            neighbor,
+                            country_tag,
+                            Some(graph),
+                        ) {
+                            available.push(Command::Move {
+                                army_id: *army_id,
+                                destination: neighbor,
+                            });
+                        }
                     }
                 }
             }
@@ -604,6 +753,13 @@ pub fn available_commands(
                 available.push(Command::AcceptPeace { war_id: war.id });
                 available.push(Command::RejectPeace { war_id: war.id });
             }
+        }
+    }
+
+    // Pending Call-to-Arms - Allies summon aid in times of war.
+    if let Some(country_state) = state.countries.get(country_tag) {
+        for (&war_id, &side) in &country_state.pending_call_to_arms {
+            available.push(Command::JoinWar { war_id, side });
         }
     }
 
@@ -905,6 +1061,14 @@ fn execute_command(
                 }
             }
 
+            // Check Zone of Control (ZoC) - forts block movement through adjacent provinces
+            if state.is_blocked_by_zoc(current_location, *destination, country_tag, adjacency) {
+                return Err(ActionError::NoMilitaryAccess {
+                    province: *destination,
+                    owner: "ZoC blocked".to_string(), // Generic error (could add specific ZoC error later)
+                });
+            }
+
             // Set movement path
             // TODO: Handle edge case where start == destination (empty path).
             // Currently wastes 10 ticks doing nothing. Should skip movement initialization.
@@ -1010,6 +1174,10 @@ fn execute_command(
             };
 
             state.diplomacy.wars.insert(war_id, war);
+
+            // Call allies to join the war
+            call_allies_to_war(state, war_id, country_tag, true); // Attacker's allies
+            call_allies_to_war(state, war_id, target, false); // Defender's allies (auto-join)
 
             // Mark diplomatic action cooldown
             if let Some(country) = state.countries.get_mut(country_tag) {
@@ -1376,11 +1544,17 @@ fn execute_command(
             // Create truces before removing war
             create_war_truces(state, &war, state.date);
 
-            // Clear peace offer cooldowns for all participants
+            // Clear peace offer cooldowns and pending call-to-arms for all participants
             for tag in war.attackers.iter().chain(war.defenders.iter()) {
                 if let Some(country) = state.countries.get_mut(tag) {
                     country.peace_offer_cooldowns.remove(war_id);
+                    country.pending_call_to_arms.remove(war_id);
                 }
+            }
+
+            // Clear pending call-to-arms for all countries (in case non-participants had pending calls)
+            for (_tag, country) in state.countries.iter_mut() {
+                country.pending_call_to_arms.remove(war_id);
             }
 
             // Remove war
@@ -1417,6 +1591,78 @@ fn execute_command(
                 war.pending_peace = None;
                 log::info!("{} rejected peace in war {}", country_tag, war_id);
             }
+            Ok(())
+        }
+        Command::JoinWar { war_id, side } => {
+            // Validate war exists
+            if !state.diplomacy.wars.contains_key(war_id) {
+                return Err(ActionError::WarNotFound { war_id: *war_id });
+            }
+
+            // Check if country has a pending call-to-arms for this war
+            let has_pending = state
+                .countries
+                .get(country_tag)
+                .and_then(|c| c.pending_call_to_arms.get(war_id))
+                .is_some();
+
+            if !has_pending {
+                // Can only join if you have a pending call
+                return Ok(()); // Silently ignore (not an error, just invalid action)
+            }
+
+            // Join the war
+            join_war(state, country_tag, *war_id, *side);
+            log::info!("{} joined war {} as {:?}", country_tag, war_id, side);
+
+            Ok(())
+        }
+        Command::CallAllyToWar { ally, war_id } => {
+            // Validate war exists
+            if !state.diplomacy.wars.contains_key(war_id) {
+                return Err(ActionError::WarNotFound { war_id: *war_id });
+            }
+
+            // Check if caller is in the war
+            let war = state.diplomacy.wars.get(war_id).unwrap();
+            let is_attacker = war.attackers.contains(&country_tag.to_string());
+            let is_defender = war.defenders.contains(&country_tag.to_string());
+
+            if !is_attacker && !is_defender {
+                return Err(ActionError::NotWarParticipant {
+                    tag: country_tag.to_string(),
+                    war_id: *war_id,
+                });
+            }
+
+            // Check if ally has an alliance
+            use crate::state::RelationType;
+            let has_alliance = state.diplomacy.relations.iter().any(|((a, b), rel)| {
+                *rel == RelationType::Alliance
+                    && ((a == country_tag && b == ally) || (b == country_tag && a == ally))
+            });
+
+            if !has_alliance {
+                return Ok(()); // Silently ignore - no alliance
+            }
+
+            // Create pending call-to-arms for the ally
+            if let Some(ally_country) = state.countries.get_mut(ally) {
+                let side = if is_attacker {
+                    crate::input::WarSide::Attacker
+                } else {
+                    crate::input::WarSide::Defender
+                };
+                ally_country.pending_call_to_arms.insert(*war_id, side);
+                log::info!(
+                    "{} called ally {} to join war {} as {:?}",
+                    country_tag,
+                    ally,
+                    war_id,
+                    side
+                );
+            }
+
             Ok(())
         }
 
@@ -2398,5 +2644,839 @@ mod tests {
 
         // Verify truce exists
         assert!(state.diplomacy.has_active_truce("A", "B", state.date));
+    }
+
+    #[test]
+    fn test_siege_integration() {
+        use crate::state::{Army, ProvinceState, Regiment, RegimentType};
+
+        // Setup: Two countries at war, one with a fortified province
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11) // Bypass first-month immunity
+            .with_country("ATK")
+            .with_country("DEF")
+            .with_province_state(
+                1,
+                ProvinceState {
+                    owner: Some("DEF".to_string()),
+                    controller: Some("DEF".to_string()),
+                    fort_level: 2, // Level 2 fort
+                    is_mothballed: false,
+                    ..Default::default()
+                },
+            )
+            .with_province_state(
+                2,
+                ProvinceState {
+                    owner: Some("DEF".to_string()),
+                    controller: Some("DEF".to_string()),
+                    fort_level: 0, // Unfortified province
+                    ..Default::default()
+                },
+            )
+            .build();
+
+        // Declare war
+        execute_command(
+            &mut state,
+            "ATK",
+            &Command::DeclareWar {
+                target: "DEF".to_string(),
+                cb: None,
+            },
+            None,
+        )
+        .unwrap();
+
+        // Create attacking army in fortified province
+        let army_id = 1;
+        state.armies.insert(
+            army_id,
+            Army {
+                id: army_id,
+                name: "Attacker Army".to_string(),
+                owner: "ATK".to_string(),
+                location: 1,
+                regiments: vec![
+                    Regiment {
+                        type_: RegimentType::Infantry,
+                        strength: Fixed::from_int(1000),
+                        morale: Fixed::from_f32(eu4data::defines::combat::BASE_MORALE),
+                    },
+                    Regiment {
+                        type_: RegimentType::Artillery,
+                        strength: Fixed::from_int(1000),
+                        morale: Fixed::from_f32(eu4data::defines::combat::BASE_MORALE),
+                    },
+                ],
+                movement: None,
+                embarked_on: None,
+                general: None,
+                in_battle: None,
+            },
+        );
+
+        // Step simulation - siege should start
+        let new_state = step_world(
+            &state,
+            &[],
+            None,
+            &crate::config::SimConfig::default(),
+            None,
+        );
+
+        // Verify siege started at fortified province
+        assert!(
+            new_state.sieges.contains_key(&1),
+            "Siege should start at fortified province"
+        );
+        let siege = new_state.sieges.get(&1).unwrap();
+        assert_eq!(siege.attacker, "ATK");
+        assert_eq!(siege.fort_level, 2);
+        assert!(siege.besieging_armies.contains(&army_id));
+
+        // Controller should NOT change instantly for fortified province
+        assert_eq!(
+            new_state.provinces.get(&1).unwrap().controller,
+            Some("DEF".to_string()),
+            "Fortified province should not be instantly occupied"
+        );
+
+        // Now test unfortified province - should be instant occupation
+        let mut state2 = new_state.clone();
+        let army_id_2 = 2;
+        state2.armies.insert(
+            army_id_2,
+            Army {
+                id: army_id_2,
+                name: "Second Army".to_string(),
+                owner: "ATK".to_string(),
+                location: 2,
+                regiments: vec![Regiment {
+                    type_: RegimentType::Infantry,
+                    strength: Fixed::from_int(1000),
+                    morale: Fixed::from_f32(eu4data::defines::combat::BASE_MORALE),
+                }],
+                movement: None,
+                embarked_on: None,
+                general: None,
+                in_battle: None,
+            },
+        );
+
+        let new_state2 = step_world(
+            &state2,
+            &[],
+            None,
+            &crate::config::SimConfig::default(),
+            None,
+        );
+
+        // Unfortified province should be instantly occupied
+        assert_eq!(
+            new_state2.provinces.get(&2).unwrap().controller,
+            Some("ATK".to_string()),
+            "Unfortified province should be instantly occupied"
+        );
+        assert!(
+            !new_state2.sieges.contains_key(&2),
+            "No siege should start at unfortified province"
+        );
+    }
+
+    #[test]
+    fn test_zoc_blocks_movement() {
+        use crate::state::ProvinceState;
+        use eu4data::adjacency::AdjacencyGraph;
+
+        // Setup: Three provinces in a triangle (1-2-3, all adjacent to each other)
+        // Province 2 has a fort owned by DEF
+        // ATK army at province 1, wants to move to province 3
+        // Both 1 and 3 are adjacent to fort at 2, so ZoC should block
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("ATK")
+            .with_country("DEF")
+            .with_province_state(
+                1,
+                ProvinceState {
+                    owner: Some("ATK".to_string()),
+                    controller: Some("ATK".to_string()),
+                    ..Default::default()
+                },
+            )
+            .with_province_state(
+                2,
+                ProvinceState {
+                    owner: Some("DEF".to_string()),
+                    controller: Some("DEF".to_string()),
+                    fort_level: 2,
+                    is_mothballed: false,
+                    ..Default::default()
+                },
+            )
+            .with_province_state(
+                3,
+                ProvinceState {
+                    owner: Some("DEF".to_string()),
+                    controller: Some("DEF".to_string()),
+                    ..Default::default()
+                },
+            )
+            .build();
+
+        // Declare war
+        execute_command(
+            &mut state,
+            "ATK",
+            &Command::DeclareWar {
+                target: "DEF".to_string(),
+                cb: None,
+            },
+            None,
+        )
+        .unwrap();
+
+        // Create adjacency graph: 1-2-3 triangle
+        let mut graph = AdjacencyGraph::new();
+        graph.add_adjacency(1, 2);
+        graph.add_adjacency(2, 3);
+        graph.add_adjacency(1, 3);
+
+        // Test ZoC blocking: 1 -> 3 blocked (both adjacent to fort at 2)
+        assert!(
+            state.is_blocked_by_zoc(1, 3, "ATK", Some(&graph)),
+            "Movement from 1 to 3 should be blocked by fort at 2"
+        );
+
+        // Test direct move to fort is allowed: 1 -> 2 not blocked
+        assert!(
+            !state.is_blocked_by_zoc(1, 2, "ATK", Some(&graph)),
+            "Direct movement to fort should be allowed"
+        );
+    }
+
+    #[test]
+    fn test_zoc_mothballed_fort_no_block() {
+        use crate::state::ProvinceState;
+        use eu4data::adjacency::AdjacencyGraph;
+
+        // Same setup as above, but fort is mothballed - should NOT block
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("ATK")
+            .with_country("DEF")
+            .with_province_state(
+                1,
+                ProvinceState {
+                    owner: Some("ATK".to_string()),
+                    ..Default::default()
+                },
+            )
+            .with_province_state(
+                2,
+                ProvinceState {
+                    owner: Some("DEF".to_string()),
+                    fort_level: 2,
+                    is_mothballed: true, // Mothballed!
+                    ..Default::default()
+                },
+            )
+            .with_province_state(
+                3,
+                ProvinceState {
+                    owner: Some("DEF".to_string()),
+                    ..Default::default()
+                },
+            )
+            .build();
+
+        // Declare war
+        execute_command(
+            &mut state,
+            "ATK",
+            &Command::DeclareWar {
+                target: "DEF".to_string(),
+                cb: None,
+            },
+            None,
+        )
+        .unwrap();
+
+        let mut graph = AdjacencyGraph::new();
+        graph.add_adjacency(1, 2);
+        graph.add_adjacency(2, 3);
+        graph.add_adjacency(1, 3);
+
+        // Mothballed fort should NOT block movement
+        assert!(
+            !state.is_blocked_by_zoc(1, 3, "ATK", Some(&graph)),
+            "Mothballed fort should not project ZoC"
+        );
+    }
+
+    #[test]
+    fn test_zoc_only_during_war() {
+        use crate::state::ProvinceState;
+        use eu4data::adjacency::AdjacencyGraph;
+
+        // Same setup, but no war - ZoC should NOT apply
+        let state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("ATK")
+            .with_country("DEF")
+            .with_province_state(
+                1,
+                ProvinceState {
+                    owner: Some("ATK".to_string()),
+                    ..Default::default()
+                },
+            )
+            .with_province_state(
+                2,
+                ProvinceState {
+                    owner: Some("DEF".to_string()),
+                    fort_level: 2,
+                    is_mothballed: false,
+                    ..Default::default()
+                },
+            )
+            .with_province_state(
+                3,
+                ProvinceState {
+                    owner: Some("DEF".to_string()),
+                    ..Default::default()
+                },
+            )
+            .build();
+
+        // NO war declared
+
+        let mut graph = AdjacencyGraph::new();
+        graph.add_adjacency(1, 2);
+        graph.add_adjacency(2, 3);
+        graph.add_adjacency(1, 3);
+
+        // No war, so ZoC should NOT block
+        assert!(
+            !state.is_blocked_by_zoc(1, 3, "ATK", Some(&graph)),
+            "ZoC should not apply during peacetime"
+        );
+    }
+
+    #[test]
+    fn test_zoc_filters_available_commands() {
+        use crate::state::{Army, ProvinceState, Regiment, RegimentType};
+        use eu4data::adjacency::AdjacencyGraph;
+
+        // Setup: ATK army at province 1, fort at province 2, province 3 accessible
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("ATK")
+            .with_country("DEF")
+            .with_province_state(
+                1,
+                ProvinceState {
+                    owner: Some("ATK".to_string()),
+                    ..Default::default()
+                },
+            )
+            .with_province_state(
+                2,
+                ProvinceState {
+                    owner: Some("DEF".to_string()),
+                    fort_level: 2,
+                    is_mothballed: false,
+                    ..Default::default()
+                },
+            )
+            .with_province_state(
+                3,
+                ProvinceState {
+                    owner: Some("DEF".to_string()),
+                    ..Default::default()
+                },
+            )
+            .build();
+
+        // Declare war
+        execute_command(
+            &mut state,
+            "ATK",
+            &Command::DeclareWar {
+                target: "DEF".to_string(),
+                cb: None,
+            },
+            None,
+        )
+        .unwrap();
+
+        // Create army at province 1
+        state.armies.insert(
+            1,
+            Army {
+                id: 1,
+                name: "Test Army".to_string(),
+                owner: "ATK".to_string(),
+                location: 1,
+                regiments: vec![Regiment {
+                    type_: RegimentType::Infantry,
+                    strength: Fixed::from_int(1000),
+                    morale: Fixed::from_f32(eu4data::defines::combat::BASE_MORALE),
+                }],
+                movement: None,
+                embarked_on: None,
+                general: None,
+                in_battle: None,
+            },
+        );
+
+        // Create adjacency
+        let mut graph = AdjacencyGraph::new();
+        graph.add_adjacency(1, 2);
+        graph.add_adjacency(2, 3);
+        graph.add_adjacency(1, 3);
+
+        // Get available commands
+        let commands = available_commands(&state, "ATK", Some(&graph));
+
+        // Should include Move to 2 (direct fort attack)
+        assert!(
+            commands.iter().any(|cmd| matches!(
+                cmd,
+                Command::Move {
+                    army_id: 1,
+                    destination: 2
+                }
+            )),
+            "Should allow direct move to fort"
+        );
+
+        // Should NOT include Move to 3 (ZoC blocked)
+        assert!(
+            !commands.iter().any(|cmd| matches!(
+                cmd,
+                Command::Move {
+                    army_id: 1,
+                    destination: 3
+                }
+            )),
+            "Should not allow ZoC-blocked move to province 3"
+        );
+    }
+
+    // ========================================================================
+    // Call-to-Arms Tests
+    // ========================================================================
+
+    #[test]
+    fn test_defensive_allies_auto_join() {
+        use crate::state::RelationType;
+
+        // Create three countries: SWE attacks DEN, NOR is allied with DEN
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .with_country("NOR")
+            .build();
+
+        // Create DEN-NOR alliance
+        state.diplomacy.relations.insert(
+            ("DEN".to_string(), "NOR".to_string()),
+            RelationType::Alliance,
+        );
+
+        // SWE declares war on DEN
+        let inputs = vec![PlayerInputs {
+            country: "SWE".to_string(),
+            commands: vec![Command::DeclareWar {
+                target: "DEN".to_string(),
+                cb: None,
+            }],
+            available_commands: vec![],
+            visible_state: None,
+        }];
+
+        let new_state = step_world(
+            &state,
+            &inputs,
+            None,
+            &crate::config::SimConfig::default(),
+            None,
+        );
+
+        // War should be created
+        assert_eq!(new_state.diplomacy.wars.len(), 1);
+
+        // NOR (defender's ally) should auto-join as defender
+        let war = new_state.diplomacy.wars.values().next().unwrap();
+        assert!(
+            war.defenders.contains(&"NOR".to_string()),
+            "Defensive ally should auto-join war"
+        );
+        assert_eq!(war.attackers.len(), 1);
+        assert_eq!(war.defenders.len(), 2); // DEN + NOR
+    }
+
+    #[test]
+    fn test_offensive_allies_get_pending_cta() {
+        use crate::state::RelationType;
+
+        // Create three countries: SWE declares war on DEN, NOR is allied with SWE
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .with_country("NOR")
+            .build();
+
+        // Create SWE-NOR alliance
+        state.diplomacy.relations.insert(
+            ("NOR".to_string(), "SWE".to_string()),
+            RelationType::Alliance,
+        );
+
+        // SWE declares war on DEN
+        let inputs = vec![PlayerInputs {
+            country: "SWE".to_string(),
+            commands: vec![Command::DeclareWar {
+                target: "DEN".to_string(),
+                cb: None,
+            }],
+            available_commands: vec![],
+            visible_state: None,
+        }];
+
+        let new_state = step_world(
+            &state,
+            &inputs,
+            None,
+            &crate::config::SimConfig::default(),
+            None,
+        );
+
+        // War should be created
+        assert_eq!(new_state.diplomacy.wars.len(), 1);
+
+        let war_id = *new_state.diplomacy.wars.keys().next().unwrap();
+
+        // NOR (attacker's ally) should NOT auto-join
+        let war = new_state.diplomacy.wars.values().next().unwrap();
+        assert!(
+            !war.attackers.contains(&"NOR".to_string()),
+            "Offensive ally should not auto-join war"
+        );
+        assert_eq!(war.attackers.len(), 1); // Only SWE
+        assert_eq!(war.defenders.len(), 1); // Only DEN
+
+        // NOR should have a pending call-to-arms
+        let nor_country = new_state.countries.get("NOR").unwrap();
+        assert!(
+            nor_country.pending_call_to_arms.contains_key(&war_id),
+            "Offensive ally should have pending call-to-arms"
+        );
+        assert_eq!(
+            nor_country.pending_call_to_arms.get(&war_id),
+            Some(&crate::input::WarSide::Attacker)
+        );
+    }
+
+    #[test]
+    fn test_join_war_command() {
+        use crate::state::RelationType;
+
+        // Create three countries with alliance
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .with_country("NOR")
+            .build();
+
+        // Create SWE-NOR alliance
+        state.diplomacy.relations.insert(
+            ("NOR".to_string(), "SWE".to_string()),
+            RelationType::Alliance,
+        );
+
+        // SWE declares war on DEN
+        execute_command(
+            &mut state,
+            "SWE",
+            &Command::DeclareWar {
+                target: "DEN".to_string(),
+                cb: None,
+            },
+            None,
+        )
+        .unwrap();
+
+        let war_id = *state.diplomacy.wars.keys().next().unwrap();
+
+        // NOR should have pending CTA
+        assert!(state
+            .countries
+            .get("NOR")
+            .unwrap()
+            .pending_call_to_arms
+            .contains_key(&war_id));
+
+        // NOR accepts the call-to-arms
+        execute_command(
+            &mut state,
+            "NOR",
+            &Command::JoinWar {
+                war_id,
+                side: crate::input::WarSide::Attacker,
+            },
+            None,
+        )
+        .unwrap();
+
+        // NOR should now be in the war as attacker
+        let war = state.diplomacy.wars.get(&war_id).unwrap();
+        assert!(
+            war.attackers.contains(&"NOR".to_string()),
+            "NOR should be in war after accepting CTA"
+        );
+
+        // Pending CTA should be cleared
+        assert!(
+            !state
+                .countries
+                .get("NOR")
+                .unwrap()
+                .pending_call_to_arms
+                .contains_key(&war_id),
+            "Pending CTA should be cleared after joining"
+        );
+    }
+
+    #[test]
+    fn test_pending_cta_appears_in_available_commands() {
+        use crate::state::RelationType;
+
+        // Create three countries with alliance
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .with_country("NOR")
+            .build();
+
+        // Create SWE-NOR alliance
+        state.diplomacy.relations.insert(
+            ("NOR".to_string(), "SWE".to_string()),
+            RelationType::Alliance,
+        );
+
+        // SWE declares war on DEN
+        execute_command(
+            &mut state,
+            "SWE",
+            &Command::DeclareWar {
+                target: "DEN".to_string(),
+                cb: None,
+            },
+            None,
+        )
+        .unwrap();
+
+        let war_id = *state.diplomacy.wars.keys().next().unwrap();
+
+        // Get available commands for NOR
+        let commands = available_commands(&state, "NOR", None);
+
+        // Should include JoinWar command
+        assert!(
+            commands.iter().any(|cmd| matches!(
+                cmd,
+                Command::JoinWar {
+                    war_id: id,
+                    side: crate::input::WarSide::Attacker
+                } if *id == war_id
+            )),
+            "Available commands should include JoinWar for pending CTA"
+        );
+    }
+
+    #[test]
+    fn test_pending_cta_cleanup_on_peace() {
+        use crate::state::RelationType;
+
+        // Create countries with alliances
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .with_country("NOR")
+            .build();
+
+        // Create SWE-NOR alliance
+        state.diplomacy.relations.insert(
+            ("NOR".to_string(), "SWE".to_string()),
+            RelationType::Alliance,
+        );
+
+        // SWE declares war on DEN
+        execute_command(
+            &mut state,
+            "SWE",
+            &Command::DeclareWar {
+                target: "DEN".to_string(),
+                cb: None,
+            },
+            None,
+        )
+        .unwrap();
+
+        let war_id = *state.diplomacy.wars.keys().next().unwrap();
+
+        // Verify NOR has pending CTA
+        assert!(state
+            .countries
+            .get("NOR")
+            .unwrap()
+            .pending_call_to_arms
+            .contains_key(&war_id));
+
+        // DEN offers peace
+        execute_command(
+            &mut state,
+            "DEN",
+            &Command::OfferPeace {
+                war_id,
+                terms: crate::state::PeaceTerms::WhitePeace,
+            },
+            None,
+        )
+        .unwrap();
+
+        // SWE accepts peace
+        execute_command(&mut state, "SWE", &Command::AcceptPeace { war_id }, None).unwrap();
+
+        // War should be over
+        assert!(!state.diplomacy.wars.contains_key(&war_id));
+
+        // NOR's pending CTA should be cleared
+        assert!(
+            !state
+                .countries
+                .get("NOR")
+                .unwrap()
+                .pending_call_to_arms
+                .contains_key(&war_id),
+            "Pending CTA should be cleared when war ends"
+        );
+    }
+
+    #[test]
+    fn test_call_ally_to_war_command() {
+        use crate::state::RelationType;
+
+        // Create countries with alliance
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .with_country("NOR")
+            .with_country("FIN")
+            .build();
+
+        // Create SWE-FIN alliance (FIN not auto-called initially)
+        state.diplomacy.relations.insert(
+            ("FIN".to_string(), "SWE".to_string()),
+            RelationType::Alliance,
+        );
+
+        // SWE declares war on DEN
+        execute_command(
+            &mut state,
+            "SWE",
+            &Command::DeclareWar {
+                target: "DEN".to_string(),
+                cb: None,
+            },
+            None,
+        )
+        .unwrap();
+
+        let war_id = *state.diplomacy.wars.keys().next().unwrap();
+
+        // SWE manually calls FIN to war
+        execute_command(
+            &mut state,
+            "SWE",
+            &Command::CallAllyToWar {
+                ally: "FIN".to_string(),
+                war_id,
+            },
+            None,
+        )
+        .unwrap();
+
+        // FIN should now have pending CTA
+        assert!(
+            state
+                .countries
+                .get("FIN")
+                .unwrap()
+                .pending_call_to_arms
+                .contains_key(&war_id),
+            "Manually called ally should have pending CTA"
+        );
+        assert_eq!(
+            state
+                .countries
+                .get("FIN")
+                .unwrap()
+                .pending_call_to_arms
+                .get(&war_id),
+            Some(&crate::input::WarSide::Attacker)
+        );
+    }
+
+    #[test]
+    fn test_multiple_allies_defensive() {
+        use crate::state::RelationType;
+
+        // Create five countries: SWE attacks DEN, NOR and FIN are allied with DEN
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .with_country("NOR")
+            .with_country("FIN")
+            .build();
+
+        // Create DEN-NOR and DEN-FIN alliances
+        state.diplomacy.relations.insert(
+            ("DEN".to_string(), "NOR".to_string()),
+            RelationType::Alliance,
+        );
+        state.diplomacy.relations.insert(
+            ("DEN".to_string(), "FIN".to_string()),
+            RelationType::Alliance,
+        );
+
+        // SWE declares war on DEN
+        execute_command(
+            &mut state,
+            "SWE",
+            &Command::DeclareWar {
+                target: "DEN".to_string(),
+                cb: None,
+            },
+            None,
+        )
+        .unwrap();
+
+        // Both NOR and FIN should auto-join as defenders
+        let war = state.diplomacy.wars.values().next().unwrap();
+        assert_eq!(war.attackers.len(), 1); // Only SWE
+        assert_eq!(war.defenders.len(), 3); // DEN + NOR + FIN
+        assert!(war.defenders.contains(&"NOR".to_string()));
+        assert!(war.defenders.contains(&"FIN".to_string()));
     }
 }
