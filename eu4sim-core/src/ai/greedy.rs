@@ -209,12 +209,21 @@ impl GreedyAI {
             Command::RecallMerchant { .. } => -200, // Rarely want to recall
 
             // Negative or Low Priority
-            Command::OfferPeace { war_id, .. } => {
-                // Offer peace if we're winning decisively (war_score > 50)
+            Command::OfferPeace { war_id, terms } => {
+                // Offer peace if we're winning (war_score > 25)
                 if let Some(&score) = state.our_war_score.get(war_id) {
-                    let threshold = crate::fixed::Fixed::from_int(50);
+                    let threshold = crate::fixed::Fixed::from_int(25);
                     if score > threshold {
-                        800 // Winning decisively, offer peace to secure gains
+                        // Prefer TakeProvinces over WhitePeace when winning
+                        match terms {
+                            crate::state::PeaceTerms::TakeProvinces { provinces }
+                                if !provinces.is_empty() =>
+                            {
+                                1000 // Take the provinces!
+                            }
+                            crate::state::PeaceTerms::WhitePeace => 400, // Less preferred
+                            _ => 500,
+                        }
                     } else {
                         -100 // Not winning enough to offer peace
                     }

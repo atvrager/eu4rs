@@ -794,11 +794,58 @@ pub fn available_commands(
 
     // 5. War Resolution - Every conflict must eventually find its truth. ✧
     for war in state.diplomacy.get_wars_for_country(country_tag) {
-        // OfferPeace - An olive branch extended through the smoke of battle.
-        available.push(Command::OfferPeace {
-            war_id: war.id,
-            terms: PeaceTerms::default(),
+        let is_attacker = war.attackers.contains(&country_tag.to_string());
+        let our_score = if is_attacker {
+            war.attacker_score
+        } else {
+            war.defender_score
+        };
+        let enemies: Vec<&String> = if is_attacker {
+            war.defenders.iter().collect()
+        } else {
+            war.attackers.iter().collect()
+        };
+
+        // Find occupied enemy provinces (controller is us, owner is enemy)
+        let occupied: Vec<ProvinceId> = state
+            .provinces
+            .iter()
+            .filter(|(_, p)| {
+                p.controller.as_ref() == Some(&country_tag.to_string())
+                    && p.owner.as_ref().is_some_and(|o| enemies.contains(&o))
+            })
+            .map(|(&id, _)| id)
+            .collect();
+
+        // Check if we occupy at least one fort (required to take provinces)
+        // NOTE: We don't yet check connectivity - any occupied fort allows taking any occupied province.
+        // In EU4, you can only take provinces connected to an occupied fort.
+        let occupies_fort = occupied.iter().any(|&prov_id| {
+            state
+                .provinces
+                .get(&prov_id)
+                .is_some_and(|p| p.fort_level > 0)
         });
+
+        // OfferPeace with TakeProvinces if we occupy a fort and have war score
+        if occupies_fort && !occupied.is_empty() && our_score >= 10 {
+            available.push(Command::OfferPeace {
+                war_id: war.id,
+                terms: PeaceTerms::TakeProvinces {
+                    provinces: occupied,
+                },
+            });
+        }
+
+        // WhitePeace - only offer after war has been ongoing for 6+ months
+        // Prevents frivolous early peace offers
+        let war_months = state.date.months_since(&war.start_date);
+        if war_months >= 6 {
+            available.push(Command::OfferPeace {
+                war_id: war.id,
+                terms: PeaceTerms::WhitePeace,
+            });
+        }
 
         // AcceptPeace - Accepting the fate that the stars have written. 🛡️
         if let Some(pending) = &war.pending_peace {

@@ -310,6 +310,117 @@ fn format_gp_events(
     events
 }
 
+/// Format state-change events for TUI (battles, sieges, peace transfers)
+fn format_state_events(
+    prev_state: &WorldState,
+    curr_state: &WorldState,
+    great_powers: &HashSet<String>,
+) -> Vec<String> {
+    use eu4sim_core::state::BattleResult;
+
+    let mut events = Vec::new();
+    let date_str = format!("{}", curr_state.date);
+
+    // Detect completed battles (result changed from None to Some)
+    for (&battle_id, battle) in &curr_state.battles {
+        if battle.result.is_some() {
+            // Check if this battle just completed (wasn't in prev or had no result)
+            let just_completed = prev_state
+                .battles
+                .get(&battle_id)
+                .map(|b| b.result.is_none())
+                .unwrap_or(true);
+
+            if just_completed {
+                // Get army owners for GP filtering
+                let attacker_tag = battle
+                    .attackers
+                    .first()
+                    .and_then(|id| curr_state.armies.get(id))
+                    .map(|a| a.owner.clone())
+                    .unwrap_or_default();
+                let defender_tag = battle
+                    .defenders
+                    .first()
+                    .and_then(|id| curr_state.armies.get(id))
+                    .map(|a| a.owner.clone())
+                    .unwrap_or_default();
+
+                if great_powers.contains(&attacker_tag) || great_powers.contains(&defender_tag) {
+                    let (winner, loser) = match &battle.result {
+                        Some(BattleResult::AttackerVictory { .. }) => {
+                            (&attacker_tag, &defender_tag)
+                        }
+                        Some(BattleResult::DefenderVictory { .. }) => {
+                            (&defender_tag, &attacker_tag)
+                        }
+                        _ => continue,
+                    };
+                    events.push(format!(
+                        "[{}] {} defeated {} ({}:{} casualties)",
+                        date_str,
+                        winner,
+                        loser,
+                        battle.attacker_casualties,
+                        battle.defender_casualties
+                    ));
+                }
+            }
+        }
+    }
+
+    // Detect siege completions (province controller changed)
+    for (&prov_id, prev_prov) in &prev_state.provinces {
+        if let Some(curr_prov) = curr_state.provinces.get(&prov_id) {
+            // Controller changed (siege/occupation)
+            if prev_prov.controller != curr_prov.controller {
+                let new_controller = curr_prov
+                    .controller
+                    .as_ref()
+                    .unwrap_or(&"None".to_string())
+                    .clone();
+                let old_controller = prev_prov
+                    .controller
+                    .as_ref()
+                    .or(prev_prov.owner.as_ref())
+                    .unwrap_or(&"None".to_string())
+                    .clone();
+
+                if great_powers.contains(&new_controller) || great_powers.contains(&old_controller)
+                {
+                    events.push(format!(
+                        "[{}] {} seized province {} from {}",
+                        date_str, new_controller, prov_id, old_controller
+                    ));
+                }
+            }
+
+            // Owner changed (peace deal transfer)
+            if prev_prov.owner != curr_prov.owner {
+                let new_owner = curr_prov
+                    .owner
+                    .as_ref()
+                    .unwrap_or(&"None".to_string())
+                    .clone();
+                let old_owner = prev_prov
+                    .owner
+                    .as_ref()
+                    .unwrap_or(&"None".to_string())
+                    .clone();
+
+                if great_powers.contains(&new_owner) || great_powers.contains(&old_owner) {
+                    events.push(format!(
+                        "[{}] {} annexed province {} from {}",
+                        date_str, new_owner, prov_id, old_owner
+                    ));
+                }
+            }
+        }
+    }
+
+    events
+}
+
 /// Reassign AIs based on current great power rankings
 /// Returns true if any changes were made
 fn reassign_hybrid_ais(
@@ -1171,6 +1282,13 @@ fn main() -> Result<()> {
         }
 
         // Step (with timing for TUI metrics)
+        // Store previous state for TUI event detection (only in TUI mode)
+        let prev_state = if tui_system.is_some() {
+            Some(state.clone())
+        } else {
+            None
+        };
+
         let step_start = std::time::Instant::now();
         state = step_world(
             &state,
@@ -1186,9 +1304,19 @@ fn main() -> Result<()> {
         if let Some(tui) = &mut tui_system {
             tui.last_sim_ms = step_ms;
             let great_powers = calculate_top_countries(&state, 8);
-            let events = format_gp_events(&inputs, &great_powers, &state);
-            for event in events {
+
+            // Command-based events (war declarations, peace offers, etc.)
+            let cmd_events = format_gp_events(&inputs, &great_powers, &state);
+            for event in cmd_events {
                 tui.log_event(event);
+            }
+
+            // State-change events (battles, sieges, province transfers)
+            if let Some(prev) = &prev_state {
+                let state_events = format_state_events(prev, &state, &great_powers);
+                for event in state_events {
+                    tui.log_event(event);
+                }
             }
         }
 

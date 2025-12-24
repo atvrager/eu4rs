@@ -70,6 +70,14 @@ impl Date {
             day: self.day,
         }
     }
+
+    /// Calculate months elapsed since another date.
+    /// Uses 30-day months for simplicity.
+    pub fn months_since(&self, other: &Date) -> i32 {
+        let self_days = self.days_from_epoch();
+        let other_days = other.days_from_epoch();
+        ((self_days - other_days) / 30) as i32
+    }
 }
 
 impl Default for Date {
