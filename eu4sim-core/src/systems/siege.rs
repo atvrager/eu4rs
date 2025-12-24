@@ -72,14 +72,29 @@ pub fn start_occupation(
 
 /// Tick one day for a specific siege.
 fn tick_siege_day(state: &mut WorldState, province_id: ProvinceId) {
-    let phase_complete = {
+    let (phase_complete, days_in_phase, progress) = {
         let siege = match state.sieges.get_mut(&province_id) {
             Some(s) => s,
             None => return,
         };
         siege.days_in_phase += 1;
-        siege.days_in_phase >= defines::SIEGE_PHASE_DAYS
+        (
+            siege.days_in_phase >= defines::SIEGE_PHASE_DAYS,
+            siege.days_in_phase,
+            siege.progress_modifier,
+        )
     };
+
+    // Log progress periodically (every 10 days)
+    if days_in_phase % 10 == 0 {
+        log::debug!(
+            "[SIEGE] Province {} - day {}/{}, progress_modifier={}",
+            province_id,
+            days_in_phase,
+            defines::SIEGE_PHASE_DAYS,
+            progress
+        );
+    }
 
     if phase_complete {
         resolve_siege_phase(state, province_id);

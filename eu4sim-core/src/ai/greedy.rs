@@ -210,10 +210,10 @@ impl GreedyAI {
 
             // Negative or Low Priority
             Command::OfferPeace { war_id, terms } => {
-                // Offer peace if we're winning (war_score > 25)
+                // Offer peace if we have any war score from occupation
                 if let Some(&score) = state.our_war_score.get(war_id) {
-                    let threshold = crate::fixed::Fixed::from_int(25);
-                    if score > threshold {
+                    let threshold = crate::fixed::Fixed::from_int(1);
+                    if score >= threshold {
                         // Prefer TakeProvinces over WhitePeace when winning
                         match terms {
                             crate::state::PeaceTerms::TakeProvinces { provinces }

@@ -587,7 +587,7 @@ struct Args {
     #[arg(long)]
     datagen: Option<String>,
 
-    /// AI type: "random", "greedy", or "hybrid" (default)
+    /// AI type: "random", "greedy", "hybrid" (default), or "gp-only" (only top 8 get GreedyAI)
     #[arg(long, default_value = "hybrid")]
     ai: String,
 
@@ -702,6 +702,7 @@ fn main() -> Result<()> {
         };
 
         // Determine which tags get GreedyAI (excluding the LLM tag if present)
+        let gp_only_mode = args.ai == "gp-only";
         let greedy_tags: HashSet<String> = match args.ai.as_str() {
             "greedy" => state.countries.keys().cloned().collect(),
             "hybrid" => {
@@ -716,6 +717,16 @@ fn main() -> Result<()> {
                     top.len(),
                     if llm_tag.is_some() { 1 } else { 0 },
                     top.len() + if llm_tag.is_some() { 1 } else { 0 },
+                    top
+                );
+                top
+            }
+            "gp-only" => {
+                // Only top greedy_count countries get AI, everyone else is passive
+                let top = calculate_top_countries(&state, args.greedy_count);
+                log::info!(
+                    "GP-only mode: {} GreedyAIs, all others passive: {:?}",
+                    top.len(),
                     top
                 );
                 top
@@ -763,19 +774,24 @@ fn main() -> Result<()> {
         let mut llm_ai = llm_ai; // Make it mutable so we can take() from it
 
         for tag in state.countries.keys() {
-            let ai: Box<dyn eu4sim_core::AiPlayer> =
+            let ai: Option<Box<dyn eu4sim_core::AiPlayer>> =
                 if llm_tag.as_ref() == Some(tag) && llm_ai.is_some() {
                     // Use LLM AI for the top GP
-                    llm_ai.take().unwrap()
+                    Some(llm_ai.take().unwrap())
                 } else if greedy_tags.contains(tag) {
-                    Box::new(eu4sim_core::GreedyAI::new())
+                    Some(Box::new(eu4sim_core::GreedyAI::new()))
+                } else if gp_only_mode {
+                    // In gp-only mode, non-GPs get no AI (passive)
+                    None
                 } else {
                     // Hash tag into seed for diversity
                     let tag_hash: u64 = tag.as_bytes().iter().map(|&b| b as u64).sum();
                     let seed = args.seed.wrapping_add(tag_hash);
-                    Box::new(eu4sim_core::RandomAi::new(seed))
+                    Some(Box::new(eu4sim_core::RandomAi::new(seed)))
                 };
-            ai_map.insert(tag.clone(), ai);
+            if let Some(ai) = ai {
+                ai_map.insert(tag.clone(), ai);
+            }
         }
         ai_map
     } else {
@@ -1268,6 +1284,42 @@ fn main() -> Result<()> {
                     }
                 })
                 .collect();
+
+            // In gp-only mode: auto-accept peace offers for passive countries (no AI)
+            if args.ai == "gp-only" {
+                let ai_tags: std::collections::HashSet<_> = ais.keys().cloned().collect();
+                for war in state.diplomacy.wars.values() {
+                    if let Some(pending) = &war.pending_peace {
+                        // Find the target of the peace offer (opposite side from offerer)
+                        let target_side = if pending.from_attacker {
+                            &war.defenders
+                        } else {
+                            &war.attackers
+                        };
+
+                        // If any target country is passive (no AI), auto-accept
+                        for target_tag in target_side {
+                            if !ai_tags.contains(target_tag) {
+                                inputs.push(PlayerInputs {
+                                    country: target_tag.clone(),
+                                    commands: vec![eu4sim_core::Command::AcceptPeace {
+                                        war_id: war.id,
+                                    }],
+                                    available_commands: vec![],
+                                    visible_state: None,
+                                });
+                                log::info!(
+                                    "[AUTO-ACCEPT] {} accepts peace in {}",
+                                    target_tag,
+                                    war.name
+                                );
+                                break; // Only need one country to accept
+                            }
+                        }
+                    }
+                }
+            }
+
             if let Some(m) = metrics.as_mut() {
                 m.ai_time += ai_start.elapsed();
             }

@@ -234,9 +234,11 @@ pub fn load_initial_state(
         }
     }
 
+    let fort_count = provinces.values().filter(|p| p.fort_level > 0).count();
     log::info!(
-        "Loaded {} provinces, {} countries",
+        "Loaded {} provinces ({} with forts), {} countries",
         provinces.len(),
+        fort_count,
         countries.len()
     );
 

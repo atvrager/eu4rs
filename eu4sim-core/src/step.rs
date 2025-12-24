@@ -266,8 +266,20 @@ fn update_occupation(state: &mut WorldState) {
         let province_id = army.location;
         if let Some(province) = state.provinces.get(&province_id) {
             if let Some(owner) = &province.owner {
+                // Skip if we already control this province
+                if province.controller.as_ref() == Some(&army.owner) {
+                    continue;
+                }
+
                 // Check if army owner is at war with province owner
                 if owner != &army.owner && state.diplomacy.are_at_war(&army.owner, owner) {
+                    log::debug!(
+                        "Army {} ({}) in enemy province {} owned by {}",
+                        army_id,
+                        army.owner,
+                        province_id,
+                        owner
+                    );
                     enemy_occupations.push((province_id, army_id, army.owner.clone()));
                 }
             }
@@ -305,7 +317,7 @@ fn cleanup_abandoned_sieges(state: &mut WorldState) {
 
         if active_armies.is_empty() {
             sieges_to_remove.push(province_id);
-            log::info!(
+            log::debug!(
                 "Siege at province {} abandoned (no armies left)",
                 province_id
             );
@@ -671,9 +683,21 @@ pub fn available_commands(
     }
 
     // 3. Military Actions - Armies are the shields that guard our truth. 🛡️
+    // Build set of armies participating in active sieges (shouldn't move)
+    let besieging_armies: std::collections::HashSet<ArmyId> = state
+        .sieges
+        .values()
+        .flat_map(|s| s.besieging_armies.iter().copied())
+        .collect();
+
     if let Some(graph) = adjacency {
         // Move: For each army, check adjacent provinces
         for (army_id, army) in &state.armies {
+            // Skip armies that are besieging - they should finish the siege first
+            if besieging_armies.contains(army_id) {
+                continue;
+            }
+
             if army.owner == country_tag && army.movement.is_none() && army.embarked_on.is_none() {
                 for neighbor in graph.neighbors(army.location) {
                     if can_army_enter(state, country_tag, neighbor) {
@@ -817,24 +841,37 @@ pub fn available_commands(
             .map(|(&id, _)| id)
             .collect();
 
-        // Check if we occupy at least one fort (required to take provinces)
-        // NOTE: We don't yet check connectivity - any occupied fort allows taking any occupied province.
-        // In EU4, you can only take provinces connected to an occupied fort.
-        let occupies_fort = occupied.iter().any(|&prov_id| {
-            state
-                .provinces
-                .get(&prov_id)
-                .is_some_and(|p| p.fort_level > 0)
+        // Check if we occupy at least one enemy fort
+        // Fort requirement: can't take provinces without occupying a fort first
+        let has_occupied_fort = state.provinces.iter().any(|(_, p)| {
+            p.fort_level > 0
+                && p.controller.as_ref() == Some(&country_tag.to_string())
+                && p.owner.as_ref().is_some_and(|o| enemies.contains(&o))
         });
 
-        // OfferPeace with TakeProvinces if we occupy a fort and have war score
-        if occupies_fort && !occupied.is_empty() && our_score >= 10 {
+        // OfferPeace with TakeProvinces if we occupy enemy provinces, have war score, AND have a fort
+        if !occupied.is_empty() && our_score > 0 && has_occupied_fort {
+            log::info!(
+                "[PEACE] {} offering TakeProvinces in {} ({} provinces, score={})",
+                country_tag,
+                war.name,
+                occupied.len(),
+                our_score,
+            );
             available.push(Command::OfferPeace {
                 war_id: war.id,
                 terms: PeaceTerms::TakeProvinces {
                     provinces: occupied,
                 },
             });
+        } else if !occupied.is_empty() && our_score > 0 && !has_occupied_fort {
+            // Debug: occupation but no fort
+            log::debug!(
+                "[PEACE] {} occupies {} provinces but no fort in {}",
+                country_tag,
+                occupied.len(),
+                war.name,
+            );
         }
 
         // WhitePeace - only offer after war has been ongoing for 6+ months
@@ -1614,7 +1651,22 @@ fn execute_command(
                 war.defender_score
             };
 
+            log::debug!(
+                "[OFFER_DEBUG] {} offering peace in {}: cost={}, available={}",
+                country_tag,
+                war.name,
+                war_score_cost,
+                available_score
+            );
+
             if war_score_cost > available_score {
+                log::warn!(
+                    "[OFFER_FAIL] {} can't afford peace in {}: cost={} > available={}",
+                    country_tag,
+                    war.name,
+                    war_score_cost,
+                    available_score
+                );
                 return Err(ActionError::InsufficientWarScore {
                     required: war_score_cost,
                     available: available_score,

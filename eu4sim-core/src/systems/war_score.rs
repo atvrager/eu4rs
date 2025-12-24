@@ -40,6 +40,16 @@ pub fn recalculate_war_scores(state: &mut WorldState) {
         if let Some(war) = state.diplomacy.wars.get(&war_id) {
             let (attacker_occ, defender_occ) = calculate_occupation_scores(state, war);
 
+            // Debug: Log significant occupation changes
+            if attacker_occ > 0 || defender_occ > 0 {
+                log::debug!(
+                    "[WAR_SCORE] War {}: attacker_occ={}, defender_occ={}",
+                    war.name,
+                    attacker_occ,
+                    defender_occ
+                );
+            }
+
             // Update war with new occupation-based scores
             if let Some(war) = state.diplomacy.wars.get_mut(&war_id) {
                 war.attacker_score = (war.attacker_battle_score + attacker_occ).min(100);
@@ -60,7 +70,10 @@ fn calculate_occupation_scores(state: &WorldState, war: &War) -> (u8, u8) {
     let mut attacker_occupied_dev = Fixed::ZERO; // Dev occupied by attackers (in defender territory)
     let mut defender_occupied_dev = Fixed::ZERO; // Dev occupied by defenders (in attacker territory)
 
-    for province in state.provinces.values() {
+    // Track occupied provinces for debugging
+    let mut occupied_provinces: Vec<(u32, String, String)> = Vec::new();
+
+    for (&prov_id, province) in &state.provinces {
         let dev = province.base_tax + province.base_production + province.base_manpower;
 
         if let Some(owner) = &province.owner {
@@ -74,6 +87,7 @@ fn calculate_occupation_scores(state: &WorldState, war: &War) -> (u8, u8) {
                 if let Some(controller) = &province.controller {
                     if war.defenders.contains(controller) && controller != owner {
                         defender_occupied_dev += dev;
+                        occupied_provinces.push((prov_id, controller.clone(), owner.clone()));
                     }
                 }
             } else if is_defender_owned {
@@ -83,10 +97,21 @@ fn calculate_occupation_scores(state: &WorldState, war: &War) -> (u8, u8) {
                 if let Some(controller) = &province.controller {
                     if war.attackers.contains(controller) && controller != owner {
                         attacker_occupied_dev += dev;
+                        occupied_provinces.push((prov_id, controller.clone(), owner.clone()));
                     }
                 }
             }
         }
+    }
+
+    // Log occupied provinces if any
+    if !occupied_provinces.is_empty() {
+        log::info!(
+            "[WAR_SCORE] {} occupation(s) in {}: {:?}",
+            occupied_provinces.len(),
+            war.name,
+            occupied_provinces
+        );
     }
 
     // Calculate occupation scores: (occupied_dev / enemy_total_dev) * MAX_OCCUPATION_SCORE

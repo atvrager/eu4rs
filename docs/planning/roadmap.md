@@ -4,8 +4,8 @@ This document tracks the implementation status of the eu4rs simulation engine an
 
 ## Overview
 
-**Current Focus**: Phase 5 - Advanced Military Features
-**Next Up**: Phase 6 - Diplomacy & AI
+**Current Focus**: Phase 5 & 6 - Advanced Military + Diplomacy & AI
+**Next Up**: Phase 7 - Advanced Economy
 
 ---
 
@@ -100,7 +100,7 @@ Deterministic army/fleet movement with A* pathfinding.
 
 ---
 
-## Phase 5: Advanced Military 📋 **PLANNED**
+## Phase 5: Advanced Military 🔄 **IN PROGRESS**
 
 *Target: v0.2.0*
 
@@ -109,10 +109,11 @@ Enhanced combat and military management.
 - [ ] **Terrain Effects**: Movement costs and combat modifiers
   - River crossings, mountain penalties
   - Terrain-specific combat bonuses
-- [ ] **Siege System**: Fort siege mechanics
-  - Siege progress calculation
-  - Garrison attrition
-  - Assault/breach mechanics
+- [x] **Siege System**: Fort siege mechanics
+  - Siege progress calculation (30-day phases, RNG-based resolution)
+  - Fort level affects siege difficulty
+  - Armies persist until siege completes
+  - ⚠️ TODO: Remove instant occupation for unfortified provinces
 - [ ] **Leaders**: General/Admiral stats and bonuses
   - Command, fire, shock, maneuver
   - Leader assignment to armies/fleets
@@ -124,25 +125,29 @@ Enhanced combat and military management.
 
 ---
 
-## Phase 6: Diplomacy & AI 📋 **PLANNED**
+## Phase 6: Diplomacy & AI 🔄 **IN PROGRESS**
 
 *Target: v0.3.0*
 
 Expanded diplomatic actions and heuristic AI foundation.
 
-- [ ] **Peace Treaties**: War resolution with land transfer
+- [x] **Peace Treaties**: War resolution with land transfer
+  - TakeProvinces peace terms with occupied enemy provinces
+  - Fort requirement: must occupy a fort to take provinces
+  - War score validation for peace term costs
+  - ⚠️ TODO: TUI events for battle results, siege completions, peace transfers
 - [ ] **Alliance Enforcement**: Defensive pact call-to-arms
 - [ ] **Casus Belli System**: War justification mechanics
-- [ ] **AI Crate Refactor**: Extract `eu4sim-ai` crate from `eu4sim-core/src/ai/`
+- [x] **AI Crate Refactor**: Extract `eu4sim-ai` crate from `eu4sim-core/src/ai/`
   - Keep `RandomAi` (existing)
   - Prepare trait interface for multiple implementations
-- [ ] **GreedyBot**: Heuristic AI that makes locally-optimal decisions
+- [x] **GreedyBot**: Heuristic AI that makes locally-optimal decisions
   - Economy: Prioritize high-ROI buildings, develop best provinces
-  - Military: Attack weak neighbors, defend when outnumbered, siege forts
-  - Diplomacy: Ally against threats, rival competitors
+  - Military: Attack weak neighbors, siege forts, persist sieges
+  - gp-only mode: Only 8 GP greedy AIs, passive auto-accept for minors
   - Action ranking logic (reusable for ML prompt filtering later)
   - Serves as training data generator for learned AI
-- [ ] **Available Commands API**: `fn available_commands(&WorldState, &Tag) -> Vec<Command>`
+- [x] **Available Commands API**: `fn available_commands(&WorldState, &Tag) -> Vec<Command>`
   - Required for both GreedyBot and learned AI
   - Enumerates all legal actions for a country this tick
 
@@ -198,6 +203,7 @@ Parallel development track for rendering and debugging.
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| **0.2.0** | 2025-12-24 | War resolution with province transfers, siege system, gp-only AI mode |
 | **0.1.9** | 2025-12-21 | LLM AI with LoRA inference, hybrid mode integration, training pipeline |
 | **0.1.8** | 2025-12-20 | Timeline replay with event log, 367ms map regeneration, FPS profiling |
 | **0.1.7** | 2025-12-19 | Truce system, AI war declaration filtering, checksum integration |
@@ -220,7 +226,7 @@ Before starting work on a feature:
 3. **Follow property-based testing** workflow ([guide](../development/testing/property-based-testing.md))
 4. **Run CI** before committing: `cargo xtask ci`
 
-**Priority**: Phase 4 complete. Focus on Phase 5 (Advanced Military) features.
+**Priority**: Phase 5 siege system complete. Focus on Phase 5/6 remaining items (terrain, morale, alliance enforcement).
 
 ---
 
@@ -265,4 +271,4 @@ Play EU4 in your terminal! A text-based interface using `ratatui` or similar:
 
 ---
 
-*Last updated: 2025-12-21* (v0.1.9)
+*Last updated: 2025-12-24* (v0.2.0)
