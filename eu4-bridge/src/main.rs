@@ -167,7 +167,18 @@ fn main() -> Result<()> {
 
         Commands::Capture { window, output } => {
             let win = capture::find_window(&window)?;
-            capture::capture_and_save(&win, &output)?;
+            let screenshot = capture::capture_window(&win)?;
+
+            // Warn if resolution doesn't match calibration
+            if screenshot.width() != 1920 || screenshot.height() != 1080 {
+                log::warn!(
+                    "Capture resolution {}x{} does not match calibrated 1920x1080 layout. Regions may be misaligned.",
+                    screenshot.width(),
+                    screenshot.height()
+                );
+            }
+
+            screenshot.save(&output)?;
             println!("Captured to {}", output);
         }
 
@@ -193,6 +204,15 @@ fn main() -> Result<()> {
         Commands::Calibrate { window, output } => {
             let win = capture::find_window(&window)?;
             let screenshot = capture::capture_window(&win)?;
+
+            // Warn on resolution mismatch
+            if screenshot.width() != 1920 || screenshot.height() != 1080 {
+                log::warn!(
+                    "Calibration resolution {}x{} != 1920x1080. Generated regions will be incorrect.",
+                    screenshot.width(),
+                    screenshot.height()
+                );
+            }
 
             // Convert RGBA to RGB for imageproc
             let (width, height) = (screenshot.width(), screenshot.height());
@@ -248,7 +268,10 @@ fn main() -> Result<()> {
                     .filter_map(|s| {
                         let parts: Vec<&str> = s.split(':').collect();
                         if parts.len() == 2 {
-                            parts[1].parse().ok().map(|v| (parts[0].to_lowercase(), v))
+                            parts[1]
+                                .parse()
+                                .ok()
+                                .map(|v| (parts[0].to_lowercase().replace(' ', ""), v))
                         } else {
                             None
                         }

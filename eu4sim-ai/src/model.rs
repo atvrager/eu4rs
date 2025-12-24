@@ -448,6 +448,14 @@ impl Eu4AiModel {
         } else {
             log::error!("No LoRA weights were merged! Check key mapping.");
         }
+
+        // Validation: If we loaded keys but merged nothing, that's critical
+        if !lora_keys.is_empty() && merge_count == 0 {
+            anyhow::bail!(
+                "LoRA merge failed: {} keys in adapter, 0 merged. Naming mismatch?",
+                lora_keys.len()
+            );
+        }
         Ok(merged)
     }
 
