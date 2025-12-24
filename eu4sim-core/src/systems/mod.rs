@@ -1,5 +1,6 @@
 //! Simulation systems.
 
+pub mod attrition;
 pub mod colonization;
 pub mod combat;
 pub mod coring;
@@ -20,6 +21,7 @@ pub mod trade_power;
 pub mod trade_value;
 pub mod war_score;
 
+pub use attrition::run_attrition_tick;
 pub use colonization::run_colonization_tick;
 pub use combat::run_combat_tick;
 pub use coring::{

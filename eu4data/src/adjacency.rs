@@ -19,6 +19,9 @@ pub struct Color {
 pub struct AdjacencyGraph {
     /// Map of province ID to list of adjacent province IDs
     adjacencies: HashMap<ProvinceId, HashSet<ProvinceId>>,
+    /// Set of directed river crossings (from, to) that apply combat penalty
+    #[serde(default)]
+    pub river_crossings: HashSet<(ProvinceId, ProvinceId)>,
 }
 
 impl AdjacencyGraph {
@@ -26,6 +29,7 @@ impl AdjacencyGraph {
     pub fn new() -> Self {
         Self {
             adjacencies: HashMap::new(),
+            river_crossings: HashSet::new(),
         }
     }
 
@@ -49,6 +53,13 @@ impl AdjacencyGraph {
             .get(&p1)
             .map(|set| set.contains(&p2))
             .unwrap_or(false)
+    }
+
+    /// Check if moving from `from` to `to` crosses a river.
+    ///
+    /// River crossings apply a -1 dice penalty to the attacker in combat.
+    pub fn is_river_crossing(&self, from: ProvinceId, to: ProvinceId) -> bool {
+        self.river_crossings.contains(&(from, to))
     }
 
     /// Get total number of provinces in the graph.
@@ -313,14 +324,27 @@ impl CacheableResource for AdjacencyGraph {
             graph.province_count()
         );
 
-        // Add straits from adjacencies.csv
+        // Add special adjacencies from adjacencies.csv (straits, rivers, etc.)
         let adjacencies_path = game_path.join("map").join("adjacencies.csv");
         if adjacencies_path.exists() {
-            let straits = load_adjacencies_csv(&adjacencies_path)?;
-            log::info!("Loaded {} strait entries", straits.len());
+            let entries = load_adjacencies_csv(&adjacencies_path)?;
+            log::info!("Loaded {} adjacency entries", entries.len());
 
-            for strait in straits {
-                graph.add_adjacency(strait.from, strait.to);
+            let mut river_count = 0;
+            for entry in entries {
+                // Add adjacency for all types (straits, rivers, land, etc.)
+                graph.add_adjacency(entry.from, entry.to);
+
+                // Track river crossings for combat penalties
+                if entry.strait_type == "river" {
+                    graph.river_crossings.insert((entry.from, entry.to));
+                    graph.river_crossings.insert((entry.to, entry.from));
+                    river_count += 1;
+                }
+            }
+
+            if river_count > 0 {
+                log::info!("Detected {} river crossings", river_count);
             }
         }
 

@@ -126,7 +126,7 @@ pub fn step_world(
 
     // Combat runs daily (whenever armies are engaged)
     let combat_start = Instant::now();
-    crate::systems::run_combat_tick(&mut new_state);
+    crate::systems::run_combat_tick(&mut new_state, adjacency);
     if let Some(m) = metrics.as_mut() {
         m.combat_time += combat_start.elapsed();
     }
@@ -188,6 +188,7 @@ pub fn step_world(
 
         crate::systems::run_taxation_tick(&mut new_state);
         crate::systems::run_manpower_tick(&mut new_state);
+        crate::systems::run_attrition_tick(&mut new_state);
         crate::systems::run_expenses_tick(&mut new_state);
         crate::systems::run_mana_tick(&mut new_state);
         crate::systems::run_stats_tick(&mut new_state);
@@ -906,6 +907,7 @@ fn execute_command(
                         name: format!("{} Army {}", country_tag, army_id),
                         owner: country_tag.to_string(),
                         location: *province,
+                        previous_location: None,
                         regiments: vec![crate::state::Regiment {
                             type_: *unit_type,
                             strength: Fixed::from_int(1000),
@@ -2697,6 +2699,7 @@ mod tests {
                 name: "Attacker Army".to_string(),
                 owner: "ATK".to_string(),
                 location: 1,
+                previous_location: None,
                 regiments: vec![
                     Regiment {
                         type_: RegimentType::Infantry,
@@ -2752,6 +2755,7 @@ mod tests {
                 name: "Second Army".to_string(),
                 owner: "ATK".to_string(),
                 location: 2,
+                previous_location: None,
                 regiments: vec![Regiment {
                     type_: RegimentType::Infantry,
                     strength: Fixed::from_int(1000),
@@ -3019,6 +3023,7 @@ mod tests {
                 name: "Test Army".to_string(),
                 owner: "ATK".to_string(),
                 location: 1,
+                previous_location: None,
                 regiments: vec![Regiment {
                     type_: RegimentType::Infantry,
                     strength: Fixed::from_int(1000),

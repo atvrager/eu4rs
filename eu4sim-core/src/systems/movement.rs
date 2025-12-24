@@ -87,6 +87,7 @@ pub fn run_movement_tick(state: &mut WorldState, _graph: Option<&AdjacencyGraph>
                 if movement.progress >= movement.required_progress {
                     if let Some(next_province) = movement.path.pop_front() {
                         let prev_location = army.location;
+                        army.previous_location = Some(prev_location);
                         army.location = next_province;
                         movement.progress = Fixed::ZERO;
 
@@ -173,6 +174,7 @@ mod tests {
             name: "Swedish Army".into(),
             owner: "SWE".into(),
             location: 1,
+            previous_location: None,
             regiments: vec![Regiment {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
@@ -214,6 +216,7 @@ mod tests {
             name: "Swedish Army".into(),
             owner: "SWE".into(),
             location: 1,
+            previous_location: None,
             regiments: vec![Regiment {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
@@ -268,6 +271,7 @@ mod tests {
             name: "Swedish Army".into(),
             owner: "SWE".into(),
             location: 1,
+            previous_location: None,
             regiments: vec![Regiment {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
@@ -303,6 +307,7 @@ mod tests {
             name: "Timing Army".into(),
             owner: "SWE".into(),
             location: 1,
+            previous_location: None,
             regiments: vec![Regiment {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
@@ -351,6 +356,7 @@ mod tests {
             name: "Test Army".into(),
             owner: "SWE".into(),
             location: 1,
+            previous_location: None,
             regiments: vec![Regiment {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
@@ -418,6 +424,7 @@ mod tests {
                 name: "Prop Army".into(),
                 owner: "SWE".into(),
                 location: 1,
+                previous_location: None,
                 regiments: vec![],
                 movement: Some(MovementState {
                     path: VecDeque::from(vec![2]),

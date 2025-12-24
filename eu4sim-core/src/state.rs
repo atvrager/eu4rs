@@ -135,6 +135,8 @@ pub struct Army {
     pub name: String,
     pub owner: Tag,
     pub location: ProvinceId,
+    /// Previous location (for river crossing detection in combat)
+    pub previous_location: Option<ProvinceId>,
     pub regiments: Vec<Regiment>,
     /// Active movement state (None if stationary).
     pub movement: Option<MovementState>,
@@ -230,6 +232,8 @@ pub enum BattleResult {
 pub struct Battle {
     pub id: BattleId,
     pub province: ProvinceId,
+    /// Province where the attacker came from (for river crossing penalty)
+    pub attacker_origin: Option<ProvinceId>,
     pub start_date: Date,
     /// Current day within the current phase (0, 1, 2)
     pub phase_day: u8,

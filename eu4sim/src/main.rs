@@ -129,6 +129,7 @@ fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGra
             name: "AAA Army".to_string(),
             owner: "AAA".to_string(),
             location: 1,
+            previous_location: None,
             regiments: vec![Regiment {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),
@@ -147,6 +148,7 @@ fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGra
             name: "BBB Army".to_string(),
             owner: "BBB".to_string(),
             location: 3,
+            previous_location: None,
             regiments: vec![Regiment {
                 type_: RegimentType::Infantry,
                 strength: Fixed::from_int(1000),

@@ -155,3 +155,21 @@ pub mod economy {
     /// Months in a year for tax calculations
     pub const MONTHS_PER_YEAR: i64 = 12;
 }
+
+/// Attrition constants
+pub mod attrition {
+    /// Supply limit: 1 regiment per 1 total development
+    pub const BASE_SUPPLY_LIMIT_PER_DEV: f32 = 1.0;
+
+    /// Base monthly attrition when over supply limit
+    pub const ATTRITION_BASE_PERCENT: f32 = 1.0;
+
+    /// Multiplier for over-limit ratio (5% per 100% over limit)
+    pub const ATTRITION_OVER_LIMIT_MULTIPLIER: f32 = 5.0;
+
+    /// Additional attrition in winter months (Dec, Jan, Feb)
+    pub const WINTER_ATTRITION_BONUS: f32 = 2.0;
+
+    /// Additional attrition in hostile (enemy) territory
+    pub const HOSTILE_ATTRITION: f32 = 1.0;
+}

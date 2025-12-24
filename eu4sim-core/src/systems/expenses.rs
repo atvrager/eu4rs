@@ -92,6 +92,7 @@ mod tests {
             name: "Test Army".into(),
             owner: "SWE".into(),
             location: 1,
+            previous_location: None,
             regiments: vec![
                 Regiment {
                     type_: RegimentType::Infantry,

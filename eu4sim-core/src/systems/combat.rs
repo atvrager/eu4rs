@@ -20,7 +20,10 @@ use std::collections::HashMap;
 /// Runs daily combat resolution for all active battles and detects new engagements.
 ///
 /// Called once per day in the simulation tick.
-pub fn run_combat_tick(state: &mut WorldState) {
+pub fn run_combat_tick(
+    state: &mut WorldState,
+    adjacency: Option<&eu4data::adjacency::AdjacencyGraph>,
+) {
     // 1. Check for reinforcements joining existing battles
     process_reinforcements(state);
 
@@ -30,7 +33,7 @@ pub fn run_combat_tick(state: &mut WorldState) {
     // 3. Run one day for each active battle
     let battle_ids: Vec<_> = state.battles.keys().cloned().collect();
     for battle_id in battle_ids {
-        tick_battle_day(state, battle_id);
+        tick_battle_day(state, battle_id, adjacency);
     }
 
     // 4. Cleanup finished battles
@@ -181,6 +184,12 @@ fn start_battle(
     let attacker_line = deploy_to_lines(state, &attacker_armies, combat_width);
     let defender_line = deploy_to_lines(state, &defender_armies, combat_width);
 
+    // Determine attacker origin for river crossing penalty
+    let attacker_origin = attacker_armies
+        .first()
+        .and_then(|&id| state.armies.get(&id))
+        .and_then(|a| a.previous_location);
+
     // Roll initial dice
     let attacker_dice = roll_dice(state);
     let defender_dice = roll_dice(state);
@@ -188,6 +197,7 @@ fn start_battle(
     let battle = Battle {
         id: battle_id,
         province,
+        attacker_origin,
         start_date: state.date,
         phase_day: 0,
         phase: CombatPhase::Fire,
@@ -287,7 +297,11 @@ fn deploy_to_lines(state: &WorldState, army_ids: &[ArmyId], combat_width: u8) ->
 // ============================================================================
 
 /// Run one day of combat for a battle.
-fn tick_battle_day(state: &mut WorldState, battle_id: BattleId) {
+fn tick_battle_day(
+    state: &mut WorldState,
+    battle_id: BattleId,
+    adjacency: Option<&eu4data::adjacency::AdjacencyGraph>,
+) {
     // Check if battle is already over
     if state
         .battles
@@ -301,7 +315,7 @@ fn tick_battle_day(state: &mut WorldState, battle_id: BattleId) {
     fill_frontline_gaps(state, battle_id);
 
     // Calculate and apply damage
-    apply_daily_damage(state, battle_id);
+    apply_daily_damage(state, battle_id, adjacency);
 
     // Check for morale break / stackwipe
     if check_battle_end(state, battle_id) {
@@ -335,7 +349,11 @@ fn fill_frontline_gaps(state: &mut WorldState, battle_id: BattleId) {
 }
 
 /// Calculate and apply damage for both sides.
-fn apply_daily_damage(state: &mut WorldState, battle_id: BattleId) {
+fn apply_daily_damage(
+    state: &mut WorldState,
+    battle_id: BattleId,
+    adjacency: Option<&eu4data::adjacency::AdjacencyGraph>,
+) {
     // Get battle info (immutable first pass to calculate)
     let (att_damage, def_damage, _phase) = {
         let battle = match state.battles.get(&battle_id) {
@@ -343,8 +361,8 @@ fn apply_daily_damage(state: &mut WorldState, battle_id: BattleId) {
             None => return,
         };
 
-        let att_damage = calculate_side_damage(state, battle, true);
-        let def_damage = calculate_side_damage(state, battle, false);
+        let att_damage = calculate_side_damage(state, battle, true, adjacency);
+        let def_damage = calculate_side_damage(state, battle, false, adjacency);
 
         (att_damage, def_damage, battle.phase)
     };
@@ -357,7 +375,12 @@ fn apply_daily_damage(state: &mut WorldState, battle_id: BattleId) {
 }
 
 /// Calculate damage dealt by one side. Returns (casualties, morale_damage).
-fn calculate_side_damage(state: &WorldState, battle: &Battle, is_attacker: bool) -> (Fixed, Fixed) {
+fn calculate_side_damage(
+    state: &WorldState,
+    battle: &Battle,
+    is_attacker: bool,
+    adjacency: Option<&eu4data::adjacency::AdjacencyGraph>,
+) -> (Fixed, Fixed) {
     let line = if is_attacker {
         &battle.attacker_line
     } else {
@@ -411,10 +434,16 @@ fn calculate_side_damage(state: &WorldState, battle: &Battle, is_attacker: bool)
         }
     }
 
-    // Apply terrain penalty to attacker (considers maneuver difference)
+    // Apply terrain penalty to attacker (considers maneuver difference and river crossing)
     if is_attacker {
-        let terrain_mod =
-            get_terrain_penalty(state, battle.province, &battle.attackers, &battle.defenders);
+        let terrain_mod = get_terrain_penalty(
+            state,
+            battle.province,
+            battle.attacker_origin,
+            &battle.attackers,
+            &battle.defenders,
+            adjacency,
+        );
         // Each -1 to dice effectively reduces damage by ~10%
         let penalty_factor = Fixed::from_int(10 + terrain_mod as i64).div(Fixed::from_int(10));
         total_damage = total_damage.mul(penalty_factor.max(Fixed::ZERO));
@@ -520,12 +549,14 @@ fn get_regiment_phase_damage(type_: RegimentType, phase: CombatPhase) -> f32 {
 fn get_terrain_penalty(
     state: &WorldState,
     province: ProvinceId,
+    attacker_origin: Option<ProvinceId>,
     attacker_armies: &[ArmyId],
     defender_armies: &[ArmyId],
+    adjacency: Option<&eu4data::adjacency::AdjacencyGraph>,
 ) -> i8 {
     let terrain = state.provinces.get(&province).and_then(|p| p.terrain);
 
-    let base_penalty = match terrain {
+    let mut base_penalty = match terrain {
         Some(Terrain::Mountains) => defines::MOUNTAIN_PENALTY,
         Some(Terrain::Hills) => defines::HILLS_PENALTY,
         Some(Terrain::Forest) => defines::FOREST_PENALTY,
@@ -534,7 +565,14 @@ fn get_terrain_penalty(
         _ => 0,
     };
 
-    // Maneuver difference can negate terrain penalty
+    // Add river crossing penalty if attacker crossed a river
+    if let (Some(origin), Some(adj)) = (attacker_origin, adjacency) {
+        if adj.is_river_crossing(origin, province) {
+            base_penalty += defines::CROSSING_RIVER_PENALTY;
+        }
+    }
+
+    // Maneuver difference can negate terrain penalty (but not river crossing)
     let atk_maneuver = get_maneuver_bonus(state, attacker_armies);
     let def_maneuver = get_maneuver_bonus(state, defender_armies);
     let mitigation = (atk_maneuver - def_maneuver).max(0); // Can't go negative
@@ -841,6 +879,7 @@ mod tests {
             name: format!("{} Army {}", owner, id),
             owner: owner.to_string(),
             location,
+            previous_location: None,
             regiments,
             movement: None,
             embarked_on: None,
@@ -893,7 +932,7 @@ mod tests {
         state.diplomacy.wars.insert(0, war);
 
         // Start battle
-        run_combat_tick(&mut state);
+        run_combat_tick(&mut state, None);
 
         assert_eq!(state.battles.len(), 1);
         let battle = state.battles.values().next().unwrap();
@@ -901,8 +940,8 @@ mod tests {
         assert_eq!(battle.phase_day, 1); // After first tick
 
         // Tick 2 more days - should still be Fire
-        run_combat_tick(&mut state);
-        run_combat_tick(&mut state);
+        run_combat_tick(&mut state, None);
+        run_combat_tick(&mut state, None);
 
         let battle = state.battles.values().next().unwrap();
         // Day 3 completes Fire phase, day 0 of Shock
@@ -955,7 +994,7 @@ mod tests {
 
         // Run several combat ticks
         for _ in 0..5 {
-            run_combat_tick(&mut state);
+            run_combat_tick(&mut state, None);
         }
 
         // Morale should have decreased (if battle still ongoing)
@@ -1009,7 +1048,7 @@ mod tests {
 
         // Run combat until resolved
         for _ in 0..10 {
-            run_combat_tick(&mut state);
+            run_combat_tick(&mut state, None);
         }
 
         // DEN army should be stackwiped (no regiments remaining)
@@ -1168,7 +1207,7 @@ mod tests {
 
         // Mountain penalty is -2, maneuver difference is 3-1=2
         // Final penalty should be -2 + 2 = 0 (fully negated)
-        let penalty = get_terrain_penalty(&state, 1, &[1], &[2]);
+        let penalty = get_terrain_penalty(&state, 1, None, &[1], &[2], None);
         assert_eq!(penalty, 0);
     }
 
@@ -1224,7 +1263,7 @@ mod tests {
 
         // Mountain penalty -2, maneuver difference 1-0=1
         // Final: -2 + 1 = -1
-        let penalty = get_terrain_penalty(&state, 1, &[1], &[2]);
+        let penalty = get_terrain_penalty(&state, 1, None, &[1], &[2], None);
         assert_eq!(penalty, -1);
     }
 
@@ -1290,7 +1329,54 @@ mod tests {
 
         // Maneuver difference: 2-4 = -2, clamped to 0
         // Penalty stays at -2 (no mitigation)
-        let penalty = get_terrain_penalty(&state, 1, &[1], &[2]);
+        let penalty = get_terrain_penalty(&state, 1, None, &[1], &[2], None);
         assert_eq!(penalty, -2);
+    }
+
+    #[test]
+    fn test_river_crossing_penalty() {
+        use eu4data::adjacency::AdjacencyGraph;
+
+        let mut state = WorldStateBuilder::new()
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        // Create adjacency graph with a river crossing from province 1 to 2
+        let mut adjacency = AdjacencyGraph::new();
+        adjacency.add_adjacency(1, 2);
+        // Manually add river crossing (simulating CSV parse)
+        adjacency.river_crossings.insert((1, 2));
+        adjacency.river_crossings.insert((2, 1));
+
+        // Create armies
+        let mut atk_army = make_army(
+            1,
+            "SWE",
+            2,
+            vec![make_regiment(RegimentType::Infantry, 1000)],
+        );
+        atk_army.previous_location = Some(1); // Army came from province 1
+        state.armies.insert(1, atk_army);
+
+        let def_army = make_army(
+            2,
+            "DEN",
+            2,
+            vec![make_regiment(RegimentType::Infantry, 1000)],
+        );
+        state.armies.insert(2, def_army);
+
+        // River crossing penalty is -1
+        let penalty = get_terrain_penalty(&state, 2, Some(1), &[1], &[2], Some(&adjacency));
+        assert_eq!(penalty, -1);
+
+        // Without origin, no penalty
+        let penalty = get_terrain_penalty(&state, 2, None, &[1], &[2], Some(&adjacency));
+        assert_eq!(penalty, 0);
+
+        // River crossing in reverse direction also has penalty
+        let penalty = get_terrain_penalty(&state, 1, Some(2), &[1], &[2], Some(&adjacency));
+        assert_eq!(penalty, -1);
     }
 }

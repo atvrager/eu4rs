@@ -262,6 +262,7 @@ pub fn load_initial_state(
                     name: format!("{} Army", tag),
                     owner: tag.clone(),
                     location,
+                    previous_location: None,
                     regiments,
                     movement: None,
                     embarked_on: None,
