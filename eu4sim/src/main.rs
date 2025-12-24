@@ -218,6 +218,83 @@ fn calculate_top_countries(state: &WorldState, count: usize) -> HashSet<String> 
     ranked.into_iter().take(count).map(|(t, _)| t).collect()
 }
 
+/// Format interesting events from Great Powers for the TUI event log
+fn format_gp_events(
+    inputs: &[PlayerInputs],
+    great_powers: &HashSet<String>,
+    state: &WorldState,
+) -> Vec<String> {
+    use eu4sim_core::input::Command;
+    let mut events = Vec::new();
+    let date_str = format!("{}", state.date);
+
+    for input in inputs {
+        // Only log events from Great Powers
+        if !great_powers.contains(&input.country) {
+            continue;
+        }
+
+        for cmd in &input.commands {
+            let event = match cmd {
+                Command::DeclareWar { target, .. } => Some(format!(
+                    "[{}] {} → Declared war on {}",
+                    date_str, input.country, target
+                )),
+                Command::RecruitGeneral => Some(format!(
+                    "[{}] {} → Recruited general",
+                    date_str, input.country
+                )),
+                Command::AssignGeneral { army, .. } => Some(format!(
+                    "[{}] {} → Assigned general to army #{}",
+                    date_str, input.country, army
+                )),
+                Command::Move { destination, .. }
+                    if state
+                        .provinces
+                        .get(destination)
+                        .and_then(|p| p.owner.as_ref())
+                        .is_some_and(|owner| state.diplomacy.are_at_war(&input.country, owner)) =>
+                {
+                    let owner = state
+                        .provinces
+                        .get(destination)
+                        .and_then(|p| p.owner.as_ref())
+                        .unwrap();
+                    Some(format!(
+                        "[{}] {} → Moving army into {} territory",
+                        date_str, input.country, owner
+                    ))
+                }
+                Command::AcceptPeace { .. } => {
+                    Some(format!("[{}] {} → Accepted peace", date_str, input.country))
+                }
+                Command::OfferPeace { .. } => {
+                    Some(format!("[{}] {} → Offered peace", date_str, input.country))
+                }
+                Command::JoinWar { .. } => Some(format!(
+                    "[{}] {} → Joined war (honoring alliance)",
+                    date_str, input.country
+                )),
+                Command::BuyTech { tech_type } => Some(format!(
+                    "[{}] {} → Researched {:?} tech",
+                    date_str, input.country, tech_type
+                )),
+                Command::EmbraceInstitution { .. } => Some(format!(
+                    "[{}] {} → Embraced institution",
+                    date_str, input.country
+                )),
+                _ => None,
+            };
+
+            if let Some(evt) = event {
+                events.push(evt);
+            }
+        }
+    }
+
+    events
+}
+
 /// Reassign AIs based on current great power rankings
 /// Returns true if any changes were made
 fn reassign_hybrid_ais(
@@ -1016,7 +1093,8 @@ fn main() -> Result<()> {
             });
         }
 
-        // Step
+        // Step (with timing for TUI metrics)
+        let step_start = std::time::Instant::now();
         state = step_world(
             &state,
             &inputs,
@@ -1025,6 +1103,17 @@ fn main() -> Result<()> {
             metrics.as_mut(),
         );
         tick += 1;
+        let step_ms = step_start.elapsed().as_secs_f64() * 1000.0;
+
+        // Log interesting events to TUI
+        if let Some(tui) = &mut tui_system {
+            tui.last_sim_ms = step_ms;
+            let great_powers = calculate_top_countries(&state, 8);
+            let events = format_gp_events(&inputs, &great_powers, &state);
+            for event in events {
+                tui.log_event(event);
+            }
+        }
 
         // Yearly AI pool reassignment in hybrid mode
         if args.ai == "hybrid" && state.date.year > last_reassign_year {

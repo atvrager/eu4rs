@@ -34,6 +34,14 @@ pub struct TuiSystem {
     pub scale: f32,
     /// Top-left corner of viewport in map image coordinates
     pub offset: (u32, u32),
+    /// Event log buffer (most recent first)
+    event_log: Vec<String>,
+    /// Maximum number of events to keep
+    max_events: usize,
+    /// Last simulation tick duration in milliseconds
+    pub last_sim_ms: f64,
+    /// Last render duration in milliseconds
+    pub last_render_ms: f64,
 }
 
 struct CachedMap {
@@ -68,19 +76,42 @@ impl TuiSystem {
             paused: false,
             scale: 1.0,
             offset,
+            event_log: Vec::new(),
+            max_events: 50,
+            last_sim_ms: 0.0,
+            last_render_ms: 0.0,
         })
     }
 
+    /// Add an event to the log (most recent at top)
+    pub fn log_event(&mut self, event: String) {
+        self.event_log.insert(0, event);
+        // Keep only max_events
+        if self.event_log.len() > self.max_events {
+            self.event_log.truncate(self.max_events);
+        }
+    }
+
     pub fn render(&mut self, state: &WorldState, tick: u64, max_ticks: u32) -> Result<()> {
+        let render_start = std::time::Instant::now();
+
         let size = self.terminal.size()?;
         let rect = Rect::new(0, 0, size.width, size.height);
 
-        let chunks = Layout::default()
+        // Split vertically: main content + status bar
+        let vert_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Min(0), Constraint::Length(1)])
             .split(rect);
 
-        let outer_area = chunks[0];
+        // Split horizontally: map + event panel
+        let horiz_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
+            .split(vert_chunks[0]);
+
+        let outer_area = horiz_chunks[0];
+        let events_area = horiz_chunks[1];
         let inner_area = Rect {
             x: outer_area.x + 1,
             y: outer_area.y + 1,
@@ -108,12 +139,31 @@ impl TuiSystem {
         let scale = self.scale;
         let offset = self.offset;
 
+        let event_log_ref = &self.event_log;
+        let last_sim_ms = self.last_sim_ms;
+        let last_render_ms = self.last_render_ms;
+
         self.terminal.draw(|f| {
             draw_ui(
-                f, outer_area, chunks[1], grid_ref, state, tick, max_ticks, speed, paused, scale,
+                f,
+                outer_area,
+                events_area,
+                vert_chunks[1],
+                grid_ref,
+                state,
+                tick,
+                max_ticks,
+                speed,
+                paused,
+                scale,
                 offset,
+                event_log_ref,
+                last_sim_ms,
+                last_render_ms,
             );
         })?;
+
+        self.last_render_ms = render_start.elapsed().as_secs_f64() * 1000.0;
         Ok(())
     }
 
@@ -228,6 +278,7 @@ impl Drop for TuiSystem {
 fn draw_ui(
     f: &mut Frame,
     map_area: Rect,
+    events_area: Rect,
     status_area: Rect,
     grid: Option<&Vec<Vec<u32>>>,
     state: &WorldState,
@@ -237,6 +288,9 @@ fn draw_ui(
     paused: bool,
     scale: f32,
     offset: (u32, u32),
+    event_log: &[String],
+    last_sim_ms: f64,
+    last_render_ms: f64,
 ) {
     let block = Block::default().borders(Borders::ALL).title(" EU4 Map ");
 
@@ -249,11 +303,30 @@ fn draw_ui(
         f.render_widget(body, map_area);
     }
 
+    // Render event log panel
+    let events_block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Great Power Events ");
+    let events_inner = events_block.inner(events_area);
+    f.render_widget(events_block, events_area);
+
+    // Render event text (most recent at top)
+    let visible_count = events_inner.height as usize;
+    let events_text = event_log
+        .iter()
+        .take(visible_count)
+        .map(|s| s.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let events_para = Paragraph::new(events_text);
+    f.render_widget(events_para, events_inner);
+
+    // Render status bar with timing metrics
     let status = if paused { " PAUSED" } else { "" };
     let pct = (tick as f64 / max_ticks as f64) * 100.0;
     let status_text = format!(
-        " {} │ {}/{} ({:.0}%){} │ Spd:{} │ ({},{}) {:.1}x │ WASD:pan ±:zoom 1-5:speed q:quit",
-        state.date, tick, max_ticks, pct, status, speed, offset.0, offset.1, scale
+        " {} │ {}/{} ({:.0}%){} │ Spd:{} │ Render:{:.1}ms Sim:{:.1}ms │ ({},{}) {:.1}x │ WASD:pan ±:zoom 1-5:speed q:quit",
+        state.date, tick, max_ticks, pct, status, speed, last_render_ms, last_sim_ms, offset.0, offset.1, scale
     );
     let status_bar = Paragraph::new(status_text).style(Style::default().bg(Color::Indexed(236)));
     f.render_widget(status_bar, status_area);
