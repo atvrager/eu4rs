@@ -579,6 +579,7 @@ pub fn available_commands(
                     if let Some(neighbor) = state.provinces.get(&neighbor_id) {
                         if neighbor.owner.is_none()
                             && !neighbor.is_sea
+                            && !neighbor.is_wasteland
                             && !state.colonies.contains_key(&neighbor_id)
                         {
                             colonizable.insert(neighbor_id);
@@ -1845,7 +1846,7 @@ fn execute_command(
                 && !state.colonies.contains_key(&province)
             {
                 if let Some(p) = state.provinces.get(&province) {
-                    if !p.is_sea {
+                    if !p.is_sea && !p.is_wasteland {
                         state.colonies.insert(
                             province,
                             crate::state::Colony {

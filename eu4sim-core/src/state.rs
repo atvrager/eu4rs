@@ -657,6 +657,9 @@ pub struct ProvinceState {
     pub is_mothballed: bool,
     /// Whether this province is a sea province (for naval movement)
     pub is_sea: bool,
+    /// Whether this province is a wasteland (impassable, uncolonizable)
+    #[serde(default)]
+    pub is_wasteland: bool,
     /// Terrain type (e.g., "plains", "mountains", "forest")
     pub terrain: Option<Terrain>,
     /// Progress of institutions in this province (0.0 to 100.0)

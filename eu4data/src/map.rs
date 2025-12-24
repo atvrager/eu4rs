@@ -53,6 +53,9 @@ pub fn load_definitions(path: &Path) -> Result<HashMap<u32, ProvinceDefinition>,
 }
 
 /// Represents a mapping of special provinces like sea zones and lakes.
+///
+/// Note: Wasteland provinces are NOT defined in default.map.
+/// They are defined in terrain.txt as the "wasteland" terrain type.
 #[derive(Debug, Deserialize)]
 pub struct DefaultMap {
     /// List of province IDs that are sea zones.

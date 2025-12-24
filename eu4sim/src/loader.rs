@@ -120,7 +120,15 @@ pub fn load_initial_state(
         .map_err(|e| anyhow::anyhow!("Failed to load default map: {}", e))?;
     let sea_provinces: std::collections::HashSet<u32> =
         default_map.sea_starts.iter().copied().collect();
-    log::info!("Loaded {} sea provinces", sea_provinces.len());
+
+    // 3b. Load impassable (wasteland) provinces from climate.txt
+    let wasteland_provinces = eu4data::climate::load_impassable_provinces(game_path)
+        .map_err(|e| anyhow::anyhow!("Failed to load climate data: {}", e))?;
+    log::info!(
+        "Loaded {} sea provinces, {} wastelands",
+        sea_provinces.len(),
+        wasteland_provinces.len()
+    );
 
     // 4. Load Provinces
     log::info!("Loading province history...");
@@ -181,6 +189,7 @@ pub fn load_initial_state(
             is_capital: hist.capital.is_some(),
             is_mothballed: false,
             is_sea: sea_provinces.contains(&id),
+            is_wasteland: wasteland_provinces.contains(&id),
             terrain: terrain_map.get(&id).and_then(|s| parse_terrain(s)),
             institution_presence: ImHashMap::default(),
             trade: Default::default(),

@@ -29,6 +29,14 @@ pub fn run_colonization_tick(state: &mut WorldState) {
     for province_id in completed {
         if let Some(colony) = state.colonies.remove(&province_id) {
             if let Some(province) = state.provinces.get_mut(&province_id) {
+                // Wastelands cannot be colonized - remove invalid colony
+                if province.is_wasteland {
+                    log::warn!(
+                        "Removed invalid colony in wasteland province {}",
+                        province_id
+                    );
+                    continue;
+                }
                 province.owner = Some(colony.owner.clone());
                 province.controller = Some(colony.owner.clone());
                 log::info!(

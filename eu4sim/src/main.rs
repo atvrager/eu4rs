@@ -112,6 +112,7 @@ fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGra
                 is_capital: id == 1,
                 is_mothballed: false,
                 is_sea: false,
+                is_wasteland: false,
                 terrain: Some(Terrain::Plains),
                 institution_presence: Default::default(),
                 trade: Default::default(),

@@ -35,6 +35,7 @@
 
 pub mod adjacency;
 pub mod cache;
+pub mod climate;
 pub mod countries;
 pub mod coverage;
 pub mod cultures;
