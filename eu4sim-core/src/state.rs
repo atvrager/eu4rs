@@ -90,7 +90,9 @@ pub type ArmyId = u32;
 pub type WarId = u32;
 pub type FleetId = u32;
 pub type GeneralId = u32;
+pub type AdmiralId = u32;
 pub type BattleId = u32;
+pub type NavalBattleId = u32;
 pub type SiegeId = u32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -108,6 +110,25 @@ pub struct Regiment {
     /// Current morale (0.0 to country's max morale, base ~2.0)
     /// Depletes during combat; at 0, army routs.
     pub morale: Fixed,
+}
+
+/// Naval unit types
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
+pub enum ShipType {
+    HeavyShip, // Best in open sea, expensive
+    LightShip, // Trade protection, weak combat
+    Galley,    // Best in inland seas, cheap
+    Transport, // Troop transport, no combat value
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Ship {
+    pub type_: ShipType,
+    /// Hull integrity (0-100% of hull size)
+    pub hull: Fixed,
+    /// Current durability (0.0 to base durability)
+    /// Depletes during combat; at 0, ship sinks.
+    pub durability: Fixed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -155,12 +176,16 @@ pub struct Fleet {
     pub name: String,
     pub owner: Tag,
     pub location: ProvinceId, // Sea province
-    /// Transport capacity: 1 ship = 1 regiment
-    pub transport_capacity: u32,
+    /// Ships in this fleet
+    pub ships: Vec<Ship>,
     /// Armies currently embarked on this fleet
     pub embarked_armies: Vec<ArmyId>,
     /// Active movement state (None if stationary).
     pub movement: Option<MovementState>,
+    /// Assigned admiral (if any)
+    pub admiral: Option<AdmiralId>,
+    /// Active naval battle this fleet is participating in (if any)
+    pub in_battle: Option<NavalBattleId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -188,6 +213,22 @@ pub struct General {
     /// Maneuver pip (affects terrain penalty negation, pursuit)
     pub maneuver: u8,
     /// Siege pip (not used in field battles)
+    pub siege: u8,
+}
+
+/// A naval leader with combat pips.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Admiral {
+    pub id: AdmiralId,
+    pub name: String,
+    pub owner: Tag,
+    /// Fire phase pip bonus (0-6)
+    pub fire: u8,
+    /// Shock phase pip bonus (0-6)
+    pub shock: u8,
+    /// Maneuver pip (affects naval engagement/pursuit)
+    pub maneuver: u8,
+    /// Siege pip (blockade effectiveness)
     pub siege: u8,
 }
 
@@ -259,6 +300,32 @@ pub struct Battle {
     pub result: Option<BattleResult>,
 }
 
+/// An active naval battle between opposing fleets.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NavalBattle {
+    pub id: NavalBattleId,
+    pub sea_zone: ProvinceId,
+    pub start_date: Date,
+    /// Current day within the current phase (0, 1, 2)
+    pub phase_day: u8,
+    /// Current phase (Fire or Shock)
+    pub phase: CombatPhase,
+    /// Dice roll for attacker this phase (set on phase start)
+    pub attacker_dice: u8,
+    /// Dice roll for defender this phase (set on phase start)
+    pub defender_dice: u8,
+    /// Attacker side fleets
+    pub attackers: Vec<FleetId>,
+    /// Defender side fleets
+    pub defenders: Vec<FleetId>,
+    /// Accumulated attacker ship losses (for war score)
+    pub attacker_losses: u32,
+    /// Accumulated defender ship losses (for war score)
+    pub defender_losses: u32,
+    /// Battle result (Some when resolved)
+    pub result: Option<BattleResult>,
+}
+
 /// An active siege of a fortified province.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Siege {
@@ -307,9 +374,15 @@ pub struct WorldState {
     /// All generals in the game
     pub generals: HashMap<GeneralId, General>,
     pub next_general_id: GeneralId,
-    /// Active battles
+    /// All admirals in the game
+    pub admirals: HashMap<AdmiralId, Admiral>,
+    pub next_admiral_id: AdmiralId,
+    /// Active land battles
     pub battles: HashMap<BattleId, Battle>,
     pub next_battle_id: BattleId,
+    /// Active naval battles
+    pub naval_battles: HashMap<NavalBattleId, NavalBattle>,
+    pub next_naval_battle_id: NavalBattleId,
     /// Active sieges
     pub sieges: HashMap<ProvinceId, Siege>,
     pub next_siege_id: SiegeId,
@@ -428,6 +501,38 @@ impl WorldState {
         }
 
         false // No ZoC blocking
+    }
+
+    /// Check if movement across a strait is blocked by enemy fleets.
+    ///
+    /// # Strait Blocking Rules (EU4-authentic)
+    /// - Straits connect two land provinces through a sea zone
+    /// - Movement is blocked if an enemy fleet is in the strait's sea zone
+    /// - Fleets must be at war with the mover to block
+    pub fn is_strait_blocked(
+        &self,
+        from: ProvinceId,
+        to: ProvinceId,
+        mover: &str,
+        adjacency: Option<&eu4data::adjacency::AdjacencyGraph>,
+    ) -> bool {
+        let Some(graph) = adjacency else {
+            return false; // No adjacency data - cannot check straits
+        };
+
+        // Check if this movement crosses a strait
+        let Some(sea_zone) = graph.get_strait_sea_zone(from, to) else {
+            return false; // Not a strait crossing
+        };
+
+        // Check if any enemy fleet is in the sea zone
+        for fleet in self.fleets.values() {
+            if fleet.location == sea_zone && self.diplomacy.are_at_war(mover, &fleet.owner) {
+                return true; // Strait blocked by enemy fleet
+            }
+        }
+
+        false // Strait is clear
     }
 }
 
@@ -557,6 +662,11 @@ pub struct CountryState {
     /// High OE causes unrest and other penalties.
     #[serde(default)]
     pub overextension: Fixed,
+    /// Aggressive expansion toward each country.
+    /// Accumulates when conquering provinces, decays over time (~2 AE per year).
+    /// High AE (>50) can trigger coalition formation.
+    #[serde(default)]
+    pub aggressive_expansion: HashMap<Tag, Fixed>,
 }
 
 /// Breakdown of monthly income by source.
@@ -594,6 +704,7 @@ impl Default for CountryState {
             peace_offer_cooldowns: std::collections::HashMap::new(),
             pending_call_to_arms: std::collections::HashMap::new(),
             overextension: Fixed::ZERO,
+            aggressive_expansion: HashMap::new(),
         }
     }
 }
@@ -651,6 +762,20 @@ pub enum PeaceTerms {
     FullAnnexation,
 }
 
+/// Coalition against an aggressive nation.
+///
+/// Forms when multiple countries accumulate high AE (>50) toward a target.
+/// Coalition members can declare war together as a defensive alliance.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Coalition {
+    /// Target country the coalition is against
+    pub target: Tag,
+    /// Countries in the coalition
+    pub members: Vec<Tag>,
+    /// Date the coalition was formed
+    pub formed_date: Date,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DiplomacyState {
     /// Bilateral relationships: (Tag1, Tag2) -> RelationType
@@ -665,6 +790,9 @@ pub struct DiplomacyState {
     /// Active truces: (Tag1, Tag2) -> expiry date
     /// Keys stored in sorted order (smaller tag first) to avoid duplication
     pub truces: HashMap<(Tag, Tag), Date>,
+    /// Active coalitions against aggressive countries (keyed by target)
+    #[serde(default)]
+    pub coalitions: HashMap<Tag, Coalition>,
 }
 
 impl DiplomacyState {
@@ -848,9 +976,16 @@ impl WorldState {
             f.name.hash(&mut hasher);
             f.owner.hash(&mut hasher);
             f.location.hash(&mut hasher);
-            f.transport_capacity.hash(&mut hasher);
+            f.ships.len().hash(&mut hasher);
+            for ship in &f.ships {
+                ship.type_.hash(&mut hasher);
+                ship.hull.0.hash(&mut hasher);
+                ship.durability.0.hash(&mut hasher);
+            }
             f.embarked_armies.hash(&mut hasher);
             f.movement.hash(&mut hasher);
+            f.admiral.hash(&mut hasher);
+            f.in_battle.hash(&mut hasher);
         }
 
         // Reformation state

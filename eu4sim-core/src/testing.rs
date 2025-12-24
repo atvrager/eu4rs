@@ -29,8 +29,12 @@ impl WorldStateBuilder {
                 // Combat system
                 generals: HashMap::default(),
                 next_general_id: 1,
+                admirals: HashMap::default(),
+                next_admiral_id: 1,
                 battles: HashMap::default(),
                 next_battle_id: 1,
+                naval_battles: HashMap::default(),
+                next_naval_battle_id: 1,
                 sieges: HashMap::default(),
                 next_siege_id: 1,
                 // Trade system

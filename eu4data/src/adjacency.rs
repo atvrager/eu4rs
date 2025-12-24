@@ -20,8 +20,12 @@ pub struct AdjacencyGraph {
     /// Map of province ID to list of adjacent province IDs
     adjacencies: HashMap<ProvinceId, HashSet<ProvinceId>>,
     /// Set of directed river crossings (from, to) that apply combat penalty
-    #[serde(default)]
+    #[serde(skip)]
     pub river_crossings: HashSet<(ProvinceId, ProvinceId)>,
+    /// Straits: (from, to) -> sea zone that must be controlled to cross
+    /// These are sea-type adjacencies with a `through` province
+    #[serde(skip)]
+    pub straits: HashMap<(ProvinceId, ProvinceId), ProvinceId>,
 }
 
 impl AdjacencyGraph {
@@ -30,6 +34,7 @@ impl AdjacencyGraph {
         Self {
             adjacencies: HashMap::new(),
             river_crossings: HashSet::new(),
+            straits: HashMap::new(),
         }
     }
 
@@ -60,6 +65,17 @@ impl AdjacencyGraph {
     /// River crossings apply a -1 dice penalty to the attacker in combat.
     pub fn is_river_crossing(&self, from: ProvinceId, to: ProvinceId) -> bool {
         self.river_crossings.contains(&(from, to))
+    }
+
+    /// Get the sea zone that must be controlled to cross a strait.
+    ///
+    /// Returns Some(sea_zone_id) if the movement crosses a strait, None otherwise.
+    /// Straits can be blocked by enemy fleets in the sea zone.
+    pub fn get_strait_sea_zone(&self, from: ProvinceId, to: ProvinceId) -> Option<ProvinceId> {
+        self.straits
+            .get(&(from, to))
+            .or_else(|| self.straits.get(&(to, from)))
+            .copied()
     }
 
     /// Get total number of provinces in the graph.
@@ -331,6 +347,7 @@ impl CacheableResource for AdjacencyGraph {
             log::info!("Loaded {} adjacency entries", entries.len());
 
             let mut river_count = 0;
+            let mut strait_count = 0;
             for entry in entries {
                 // Add adjacency for all types (straits, rivers, land, etc.)
                 graph.add_adjacency(entry.from, entry.to);
@@ -341,10 +358,22 @@ impl CacheableResource for AdjacencyGraph {
                     graph.river_crossings.insert((entry.to, entry.from));
                     river_count += 1;
                 }
+
+                // Track straits (sea-type with through province)
+                if entry.strait_type == "sea"
+                    && let Some(sea_zone) = entry.through
+                {
+                    graph.straits.insert((entry.from, entry.to), sea_zone);
+                    graph.straits.insert((entry.to, entry.from), sea_zone);
+                    strait_count += 1;
+                }
             }
 
             if river_count > 0 {
                 log::info!("Detected {} river crossings", river_count);
+            }
+            if strait_count > 0 {
+                log::info!("Detected {} straits", strait_count);
             }
         }
 

@@ -131,9 +131,16 @@ pub fn step_world(
         m.combat_time += combat_start.elapsed();
     }
 
+    // Naval combat runs daily (whenever fleets are engaged)
+    let naval_combat_start = Instant::now();
+    crate::systems::run_naval_combat_tick(&mut new_state);
+    if let Some(m) = metrics.as_mut() {
+        m.combat_time += naval_combat_start.elapsed(); // Count as combat time
+    }
+
     // Siege runs daily (progress siege phases and dice rolls)
     let siege_start = Instant::now();
-    crate::systems::run_siege_tick(&mut new_state);
+    crate::systems::run_siege_tick(&mut new_state, adjacency);
     if let Some(m) = metrics.as_mut() {
         m.combat_time += siege_start.elapsed(); // Count as combat time
     }
@@ -204,6 +211,9 @@ pub fn step_world(
 
         // Recalculate war scores monthly
         crate::systems::recalculate_war_scores(&mut new_state);
+
+        // Coalition formation and AE decay
+        crate::systems::run_coalition_tick(&mut new_state);
 
         // Auto-end wars after 10 years (stalemate prevention)
         auto_end_stale_wars(&mut new_state);
@@ -664,17 +674,29 @@ pub fn available_commands(
                 for neighbor in graph.neighbors(army.location) {
                     if can_army_enter(state, country_tag, neighbor) {
                         // Check Zone of Control - forts block movement through adjacent provinces
-                        if !state.is_blocked_by_zoc(
+                        if state.is_blocked_by_zoc(
                             army.location,
                             neighbor,
                             country_tag,
                             Some(graph),
                         ) {
-                            available.push(Command::Move {
-                                army_id: *army_id,
-                                destination: neighbor,
-                            });
+                            continue; // ZoC blocked
                         }
+
+                        // Check strait blocking - enemy fleets in sea zones block crossing
+                        if state.is_strait_blocked(
+                            army.location,
+                            neighbor,
+                            country_tag,
+                            Some(graph),
+                        ) {
+                            continue; // Strait blocked by enemy fleet
+                        }
+
+                        available.push(Command::Move {
+                            army_id: *army_id,
+                            destination: neighbor,
+                        });
                     }
                 }
             }
@@ -1071,6 +1093,14 @@ fn execute_command(
                 });
             }
 
+            // Check strait blocking - enemy fleets in sea zones block crossing
+            if state.is_strait_blocked(current_location, *destination, country_tag, adjacency) {
+                return Err(ActionError::NoMilitaryAccess {
+                    province: *destination,
+                    owner: "Strait blocked by enemy fleet".to_string(),
+                });
+            }
+
             // Set movement path
             // TODO: Handle edge case where start == destination (empty path).
             // Currently wastes 10 ticks doing nothing. Should skip movement initialization.
@@ -1293,7 +1323,14 @@ fn execute_command(
                 .map(|a| a.regiments.len() as u32)
                 .sum();
 
-            if current_capacity_used + army_size > fleet.transport_capacity {
+            // Calculate transport capacity from transport ships (1 ship = 1 regiment)
+            let transport_capacity = fleet
+                .ships
+                .iter()
+                .filter(|s| s.type_ == crate::state::ShipType::Transport)
+                .count() as u32;
+
+            if current_capacity_used + army_size > transport_capacity {
                 return Err(ActionError::InsufficientCapacity);
             }
 
@@ -2020,7 +2057,64 @@ fn calculate_peace_terms_cost(
     }
 }
 
-/// Executes peace terms (province transfers, country elimination).
+/// Apply aggressive expansion to all countries when provinces are conquered.
+///
+/// AE impact:
+/// - 1 AE per 1 development conquered
+/// - Applied to all countries in the world
+/// - Higher impact on neighbors and countries with good relations
+fn apply_aggressive_expansion(state: &mut WorldState, conqueror: &str, provinces: &[ProvinceId]) {
+    // Calculate total development conquered
+    let total_dev: i64 = provinces
+        .iter()
+        .filter_map(|&prov_id| {
+            state
+                .provinces
+                .get(&prov_id)
+                .map(|p| (p.base_tax + p.base_production + p.base_manpower).0)
+        })
+        .sum();
+
+    if total_dev == 0 {
+        return;
+    }
+
+    let ae_per_dev = Fixed::ONE; // 1 AE per 1 dev
+    let total_ae = Fixed::from_int(total_dev) * ae_per_dev;
+
+    // Apply AE to all countries
+    let country_tags: Vec<String> = state.countries.keys().cloned().collect();
+    for tag in country_tags {
+        if tag == conqueror {
+            continue; // Don't apply AE to self
+        }
+
+        if let Some(country) = state.countries.get_mut(&tag) {
+            let ae = country
+                .aggressive_expansion
+                .entry(conqueror.to_string())
+                .or_insert(Fixed::ZERO);
+            *ae += total_ae;
+
+            log::debug!(
+                "{} gains {} AE toward {} (total: {})",
+                tag,
+                total_ae.to_f32(),
+                conqueror,
+                ae.to_f32()
+            );
+        }
+    }
+
+    log::info!(
+        "{} gained {} AE from conquering {} development across {} provinces",
+        conqueror,
+        total_ae.to_f32(),
+        total_dev,
+        provinces.len()
+    );
+}
+
 fn execute_peace_terms(
     state: &mut WorldState,
     war_id: u32,
@@ -2064,6 +2158,9 @@ fn execute_peace_terms(
                     log::info!("Province {} transferred to {}", prov_id, new_owner);
                 }
             }
+
+            // Apply aggressive expansion for conquered provinces
+            apply_aggressive_expansion(state, &new_owner, provinces);
         }
         PeaceTerms::FullAnnexation => {
             // Transfer ALL enemy provinces to winner
@@ -2075,14 +2172,19 @@ fn execute_peace_terms(
             let new_owner = winner_tags.first().cloned().unwrap_or_default();
 
             let province_ids: Vec<u32> = state.provinces.keys().copied().collect();
+            let mut conquered_provinces = Vec::new();
             for prov_id in province_ids {
                 if let Some(prov) = state.provinces.get_mut(&prov_id) {
                     if prov.owner.as_ref().is_some_and(|o| loser_tags.contains(o)) {
                         prov.owner = Some(new_owner.clone());
                         prov.controller = Some(new_owner.clone());
+                        conquered_provinces.push(prov_id);
                     }
                 }
             }
+
+            // Apply aggressive expansion for all conquered provinces
+            apply_aggressive_expansion(state, &new_owner, &conquered_provinces);
 
             // Remove annexed countries
             for tag in &loser_tags {
@@ -3067,6 +3169,406 @@ mod tests {
                 }
             )),
             "Should not allow ZoC-blocked move to province 3"
+        );
+    }
+
+    // ========================================================================
+    // Strait Blocking Tests
+    // ========================================================================
+
+    #[test]
+    fn test_strait_blocked_by_enemy_fleet() {
+        use crate::fixed::Fixed;
+        use crate::state::{Fleet, ProvinceState, Ship, ShipType, Terrain};
+        use eu4data::adjacency::AdjacencyGraph;
+
+        // Setup: Provinces 1 and 3 are separated by sea zone 2 (a strait)
+        // DEF has a fleet in the sea zone
+        // ATK army at province 1, wants to move to province 3
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("ATK")
+            .with_country("DEF")
+            .with_province_state(
+                1,
+                ProvinceState {
+                    owner: Some("ATK".to_string()),
+                    controller: Some("ATK".to_string()),
+                    ..Default::default()
+                },
+            )
+            .with_province_state(
+                2,
+                ProvinceState {
+                    terrain: Some(Terrain::Sea),
+                    ..Default::default()
+                },
+            )
+            .with_province_state(
+                3,
+                ProvinceState {
+                    owner: Some("DEF".to_string()),
+                    controller: Some("DEF".to_string()),
+                    ..Default::default()
+                },
+            )
+            .build();
+
+        // Declare war
+        execute_command(
+            &mut state,
+            "ATK",
+            &Command::DeclareWar {
+                target: "DEF".to_string(),
+                cb: None,
+            },
+            None,
+        )
+        .unwrap();
+
+        // Create enemy fleet in the strait sea zone
+        state.fleets.insert(
+            1,
+            Fleet {
+                id: 1,
+                name: "DEF Fleet".to_string(),
+                owner: "DEF".to_string(),
+                location: 2, // Sea zone
+                ships: vec![Ship {
+                    type_: ShipType::HeavyShip,
+                    hull: Fixed::from_int(100),
+                    durability: Fixed::from_f32(eu4data::defines::naval::BASE_DURABILITY),
+                }],
+                embarked_armies: vec![],
+                movement: None,
+                admiral: None,
+                in_battle: None,
+            },
+        );
+
+        // Create adjacency graph with strait: 1 <-sea(2)-> 3
+        let mut graph = AdjacencyGraph::new();
+        graph.add_adjacency(1, 3);
+        graph.straits.insert((1, 3), 2);
+        graph.straits.insert((3, 1), 2);
+
+        // Test strait blocking: 1 -> 3 blocked by fleet at 2
+        assert!(
+            state.is_strait_blocked(1, 3, "ATK", Some(&graph)),
+            "Movement across strait should be blocked by enemy fleet"
+        );
+
+        // Test reverse direction also blocked
+        assert!(
+            state.is_strait_blocked(3, 1, "ATK", Some(&graph)),
+            "Reverse movement across strait should also be blocked"
+        );
+    }
+
+    #[test]
+    fn test_strait_not_blocked_without_enemy_fleet() {
+        use crate::state::{ProvinceState, Terrain};
+        use eu4data::adjacency::AdjacencyGraph;
+
+        // Same setup as above, but no enemy fleet in the sea zone
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("ATK")
+            .with_country("DEF")
+            .with_province_state(
+                1,
+                ProvinceState {
+                    owner: Some("ATK".to_string()),
+                    ..Default::default()
+                },
+            )
+            .with_province_state(
+                2,
+                ProvinceState {
+                    terrain: Some(Terrain::Sea),
+                    ..Default::default()
+                },
+            )
+            .with_province_state(
+                3,
+                ProvinceState {
+                    owner: Some("DEF".to_string()),
+                    ..Default::default()
+                },
+            )
+            .build();
+
+        // Declare war
+        execute_command(
+            &mut state,
+            "ATK",
+            &Command::DeclareWar {
+                target: "DEF".to_string(),
+                cb: None,
+            },
+            None,
+        )
+        .unwrap();
+
+        // Create adjacency graph with strait (no fleet)
+        let mut graph = AdjacencyGraph::new();
+        graph.add_adjacency(1, 3);
+        graph.straits.insert((1, 3), 2);
+        graph.straits.insert((3, 1), 2);
+
+        // Test strait NOT blocked: 1 -> 3 should be allowed
+        assert!(
+            !state.is_strait_blocked(1, 3, "ATK", Some(&graph)),
+            "Movement across strait should be allowed without enemy fleet"
+        );
+    }
+
+    #[test]
+    fn test_strait_not_blocked_by_allied_fleet() {
+        use crate::fixed::Fixed;
+        use crate::state::{Fleet, ProvinceState, RelationType, Ship, ShipType, Terrain};
+        use eu4data::adjacency::AdjacencyGraph;
+
+        // Setup: ATK and NOR are allies, NOR fleet in strait
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("ATK")
+            .with_country("NOR")
+            .with_province_state(
+                1,
+                ProvinceState {
+                    owner: Some("ATK".to_string()),
+                    ..Default::default()
+                },
+            )
+            .with_province_state(
+                2,
+                ProvinceState {
+                    terrain: Some(Terrain::Sea),
+                    ..Default::default()
+                },
+            )
+            .with_province_state(
+                3,
+                ProvinceState {
+                    owner: Some("NOR".to_string()),
+                    ..Default::default()
+                },
+            )
+            .build();
+
+        // Create alliance
+        state.diplomacy.relations.insert(
+            ("ATK".to_string(), "NOR".to_string()),
+            RelationType::Alliance,
+        );
+
+        // Create allied fleet in the strait
+        state.fleets.insert(
+            1,
+            Fleet {
+                id: 1,
+                name: "NOR Fleet".to_string(),
+                owner: "NOR".to_string(),
+                location: 2,
+                ships: vec![Ship {
+                    type_: ShipType::HeavyShip,
+                    hull: Fixed::from_int(100),
+                    durability: Fixed::from_f32(eu4data::defines::naval::BASE_DURABILITY),
+                }],
+                embarked_armies: vec![],
+                movement: None,
+                admiral: None,
+                in_battle: None,
+            },
+        );
+
+        // Create adjacency graph
+        let mut graph = AdjacencyGraph::new();
+        graph.add_adjacency(1, 3);
+        graph.straits.insert((1, 3), 2);
+
+        // Test strait NOT blocked by allied fleet
+        assert!(
+            !state.is_strait_blocked(1, 3, "ATK", Some(&graph)),
+            "Movement should not be blocked by allied fleet"
+        );
+    }
+
+    #[test]
+    fn test_strait_not_blocked_during_peace() {
+        use crate::fixed::Fixed;
+        use crate::state::{Fleet, ProvinceState, Ship, ShipType, Terrain};
+        use eu4data::adjacency::AdjacencyGraph;
+
+        // Setup: ATK and DEF at peace, DEF fleet in strait
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("ATK")
+            .with_country("DEF")
+            .with_province_state(
+                1,
+                ProvinceState {
+                    owner: Some("ATK".to_string()),
+                    ..Default::default()
+                },
+            )
+            .with_province_state(
+                2,
+                ProvinceState {
+                    terrain: Some(Terrain::Sea),
+                    ..Default::default()
+                },
+            )
+            .with_province_state(
+                3,
+                ProvinceState {
+                    owner: Some("DEF".to_string()),
+                    ..Default::default()
+                },
+            )
+            .build();
+
+        // Create DEF fleet (but no war)
+        state.fleets.insert(
+            1,
+            Fleet {
+                id: 1,
+                name: "DEF Fleet".to_string(),
+                owner: "DEF".to_string(),
+                location: 2,
+                ships: vec![Ship {
+                    type_: ShipType::HeavyShip,
+                    hull: Fixed::from_int(100),
+                    durability: Fixed::from_f32(eu4data::defines::naval::BASE_DURABILITY),
+                }],
+                embarked_armies: vec![],
+                movement: None,
+                admiral: None,
+                in_battle: None,
+            },
+        );
+
+        // Create adjacency graph
+        let mut graph = AdjacencyGraph::new();
+        graph.add_adjacency(1, 3);
+        graph.straits.insert((1, 3), 2);
+
+        // Test strait NOT blocked during peacetime
+        assert!(
+            !state.is_strait_blocked(1, 3, "ATK", Some(&graph)),
+            "Movement should not be blocked during peacetime"
+        );
+    }
+
+    #[test]
+    fn test_strait_blocking_filters_available_commands() {
+        use crate::fixed::Fixed;
+        use crate::state::{
+            Army, Fleet, ProvinceState, Regiment, RegimentType, Ship, ShipType, Terrain,
+        };
+        use eu4data::adjacency::AdjacencyGraph;
+
+        // Setup: ATK army at province 1, strait to province 3, DEF fleet blocking
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("ATK")
+            .with_country("DEF")
+            .with_province_state(
+                1,
+                ProvinceState {
+                    owner: Some("ATK".to_string()),
+                    ..Default::default()
+                },
+            )
+            .with_province_state(
+                2,
+                ProvinceState {
+                    terrain: Some(Terrain::Sea),
+                    ..Default::default()
+                },
+            )
+            .with_province_state(
+                3,
+                ProvinceState {
+                    owner: Some("DEF".to_string()),
+                    ..Default::default()
+                },
+            )
+            .build();
+
+        // Declare war
+        execute_command(
+            &mut state,
+            "ATK",
+            &Command::DeclareWar {
+                target: "DEF".to_string(),
+                cb: None,
+            },
+            None,
+        )
+        .unwrap();
+
+        // Create army at province 1
+        state.armies.insert(
+            1,
+            Army {
+                id: 1,
+                name: "ATK Army".to_string(),
+                owner: "ATK".to_string(),
+                location: 1,
+                previous_location: None,
+                regiments: vec![Regiment {
+                    type_: RegimentType::Infantry,
+                    strength: Fixed::from_int(1000),
+                    morale: Fixed::from_f32(eu4data::defines::combat::BASE_MORALE),
+                }],
+                general: None,
+                movement: None,
+                embarked_on: None,
+                in_battle: None,
+            },
+        );
+
+        // Create enemy fleet blocking the strait
+        state.fleets.insert(
+            1,
+            Fleet {
+                id: 1,
+                name: "DEF Fleet".to_string(),
+                owner: "DEF".to_string(),
+                location: 2,
+                ships: vec![Ship {
+                    type_: ShipType::HeavyShip,
+                    hull: Fixed::from_int(100),
+                    durability: Fixed::from_f32(eu4data::defines::naval::BASE_DURABILITY),
+                }],
+                embarked_armies: vec![],
+                movement: None,
+                admiral: None,
+                in_battle: None,
+            },
+        );
+
+        // Create adjacency graph
+        let mut graph = AdjacencyGraph::new();
+        graph.add_adjacency(1, 3);
+        graph.straits.insert((1, 3), 2);
+        graph.straits.insert((3, 1), 2);
+
+        // Get available commands
+        let commands = available_commands(&state, "ATK", Some(&graph));
+
+        // Should NOT include Move to 3 (strait blocked)
+        assert!(
+            !commands.iter().any(|cmd| matches!(
+                cmd,
+                Command::Move {
+                    army_id: 1,
+                    destination: 3
+                }
+            )),
+            "Should not allow strait-blocked move to province 3"
         );
     }
 

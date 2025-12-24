@@ -173,3 +173,40 @@ pub mod attrition {
     /// Additional attrition in hostile (enemy) territory
     pub const HOSTILE_ATTRITION: f32 = 1.0;
 }
+
+/// Naval combat constants
+pub mod naval {
+    /// Days per naval combat phase (EU4: 3 days per phase, same as land)
+    pub const DAYS_PER_PHASE: u8 = 3;
+
+    /// Base durability for all ships (EU4: 1.0)
+    pub const BASE_DURABILITY: f32 = 1.0;
+
+    // === Ship Combat Values ===
+    // Heavy ships (best in open sea)
+    pub const HEAVY_SHIP_FIRE: f32 = 1.0;
+    pub const HEAVY_SHIP_SHOCK: f32 = 0.0;
+    pub const HEAVY_SHIP_HULL_SIZE: u32 = 50; // Base hull size
+
+    // Light ships (trade protection, weak combat)
+    pub const LIGHT_SHIP_FIRE: f32 = 0.2;
+    pub const LIGHT_SHIP_SHOCK: f32 = 0.1;
+    pub const LIGHT_SHIP_HULL_SIZE: u32 = 10;
+
+    // Galleys (best in inland seas)
+    pub const GALLEY_FIRE: f32 = 0.1;
+    pub const GALLEY_SHOCK: f32 = 0.8;
+    pub const GALLEY_HULL_SIZE: u32 = 20;
+
+    // Transports (no combat value)
+    pub const TRANSPORT_FIRE: f32 = 0.0;
+    pub const TRANSPORT_SHOCK: f32 = 0.0;
+    pub const TRANSPORT_HULL_SIZE: u32 = 5;
+
+    /// Durability damage as fraction of hull damage dealt
+    pub const DURABILITY_DAMAGE_MULTIPLIER: f32 = 0.01;
+
+    /// Dice range (0-9 in EU4, same as land combat)
+    pub const DICE_MIN: u8 = 0;
+    pub const DICE_MAX: u8 = 9;
+}

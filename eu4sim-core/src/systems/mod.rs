@@ -1,6 +1,7 @@
 //! Simulation systems.
 
 pub mod attrition;
+pub mod coalitions;
 pub mod colonization;
 pub mod combat;
 pub mod coring;
@@ -10,6 +11,7 @@ pub mod institutions;
 pub mod mana;
 pub mod manpower;
 pub mod movement;
+pub mod naval_combat;
 pub mod production;
 pub mod reformation;
 pub mod siege;
@@ -22,6 +24,7 @@ pub mod trade_value;
 pub mod war_score;
 
 pub use attrition::run_attrition_tick;
+pub use coalitions::run_coalition_tick;
 pub use colonization::run_colonization_tick;
 pub use combat::run_combat_tick;
 pub use coring::{
@@ -33,6 +36,7 @@ pub use institutions::{embrace_institution, tick_institution_spread};
 pub use mana::run_mana_tick;
 pub use manpower::run_manpower_tick;
 pub use movement::run_movement_tick;
+pub use naval_combat::run_naval_combat_tick;
 pub use production::{run_production_tick, EconomyConfig};
 pub use reformation::run_reformation_tick;
 pub use siege::{run_siege_tick, start_occupation};

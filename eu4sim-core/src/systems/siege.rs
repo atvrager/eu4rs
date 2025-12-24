@@ -16,7 +16,17 @@ use eu4data::defines::siege as defines;
 
 /// Run daily siege tick for all active sieges.
 /// Called once per day in the simulation tick.
-pub fn run_siege_tick(state: &mut WorldState) {
+///
+/// The adjacency graph is optional - if provided, blockade detection will be enabled.
+pub fn run_siege_tick(
+    state: &mut WorldState,
+    adjacency: Option<&eu4data::adjacency::AdjacencyGraph>,
+) {
+    // Update blockade status for all sieges
+    if let Some(adj) = adjacency {
+        update_blockade_status(state, adj);
+    }
+
     let siege_provinces: Vec<ProvinceId> = state.sieges.keys().cloned().collect();
 
     for province_id in siege_provinces {
@@ -201,7 +211,7 @@ fn start_siege(state: &mut WorldState, province_id: ProvinceId, attacker: &str, 
         progress_modifier: 0, // Starts at 0, increases each failed phase
         days_in_phase: 0,
         start_date: state.date,
-        is_blockaded: false, // TODO: Check for naval blockade
+        is_blockaded: false, // Updated each tick by update_blockade_status()
         breached: false,
     };
 
@@ -347,6 +357,86 @@ fn apply_starvation(state: &mut WorldState, province_id: ProvinceId) {
             complete_siege(state, province_id);
         }
     }
+}
+
+// ============================================================================
+// Blockade Detection
+// ============================================================================
+
+/// Update blockade status for all active sieges.
+fn update_blockade_status(state: &mut WorldState, adjacency: &eu4data::adjacency::AdjacencyGraph) {
+    let siege_provinces: Vec<ProvinceId> = state.sieges.keys().cloned().collect();
+
+    for province_id in siege_provinces {
+        let is_blockaded = check_blockade(state, adjacency, province_id);
+        if let Some(siege) = state.sieges.get_mut(&province_id) {
+            siege.is_blockaded = is_blockaded;
+        }
+    }
+}
+
+/// Check if a province is blockaded by attacker fleets.
+///
+/// A province is blockaded if:
+/// 1. It is coastal (has adjacent sea zones)
+/// 2. All adjacent sea zones have attacker fleets (or allied fleets)
+///
+/// Blockades provide +1 siege bonus and cause garrison starvation.
+/// Sea control is determined by fleet presence - any fleet in a sea zone controls it.
+fn check_blockade(
+    state: &WorldState,
+    adjacency: &eu4data::adjacency::AdjacencyGraph,
+    province_id: ProvinceId,
+) -> bool {
+    let siege = match state.sieges.get(&province_id) {
+        Some(s) => s,
+        None => return false,
+    };
+
+    let defender = match state
+        .provinces
+        .get(&province_id)
+        .and_then(|p| p.owner.as_ref())
+    {
+        Some(d) => d,
+        None => return false,
+    };
+
+    // Get all adjacent sea zones
+    let neighbors = adjacency.neighbors(province_id);
+    let adjacent_seas: Vec<ProvinceId> = neighbors
+        .iter()
+        .filter(|&&neighbor_id| {
+            state
+                .provinces
+                .get(&neighbor_id)
+                .map(|p| p.is_sea)
+                .unwrap_or(false)
+        })
+        .copied()
+        .collect();
+
+    // If no adjacent seas, can't be blockaded
+    if adjacent_seas.is_empty() {
+        return false;
+    }
+
+    // Check if all adjacent sea zones have attacker fleets (or allied fleets at war with defender)
+    for sea_zone in adjacent_seas {
+        let has_attacker_fleet = state.fleets.values().any(|fleet| {
+            fleet.location == sea_zone
+                && (fleet.owner == siege.attacker
+                    || state.diplomacy.are_at_war(&fleet.owner, defender))
+        });
+
+        // If any sea zone lacks attacker fleet presence, not fully blockaded
+        if !has_attacker_fleet {
+            return false;
+        }
+    }
+
+    // All adjacent sea zones have attacker fleets - province is blockaded
+    true
 }
 
 // ============================================================================

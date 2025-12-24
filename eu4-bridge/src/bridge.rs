@@ -150,6 +150,7 @@ impl ExtractedState {
             peace_offer_cooldowns: Default::default(),
             pending_call_to_arms: Default::default(),
             overextension: Fixed::ZERO, // Can't extract from OCR yet
+            aggressive_expansion: Default::default(), // Can't extract from OCR yet
         };
 
         VisibleWorldState {

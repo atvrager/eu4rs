@@ -295,8 +295,12 @@ pub fn load_initial_state(
             // Combat system
             generals: ImHashMap::default(),
             next_general_id: 1,
+            admirals: ImHashMap::default(),
+            next_admiral_id: 1,
             battles: ImHashMap::default(),
             next_battle_id: 1,
+            naval_battles: ImHashMap::default(),
+            next_naval_battle_id: 1,
             sieges: ImHashMap::default(),
             next_siege_id: 1,
             // Trade system

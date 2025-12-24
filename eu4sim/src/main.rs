@@ -186,8 +186,12 @@ fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGra
         // Combat system
         generals: Default::default(),
         next_general_id: 1,
+        admirals: Default::default(),
+        next_admiral_id: 1,
         battles: Default::default(),
         next_battle_id: 1,
+        naval_battles: Default::default(),
+        next_naval_battle_id: 1,
         sieges: Default::default(),
         next_siege_id: 1,
         // Trade system
