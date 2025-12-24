@@ -162,6 +162,18 @@ impl ExtractedState {
             enemy_provinces: Default::default(),
             known_country_strength: Default::default(),
             our_war_score: Default::default(),
+            // Warfare fields (all TODO for OCR extraction)
+            own_generals: Default::default(),
+            armies_without_general: Default::default(),
+            own_fleets: Default::default(),
+            blocked_straits: Default::default(),
+            province_supply: Default::default(),
+            army_locations: Default::default(),
+            own_ae: Default::default(),
+            coalition_against_us: Default::default(),
+            fort_provinces: Default::default(),
+            active_sieges: Default::default(),
+            pending_call_to_arms: Default::default(),
         }
     }
 }

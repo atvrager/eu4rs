@@ -859,6 +859,115 @@ fn main() -> Result<()> {
                         .map(|(k, v)| (k.clone(), *v))
                         .collect();
 
+                    // Build warfare-aware fields
+                    let own_generals: Vec<eu4sim_core::ai::GeneralSummary> = state
+                        .generals
+                        .values()
+                        .filter(|g| g.owner == *tag)
+                        .map(|g| {
+                            let assigned_to = state
+                                .armies
+                                .values()
+                                .find(|a| a.general == Some(g.id))
+                                .map(|a| a.id);
+                            eu4sim_core::ai::GeneralSummary {
+                                id: g.id,
+                                fire: g.fire,
+                                shock: g.shock,
+                                maneuver: g.maneuver,
+                                siege: g.siege,
+                                assigned_to,
+                            }
+                        })
+                        .collect();
+
+                    let armies_without_general: Vec<u32> = state
+                        .armies
+                        .values()
+                        .filter(|a| a.owner == *tag && a.general.is_none())
+                        .map(|a| a.id)
+                        .collect();
+
+                    let own_fleets: Vec<eu4sim_core::ai::FleetSummary> = state
+                        .fleets
+                        .values()
+                        .filter(|f| f.owner == *tag)
+                        .map(|f| eu4sim_core::ai::FleetSummary {
+                            id: f.id,
+                            location: f.location,
+                            ship_count: f.ships.len() as u32,
+                            transport_capacity: f.ships.len() as u32, // Simplified
+                            in_battle: f.in_battle.is_some(),
+                        })
+                        .collect();
+
+                    // Blocked straits (simplified - would need adjacency graph for full implementation)
+                    let blocked_straits = std::collections::HashSet::new();
+
+                    // Province supply limits and army locations
+                    let province_supply: std::collections::HashMap<u32, u32> = state
+                        .provinces
+                        .iter()
+                        .map(|(id, p)| {
+                            let dev = p.base_tax + p.base_production + p.base_manpower;
+                            (*id, dev.to_int() as u32)
+                        })
+                        .collect();
+
+                    let mut army_locations = std::collections::HashMap::new();
+                    for army in state.armies.values() {
+                        let regiment_count = army.regiments.len() as u32;
+                        *army_locations.entry(army.location).or_insert(0) += regiment_count;
+                    }
+
+                    // AE and coalitions (convert im::HashMap to std::HashMap)
+                    let own_ae: std::collections::HashMap<String, eu4sim_core::fixed::Fixed> =
+                        state
+                            .countries
+                            .get(tag)
+                            .map(|c| {
+                                c.aggressive_expansion
+                                    .iter()
+                                    .map(|(k, v)| (k.clone(), *v))
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+
+                    let coalition_against_us = state
+                        .diplomacy
+                        .coalitions
+                        .get(tag)
+                        .map(|c| c.members.clone());
+
+                    // Fort provinces (enemy provinces with forts)
+                    let fort_provinces: std::collections::HashSet<u32> = state
+                        .provinces
+                        .iter()
+                        .filter(|(id, p)| enemy_provinces.contains(id) && p.fort_level > 0)
+                        .map(|(id, _)| *id)
+                        .collect();
+
+                    // Active sieges
+                    let active_sieges: Vec<eu4sim_core::ai::SiegeSummary> = state
+                        .sieges
+                        .values()
+                        .filter(|s| s.attacker == *tag)
+                        .map(|s| {
+                            // Rough estimate: average 30 days per phase, 12 phases max
+                            let phases_left = 12 - s.progress_modifier.min(12);
+                            let days_estimate = (phases_left * 30) as u32;
+                            eu4sim_core::ai::SiegeSummary {
+                                province: s.province,
+                                fort_level: s.fort_level,
+                                progress_modifier: s.progress_modifier,
+                                days_remaining_estimate: days_estimate,
+                            }
+                        })
+                        .collect();
+
+                    // Pending calls-to-arms (simplified - would need relationship tracking)
+                    let pending_call_to_arms = vec![];
+
                     // Build visible state with fog-of-war filtered intelligence
                     let visible_state = eu4sim_core::ai::VisibleWorldState {
                         date: state.date,
@@ -869,6 +978,17 @@ fn main() -> Result<()> {
                         enemy_provinces,
                         known_country_strength,
                         our_war_score,
+                        own_generals,
+                        armies_without_general,
+                        own_fleets,
+                        blocked_straits,
+                        province_supply,
+                        army_locations,
+                        own_ae,
+                        coalition_against_us,
+                        fort_provinces,
+                        active_sieges,
+                        pending_call_to_arms,
                     };
 
                     // Compute available commands once - reused by AI and datagen

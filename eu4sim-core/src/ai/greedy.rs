@@ -61,26 +61,93 @@ impl GreedyAI {
                     .copied()
                     .unwrap_or(0);
 
-                // Check if own_strength >= target_strength * 1.5
-                // Using integer math: own >= target * 1.5  ⟺  own * 2 >= target * 3
-                if own_strength * 2 >= target_strength * 3 {
+                // Check coalition risk - count countries with high AE toward us
+                let ae_risk = state
+                    .own_ae
+                    .values()
+                    .filter(|ae| **ae > crate::fixed::Fixed::from_int(40))
+                    .count();
+
+                // Don't declare if coalition is forming (3+ angry countries)
+                if ae_risk >= 3 {
+                    -2000 // Coalition risk too high
+                } else if own_strength * 2 >= target_strength * 3 {
                     2000 // Strong enough to attack
                 } else {
                     -1000 // Too risky, avoid war
                 }
             }
 
+            // Tier 2.5: Leadership & Generals
+            Command::RecruitGeneral => {
+                // Only recruit during war if we have armies without generals
+                if state.at_war
+                    && state.own_country.mil_mana >= crate::fixed::Fixed::from_int(50)
+                    && !state.armies_without_general.is_empty()
+                {
+                    3000 // High priority during war
+                } else {
+                    -100 // Save mana otherwise
+                }
+            }
+
+            Command::AssignGeneral { army, .. } => {
+                // High priority to assign generals to armies that need them
+                if state.armies_without_general.contains(army) {
+                    2500 // Immediate benefit
+                } else {
+                    -100 // Army already has one
+                }
+            }
+
             // Tier 3: War Ops / Tactical Movement
             Command::Move { destination, .. } => {
-                if state.enemy_provinces.contains(destination) {
-                    1500 // Toward siege targets
+                let mut base_score = if state.enemy_provinces.contains(destination) {
+                    // Bonus for forts (priority siege targets)
+                    if state.fort_provinces.contains(destination) {
+                        2000 // Fort = high priority
+                    } else {
+                        1500 // Regular enemy province
+                    }
                 } else if state.at_war {
                     200 // Positioning
                 } else {
                     50 // Peacetime movement
+                };
+
+                // Attrition penalty: avoid stacking over supply limit
+                let supply = state
+                    .province_supply
+                    .get(destination)
+                    .copied()
+                    .unwrap_or(10);
+                let current = state.army_locations.get(destination).copied().unwrap_or(0);
+                if current >= supply {
+                    base_score -= 1000; // Heavy penalty for attrition risk
+                }
+
+                base_score
+            }
+
+            Command::MoveFleet { .. } => {
+                // Check if this position would block a strategically important strait
+                // For now, basic scoring - could be enhanced with strait awareness
+                if state.at_war {
+                    100 // Fleet positioning during war
+                } else {
+                    40 // Peacetime
                 }
             }
-            Command::MoveFleet { .. } => 40,
+
+            // Call-to-arms: honor alliances
+            Command::JoinWar { war_id, .. } => {
+                // Almost always honor alliances (affects trust)
+                if state.pending_call_to_arms.iter().any(|(w, _)| w == war_id) {
+                    1500 // High priority to maintain alliances
+                } else {
+                    -100 // Not a valid CTA
+                }
+            }
 
             // Tier 4: Economy (Mana Sinks)
             Command::DevelopProvince { dev_type, .. } => {
@@ -213,6 +280,17 @@ mod tests {
             enemy_provinces: HashSet::new(),
             known_country_strength: std::collections::HashMap::new(),
             our_war_score: std::collections::HashMap::new(),
+            own_generals: vec![],
+            armies_without_general: vec![],
+            own_fleets: vec![],
+            blocked_straits: HashSet::new(),
+            province_supply: std::collections::HashMap::new(),
+            army_locations: std::collections::HashMap::new(),
+            own_ae: std::collections::HashMap::new(),
+            coalition_against_us: None,
+            fort_provinces: HashSet::new(),
+            active_sieges: vec![],
+            pending_call_to_arms: vec![],
         }
     }
 
@@ -273,5 +351,165 @@ mod tests {
 
         // Should NOT develop if mana is low
         assert!(decisions.is_empty());
+    }
+
+    // =========================================================================
+    // Warfare Tests
+    // =========================================================================
+
+    #[test]
+    fn test_greedy_recruits_general_during_war() {
+        let ai = GreedyAI::new();
+        let mut state = dummy_state();
+        state.at_war = true;
+        state.own_country.mil_mana = crate::fixed::Fixed::from_int(100);
+        state.armies_without_general = vec![1, 2];
+
+        let cmd = Command::RecruitGeneral;
+        let score = ai.score_command(&cmd, &state);
+
+        // Should prioritize recruiting general during war
+        assert_eq!(score, 3000);
+    }
+
+    #[test]
+    fn test_greedy_skips_general_at_peace() {
+        let ai = GreedyAI::new();
+        let mut state = dummy_state();
+        state.at_war = false;
+        state.own_country.mil_mana = crate::fixed::Fixed::from_int(100);
+
+        let cmd = Command::RecruitGeneral;
+        let score = ai.score_command(&cmd, &state);
+
+        // Should NOT recruit general during peace
+        assert_eq!(score, -100);
+    }
+
+    #[test]
+    fn test_greedy_assigns_general_to_army() {
+        let ai = GreedyAI::new();
+        let mut state = dummy_state();
+        state.armies_without_general = vec![5];
+
+        let cmd = Command::AssignGeneral {
+            general: 1,
+            army: 5,
+        };
+        let score = ai.score_command(&cmd, &state);
+
+        // Should assign general to army that needs one
+        assert_eq!(score, 2500);
+    }
+
+    #[test]
+    fn test_greedy_avoids_attrition_stacking() {
+        let ai = GreedyAI::new();
+        let mut state = dummy_state();
+        state.province_supply.insert(10, 5); // Supply limit = 5
+        state.army_locations.insert(10, 5); // Already at limit
+
+        let cmd = Command::Move {
+            army_id: 1,
+            destination: 10,
+        };
+        let score = ai.score_command(&cmd, &state);
+
+        // Should heavily penalize moving to over-supplied province
+        assert!(score < 0);
+    }
+
+    #[test]
+    fn test_greedy_prioritizes_fort_sieges() {
+        let ai = GreedyAI::new();
+        let mut state = dummy_state();
+        state.enemy_provinces.insert(10);
+        state.enemy_provinces.insert(20);
+        state.fort_provinces.insert(20); // Province 20 has a fort
+
+        let move_regular = Command::Move {
+            army_id: 1,
+            destination: 10,
+        };
+        let move_fort = Command::Move {
+            army_id: 2,
+            destination: 20,
+        };
+
+        let score_regular = ai.score_command(&move_regular, &state);
+        let score_fort = ai.score_command(&move_fort, &state);
+
+        // Fort siege should score higher
+        assert!(score_fort > score_regular);
+        assert_eq!(score_fort, 2000);
+        assert_eq!(score_regular, 1500);
+    }
+
+    #[test]
+    fn test_greedy_honors_call_to_arms() {
+        let ai = GreedyAI::new();
+        let mut state = dummy_state();
+        state.pending_call_to_arms.push((42, "FRA".to_string()));
+
+        let cmd = Command::JoinWar {
+            war_id: 42,
+            side: crate::input::WarSide::Defender,
+        };
+        let score = ai.score_command(&cmd, &state);
+
+        // Should honor alliance
+        assert_eq!(score, 1500);
+    }
+
+    #[test]
+    fn test_greedy_coalition_awareness() {
+        let ai = GreedyAI::new();
+        let mut state = dummy_state();
+
+        // High AE with 3 countries
+        state
+            .own_ae
+            .insert("FRA".to_string(), crate::fixed::Fixed::from_int(50));
+        state
+            .own_ae
+            .insert("CAS".to_string(), crate::fixed::Fixed::from_int(45));
+        state
+            .own_ae
+            .insert("ENG".to_string(), crate::fixed::Fixed::from_int(42));
+
+        state.known_country_strength.insert("SWE".to_string(), 100);
+        state.known_country_strength.insert("DEN".to_string(), 30);
+
+        let cmd = Command::DeclareWar {
+            target: "DEN".to_string(),
+            cb: None,
+        };
+        let score = ai.score_command(&cmd, &state);
+
+        // Should avoid war due to coalition risk
+        assert_eq!(score, -2000);
+    }
+
+    #[test]
+    fn test_greedy_declares_war_without_coalition_risk() {
+        let ai = GreedyAI::new();
+        let mut state = dummy_state();
+
+        // Low AE
+        state
+            .own_ae
+            .insert("FRA".to_string(), crate::fixed::Fixed::from_int(20));
+
+        state.known_country_strength.insert("SWE".to_string(), 100);
+        state.known_country_strength.insert("DEN".to_string(), 30);
+
+        let cmd = Command::DeclareWar {
+            target: "DEN".to_string(),
+            cb: None,
+        };
+        let score = ai.score_command(&cmd, &state);
+
+        // Should declare war (strong + no coalition risk)
+        assert_eq!(score, 2000);
     }
 }

@@ -39,11 +39,47 @@
 
 use crate::fixed::Fixed;
 use crate::input::Command;
-use crate::state::{CountryState, Date, ProvinceId, Tag, WarId};
+use crate::state::{ArmyId, CountryState, Date, FleetId, GeneralId, ProvinceId, Tag, WarId};
 use rand::Rng;
 use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+
+// =============================================================================
+// Summary Structs for AI Visibility
+// =============================================================================
+
+/// Summary of a general for AI decision-making
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GeneralSummary {
+    pub id: GeneralId,
+    pub fire: u8,
+    pub shock: u8,
+    pub maneuver: u8,
+    pub siege: u8,
+    /// Which army this general is assigned to (None if unassigned)
+    pub assigned_to: Option<ArmyId>,
+}
+
+/// Summary of a fleet for AI decision-making
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FleetSummary {
+    pub id: FleetId,
+    pub location: ProvinceId,
+    pub ship_count: u32,
+    pub transport_capacity: u32,
+    pub in_battle: bool,
+}
+
+/// Summary of an ongoing siege for AI decision-making
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SiegeSummary {
+    pub province: ProvinceId,
+    pub fort_level: u8,
+    pub progress_modifier: i32,
+    /// Estimated days until siege completes (rough heuristic)
+    pub days_remaining_estimate: u32,
+}
 
 /// Visibility mode for AI and UI filtering
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,6 +110,53 @@ pub struct VisibleWorldState {
     /// War score for each war the observer is participating in
     /// Positive = observer is winning, negative = observer is losing
     pub our_war_score: HashMap<WarId, Fixed>,
+
+    // =========================================================================
+    // Warfare Extensions (Tier 1-3)
+    // =========================================================================
+    /// Generals owned by the observer country
+    #[serde(default)]
+    pub own_generals: Vec<GeneralSummary>,
+
+    /// Armies that currently lack a general (candidates for assignment)
+    #[serde(default)]
+    pub armies_without_general: Vec<ArmyId>,
+
+    /// Fleets owned by the observer country
+    #[serde(default)]
+    pub own_fleets: Vec<FleetSummary>,
+
+    /// Straits currently blocked by enemy fleets (from, to)
+    #[serde(default)]
+    pub blocked_straits: HashSet<(ProvinceId, ProvinceId)>,
+
+    /// Supply limit for each known province (1 regiment per development)
+    #[serde(default)]
+    pub province_supply: HashMap<ProvinceId, u32>,
+
+    /// Current regiment count per province (for attrition awareness)
+    #[serde(default)]
+    pub army_locations: HashMap<ProvinceId, u32>,
+
+    /// Aggressive expansion accumulated by the observer toward each country
+    #[serde(default)]
+    pub own_ae: HashMap<Tag, Fixed>,
+
+    /// Coalition against the observer (if one exists)
+    #[serde(default)]
+    pub coalition_against_us: Option<Vec<Tag>>,
+
+    /// Enemy provinces with forts (priority siege targets)
+    #[serde(default)]
+    pub fort_provinces: HashSet<ProvinceId>,
+
+    /// Active sieges conducted by the observer
+    #[serde(default)]
+    pub active_sieges: Vec<SiegeSummary>,
+
+    /// Pending calls-to-arms: (war_id, ally_requesting)
+    #[serde(default)]
+    pub pending_call_to_arms: Vec<(WarId, Tag)>,
 }
 
 /// Available commands for a country
@@ -110,7 +193,9 @@ pub fn categorize_command(cmd: &Command) -> CommandCategory {
         Command::DeclareWar { .. }
         | Command::OfferPeace { .. }
         | Command::AcceptPeace { .. }
-        | Command::RejectPeace { .. } => CommandCategory::Diplomatic,
+        | Command::RejectPeace { .. }
+        | Command::JoinWar { .. }
+        | Command::CallAllyToWar { .. } => CommandCategory::Diplomatic,
 
         // Military: unlimited
         Command::Move { .. }
@@ -118,13 +203,18 @@ pub fn categorize_command(cmd: &Command) -> CommandCategory {
         | Command::Embark { .. }
         | Command::Disembark { .. }
         | Command::MergeArmies { .. }
-        | Command::SplitArmy { .. } => CommandCategory::Military,
+        | Command::SplitArmy { .. }
+        | Command::RecruitGeneral
+        | Command::AssignGeneral { .. }
+        | Command::UnassignGeneral { .. }
+        | Command::RecruitRegiment { .. } => CommandCategory::Military,
 
         // Economic: unlimited
         Command::DevelopProvince { .. }
         | Command::BuyTech { .. }
         | Command::EmbraceInstitution { .. }
-        | Command::BuildInProvince { .. } => CommandCategory::Economic,
+        | Command::BuildInProvince { .. }
+        | Command::Core { .. } => CommandCategory::Economic,
 
         // Trade: unlimited
         Command::SendMerchant { .. }
@@ -276,16 +366,27 @@ pub mod tests {
     use crate::state::CountryState; // Assuming CountryState is available/constructible
 
     // Helper to create a dummy state
-    fn dummy_state() -> VisibleWorldState {
+    pub fn dummy_state() -> VisibleWorldState {
         VisibleWorldState {
             date: Date::new(1444, 11, 11),
-            observer: "SWE".to_string(), // Tag is String or similar
-            own_country: CountryState::default(), // Assuming default or minimal construction
+            observer: "SWE".to_string(),
+            own_country: CountryState::default(),
             at_war: false,
             known_countries: vec![],
             enemy_provinces: HashSet::new(),
             known_country_strength: HashMap::new(),
             our_war_score: HashMap::new(),
+            own_generals: vec![],
+            armies_without_general: vec![],
+            own_fleets: vec![],
+            blocked_straits: HashSet::new(),
+            province_supply: HashMap::new(),
+            army_locations: HashMap::new(),
+            own_ae: HashMap::new(),
+            coalition_against_us: None,
+            fort_provinces: HashSet::new(),
+            active_sieges: vec![],
+            pending_call_to_arms: vec![],
         }
     }
 
