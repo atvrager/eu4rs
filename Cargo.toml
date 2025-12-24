@@ -32,3 +32,10 @@ opt-level = 2
 
 [profile.test.package."*"]
 opt-level = 2
+
+# === CUDA 13.1 Compatibility ===
+# ug-cuda 0.5.0 uses cudarc 0.17.3 via workspace, which only supports CUDA ≤13.0
+# Use mayocream's PR branch (github.com/LaurentMazare/ug/pull/12) until merged
+[patch.crates-io]
+ug = { git = "https://github.com/mayocream/ug", branch = "bump/cudarc" }
+ug-cuda = { git = "https://github.com/mayocream/ug", branch = "bump/cudarc" }

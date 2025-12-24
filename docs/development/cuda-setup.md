@@ -21,7 +21,7 @@ cargo test -p eu4sim-ai --features cuda
 |-----------|---------|-------|
 | CUDA Toolkit | 13.0+ | From `extra/cuda` |
 | NVIDIA Driver | 580+ | Check with `nvidia-smi` |
-| cudarc | 0.18+ | Via candle git branch |
+| cudarc | 0.18.2+ | Via ug patch (see Cargo.toml) |
 
 ## Why CUDA 13?
 
@@ -29,19 +29,19 @@ We use CUDA 13 from Arch's official repos because:
 
 1. **glibc Compatibility**: Arch uses bleeding-edge glibc (2.41+) which has new math functions (`cospi`, `sinpi`, `rsqrt`) that older CUDA versions can't compile against.
 
-2. **cudarc Support**: The candle ML framework's `cudarc` bindings require 0.18+ for CUDA 13 support. We use candle from git (`main` branch) rather than crates.io 0.9.1.
+2. **cudarc Support**: The candle ML framework's `cudarc` bindings require 0.18+ for CUDA 13 support. We use candle from git (pinned to `ab6d97ec`) rather than crates.io 0.9.1.
 
 3. **Simple Setup**: The official package integrates properly with system paths and doesn't require building GCC12 from AUR.
 
 ## GPU Architecture Notes
 
-| GPU Generation | Compute Capability | BF16 Support |
-|----------------|-------------------|--------------|
-| Turing (RTX 20xx) | sm_75 | Limited |
-| Ampere (RTX 30xx) | sm_80/86 | Full |
-| Ada Lovelace (RTX 40xx) | sm_89 | Full |
+| GPU Generation | Compute Capability | CUDA Build |
+|----------------|-------------------|------------|
+| Turing (RTX 20xx) | sm_75 | ✅ |
+| Ampere (RTX 30xx) | sm_80/86 | ✅ |
+| Ada Lovelace (RTX 40xx) | sm_89 | ✅ |
 
-The test suite gracefully skips BF16 tests on Turing and older GPUs.
+All generations are supported. We pin candle to commit `ab6d97ec` which predates the MOE WMMA kernels that require Ampere+ GPUs.
 
 ## Environment Setup
 
@@ -61,15 +61,19 @@ fi
 
 ## Troubleshooting
 
-### "Unsupported cuda toolkit version"
+### "Unsupported cuda toolkit version: 13.1"
 
-**Cause**: cudarc version is too old for your CUDA toolkit.
+**Cause**: `ug-cuda` crate uses cudarc 0.17.x which only supports CUDA ≤13.0. CUDA 13.1 requires cudarc 0.18.2+.
 
-**Fix**: Ensure candle is from git, not crates.io:
+**Fix**: The workspace Cargo.toml patches ug/ug-cuda from a branch with cudarc 0.18:
 ```toml
-# eu4sim-ai/Cargo.toml
-candle-core = { git = "https://github.com/huggingface/candle", branch = "main" }
+# Cargo.toml (workspace root)
+[patch.crates-io]
+ug = { git = "https://github.com/mayocream/ug", branch = "bump/cudarc" }
+ug-cuda = { git = "https://github.com/mayocream/ug", branch = "bump/cudarc" }
 ```
+
+This uses [PR #12](https://github.com/LaurentMazare/ug/pull/12) until it's merged upstream.
 
 ### glibc header errors (`_Float32`, `cospi` undefined)
 
@@ -108,4 +112,6 @@ cargo test -p eu4sim-ai --features cuda  # Local only (requires GPU)
 
 | Date | Change |
 |------|--------|
+| 2025-12-23 | Pin candle to `ab6d97ec` (pre-MOE WMMA) for Turing GPU support |
+| 2025-12-23 | Patch ug/ug-cuda for cudarc 0.18.2 (CUDA 13.1 support) |
 | 2025-12-22 | Initial setup with CUDA 13 + candle git |
