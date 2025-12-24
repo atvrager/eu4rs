@@ -17,6 +17,7 @@ use ratatui::{
     Frame, Terminal,
 };
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::io::{self, Stdout};
 
@@ -42,6 +43,8 @@ pub struct TuiSystem {
     pub last_sim_ms: f64,
     /// Last render duration in milliseconds
     pub last_render_ms: f64,
+    /// Country tag -> RGB color mapping (from game data, fallback to hash if empty)
+    country_colors: HashMap<String, [u8; 3]>,
 }
 
 struct CachedMap {
@@ -56,6 +59,7 @@ impl TuiSystem {
         map: Option<RgbaImage>,
         lookup: Option<ProvinceLookup>,
         initial_speed: u64,
+        country_colors: HashMap<String, [u8; 3]>,
     ) -> Result<Self> {
         enable_raw_mode()?;
         let mut stdout = io::stdout();
@@ -80,6 +84,7 @@ impl TuiSystem {
             max_events: 50,
             last_sim_ms: 0.0,
             last_render_ms: 0.0,
+            country_colors,
         })
     }
 
@@ -142,6 +147,7 @@ impl TuiSystem {
         let event_log_ref = &self.event_log;
         let last_sim_ms = self.last_sim_ms;
         let last_render_ms = self.last_render_ms;
+        let country_colors_ref = &self.country_colors;
 
         self.terminal.draw(|f| {
             draw_ui(
@@ -160,6 +166,7 @@ impl TuiSystem {
                 event_log_ref,
                 last_sim_ms,
                 last_render_ms,
+                country_colors_ref,
             );
         })?;
 
@@ -291,13 +298,14 @@ fn draw_ui(
     event_log: &[String],
     last_sim_ms: f64,
     last_render_ms: f64,
+    country_colors: &HashMap<String, [u8; 3]>,
 ) {
     let block = Block::default().borders(Borders::ALL).title(" EU4 Map ");
 
     if let Some(grid) = grid {
         let inner = block.inner(map_area);
         f.render_widget(block, map_area);
-        render_map(f, inner, grid, state);
+        render_map(f, inner, grid, state, country_colors);
     } else {
         let body = Paragraph::new("Loading map...").block(block);
         f.render_widget(body, map_area);
@@ -332,7 +340,13 @@ fn draw_ui(
     f.render_widget(status_bar, status_area);
 }
 
-fn render_map(f: &mut Frame, area: Rect, grid: &[Vec<u32>], state: &WorldState) {
+fn render_map(
+    f: &mut Frame,
+    area: Rect,
+    grid: &[Vec<u32>],
+    state: &WorldState,
+    country_colors: &HashMap<String, [u8; 3]>,
+) {
     let buf = f.buffer_mut();
     for y in 0..area.height {
         let grid_row = y as usize;
@@ -342,7 +356,7 @@ fn render_map(f: &mut Frame, area: Rect, grid: &[Vec<u32>], state: &WorldState) 
                 .and_then(|r| r.get(x as usize))
                 .copied()
                 .unwrap_or(0);
-            let color = resolve_color(state, prov_id);
+            let color = resolve_color(state, prov_id, country_colors);
 
             let cell = &mut buf[(area.x + x, area.y + y)];
             cell.set_char(' ');
@@ -351,7 +365,11 @@ fn render_map(f: &mut Frame, area: Rect, grid: &[Vec<u32>], state: &WorldState) 
     }
 }
 
-fn resolve_color(state: &WorldState, prov_id: u32) -> Color {
+fn resolve_color(
+    state: &WorldState,
+    prov_id: u32,
+    country_colors: &HashMap<String, [u8; 3]>,
+) -> Color {
     if prov_id == 0 {
         return Color::Indexed(240); // Gray for invalid/border pixels
     }
@@ -366,12 +384,27 @@ fn resolve_color(state: &WorldState, prov_id: u32) -> Color {
     }
 
     match &prov.owner {
-        Some(tag) => tag_to_color(tag),
+        Some(tag) => tag_to_color(tag, country_colors),
         None => Color::Indexed(180), // Tan/brown for wasteland
     }
 }
 
-fn tag_to_color(tag: &str) -> Color {
+/// Convert RGB to nearest 256-color palette index (6x6x6 color cube)
+fn rgb_to_indexed(r: u8, g: u8, b: u8) -> u8 {
+    // 256-color palette: indices 16-231 form a 6x6x6 color cube
+    // Each channel maps 0-255 to 0-5
+    let r_idx = (r as u16 * 6 / 256) as u8;
+    let g_idx = (g as u16 * 6 / 256) as u8;
+    let b_idx = (b as u16 * 6 / 256) as u8;
+    16 + 36 * r_idx + 6 * g_idx + b_idx
+}
+
+fn tag_to_color(tag: &str, country_colors: &HashMap<String, [u8; 3]>) -> Color {
+    // Use historical color if available (converted to 256-color palette)
+    if let Some(&[r, g, b]) = country_colors.get(tag) {
+        return Color::Indexed(rgb_to_indexed(r, g, b));
+    }
+    // Fallback to hash-based color for tests or unknown countries
     let mut hasher = DefaultHasher::new();
     tag.hash(&mut hasher);
     let hash = hasher.finish();
@@ -444,17 +477,19 @@ mod tests {
     #[test]
     fn test_resolve_color_owned_province() {
         let state = make_test_world();
-        let color = resolve_color(&state, 1);
+        let empty_colors = HashMap::new();
+        let color = resolve_color(&state, 1, &empty_colors);
 
         // Should use tag-based color for owned province
-        let expected = tag_to_color("AAA");
+        let expected = tag_to_color("AAA", &empty_colors);
         assert_eq!(color, expected, "Owned province should use tag color");
     }
 
     #[test]
     fn test_resolve_color_ocean() {
         let state = make_test_world();
-        let color = resolve_color(&state, 2);
+        let empty_colors = HashMap::new();
+        let color = resolve_color(&state, 2, &empty_colors);
 
         // Ocean should be dark blue
         assert_eq!(
@@ -467,7 +502,8 @@ mod tests {
     #[test]
     fn test_resolve_color_wasteland() {
         let state = make_test_world();
-        let color = resolve_color(&state, 3);
+        let empty_colors = HashMap::new();
+        let color = resolve_color(&state, 3, &empty_colors);
 
         // Wasteland (no owner, not sea) should be tan/brown
         assert_eq!(
@@ -480,7 +516,8 @@ mod tests {
     #[test]
     fn test_resolve_color_unknown_province() {
         let state = make_test_world();
-        let color = resolve_color(&state, 0);
+        let empty_colors = HashMap::new();
+        let color = resolve_color(&state, 0, &empty_colors);
 
         // Province ID 0 (invalid/border pixels) should be gray
         assert_eq!(
@@ -493,7 +530,8 @@ mod tests {
     #[test]
     fn test_resolve_color_missing_province() {
         let state = make_test_world();
-        let color = resolve_color(&state, 999);
+        let empty_colors = HashMap::new();
+        let color = resolve_color(&state, 999, &empty_colors);
 
         // Province not in state (map edges, etc.) should be gray
         assert_eq!(
@@ -505,19 +543,35 @@ mod tests {
 
     #[test]
     fn test_tag_to_color_consistency() {
-        // Same tag should always produce same color
-        let color1 = tag_to_color("FRA");
-        let color2 = tag_to_color("FRA");
+        // Same tag should always produce same color (hash fallback)
+        let empty_colors = HashMap::new();
+        let color1 = tag_to_color("FRA", &empty_colors);
+        let color2 = tag_to_color("FRA", &empty_colors);
         assert_eq!(color1, color2, "Tag color should be deterministic");
     }
 
     #[test]
     fn test_tag_to_color_different_tags() {
         // Different tags should (usually) produce different colors
-        let fra = tag_to_color("FRA");
-        let eng = tag_to_color("ENG");
+        let empty_colors = HashMap::new();
+        let fra = tag_to_color("FRA", &empty_colors);
+        let eng = tag_to_color("ENG", &empty_colors);
         // Not strictly guaranteed but very likely with hash function
         assert_ne!(fra, eng, "Different tags should produce different colors");
+    }
+
+    #[test]
+    fn test_tag_to_color_uses_historical() {
+        // When historical colors are available, use them (converted to 256-color)
+        let mut colors = HashMap::new();
+        colors.insert("FRA".to_string(), [20, 50, 120]); // Blue-ish France
+        let color = tag_to_color("FRA", &colors);
+        // RGB(20, 50, 120) -> indices (0, 1, 2) -> 16 + 36*0 + 6*1 + 2 = 24
+        assert_eq!(
+            color,
+            Color::Indexed(rgb_to_indexed(20, 50, 120)),
+            "Should use historical color converted to 256-color palette"
+        );
     }
 
     #[test]

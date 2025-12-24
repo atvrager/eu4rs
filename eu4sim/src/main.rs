@@ -685,7 +685,30 @@ fn main() -> Result<()> {
                 None
             }
         };
-        Some(tui::TuiSystem::new(map, lookup, args.speed)?)
+        // Load country colors from game data (fallback to hash if unavailable)
+        let country_colors: std::collections::HashMap<String, [u8; 3]> =
+            match eu4data::countries::load_tags(&game_path) {
+                Ok(tags) => eu4data::countries::load_country_map(&game_path, &tags)
+                    .into_iter()
+                    .filter_map(|(tag, country)| {
+                        if country.color.len() >= 3 {
+                            Some((tag, [country.color[0], country.color[1], country.color[2]]))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect(),
+                Err(e) => {
+                    log::warn!("Failed to load country colors: {}", e);
+                    std::collections::HashMap::new()
+                }
+            };
+        Some(tui::TuiSystem::new(
+            map,
+            lookup,
+            args.speed,
+            country_colors,
+        )?)
     } else {
         None
     };
