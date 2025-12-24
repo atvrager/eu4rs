@@ -296,6 +296,7 @@ mod tests {
                 current_war_enemy_strength: 0,
                 our_army_sizes: HashMap::new(),
                 our_army_provinces: HashMap::new(),
+                staging_provinces: HashSet::new(),
             },
             available_commands: vec![
                 Command::Pass,

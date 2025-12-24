@@ -143,6 +143,8 @@ impl Timeline {
             GameEvent::PeaceAnnexation { tick, .. } => *tick,
             GameEvent::CountryEliminated { tick, .. } => *tick,
             GameEvent::ProvinceOwnerChanged { tick, .. } => *tick,
+            GameEvent::BattleFought { tick, .. } => *tick,
+            GameEvent::SiegeCompleted { tick, .. } => *tick,
         }
     }
 

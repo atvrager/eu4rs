@@ -230,10 +230,24 @@ fn format_gp_events(
     inputs: &[PlayerInputs],
     great_powers: &HashSet<String>,
     state: &WorldState,
+    prev_state: Option<&WorldState>,
 ) -> Vec<String> {
     use eu4sim_core::input::Command;
     let mut events = Vec::new();
     let date_str = format!("{}", state.date);
+
+    // Helper to find war name from either current or previous state
+    let find_war_name = |war_id: &u32| -> &str {
+        state
+            .diplomacy
+            .wars
+            .get(war_id)
+            .map(|w| w.name.as_str())
+            .or_else(|| {
+                prev_state.and_then(|prev| prev.diplomacy.wars.get(war_id).map(|w| w.name.as_str()))
+            })
+            .unwrap_or("unknown war")
+    };
 
     for input in inputs {
         // Only log events from Great Powers
@@ -280,11 +294,27 @@ fn format_gp_events(
                         date_str, input.country, inf, cav, art, owner
                     ))
                 }
-                Command::AcceptPeace { .. } => {
-                    Some(format!("[{}] {} → Accepted peace", date_str, input.country))
+                Command::AcceptPeace { war_id } => {
+                    let war_name = find_war_name(war_id);
+                    Some(format!(
+                        "[{}] {} → Accepted peace in {}",
+                        date_str, input.country, war_name
+                    ))
                 }
-                Command::OfferPeace { .. } => {
-                    Some(format!("[{}] {} → Offered peace", date_str, input.country))
+                Command::OfferPeace { war_id, terms } => {
+                    use eu4sim_core::state::PeaceTerms;
+                    let war_name = find_war_name(war_id);
+                    let terms_str = match terms {
+                        PeaceTerms::WhitePeace => "white peace".to_string(),
+                        PeaceTerms::TakeProvinces { provinces } => {
+                            format!("take {} provinces", provinces.len())
+                        }
+                        PeaceTerms::FullAnnexation => "full annexation".to_string(),
+                    };
+                    Some(format!(
+                        "[{}] {} → Offers {} in {}",
+                        date_str, input.country, terms_str, war_name
+                    ))
                 }
                 Command::JoinWar { .. } => Some(format!(
                     "[{}] {} → Joined war (honoring alliance)",
@@ -369,46 +399,56 @@ fn format_state_events(
         }
     }
 
-    // Detect siege completions (province controller changed)
+    // Detect fort siege completions (only fortified provinces, not instant occupations)
     for (&prov_id, prev_prov) in &prev_state.provinces {
         if let Some(curr_prov) = curr_state.provinces.get(&prov_id) {
-            // Controller changed (siege/occupation)
+            // Controller changed
             if prev_prov.controller != curr_prov.controller {
-                let new_controller = curr_prov
-                    .controller
-                    .as_ref()
-                    .unwrap_or(&"None".to_string())
-                    .clone();
-                let old_controller = prev_prov
-                    .controller
-                    .as_ref()
-                    .or(prev_prov.owner.as_ref())
-                    .unwrap_or(&"None".to_string())
-                    .clone();
+                // Only log if this was an actual fort siege (not instant occupation)
+                // A siege exists if there's an entry in prev_state.sieges for this province
+                let was_fort_siege = prev_state.sieges.contains_key(&prov_id);
 
-                if great_powers.contains(&new_controller) || great_powers.contains(&old_controller)
-                {
-                    events.push(format!(
-                        "[{}] {} seized province {} from {}",
-                        date_str, new_controller, prov_id, old_controller
-                    ));
+                // Only log actual fort sieges (fort_level > 0), not unfortified occupations
+                let fort_level = prev_state
+                    .sieges
+                    .get(&prov_id)
+                    .map(|s| s.fort_level)
+                    .unwrap_or(0);
+
+                if was_fort_siege && fort_level > 0 {
+                    let new_controller = curr_prov
+                        .controller
+                        .as_ref()
+                        .unwrap_or(&"None".to_string())
+                        .clone();
+                    let old_controller = prev_prov
+                        .controller
+                        .as_ref()
+                        .or(prev_prov.owner.as_ref())
+                        .unwrap_or(&"None".to_string())
+                        .clone();
+
+                    if great_powers.contains(&new_controller)
+                        || great_powers.contains(&old_controller)
+                    {
+                        events.push(format!(
+                            "[{}] {} captured fort {} (lvl {}) from {}",
+                            date_str, new_controller, prov_id, fort_level, old_controller
+                        ));
+                    }
                 }
             }
 
             // Owner changed (peace deal transfer)
             if prev_prov.owner != curr_prov.owner {
-                let new_owner = curr_prov
-                    .owner
-                    .as_ref()
-                    .unwrap_or(&"None".to_string())
-                    .clone();
-                let old_owner = prev_prov
-                    .owner
-                    .as_ref()
-                    .unwrap_or(&"None".to_string())
-                    .clone();
+                // Skip if either owner is None (unowned land, wasteland, etc.)
+                let (Some(new_owner), Some(old_owner)) =
+                    (curr_prov.owner.as_ref(), prev_prov.owner.as_ref())
+                else {
+                    continue;
+                };
 
-                if great_powers.contains(&new_owner) || great_powers.contains(&old_owner) {
+                if great_powers.contains(new_owner) || great_powers.contains(old_owner) {
                     events.push(format!(
                         "[{}] {} annexed province {} from {}",
                         date_str, new_owner, prov_id, old_owner
@@ -1246,6 +1286,26 @@ fn main() -> Result<()> {
                             acc
                         });
 
+                    // Staging provinces - friendly provinces adjacent to enemy territory
+                    // Used for army consolidation before attack
+                    let staging_provinces: std::collections::HashSet<u32> = if at_war {
+                        state
+                            .provinces
+                            .iter()
+                            .filter(|(_, p)| p.owner.as_ref() == Some(tag))
+                            .filter(|(&prov_id, _)| {
+                                // Check if any neighbor is an enemy province
+                                adjacency
+                                    .neighbors(prov_id)
+                                    .iter()
+                                    .any(|n| enemy_provinces.contains(n))
+                            })
+                            .map(|(&id, _)| id)
+                            .collect()
+                    } else {
+                        std::collections::HashSet::new()
+                    };
+
                     // Build visible state with fog-of-war filtered intelligence
                     let visible_state = eu4sim_core::ai::VisibleWorldState {
                         date: state.date,
@@ -1270,6 +1330,7 @@ fn main() -> Result<()> {
                         current_war_enemy_strength,
                         our_army_sizes,
                         our_army_provinces,
+                        staging_provinces,
                     };
 
                     // Compute available commands once - reused by AI and datagen
@@ -1355,10 +1416,22 @@ fn main() -> Result<()> {
         // Log interesting events to TUI
         if let Some(tui) = &mut tui_system {
             tui.last_sim_ms = step_ms;
-            let great_powers = calculate_top_countries(&state, 8);
+
+            // Compute great powers from BOTH prev and curr states
+            // This ensures deleted countries (e.g., annexed) are still recognized
+            let curr_great_powers = calculate_top_countries(&state, 8);
+            let great_powers: HashSet<String> = if let Some(prev) = &prev_state {
+                let prev_great_powers = calculate_top_countries(prev, 8);
+                prev_great_powers
+                    .union(&curr_great_powers)
+                    .cloned()
+                    .collect()
+            } else {
+                curr_great_powers
+            };
 
             // Command-based events (war declarations, peace offers, etc.)
-            let cmd_events = format_gp_events(&inputs, &great_powers, &state);
+            let cmd_events = format_gp_events(&inputs, &great_powers, &state, prev_state.as_ref());
             for event in cmd_events {
                 tui.log_event(event);
             }

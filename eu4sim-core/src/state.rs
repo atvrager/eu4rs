@@ -415,6 +415,8 @@ pub struct Siege {
     pub id: SiegeId,
     pub province: ProvinceId,
     pub attacker: Tag,
+    /// Original defender (controller when siege started)
+    pub defender: Tag,
     pub besieging_armies: Vec<ArmyId>,
     /// Fort level being sieged (1-8)
     pub fort_level: u8,

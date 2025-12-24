@@ -124,7 +124,7 @@ impl GreedyAI {
 
                 let mut base_score = if state.enemy_provinces.contains(destination) {
                     // Small armies should NOT move into enemy territory - consolidate first!
-                    if army_size < 5 {
+                    if army_size < 3 {
                         return -1000;
                     }
                     // Bonus for forts (priority siege targets)
@@ -134,7 +134,7 @@ impl GreedyAI {
                         1500 // Regular enemy province
                     }
                 } else if state.at_war {
-                    200 // Positioning
+                    500 // Wartime positioning is important
                 } else {
                     50 // Peacetime movement
                 };
@@ -146,6 +146,12 @@ impl GreedyAI {
                         // Bonus scales with how many troops are there
                         base_score += 500 + (friendly_regs as i32 * 50);
                     }
+                }
+
+                // Staging province bonus: during war, prefer friendly provinces adjacent to enemy
+                // This creates two-phase behavior: consolidate at border, then attack
+                if state.at_war && state.staging_provinces.contains(destination) {
+                    base_score += 800; // Strong pull toward staging areas
                 }
 
                 // Attrition penalty: avoid stacking over supply limit
@@ -221,7 +227,7 @@ impl GreedyAI {
                             {
                                 1000 // Take the provinces!
                             }
-                            crate::state::PeaceTerms::WhitePeace => 400, // Less preferred
+                            crate::state::PeaceTerms::WhitePeace => 100, // Low priority - fight first
                             _ => 500,
                         }
                     } else {
@@ -336,6 +342,7 @@ mod tests {
             current_war_enemy_strength: 0,
             our_army_sizes: std::collections::HashMap::new(),
             our_army_provinces: std::collections::HashMap::new(),
+            staging_provinces: HashSet::new(),
         }
     }
 

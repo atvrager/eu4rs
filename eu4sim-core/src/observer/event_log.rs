@@ -11,6 +11,8 @@
 //! - `peace_annexation` - War ended with full annexation
 //! - `country_eliminated` - Country removed from the game
 //! - `province_owner_changed` - Province ownership changed (for timeline reconstruction)
+//! - `battle_fought` - Land battle resolved with casualties
+//! - `siege_completed` - Fort siege completed, control changed
 //!
 //! # Future Extensions
 //!
@@ -20,12 +22,11 @@
 //! - `colony_established` - Colony reaches completion
 //! - `stability_changed` - Country stability shifts
 //! - `alliance_formed` / `alliance_broken`
-//! - `battle_fought` - Combat result summary
 //!
 //! Each event requires: new enum variant, extended `EventLogState`, detection logic.
 
 use super::{ObserverConfig, ObserverError, SimObserver, Snapshot};
-use crate::state::{ProvinceId, Tag, War, WarId};
+use crate::state::{Battle, BattleId, BattleResult, ProvinceId, Siege, Tag, War, WarId};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::io::{BufWriter, Write};
@@ -114,6 +115,37 @@ pub enum GameEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         new_owner: Option<Tag>,
     },
+
+    /// A land battle was fought and resolved.
+    BattleFought {
+        tick: u64,
+        date: String,
+        battle_id: BattleId,
+        province_id: ProvinceId,
+        /// Winning side's tag (first army's owner)
+        winner: Tag,
+        /// Losing side's tag (first army's owner)
+        loser: Tag,
+        /// Attacker casualties
+        attacker_casualties: u32,
+        /// Defender casualties
+        defender_casualties: u32,
+        /// Whether the loser was stackwiped
+        stackwiped: bool,
+    },
+
+    /// A siege completed (province control changed).
+    SiegeCompleted {
+        tick: u64,
+        date: String,
+        province_id: ProvinceId,
+        /// Country that won the siege
+        besieger: Tag,
+        /// Country that lost control
+        defender: Tag,
+        /// Fort level that was sieged
+        fort_level: u8,
+    },
 }
 
 /// Minimal snapshot of war state for comparison.
@@ -138,6 +170,63 @@ impl From<&War> for WarSnapshot {
     }
 }
 
+/// Snapshot of a battle for event detection.
+#[derive(Debug, Clone)]
+struct BattleSnapshot {
+    province: ProvinceId,
+    attacker_owner: Tag,
+    defender_owner: Tag,
+    attacker_casualties: u32,
+    defender_casualties: u32,
+    result: Option<BattleResult>,
+}
+
+impl BattleSnapshot {
+    fn from_battle(battle: &Battle, state: &crate::state::WorldState) -> Self {
+        // Get owner from first attacking/defending army
+        let attacker_owner = battle
+            .attackers
+            .first()
+            .and_then(|id| state.armies.get(id))
+            .map(|a| a.owner.clone())
+            .unwrap_or_default();
+        let defender_owner = battle
+            .defenders
+            .first()
+            .and_then(|id| state.armies.get(id))
+            .map(|a| a.owner.clone())
+            .unwrap_or_default();
+
+        Self {
+            province: battle.province,
+            attacker_owner,
+            defender_owner,
+            attacker_casualties: battle.attacker_casualties,
+            defender_casualties: battle.defender_casualties,
+            result: battle.result.clone(),
+        }
+    }
+}
+
+/// Snapshot of a siege for event detection.
+/// Note: province_id is stored as the HashMap key, not in the struct.
+#[derive(Debug, Clone)]
+struct SiegeSnapshot {
+    attacker: Tag,
+    fort_level: u8,
+    defender: Tag,
+}
+
+impl SiegeSnapshot {
+    fn from_siege(siege: &Siege, _state: &crate::state::WorldState) -> Self {
+        Self {
+            attacker: siege.attacker.clone(),
+            fort_level: siege.fort_level,
+            defender: siege.defender.clone(),
+        }
+    }
+}
+
 /// Cached state for detecting events between ticks.
 ///
 /// Stores minimal data needed for comparison, not full WorldState clones.
@@ -151,6 +240,10 @@ struct EventLogState {
     prev_country_tags: HashSet<Tag>,
     /// Province owners in the previous tick (for detecting annexation transfers)
     prev_province_owners: HashMap<ProvinceId, Option<Tag>>,
+    /// Battles in progress during the previous tick
+    prev_battles: HashMap<BattleId, BattleSnapshot>,
+    /// Sieges in progress during the previous tick
+    prev_sieges: HashMap<ProvinceId, SiegeSnapshot>,
     /// Whether this is the first tick (skip event detection)
     first_tick: bool,
 }
@@ -177,6 +270,16 @@ impl EventLogState {
             .provinces
             .iter()
             .map(|(id, prov)| (*id, prov.owner.clone()))
+            .collect();
+        self.prev_battles = state
+            .battles
+            .iter()
+            .map(|(&id, battle)| (id, BattleSnapshot::from_battle(battle, state)))
+            .collect();
+        self.prev_sieges = state
+            .sieges
+            .iter()
+            .map(|(&prov_id, siege)| (prov_id, SiegeSnapshot::from_siege(siege, state)))
             .collect();
         self.first_tick = false;
     }
@@ -293,6 +396,69 @@ impl EventLogObserver {
                         old_owner: prev_owner.clone(),
                         new_owner: current_prov.owner.clone(),
                     });
+                }
+            }
+        }
+
+        // 5. Detect completed battles
+        // A battle is complete when it existed in prev but is gone now (was removed after resolving)
+        for (battle_id, prev_battle) in &prev.prev_battles {
+            if !world.battles.contains_key(battle_id) {
+                // Battle was resolved and removed
+                if let Some(result) = &prev_battle.result {
+                    let (winner, loser, stackwiped) = match result {
+                        BattleResult::AttackerVictory { stackwiped, .. } => (
+                            prev_battle.attacker_owner.clone(),
+                            prev_battle.defender_owner.clone(),
+                            *stackwiped,
+                        ),
+                        BattleResult::DefenderVictory { stackwiped, .. } => (
+                            prev_battle.defender_owner.clone(),
+                            prev_battle.attacker_owner.clone(),
+                            *stackwiped,
+                        ),
+                        BattleResult::Draw => {
+                            // For draws, just use attacker as "winner" for logging
+                            (
+                                prev_battle.attacker_owner.clone(),
+                                prev_battle.defender_owner.clone(),
+                                false,
+                            )
+                        }
+                    };
+
+                    events.push(GameEvent::BattleFought {
+                        tick: snapshot.tick,
+                        date: world.date.to_string(),
+                        battle_id: *battle_id,
+                        province_id: prev_battle.province,
+                        winner,
+                        loser,
+                        attacker_casualties: prev_battle.attacker_casualties,
+                        defender_casualties: prev_battle.defender_casualties,
+                        stackwiped,
+                    });
+                }
+            }
+        }
+
+        // 6. Detect completed sieges
+        // A siege is complete when it existed in prev but is gone now AND controller changed
+        for (prov_id, prev_siege) in &prev.prev_sieges {
+            if !world.sieges.contains_key(prov_id) {
+                // Siege was removed - check if controller changed
+                if let Some(current_prov) = world.provinces.get(prov_id) {
+                    if current_prov.controller.as_ref() == Some(&prev_siege.attacker) {
+                        // Controller is now the besieger = successful siege
+                        events.push(GameEvent::SiegeCompleted {
+                            tick: snapshot.tick,
+                            date: world.date.to_string(),
+                            province_id: *prov_id,
+                            besieger: prev_siege.attacker.clone(),
+                            defender: prev_siege.defender.clone(),
+                            fort_level: prev_siege.fort_level,
+                        });
+                    }
                 }
             }
         }
@@ -607,6 +773,188 @@ mod tests {
         let output_str = String::from_utf8_lossy(output_data.get_ref());
         assert!(output_str.contains("\"type\":\"country_eliminated\""));
         assert!(output_str.contains("\"tag\":\"BUR\""));
+    }
+
+    #[test]
+    fn test_battle_fought_event() {
+        use crate::state::{Army, BattleLine, CombatPhase, Regiment, RegimentType};
+        use crate::Fixed;
+
+        let output = capture_output();
+        let writer: Box<dyn Write + Send> = Box::new(OutputCapture(output.clone()));
+        let observer = EventLogObserver::new(writer);
+
+        // First tick: battle in progress with result set
+        let mut state1 = WorldStateBuilder::new()
+            .with_country("FRA")
+            .with_country("ENG")
+            .build();
+
+        // Add armies
+        state1.armies.insert(
+            1,
+            Army {
+                id: 1,
+                name: "French Army".to_string(),
+                owner: "FRA".to_string(),
+                location: 100,
+                previous_location: None,
+                regiments: vec![Regiment {
+                    type_: RegimentType::Infantry,
+                    strength: Fixed::from_int(1000),
+                    morale: Fixed::from_int(4),
+                }],
+                movement: None,
+                embarked_on: None,
+                general: None,
+                in_battle: Some(1),
+                infantry_count: 1,
+                cavalry_count: 0,
+                artillery_count: 0,
+            },
+        );
+        state1.armies.insert(
+            2,
+            Army {
+                id: 2,
+                name: "English Army".to_string(),
+                owner: "ENG".to_string(),
+                location: 100,
+                previous_location: None,
+                regiments: vec![Regiment {
+                    type_: RegimentType::Infantry,
+                    strength: Fixed::from_int(1000),
+                    morale: Fixed::from_int(4),
+                }],
+                movement: None,
+                embarked_on: None,
+                general: None,
+                in_battle: Some(1),
+                infantry_count: 1,
+                cavalry_count: 0,
+                artillery_count: 0,
+            },
+        );
+
+        // Add battle with result
+        state1.battles.insert(
+            1,
+            Battle {
+                id: 1,
+                province: 100,
+                attacker_origin: None,
+                start_date: state1.date,
+                phase_day: 0,
+                phase: CombatPhase::Fire,
+                attacker_dice: 5,
+                defender_dice: 3,
+                attackers: vec![1],
+                defenders: vec![2],
+                attacker_line: BattleLine::default(),
+                defender_line: BattleLine::default(),
+                attacker_casualties: 500,
+                defender_casualties: 800,
+                result: Some(BattleResult::AttackerVictory {
+                    pursuit_casualties: 100,
+                    stackwiped: false,
+                }),
+            },
+        );
+
+        let snapshot1 = Snapshot::new(state1, 0, 0);
+        observer.on_tick(&snapshot1).unwrap();
+
+        // Second tick: battle cleaned up (removed)
+        let mut state2 = WorldStateBuilder::new()
+            .with_country("FRA")
+            .with_country("ENG")
+            .build();
+        state2.armies = state2.armies.clone(); // Keep empty armies map
+        let snapshot2 = Snapshot::new(state2, 1, 0);
+        observer.on_tick(&snapshot2).unwrap();
+
+        // Check output
+        let output_data = output.lock().unwrap();
+        let output_str = String::from_utf8_lossy(output_data.get_ref());
+        assert!(
+            output_str.contains("\"type\":\"battle_fought\""),
+            "Expected battle_fought event in output: {}",
+            output_str
+        );
+        assert!(output_str.contains("\"winner\":\"FRA\""));
+        assert!(output_str.contains("\"loser\":\"ENG\""));
+        assert!(output_str.contains("\"attacker_casualties\":500"));
+        assert!(output_str.contains("\"defender_casualties\":800"));
+    }
+
+    #[test]
+    fn test_siege_completed_event() {
+        let output = capture_output();
+        let writer: Box<dyn Write + Send> = Box::new(OutputCapture(output.clone()));
+        let observer = EventLogObserver::new(writer);
+
+        // First tick: siege in progress, controller is defender
+        let mut state1 = WorldStateBuilder::new()
+            .with_country("FRA")
+            .with_country("ENG")
+            .with_province(100, Some("ENG"))
+            .build();
+
+        // Set controller to ENG (defender)
+        if let Some(prov) = state1.provinces.get_mut(&100) {
+            prov.controller = Some("ENG".to_string());
+            prov.fort_level = 2;
+        }
+
+        // Add siege
+        state1.sieges.insert(
+            100,
+            Siege {
+                id: 1,
+                province: 100,
+                attacker: "FRA".to_string(),
+                defender: "ENG".to_string(),
+                besieging_armies: vec![1],
+                fort_level: 2,
+                garrison: 1000,
+                progress_modifier: 5,
+                days_in_phase: 20,
+                start_date: state1.date,
+                is_blockaded: false,
+                breached: false,
+            },
+        );
+
+        let snapshot1 = Snapshot::new(state1, 0, 0);
+        observer.on_tick(&snapshot1).unwrap();
+
+        // Second tick: siege completed, controller changed to attacker, siege removed
+        let mut state2 = WorldStateBuilder::new()
+            .with_country("FRA")
+            .with_country("ENG")
+            .with_province(100, Some("ENG"))
+            .build();
+
+        // Controller is now FRA (besieger won)
+        if let Some(prov) = state2.provinces.get_mut(&100) {
+            prov.controller = Some("FRA".to_string());
+        }
+        // Siege removed (not in state2.sieges)
+
+        let snapshot2 = Snapshot::new(state2, 1, 0);
+        observer.on_tick(&snapshot2).unwrap();
+
+        // Check output
+        let output_data = output.lock().unwrap();
+        let output_str = String::from_utf8_lossy(output_data.get_ref());
+        assert!(
+            output_str.contains("\"type\":\"siege_completed\""),
+            "Expected siege_completed event in output: {}",
+            output_str
+        );
+        assert!(output_str.contains("\"besieger\":\"FRA\""));
+        assert!(output_str.contains("\"defender\":\"ENG\""));
+        assert!(output_str.contains("\"fort_level\":2"));
     }
 
     /// Helper struct to capture output through Arc<Mutex<Cursor>>

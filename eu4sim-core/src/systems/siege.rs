@@ -22,6 +22,10 @@ pub fn run_siege_tick(
     state: &mut WorldState,
     adjacency: Option<&eu4data::adjacency::AdjacencyGraph>,
 ) {
+    // Cleanup completed sieges from PREVIOUS tick
+    // This ensures observers can see successful sieges for one tick before removal.
+    cleanup_completed_sieges(state);
+
     // Update blockade status for all sieges
     if let Some(adj) = adjacency {
         update_blockade_status(state, adj);
@@ -32,12 +36,13 @@ pub fn run_siege_tick(
     for province_id in siege_provinces {
         tick_siege_day(state, province_id);
     }
-
-    cleanup_completed_sieges(state);
 }
 
-/// Start siege or instant occupation based on fort status.
+/// Start siege or occupation based on fort status.
 /// Called when an army enters an enemy province.
+///
+/// For fortified provinces (fort_level > 0): Full siege mechanics with dice rolls.
+/// For unfortified provinces (fort_level = 0): Quick occupation (~30 days, 1 siege phase).
 pub fn start_occupation(
     state: &mut WorldState,
     province_id: ProvinceId,
@@ -50,19 +55,21 @@ pub fn start_occupation(
         .map(|p| p.fort_level)
         .unwrap_or(0);
 
+    // Both fortified and unfortified provinces use siege mechanics,
+    // but unfortified has high progress to complete quickly
+    start_siege(state, province_id, attacker, army_id);
+
+    // For unfortified provinces, set progress modifier high enough that any roll succeeds
+    // (need roll + progress >= 20 for fort_level=0, with roll 1-14, progress=20 guarantees success)
     if fort_level == 0 {
-        // Instant occupation for unfortified provinces
-        if let Some(province) = state.provinces.get_mut(&province_id) {
-            province.controller = Some(attacker.to_string());
+        if let Some(siege) = state.sieges.get_mut(&province_id) {
+            siege.progress_modifier = 20; // Guaranteed success on first phase
+            log::info!(
+                "Occupation started at province {} by {} (unfortified, quick completion)",
+                province_id,
+                attacker
+            );
         }
-        log::info!(
-            "Province {} instantly occupied by {}",
-            province_id,
-            attacker
-        );
-    } else {
-        // Start siege for fortified provinces
-        start_siege(state, province_id, attacker, army_id);
     }
 }
 
@@ -216,10 +223,18 @@ fn start_siege(state: &mut WorldState, province_id: ProvinceId, attacker: &str, 
         return;
     }
 
+    // Capture original defender (current controller)
+    let defender = state
+        .provinces
+        .get(&province_id)
+        .and_then(|p| p.controller.clone())
+        .unwrap_or_default();
+
     let siege = Siege {
         id: state.next_siege_id,
         province: province_id,
         attacker: attacker.to_string(),
+        defender,
         besieging_armies: vec![army_id],
         fort_level,
         garrison: fort_level as u32 * defines::GARRISON_BASE_SIZE,
@@ -473,7 +488,7 @@ mod tests {
     }
 
     #[test]
-    fn test_instant_occupation_unfortified() {
+    fn test_unfortified_occupation_starts_siege() {
         let mut state = WorldStateBuilder::new()
             .with_country("ATK")
             .with_province(1, Some("DEF"))
@@ -503,12 +518,61 @@ mod tests {
 
         start_occupation(&mut state, 1, "ATK", 1);
 
-        // Province should be instantly occupied
+        // Siege should start (not instant occupation)
+        assert!(state.sieges.contains_key(&1));
+        let siege = state.sieges.get(&1).unwrap();
+        assert_eq!(siege.fort_level, 0);
+        // Progress modifier set high (20) to guarantee first roll succeeds
+        assert_eq!(siege.progress_modifier, 20);
+        // Province not yet occupied - needs to wait for siege phase
+        assert_ne!(
+            state.provinces.get(&1).unwrap().controller,
+            Some("ATK".to_string())
+        );
+    }
+
+    #[test]
+    fn test_unfortified_occupation_completes_after_phase() {
+        use eu4data::defines::siege as defines;
+
+        let mut state = WorldStateBuilder::new()
+            .with_country("ATK")
+            .with_province(1, Some("DEF"))
+            .build();
+
+        state.provinces.get_mut(&1).unwrap().fort_level = 0;
+        state.provinces.get_mut(&1).unwrap().owner = Some("DEF".to_string());
+        state.provinces.get_mut(&1).unwrap().controller = Some("DEF".to_string());
+
+        let army = Army {
+            id: 1,
+            name: "Test Army".to_string(),
+            owner: "ATK".to_string(),
+            location: 1,
+            previous_location: None,
+            regiments: vec![make_regiment(RegimentType::Infantry, 1000)],
+            movement: None,
+            embarked_on: None,
+            general: None,
+            in_battle: None,
+            infantry_count: 0,
+            cavalry_count: 0,
+            artillery_count: 0,
+        };
+        state.armies.insert(1, army);
+
+        start_occupation(&mut state, 1, "ATK", 1);
+
+        // Run siege ticks until phase completes (30 days)
+        for _ in 0..defines::SIEGE_PHASE_DAYS {
+            run_siege_tick(&mut state, None);
+        }
+
+        // Province should now be occupied
         assert_eq!(
             state.provinces.get(&1).unwrap().controller,
             Some("ATK".to_string())
         );
-        assert!(state.sieges.is_empty());
     }
 
     #[test]

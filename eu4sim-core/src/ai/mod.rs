@@ -171,6 +171,11 @@ pub struct VisibleWorldState {
     /// Used for consolidation scoring - move toward other friendly stacks
     #[serde(default)]
     pub our_army_provinces: HashMap<ProvinceId, u32>,
+
+    /// Friendly provinces adjacent to enemy territory (staging areas)
+    /// Used for army consolidation before attack
+    #[serde(default)]
+    pub staging_provinces: HashSet<ProvinceId>,
 }
 
 /// Available commands for a country
@@ -404,6 +409,7 @@ pub mod tests {
             current_war_enemy_strength: 0,
             our_army_sizes: HashMap::new(),
             our_army_provinces: HashMap::new(),
+            staging_provinces: HashSet::new(),
         }
     }
 

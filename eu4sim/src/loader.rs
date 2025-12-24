@@ -118,15 +118,22 @@ pub fn load_initial_state(
     log::info!("Loading default map...");
     let default_map = eu4data::map::load_default_map(game_path)
         .map_err(|e| anyhow::anyhow!("Failed to load default map: {}", e))?;
-    let sea_provinces: std::collections::HashSet<u32> =
-        default_map.sea_starts.iter().copied().collect();
+    // Sea provinces include both sea_starts AND lakes (Caspian Sea, Aral Sea, etc.)
+    let sea_provinces: std::collections::HashSet<u32> = default_map
+        .sea_starts
+        .iter()
+        .chain(default_map.lakes.iter())
+        .copied()
+        .collect();
 
     // 3b. Load impassable (wasteland) provinces from climate.txt
     let wasteland_provinces = eu4data::climate::load_impassable_provinces(game_path)
         .map_err(|e| anyhow::anyhow!("Failed to load climate data: {}", e))?;
     log::info!(
-        "Loaded {} sea provinces, {} wastelands",
+        "Loaded {} sea provinces ({} seas + {} lakes), {} wastelands",
         sea_provinces.len(),
+        default_map.sea_starts.len(),
+        default_map.lakes.len(),
         wasteland_provinces.len()
     );
 
@@ -181,12 +188,15 @@ pub fn load_initial_state(
             base_tax: Fixed::from_f32(hist.base_tax.unwrap_or(0.0)),
             base_production: Fixed::from_f32(hist.base_production.unwrap_or(0.0)),
             base_manpower: Fixed::from_f32(hist.base_manpower.unwrap_or(0.0)),
+            // Note: hist.capital is the city NAME, not whether it's a country capital
+            // Country capitals are defined in country history files as province IDs
+            // TODO: Load country capitals and give them forts
             fort_level: if hist.fort_15th.unwrap_or(false) {
                 1
             } else {
                 0
             },
-            is_capital: hist.capital.is_some(),
+            is_capital: false, // TODO: Set from country history capital field
             is_mothballed: false,
             is_sea: sea_provinces.contains(&id),
             is_wasteland: wasteland_provinces.contains(&id),

@@ -177,6 +177,7 @@ impl ExtractedState {
             current_war_enemy_strength: Default::default(),
             our_army_sizes: Default::default(),
             our_army_provinces: Default::default(),
+            staging_provinces: Default::default(),
         }
     }
 }

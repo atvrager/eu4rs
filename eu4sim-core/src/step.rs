@@ -148,6 +148,9 @@ pub fn step_world(
         m.combat_time += siege_start.elapsed(); // Count as combat time
     }
 
+    // Clean up empty armies (0/0/0 strength) after combat/sieges
+    cleanup_empty_armies(&mut new_state);
+
     // Update occupation and sieges (armies in enemy territory start sieges or occupy instantly)
     let occ_start = Instant::now();
     update_occupation(&mut new_state);
@@ -199,6 +202,7 @@ pub fn step_world(
         crate::systems::run_taxation_tick(&mut new_state);
         crate::systems::run_manpower_tick(&mut new_state);
         crate::systems::run_attrition_tick(&mut new_state);
+        cleanup_empty_armies(&mut new_state); // Attrition can destroy armies
         crate::systems::run_expenses_tick(&mut new_state);
         crate::systems::run_mana_tick(&mut new_state);
         crate::systems::run_stats_tick(&mut new_state);
@@ -337,6 +341,42 @@ fn cleanup_abandoned_sieges(state: &mut WorldState) {
         if let Some(siege) = state.sieges.get_mut(&province_id) {
             siege.besieging_armies = active_armies;
         }
+    }
+}
+
+/// Remove armies that have no regiments or all regiments at zero strength.
+/// These are "ghost armies" that should not exist.
+fn cleanup_empty_armies(state: &mut WorldState) {
+    use crate::fixed::Fixed;
+
+    let armies_to_remove: Vec<ArmyId> = state
+        .armies
+        .iter()
+        .filter(|(_, army)| {
+            // Army is empty if it has no regiments
+            if army.regiments.is_empty() {
+                return true;
+            }
+            // Or if all regiments have zero strength
+            army.regiments.iter().all(|reg| reg.strength <= Fixed::ZERO)
+        })
+        .map(|(&id, _)| id)
+        .collect();
+
+    for army_id in &armies_to_remove {
+        if let Some(army) = state.armies.get(army_id) {
+            log::debug!(
+                "Removing empty army {} '{}' (owner: {})",
+                army_id,
+                army.name,
+                army.owner
+            );
+        }
+        state.armies.remove(army_id);
+    }
+
+    if !armies_to_remove.is_empty() {
+        log::info!("Cleaned up {} empty armies", armies_to_remove.len());
     }
 }
 
@@ -698,6 +738,16 @@ pub fn available_commands(
                 continue;
             }
 
+            // Skip empty armies (0/0/0 strength) - they shouldn't exist but might not be cleaned up yet
+            let total_strength: Fixed = army
+                .regiments
+                .iter()
+                .map(|r| r.strength)
+                .fold(Fixed::ZERO, |a, b| a + b);
+            if total_strength <= Fixed::ZERO {
+                continue;
+            }
+
             if army.owner == country_tag && army.movement.is_none() && army.embarked_on.is_none() {
                 for neighbor in graph.neighbors(army.location) {
                     if can_army_enter(state, country_tag, neighbor) {
@@ -849,8 +899,11 @@ pub fn available_commands(
                 && p.owner.as_ref().is_some_and(|o| enemies.contains(&o))
         });
 
+        // Don't offer peace if there's already a pending offer in this war
+        let has_pending_offer = war.pending_peace.is_some();
+
         // OfferPeace with TakeProvinces if we occupy enemy provinces, have war score, AND have a fort
-        if !occupied.is_empty() && our_score > 0 && has_occupied_fort {
+        if !has_pending_offer && !occupied.is_empty() && our_score > 0 && has_occupied_fort {
             log::info!(
                 "[PEACE] {} offering TakeProvinces in {} ({} provinces, score={})",
                 country_tag,
@@ -874,10 +927,11 @@ pub fn available_commands(
             );
         }
 
-        // WhitePeace - only offer after war has been ongoing for 6+ months
-        // Prevents frivolous early peace offers
+        // WhitePeace - only offer if losing or stalemate (war score <= 10)
+        // Also requires 6+ months of war to prevent frivolous early offers
+        // AND no pending offer already
         let war_months = state.date.months_since(&war.start_date);
-        if war_months >= 6 {
+        if !has_pending_offer && war_months >= 6 && our_score <= 10 {
             available.push(Command::OfferPeace {
                 war_id: war.id,
                 terms: PeaceTerms::WhitePeace,
@@ -3103,15 +3157,41 @@ mod tests {
             None,
         );
 
-        // Unfortified province should be instantly occupied
+        // Unfortified province should start a siege (occupations now take ~30 days)
+        assert!(
+            new_state2.sieges.contains_key(&2),
+            "Siege should start at unfortified province"
+        );
+        let siege = new_state2.sieges.get(&2).unwrap();
+        assert_eq!(siege.fort_level, 0);
+        assert_eq!(
+            siege.progress_modifier, 20,
+            "Unfortified siege should have high progress for guaranteed first-phase success"
+        );
+        // Controller not yet changed - needs to wait for siege phase
         assert_eq!(
             new_state2.provinces.get(&2).unwrap().controller,
-            Some("ATK".to_string()),
-            "Unfortified province should be instantly occupied"
+            Some("DEF".to_string()),
+            "Province not yet occupied - needs siege phase"
         );
-        assert!(
-            !new_state2.sieges.contains_key(&2),
-            "No siege should start at unfortified province"
+
+        // Run 30 more days to complete the siege phase
+        let mut state3 = new_state2;
+        for _ in 0..30 {
+            state3 = step_world(
+                &state3,
+                &[],
+                None,
+                &crate::config::SimConfig::default(),
+                None,
+            );
+        }
+
+        // Now unfortified province should be occupied
+        assert_eq!(
+            state3.provinces.get(&2).unwrap().controller,
+            Some("ATK".to_string()),
+            "Unfortified province should be occupied after siege phase"
         );
     }
 
@@ -4216,5 +4296,81 @@ mod tests {
         assert_eq!(war.defenders.len(), 3); // DEN + NOR + FIN
         assert!(war.defenders.contains(&"NOR".to_string()));
         assert!(war.defenders.contains(&"FIN".to_string()));
+    }
+
+    #[test]
+    fn test_cleanup_empty_armies() {
+        use crate::fixed::Fixed;
+        use crate::state::{Army, Regiment, RegimentType};
+
+        let mut state = WorldStateBuilder::new()
+            .with_country("TAG")
+            .with_province(1, Some("TAG"))
+            .build();
+
+        // Create an army with zero-strength regiments (ghost army)
+        state.armies.insert(
+            1,
+            Army {
+                id: 1,
+                name: "Ghost Army".to_string(),
+                owner: "TAG".to_string(),
+                location: 1,
+                previous_location: None,
+                regiments: vec![
+                    Regiment {
+                        type_: RegimentType::Infantry,
+                        strength: Fixed::ZERO,
+                        morale: Fixed::ZERO,
+                    },
+                    Regiment {
+                        type_: RegimentType::Cavalry,
+                        strength: Fixed::ZERO,
+                        morale: Fixed::ZERO,
+                    },
+                ],
+                movement: None,
+                embarked_on: None,
+                general: None,
+                in_battle: None,
+                infantry_count: 0,
+                cavalry_count: 0,
+                artillery_count: 0,
+            },
+        );
+
+        // Create a normal army with positive strength
+        state.armies.insert(
+            2,
+            Army {
+                id: 2,
+                name: "Real Army".to_string(),
+                owner: "TAG".to_string(),
+                location: 1,
+                previous_location: None,
+                regiments: vec![Regiment {
+                    type_: RegimentType::Infantry,
+                    strength: Fixed::from_int(1000),
+                    morale: Fixed::from_int(3),
+                }],
+                movement: None,
+                embarked_on: None,
+                general: None,
+                in_battle: None,
+                infantry_count: 0,
+                cavalry_count: 0,
+                artillery_count: 0,
+            },
+        );
+
+        assert_eq!(state.armies.len(), 2);
+
+        // Run cleanup
+        cleanup_empty_armies(&mut state);
+
+        // Ghost army should be removed, real army should remain
+        assert_eq!(state.armies.len(), 1);
+        assert!(state.armies.contains_key(&2));
+        assert!(!state.armies.contains_key(&1));
     }
 }

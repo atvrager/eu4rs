@@ -24,20 +24,21 @@ pub fn run_combat_tick(
     state: &mut WorldState,
     adjacency: Option<&eu4data::adjacency::AdjacencyGraph>,
 ) {
-    // 1. Check for reinforcements joining existing battles
+    // 1. Cleanup finished battles from PREVIOUS tick
+    // This ensures observers can see battles with results for one tick before removal.
+    cleanup_finished_battles(state);
+
+    // 2. Check for reinforcements joining existing battles
     process_reinforcements(state);
 
-    // 2. Start new battles where opposing armies meet
+    // 3. Start new battles where opposing armies meet
     start_new_battles(state);
 
-    // 3. Run one day for each active battle
+    // 4. Run one day for each active battle
     let battle_ids: Vec<_> = state.battles.keys().cloned().collect();
     for battle_id in battle_ids {
         tick_battle_day(state, battle_id, adjacency);
     }
-
-    // 4. Cleanup finished battles
-    cleanup_finished_battles(state);
 }
 
 // ============================================================================
@@ -318,7 +319,7 @@ fn tick_battle_day(
     apply_daily_damage(state, battle_id, adjacency);
 
     // Check for morale break / stackwipe
-    if check_battle_end(state, battle_id) {
+    if check_battle_end(state, battle_id, adjacency) {
         return;
     }
 
@@ -621,7 +622,11 @@ fn get_maneuver_bonus(state: &WorldState, army_ids: &[ArmyId]) -> i8 {
 
 /// Check if battle has ended (one side broke or was stackwiped).
 /// Returns true if battle is over.
-fn check_battle_end(state: &mut WorldState, battle_id: BattleId) -> bool {
+fn check_battle_end(
+    state: &mut WorldState,
+    battle_id: BattleId,
+    adjacency: Option<&eu4data::adjacency::AdjacencyGraph>,
+) -> bool {
     let (att_morale, att_strength, def_morale, def_strength) = {
         let battle = match state.battles.get(&battle_id) {
             Some(b) => b,
@@ -670,8 +675,8 @@ fn check_battle_end(state: &mut WorldState, battle_id: BattleId) -> bool {
         }
     };
 
-    // Apply stackwipe / pursuit casualties
-    apply_battle_result(state, battle_id, &result);
+    // Apply stackwipe / pursuit casualties and handle retreat
+    apply_battle_result(state, battle_id, &result, adjacency);
 
     // Set result
     if let Some(battle) = state.battles.get_mut(&battle_id) {
@@ -718,8 +723,13 @@ fn calculate_side_totals(state: &WorldState, line: &BattleLine) -> (Fixed, Fixed
     (avg_morale, total_strength)
 }
 
-/// Apply pursuit casualties and handle stackwipe.
-fn apply_battle_result(state: &mut WorldState, battle_id: BattleId, result: &BattleResult) {
+/// Apply pursuit casualties, handle stackwipe, and retreat losing armies.
+fn apply_battle_result(
+    state: &mut WorldState,
+    battle_id: BattleId,
+    result: &BattleResult,
+    adjacency: Option<&eu4data::adjacency::AdjacencyGraph>,
+) {
     let battle = match state.battles.get(&battle_id) {
         Some(b) => b.clone(),
         None => return,
@@ -732,8 +742,10 @@ fn apply_battle_result(state: &mut WorldState, battle_id: BattleId, result: &Bat
                 for &army_id in &battle.defenders {
                     state.armies.remove(&army_id);
                 }
+            } else {
+                // Defenders retreat
+                retreat_armies(state, &battle.defenders, battle.province, adjacency);
             }
-            // Loser retreats (would be handled by movement system)
         }
         BattleResult::DefenderVictory { stackwiped, .. } => {
             if *stackwiped {
@@ -741,9 +753,87 @@ fn apply_battle_result(state: &mut WorldState, battle_id: BattleId, result: &Bat
                 for &army_id in &battle.attackers {
                     state.armies.remove(&army_id);
                 }
+            } else {
+                // Attackers retreat
+                retreat_armies(state, &battle.attackers, battle.province, adjacency);
             }
         }
-        BattleResult::Draw => {}
+        BattleResult::Draw => {
+            // Both sides retreat
+            retreat_armies(state, &battle.attackers, battle.province, adjacency);
+            retreat_armies(state, &battle.defenders, battle.province, adjacency);
+        }
+    }
+}
+
+/// Retreat armies to an adjacent province.
+/// Prefers friendly provinces, falls back to any non-hostile province.
+fn retreat_armies(
+    state: &mut WorldState,
+    army_ids: &[ArmyId],
+    from_province: ProvinceId,
+    adjacency: Option<&eu4data::adjacency::AdjacencyGraph>,
+) {
+    let adj = match adjacency {
+        Some(a) => a,
+        None => return, // Can't retreat without adjacency info
+    };
+
+    for &army_id in army_ids {
+        let owner = match state.armies.get(&army_id) {
+            Some(a) => a.owner.clone(),
+            None => continue,
+        };
+
+        // Find retreat destination: prefer friendly, then neutral, then any land
+        let neighbors = adj.neighbors(from_province);
+        let mut retreat_dest: Option<ProvinceId> = None;
+
+        // Priority 1: Province we own/control
+        for &neighbor in neighbors.iter() {
+            if let Some(prov) = state.provinces.get(&neighbor) {
+                if prov.is_sea || prov.is_wasteland {
+                    continue;
+                }
+                if prov.controller.as_ref() == Some(&owner) || prov.owner.as_ref() == Some(&owner) {
+                    retreat_dest = Some(neighbor);
+                    break;
+                }
+            }
+        }
+
+        // Priority 2: Any non-hostile land province
+        if retreat_dest.is_none() {
+            for &neighbor in neighbors.iter() {
+                if let Some(prov) = state.provinces.get(&neighbor) {
+                    if prov.is_sea || prov.is_wasteland {
+                        continue;
+                    }
+                    // Accept any land province (even enemy) as fallback
+                    retreat_dest = Some(neighbor);
+                    break;
+                }
+            }
+        }
+
+        // Move army to retreat destination
+        if let Some(dest) = retreat_dest {
+            if let Some(army) = state.armies.get_mut(&army_id) {
+                log::debug!(
+                    "Army {} ({}) retreating from {} to {}",
+                    army_id,
+                    owner,
+                    from_province,
+                    dest
+                );
+                army.previous_location = Some(army.location);
+                army.location = dest;
+                // Shattered retreat: halve morale
+                for reg in &mut army.regiments {
+                    reg.morale = reg.morale.div(Fixed::from_int(2));
+                }
+            }
+        }
     }
 }
 
