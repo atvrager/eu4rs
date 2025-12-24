@@ -1098,6 +1098,26 @@ fn main() -> Result<()> {
                     // Pending calls-to-arms (simplified - would need relationship tracking)
                     let pending_call_to_arms = vec![];
 
+                    // Our army sizes - for Move scoring (don't move small stacks into enemy territory)
+                    let our_army_sizes: std::collections::HashMap<_, _> = state
+                        .armies
+                        .iter()
+                        .filter(|(_, a)| a.owner == *tag)
+                        .map(|(&id, a)| (id, a.regiment_count()))
+                        .collect();
+
+                    // Our army provinces - for consolidation bonus (gravitate toward friendly stacks)
+                    let our_army_provinces: std::collections::HashMap<_, _> = state
+                        .armies
+                        .iter()
+                        .filter(|(_, a)| {
+                            a.owner == *tag && a.in_battle.is_none() && a.embarked_on.is_none()
+                        })
+                        .fold(std::collections::HashMap::new(), |mut acc, (_, a)| {
+                            *acc.entry(a.location).or_default() += a.regiment_count();
+                            acc
+                        });
+
                     // Build visible state with fog-of-war filtered intelligence
                     let visible_state = eu4sim_core::ai::VisibleWorldState {
                         date: state.date,
@@ -1120,6 +1140,8 @@ fn main() -> Result<()> {
                         active_sieges,
                         pending_call_to_arms,
                         current_war_enemy_strength,
+                        our_army_sizes,
+                        our_army_provinces,
                     };
 
                     // Compute available commands once - reused by AI and datagen

@@ -116,8 +116,17 @@ impl GreedyAI {
             }
 
             // Tier 3: War Ops / Tactical Movement
-            Command::Move { destination, .. } => {
+            Command::Move {
+                army_id,
+                destination,
+            } => {
+                let army_size = state.our_army_sizes.get(army_id).copied().unwrap_or(0);
+
                 let mut base_score = if state.enemy_provinces.contains(destination) {
+                    // Small armies should NOT move into enemy territory - consolidate first!
+                    if army_size < 5 {
+                        return -1000;
+                    }
                     // Bonus for forts (priority siege targets)
                     if state.fort_provinces.contains(destination) {
                         2000 // Fort = high priority
@@ -129,6 +138,15 @@ impl GreedyAI {
                 } else {
                     50 // Peacetime movement
                 };
+
+                // Consolidation bonus: move toward provinces with friendly stacks
+                // This creates "gravitational pull" so armies cluster together
+                if let Some(&friendly_regs) = state.our_army_provinces.get(destination) {
+                    if friendly_regs > 0 && friendly_regs < 20 {
+                        // Bonus scales with how many troops are there
+                        base_score += 500 + (friendly_regs as i32 * 50);
+                    }
+                }
 
                 // Attrition penalty: avoid stacking over supply limit
                 let supply = state
@@ -307,6 +325,8 @@ mod tests {
             active_sieges: vec![],
             pending_call_to_arms: vec![],
             current_war_enemy_strength: 0,
+            our_army_sizes: std::collections::HashMap::new(),
+            our_army_provinces: std::collections::HashMap::new(),
         }
     }
 
@@ -442,6 +462,10 @@ mod tests {
         state.enemy_provinces.insert(10);
         state.enemy_provinces.insert(20);
         state.fort_provinces.insert(20); // Province 20 has a fort
+
+        // Add army sizes so Move scoring doesn't reject them as too small
+        state.our_army_sizes.insert(1, 10);
+        state.our_army_sizes.insert(2, 10);
 
         let move_regular = Command::Move {
             army_id: 1,

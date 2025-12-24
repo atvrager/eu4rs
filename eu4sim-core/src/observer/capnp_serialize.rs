@@ -294,6 +294,8 @@ mod tests {
                 active_sieges: vec![],
                 pending_call_to_arms: vec![],
                 current_war_enemy_strength: 0,
+                our_army_sizes: HashMap::new(),
+                our_army_provinces: HashMap::new(),
             },
             available_commands: vec![
                 Command::Pass,

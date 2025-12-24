@@ -162,6 +162,15 @@ pub struct VisibleWorldState {
     /// Used for war declaration heuristics - don't start new wars if overextended
     #[serde(default)]
     pub current_war_enemy_strength: u32,
+
+    /// Regiment count for each of our armies (for Move scoring)
+    #[serde(default)]
+    pub our_army_sizes: HashMap<ArmyId, u32>,
+
+    /// Provinces containing our armies, with their regiment counts
+    /// Used for consolidation scoring - move toward other friendly stacks
+    #[serde(default)]
+    pub our_army_provinces: HashMap<ProvinceId, u32>,
 }
 
 /// Available commands for a country
@@ -393,6 +402,8 @@ pub mod tests {
             active_sieges: vec![],
             pending_call_to_arms: vec![],
             current_war_enemy_strength: 0,
+            our_army_sizes: HashMap::new(),
+            our_army_provinces: HashMap::new(),
         }
     }
 

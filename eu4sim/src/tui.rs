@@ -67,8 +67,8 @@ impl TuiSystem {
         let backend = CrosstermBackend::new(stdout);
         let terminal = Terminal::new(backend)?;
 
-        // Default to Europe (roughly center of 5632x2048 map)
-        let offset = if map.is_some() { (2200, 1200) } else { (0, 0) };
+        // Default to Mediterranean view (like EU4 game start)
+        let offset = if map.is_some() { (2182, 351) } else { (0, 0) };
 
         Ok(Self {
             terminal,
@@ -78,7 +78,7 @@ impl TuiSystem {
             should_quit: false,
             speed: initial_speed,
             paused: false,
-            scale: 1.0,
+            scale: 2.1,
             offset,
             event_log: Vec::new(),
             max_events: 50,
@@ -385,7 +385,7 @@ fn resolve_color(
 
     match &prov.owner {
         Some(tag) => tag_to_color(tag, country_colors),
-        None => Color::Indexed(180), // Tan/brown for wasteland
+        None => Color::Indexed(240), // Gray for wasteland/uncolonized
     }
 }
 
@@ -505,11 +505,11 @@ mod tests {
         let empty_colors = HashMap::new();
         let color = resolve_color(&state, 3, &empty_colors);
 
-        // Wasteland (no owner, not sea) should be tan/brown
+        // Wasteland (no owner, not sea) should be gray
         assert_eq!(
             color,
-            Color::Indexed(180),
-            "Wasteland should be tan/brown (Color::Indexed(180))"
+            Color::Indexed(240),
+            "Wasteland should be gray (Color::Indexed(240))"
         );
     }
 
