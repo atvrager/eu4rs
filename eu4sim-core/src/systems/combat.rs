@@ -728,28 +728,18 @@ fn apply_battle_result(state: &mut WorldState, battle_id: BattleId, result: &Bat
     match result {
         BattleResult::AttackerVictory { stackwiped, .. } => {
             if *stackwiped {
-                // Destroy all defender regiments
+                // Stackwipe: completely destroy all defender armies
                 for &army_id in &battle.defenders {
-                    if let Some(army) = state.armies.get_mut(&army_id) {
-                        for reg in &mut army.regiments {
-                            reg.strength = Fixed::ZERO;
-                            reg.morale = Fixed::ZERO;
-                        }
-                    }
+                    state.armies.remove(&army_id);
                 }
             }
             // Loser retreats (would be handled by movement system)
         }
         BattleResult::DefenderVictory { stackwiped, .. } => {
             if *stackwiped {
-                // Destroy all attacker regiments
+                // Stackwipe: completely destroy all attacker armies
                 for &army_id in &battle.attackers {
-                    if let Some(army) = state.armies.get_mut(&army_id) {
-                        for reg in &mut army.regiments {
-                            reg.strength = Fixed::ZERO;
-                            reg.morale = Fixed::ZERO;
-                        }
-                    }
+                    state.armies.remove(&army_id);
                 }
             }
         }
@@ -801,17 +791,11 @@ fn cleanup_finished_battles(state: &mut WorldState) {
                 }
             }
 
-            // Remove dead regiments
-            for army_id in battle.attackers.iter().chain(battle.defenders.iter()) {
-                if let Some(army) = state.armies.get_mut(army_id) {
-                    army.regiments.retain(|r| r.strength > Fixed::ZERO);
-                }
-            }
+            // Note: We do NOT delete zero-strength regiments - they can be reinforced later.
+            // This matches EU4's shift+consolidate gameplay.
+            // Armies only get removed if ALL regiments are destroyed (shattered retreat edge case).
         }
     }
-
-    // Remove empty armies
-    state.armies.retain(|_, army| !army.regiments.is_empty());
 }
 
 // ============================================================================
@@ -874,6 +858,14 @@ mod tests {
     }
 
     fn make_army(id: ArmyId, owner: &str, location: ProvinceId, regiments: Vec<Regiment>) -> Army {
+        use crate::state::RegimentType;
+        let (inf, cav, art) = regiments
+            .iter()
+            .fold((0, 0, 0), |(i, c, a), r| match r.type_ {
+                RegimentType::Infantry => (i + 1, c, a),
+                RegimentType::Cavalry => (i, c + 1, a),
+                RegimentType::Artillery => (i, c, a + 1),
+            });
         Army {
             id,
             name: format!("{} Army {}", owner, id),
@@ -885,6 +877,9 @@ mod tests {
             embarked_on: None,
             general: None,
             in_battle: None,
+            infantry_count: inf,
+            cavalry_count: cav,
+            artillery_count: art,
         }
     }
 

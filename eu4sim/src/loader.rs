@@ -268,6 +268,10 @@ pub fn load_initial_state(
                     embarked_on: None,
                     general: None,
                     in_battle: None,
+                    // All regiments are infantry at game start
+                    infantry_count: reg_count as u32,
+                    cavalry_count: 0,
+                    artillery_count: 0,
                 },
             );
         }

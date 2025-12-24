@@ -293,6 +293,7 @@ mod tests {
                 fort_provinces: HashSet::new(),
                 active_sieges: vec![],
                 pending_call_to_arms: vec![],
+                current_war_enemy_strength: 0,
             },
             available_commands: vec![
                 Command::Pass,

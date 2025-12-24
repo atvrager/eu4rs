@@ -49,7 +49,7 @@ impl GreedyAI {
             // Tier 2: Expansion
             Command::StartColony { .. } => 3000,
             Command::DeclareWar { target, .. } => {
-                // Only declare war if we have 1.5x strength advantage
+                // Evaluate strength vs COMBINED enemies (current wars + new target)
                 let own_strength = state
                     .known_country_strength
                     .get(&state.observer)
@@ -61,6 +61,9 @@ impl GreedyAI {
                     .copied()
                     .unwrap_or(0);
 
+                // Total enemy strength = current war enemies + new target
+                let total_enemy_strength = state.current_war_enemy_strength + target_strength;
+
                 // Check coalition risk - count countries with high AE toward us
                 let ae_risk = state
                     .own_ae
@@ -71,10 +74,11 @@ impl GreedyAI {
                 // Don't declare if coalition is forming (3+ angry countries)
                 if ae_risk >= 3 {
                     -2000 // Coalition risk too high
-                } else if own_strength * 2 >= target_strength * 3 {
-                    2000 // Strong enough to attack
+                } else if own_strength * 2 >= total_enemy_strength * 3 {
+                    // Need 1.5x advantage over ALL enemies combined
+                    2000 // Strong enough to handle all enemies
                 } else {
-                    -1000 // Too risky, avoid war
+                    -1000 // Can't afford another war right now
                 }
             }
 
@@ -97,6 +101,17 @@ impl GreedyAI {
                     2500 // Immediate benefit
                 } else {
                     -100 // Army already has one
+                }
+            }
+
+            // Tier 2.5: Army Consolidation - merge small stacks for efficiency
+            Command::MergeArmies { army_ids } => {
+                // Consolidating armies is almost always good - reduces micro, improves combat
+                if army_ids.len() >= 2 {
+                    // Higher score for more armies merged (2 armies = 1500, 3 = 2250, etc.)
+                    1500 * (army_ids.len() as i32 - 1)
+                } else {
+                    -100 // Invalid merge
                 }
             }
 
@@ -291,6 +306,7 @@ mod tests {
             fort_provinces: HashSet::new(),
             active_sieges: vec![],
             pending_call_to_arms: vec![],
+            current_war_enemy_strength: 0,
         }
     }
 

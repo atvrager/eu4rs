@@ -167,6 +167,81 @@ pub struct Army {
     pub general: Option<GeneralId>,
     /// Active battle this army is participating in (if any)
     pub in_battle: Option<BattleId>,
+    /// Cached regiment counts by type (updated via recompute_counts)
+    #[serde(default)]
+    pub infantry_count: u32,
+    #[serde(default)]
+    pub cavalry_count: u32,
+    #[serde(default)]
+    pub artillery_count: u32,
+}
+
+impl Army {
+    /// Create a new army with correct cached counts computed from regiments.
+    pub fn new(
+        id: ArmyId,
+        name: String,
+        owner: Tag,
+        location: ProvinceId,
+        regiments: Vec<Regiment>,
+    ) -> Self {
+        let (inf, cav, art) = regiments
+            .iter()
+            .fold((0, 0, 0), |(i, c, a), r| match r.type_ {
+                RegimentType::Infantry => (i + 1, c, a),
+                RegimentType::Cavalry => (i, c + 1, a),
+                RegimentType::Artillery => (i, c, a + 1),
+            });
+        Self {
+            id,
+            name,
+            owner,
+            location,
+            previous_location: None,
+            regiments,
+            movement: None,
+            embarked_on: None,
+            general: None,
+            in_battle: None,
+            infantry_count: inf,
+            cavalry_count: cav,
+            artillery_count: art,
+        }
+    }
+
+    /// Recompute cached regiment counts from the regiments vec.
+    /// Call this after any modification to regiments.
+    pub fn recompute_counts(&mut self) {
+        let mut inf = 0u32;
+        let mut cav = 0u32;
+        let mut art = 0u32;
+        for reg in &self.regiments {
+            match reg.type_ {
+                RegimentType::Infantry => inf += 1,
+                RegimentType::Cavalry => cav += 1,
+                RegimentType::Artillery => art += 1,
+            }
+        }
+        self.infantry_count = inf;
+        self.cavalry_count = cav;
+        self.artillery_count = art;
+    }
+
+    /// Returns (infantry, cavalry, artillery) counts.
+    #[inline]
+    pub fn composition(&self) -> (u32, u32, u32) {
+        (
+            self.infantry_count,
+            self.cavalry_count,
+            self.artillery_count,
+        )
+    }
+
+    /// Total regiment count.
+    #[inline]
+    pub fn regiment_count(&self) -> u32 {
+        self.infantry_count + self.cavalry_count + self.artillery_count
+    }
 }
 
 /// Naval transport fleet.

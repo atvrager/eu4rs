@@ -86,13 +86,11 @@ fn calculate_supply_limit(state: &WorldState, province_id: ProvinceId) -> u32 {
 
 /// Count total regiments in a province (across all armies).
 fn count_regiments_in_province(state: &WorldState, army_ids: &[ArmyId]) -> u32 {
-    let mut count = 0;
-    for &army_id in army_ids {
-        if let Some(army) = state.armies.get(&army_id) {
-            count += army.regiments.len() as u32;
-        }
-    }
-    count
+    army_ids
+        .iter()
+        .filter_map(|&id| state.armies.get(&id))
+        .map(|army| army.regiment_count())
+        .sum()
 }
 
 /// Check if any army in the province is in hostile territory.
@@ -162,6 +160,9 @@ mod tests {
             embarked_on: None,
             general: None,
             in_battle: None,
+            infantry_count: 10,
+            cavalry_count: 0,
+            artillery_count: 0,
         };
         state.armies.insert(1, army);
 
@@ -206,6 +207,9 @@ mod tests {
             embarked_on: None,
             general: None,
             in_battle: None,
+            infantry_count: 30,
+            cavalry_count: 0,
+            artillery_count: 0,
         };
         state.armies.insert(1, army);
 
@@ -254,6 +258,9 @@ mod tests {
             embarked_on: None,
             general: None,
             in_battle: None,
+            infantry_count: 30,
+            cavalry_count: 0,
+            artillery_count: 0,
         };
         state.armies.insert(1, army);
 
@@ -318,6 +325,9 @@ mod tests {
             embarked_on: None,
             general: None,
             in_battle: None,
+            infantry_count: 30,
+            cavalry_count: 0,
+            artillery_count: 0,
         };
         state.armies.insert(1, army);
 
@@ -382,6 +392,9 @@ mod tests {
             embarked_on: Some(1), // Embarked on fleet 1
             general: None,
             in_battle: None,
+            infantry_count: 0,
+            cavalry_count: 0,
+            artillery_count: 0,
         };
         state.armies.insert(1, army);
 

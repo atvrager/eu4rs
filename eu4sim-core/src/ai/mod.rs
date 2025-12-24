@@ -157,6 +157,11 @@ pub struct VisibleWorldState {
     /// Pending calls-to-arms: (war_id, ally_requesting)
     #[serde(default)]
     pub pending_call_to_arms: Vec<(WarId, Tag)>,
+
+    /// Total military strength (regiment count) of all current war enemies
+    /// Used for war declaration heuristics - don't start new wars if overextended
+    #[serde(default)]
+    pub current_war_enemy_strength: u32,
 }
 
 /// Available commands for a country
@@ -387,6 +392,7 @@ pub mod tests {
             fort_provinces: HashSet::new(),
             active_sieges: vec![],
             pending_call_to_arms: vec![],
+            current_war_enemy_strength: 0,
         }
     }
 

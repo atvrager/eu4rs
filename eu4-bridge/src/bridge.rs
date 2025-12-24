@@ -174,6 +174,7 @@ impl ExtractedState {
             fort_provinces: Default::default(),
             active_sieges: Default::default(),
             pending_call_to_arms: Default::default(),
+            current_war_enemy_strength: Default::default(),
         }
     }
 }

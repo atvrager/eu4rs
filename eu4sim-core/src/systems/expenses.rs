@@ -109,6 +109,9 @@ mod tests {
             embarked_on: None,
             general: None,
             in_battle: None,
+            infantry_count: 0,
+            cavalry_count: 0,
+            artillery_count: 0,
         };
         state.armies.insert(1, army);
 

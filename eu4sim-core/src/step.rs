@@ -2,7 +2,8 @@ use crate::fixed::Fixed;
 use crate::input::{Command, DevType, PlayerInputs};
 use crate::metrics::SimMetrics;
 use crate::state::{
-    ArmyId, MovementState, PeaceTerms, PendingPeace, ProvinceId, TechType, WorldState,
+    ArmyId, GeneralId, MovementState, PeaceTerms, PendingPeace, ProvinceId, Regiment, TechType,
+    WorldState,
 };
 use std::time::Instant;
 use thiserror::Error;
@@ -86,6 +87,8 @@ pub enum ActionError {
     NoHomeNode,
     #[error("Coring failed: {message}")]
     CoringFailed { message: String },
+    #[error("Invalid command: {message}")]
+    InvalidCommand { message: String },
 }
 
 /// Advance the world by one tick.
@@ -719,6 +722,33 @@ pub fn available_commands(
         }
     }
 
+    // MergeArmies: When 2+ friendly armies are in the same province
+    {
+        use std::collections::HashMap;
+        let mut armies_by_location: HashMap<ProvinceId, Vec<ArmyId>> = HashMap::new();
+
+        for (army_id, army) in &state.armies {
+            // Only consider stationary, non-embarked, non-battling armies owned by this country
+            if army.owner == country_tag
+                && army.movement.is_none()
+                && army.embarked_on.is_none()
+                && army.in_battle.is_none()
+            {
+                armies_by_location
+                    .entry(army.location)
+                    .or_default()
+                    .push(*army_id);
+            }
+        }
+
+        // Generate MergeArmies for provinces with 2+ armies
+        for (_location, army_ids) in armies_by_location {
+            if army_ids.len() >= 2 {
+                available.push(Command::MergeArmies { army_ids });
+            }
+        }
+    }
+
     // 4. Diplomatic Actions - Words can be as sharp as any blade. ✧
     // First month immunity - don't offer war declarations in first 30 days
     const START_DATE_EPOCH: i64 = 310; // 1444.11.11 in days from 1444.01.01
@@ -917,11 +947,18 @@ fn execute_command(
                         strength: Fixed::from_int(1000),
                         morale: Fixed::from_f32(eu4data::defines::combat::BASE_MORALE),
                     });
+                    army.recompute_counts();
                 }
             } else {
                 // Create new army
                 let army_id = state.next_army_id;
                 state.next_army_id += 1;
+                // Set initial counts based on unit type
+                let (inf, cav, art) = match unit_type {
+                    crate::state::RegimentType::Infantry => (1, 0, 0),
+                    crate::state::RegimentType::Cavalry => (0, 1, 0),
+                    crate::state::RegimentType::Artillery => (0, 0, 1),
+                };
                 state.armies.insert(
                     army_id,
                     crate::state::Army {
@@ -939,6 +976,9 @@ fn execute_command(
                         embarked_on: None,
                         general: None,
                         in_battle: None,
+                        infantry_count: inf,
+                        cavalry_count: cav,
+                        artillery_count: art,
                     },
                 );
             }
@@ -1315,12 +1355,12 @@ fn execute_command(
             }
 
             // Check capacity (1 regiment = 1 capacity)
-            let army_size = army.regiments.len() as u32;
+            let army_size = army.regiment_count();
             let current_capacity_used: u32 = fleet
                 .embarked_armies
                 .iter()
                 .filter_map(|aid| state.armies.get(aid))
-                .map(|a| a.regiments.len() as u32)
+                .map(|a| a.regiment_count())
                 .sum();
 
             // Calculate transport capacity from transport ships (1 ship = 1 regiment)
@@ -1708,8 +1748,87 @@ fn execute_command(
         // ===== STUB COMMANDS (Phase 2+) =====
         // These commands are defined but not yet implemented.
         // They log a warning and return Ok(()) to allow graceful degradation.
-        Command::MergeArmies { .. } => {
-            log::warn!("MergeArmies not implemented yet");
+        Command::MergeArmies { army_ids } => {
+            // Validation: need at least 2 armies to merge
+            if army_ids.len() < 2 {
+                return Err(ActionError::InvalidCommand {
+                    message: "MergeArmies requires at least 2 armies".to_string(),
+                });
+            }
+
+            // Validate all armies exist, same owner, same location, not in battle
+            let mut location: Option<ProvinceId> = None;
+            for &army_id in army_ids {
+                let army = state
+                    .armies
+                    .get(&army_id)
+                    .ok_or(ActionError::InvalidCommand {
+                        message: format!("Army {} does not exist", army_id),
+                    })?;
+
+                if army.owner != country_tag {
+                    return Err(ActionError::InvalidCommand {
+                        message: format!("Army {} is not owned by {}", army_id, country_tag),
+                    });
+                }
+
+                if army.in_battle.is_some() {
+                    return Err(ActionError::InvalidCommand {
+                        message: format!("Army {} is in battle and cannot be merged", army_id),
+                    });
+                }
+
+                match location {
+                    None => location = Some(army.location),
+                    Some(loc) if loc != army.location => {
+                        return Err(ActionError::InvalidCommand {
+                            message: "All armies must be in the same province to merge".to_string(),
+                        });
+                    }
+                    _ => {}
+                }
+            }
+
+            // Find the best general among all merging armies (highest total pips)
+            let best_general: Option<GeneralId> = army_ids
+                .iter()
+                .filter_map(|&id| state.armies.get(&id)?.general)
+                .filter_map(|gid| state.generals.get(&gid).map(|g| (gid, g)))
+                .max_by_key(|(_, g)| {
+                    g.fire as u16 + g.shock as u16 + g.maneuver as u16 + g.siege as u16
+                })
+                .map(|(gid, _)| gid);
+
+            // Collect all regiments from armies to be merged (excluding the target)
+            let target_id = army_ids[0];
+            let mut all_regiments: Vec<Regiment> = Vec::new();
+
+            for &army_id in &army_ids[1..] {
+                if let Some(army) = state.armies.get(&army_id) {
+                    all_regiments.extend(army.regiments.clone());
+                }
+            }
+
+            // Remove merged-from armies (all except target)
+            for &army_id in &army_ids[1..] {
+                state.armies.remove(&army_id);
+            }
+
+            // Update target army: add regiments, assign best general
+            if let Some(target) = state.armies.get_mut(&target_id) {
+                target.regiments.extend(all_regiments);
+                target.general = best_general;
+                target.recompute_counts();
+
+                log::info!(
+                    "{} merged {} armies into army {} ({} regiments total)",
+                    country_tag,
+                    army_ids.len(),
+                    target_id,
+                    target.regiment_count()
+                );
+            }
+
             Ok(())
         }
         Command::SplitArmy { .. } => {
@@ -2818,6 +2937,9 @@ mod tests {
                 embarked_on: None,
                 general: None,
                 in_battle: None,
+                infantry_count: 0,
+                cavalry_count: 0,
+                artillery_count: 0,
             },
         );
 
@@ -2867,6 +2989,9 @@ mod tests {
                 embarked_on: None,
                 general: None,
                 in_battle: None,
+                infantry_count: 0,
+                cavalry_count: 0,
+                artillery_count: 0,
             },
         );
 
@@ -3135,6 +3260,9 @@ mod tests {
                 embarked_on: None,
                 general: None,
                 in_battle: None,
+                infantry_count: 0,
+                cavalry_count: 0,
+                artillery_count: 0,
             },
         );
 
@@ -3527,6 +3655,9 @@ mod tests {
                 movement: None,
                 embarked_on: None,
                 in_battle: None,
+                infantry_count: 0,
+                cavalry_count: 0,
+                artillery_count: 0,
             },
         );
 

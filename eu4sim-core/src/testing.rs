@@ -158,6 +158,39 @@ impl Default for WorldStateBuilder {
     }
 }
 
+/// Create a test army with correct cached regiment counts.
+/// Use this instead of manual Army struct construction in tests.
+pub fn make_test_army(
+    id: crate::state::ArmyId,
+    owner: &str,
+    location: ProvinceId,
+    regiments: Vec<crate::state::Regiment>,
+) -> crate::state::Army {
+    use crate::state::RegimentType;
+    let (inf, cav, art) = regiments
+        .iter()
+        .fold((0, 0, 0), |(i, c, a), r| match r.type_ {
+            RegimentType::Infantry => (i + 1, c, a),
+            RegimentType::Cavalry => (i, c + 1, a),
+            RegimentType::Artillery => (i, c, a + 1),
+        });
+    crate::state::Army {
+        id,
+        name: format!("{} Army {}", owner, id),
+        owner: owner.to_string(),
+        location,
+        previous_location: None,
+        regiments,
+        movement: None,
+        embarked_on: None,
+        general: None,
+        in_battle: None,
+        infantry_count: inf,
+        cavalry_count: cav,
+        artillery_count: art,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

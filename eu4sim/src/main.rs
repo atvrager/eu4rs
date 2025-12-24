@@ -139,6 +139,9 @@ fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGra
             embarked_on: None,
             general: None,
             in_battle: None,
+            infantry_count: 1,
+            cavalry_count: 0,
+            artillery_count: 0,
         },
     );
     armies.insert(
@@ -158,6 +161,9 @@ fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGra
             embarked_on: None,
             general: None,
             in_battle: None,
+            infantry_count: 1,
+            cavalry_count: 0,
+            artillery_count: 0,
         },
     );
 
@@ -248,21 +254,29 @@ fn format_gp_events(
                     "[{}] {} → Assigned general to army #{}",
                     date_str, input.country, army
                 )),
-                Command::Move { destination, .. }
-                    if state
-                        .provinces
-                        .get(destination)
-                        .and_then(|p| p.owner.as_ref())
-                        .is_some_and(|owner| state.diplomacy.are_at_war(&input.country, owner)) =>
+                Command::Move {
+                    army_id,
+                    destination,
+                } if state
+                    .provinces
+                    .get(destination)
+                    .and_then(|p| p.owner.as_ref())
+                    .is_some_and(|owner| state.diplomacy.are_at_war(&input.country, owner)) =>
                 {
                     let owner = state
                         .provinces
                         .get(destination)
                         .and_then(|p| p.owner.as_ref())
                         .unwrap();
+                    // Use cached I/C/A composition
+                    let (inf, cav, art) = state
+                        .armies
+                        .get(army_id)
+                        .map(|army| army.composition())
+                        .unwrap_or((0, 0, 0));
                     Some(format!(
-                        "[{}] {} → Moving army into {} territory",
-                        date_str, input.country, owner
+                        "[{}] {} → Moving army ({}/{}/{} I/C/A) into {} territory",
+                        date_str, input.country, inf, cav, art, owner
                     ))
                 }
                 Command::AcceptPeace { .. } => {
@@ -858,7 +872,7 @@ fn main() -> Result<()> {
             // Pre-compute global army strength (O(armies), shared across all AIs)
             let global_strength: HashMap<String, u32> =
                 state.armies.values().fold(HashMap::new(), |mut acc, army| {
-                    *acc.entry(army.owner.clone()).or_default() += army.regiments.len() as u32;
+                    *acc.entry(army.owner.clone()).or_default() += army.regiment_count();
                     acc
                 });
 
@@ -952,6 +966,23 @@ fn main() -> Result<()> {
                         }
                     }
 
+                    // Calculate total strength of all current war enemies
+                    let current_war_enemy_strength: u32 = state
+                        .diplomacy
+                        .wars
+                        .values()
+                        .filter(|war| war.attackers.contains(tag) || war.defenders.contains(tag))
+                        .flat_map(|war| {
+                            let is_attacker = war.attackers.contains(tag);
+                            if is_attacker {
+                                war.defenders.iter().collect::<Vec<_>>()
+                            } else {
+                                war.attackers.iter().collect()
+                            }
+                        })
+                        .filter_map(|enemy| global_strength.get(enemy))
+                        .sum();
+
                     // Filter strength to only known countries (fog of war)
                     let known_country_strength: HashMap<String, u32> = global_strength
                         .iter()
@@ -1016,8 +1047,7 @@ fn main() -> Result<()> {
 
                     let mut army_locations = std::collections::HashMap::new();
                     for army in state.armies.values() {
-                        let regiment_count = army.regiments.len() as u32;
-                        *army_locations.entry(army.location).or_insert(0) += regiment_count;
+                        *army_locations.entry(army.location).or_insert(0) += army.regiment_count();
                     }
 
                     // AE and coalitions (convert im::HashMap to std::HashMap)
@@ -1089,6 +1119,7 @@ fn main() -> Result<()> {
                         fort_provinces,
                         active_sieges,
                         pending_call_to_arms,
+                        current_war_enemy_strength,
                     };
 
                     // Compute available commands once - reused by AI and datagen
