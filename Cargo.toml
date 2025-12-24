@@ -10,6 +10,8 @@ members = [
     "eu4sim-ai",
     "eu4-bridge",
     "game_pathfinding",
+    "eu4tokens",
+    "eu4sim-verify",
 ]
 resolver = "2"
 

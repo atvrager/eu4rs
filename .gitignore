@@ -33,3 +33,7 @@ scripts/__pycache__/
 *.zip
 *.safetensors
 debug/
+
+# Derived token files
+assets/tokens/
+*.tokens.txt

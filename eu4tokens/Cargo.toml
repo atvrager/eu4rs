@@ -1,0 +1,17 @@
+[package]
+name = "eu4tokens"
+version = "0.1.0"
+edition = "2021"
+description = "Extract binary token mappings from EU4 game files"
+
+[[bin]]
+name = "eu4tokens"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+goblin = "0.8"
+memmap2 = "0.9"
+anyhow = "1.0"
+log = "0.4"
+env_logger = "0.11"
