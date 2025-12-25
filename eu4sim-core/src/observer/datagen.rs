@@ -65,7 +65,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::io::{BufWriter, Write};
 use std::path::Path;
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc::{self, Sender, SyncSender};
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 use zip::write::SimpleFileOptions;
@@ -104,9 +104,10 @@ enum WriterMessage {
         /// Already-serialized bytes (parallel serialization happened on main thread)
         data: Vec<u8>,
     },
-    /// Binary samples for a given year (will be serialized by writer thread)
+    /// Binary samples for a given year-month (will be serialized by writer thread)
     BinarySamples {
         year: i32,
+        month: u8,
         /// Raw samples to serialize as Cap'n Proto
         samples: Vec<TrainingSample>,
     },
@@ -125,8 +126,9 @@ enum OutputMode {
         handle: Option<JoinHandle<()>>,
     },
     /// Async binary (Cap'n Proto) archive mode with background writer thread
+    /// Uses SyncSender for backpressure to prevent OOM with large datasets
     AsyncBinaryArchive {
-        sender: Sender<WriterMessage>,
+        sender: SyncSender<WriterMessage>,
         /// Handle to join the writer thread on shutdown
         handle: Option<JoinHandle<()>>,
     },
@@ -234,16 +236,19 @@ impl ArchiveWriter {
 /// Background writer thread state for binary (Cap'n Proto) archives
 struct BinaryArchiveWriter {
     zip: ZipWriter<std::fs::File>,
-    current_year: Option<i32>,
-    year_samples: Vec<TrainingSample>,
+    /// Current (year, month) being buffered
+    current_period: Option<(i32, u8)>,
+    /// Samples buffered for current month (reduced from yearly to avoid OOM)
+    month_samples: Vec<TrainingSample>,
 }
 
 impl BinaryArchiveWriter {
     fn new(file: std::fs::File) -> Self {
         Self {
             zip: ZipWriter::new(file),
-            current_year: None,
-            year_samples: Vec::with_capacity(10_000), // Expect ~10k samples per year
+            current_period: None,
+            // ~20k samples per month with 666 countries × 30 days
+            month_samples: Vec::with_capacity(20_000),
         }
     }
 
@@ -251,8 +256,12 @@ impl BinaryArchiveWriter {
     fn run(mut self, receiver: mpsc::Receiver<WriterMessage>) {
         while let Ok(msg) = receiver.recv() {
             match msg {
-                WriterMessage::BinarySamples { year, samples } => {
-                    if let Err(e) = self.handle_samples(year, samples) {
+                WriterMessage::BinarySamples {
+                    year,
+                    month,
+                    samples,
+                } => {
+                    if let Err(e) = self.handle_samples(year, month, samples) {
                         log::error!("BinaryArchiveWriter error: {}", e);
                     }
                 }
@@ -269,35 +278,43 @@ impl BinaryArchiveWriter {
         }
     }
 
-    /// Buffer samples for the current year
-    fn handle_samples(&mut self, year: i32, samples: Vec<TrainingSample>) -> Result<(), String> {
-        // Year transition - flush previous year
-        if let Some(prev_year) = self.current_year {
-            if year != prev_year {
-                self.flush_year(prev_year)?;
-                self.year_samples.clear();
+    /// Buffer samples for the current month, flush on month transition
+    fn handle_samples(
+        &mut self,
+        year: i32,
+        month: u8,
+        samples: Vec<TrainingSample>,
+    ) -> Result<(), String> {
+        let new_period = (year, month);
+
+        // Month transition - flush previous month
+        if let Some(prev_period) = self.current_period {
+            if new_period != prev_period {
+                self.flush_month(prev_period.0, prev_period.1)?;
+                self.month_samples.clear();
             }
         }
-        self.current_year = Some(year);
+        self.current_period = Some(new_period);
 
         // Collect samples
-        self.year_samples.extend(samples);
+        self.month_samples.extend(samples);
 
         Ok(())
     }
 
-    fn flush_year(&mut self, year: i32) -> Result<(), String> {
-        if self.year_samples.is_empty() {
+    fn flush_month(&mut self, year: i32, month: u8) -> Result<(), String> {
+        if self.month_samples.is_empty() {
             return Ok(());
         }
 
-        // Serialize all samples for this year to Cap'n Proto
+        // Serialize all samples for this month to Cap'n Proto
         let mut buf = Vec::with_capacity(1024 * 1024); // 1MB initial
-        capnp_serialize::serialize_batch(&mut buf, year as i16, &self.year_samples)
+        capnp_serialize::serialize_batch(&mut buf, year as i16, &self.month_samples)
             .map_err(|e| format!("Failed to serialize Cap'n Proto batch: {}", e))?;
 
         // Write to ZIP archive with deflate compression
-        let filename = format!("{}.cpb", year);
+        // Filename: YYYY_MM.cpb (e.g., 1444_11.cpb)
+        let filename = format!("{}_{:02}.cpb", year, month);
         let options = SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated)
             .compression_level(Some(6));
@@ -310,9 +327,10 @@ impl BinaryArchiveWriter {
             .map_err(|e| format!("Failed to write to zip: {}", e))?;
 
         log::debug!(
-            "Wrote {}.cpb to archive ({} samples, {} bytes)",
+            "Wrote {}_{:02}.cpb to archive ({} samples, {} bytes)",
             year,
-            self.year_samples.len(),
+            month,
+            self.month_samples.len(),
             buf.len()
         );
 
@@ -320,10 +338,10 @@ impl BinaryArchiveWriter {
     }
 
     fn finalize(mut self) -> Result<(), String> {
-        // Flush any remaining year data
-        if let Some(year) = self.current_year {
-            if !self.year_samples.is_empty() {
-                self.flush_year(year)?;
+        // Flush any remaining month data
+        if let Some((year, month)) = self.current_period {
+            if !self.month_samples.is_empty() {
+                self.flush_month(year, month)?;
             }
         }
 
@@ -389,8 +407,9 @@ impl DataGenObserver {
         // Check for .cpb.zip (binary mode) first
         if path_str.ends_with(".cpb.zip") {
             // Binary archive mode: spawn background writer thread
+            // Use bounded channel (5 months) to apply backpressure and prevent OOM
             let file = std::fs::File::create(path)?;
-            let (sender, receiver) = mpsc::channel();
+            let (sender, receiver) = mpsc::sync_channel(5);
 
             let writer = BinaryArchiveWriter::new(file);
             let handle = std::thread::Builder::new()
@@ -569,6 +588,7 @@ impl SimObserver for DataGenObserver {
         }
 
         let year = snapshot.state.date.year;
+        let month = snapshot.state.date.month;
 
         let mut output = self
             .output
@@ -615,8 +635,13 @@ impl SimObserver for DataGenObserver {
             }
             OutputMode::AsyncBinaryArchive { sender, .. } => {
                 // Send samples to background writer for Cap'n Proto serialization
+                // Flushing happens on month boundaries (not yearly) to limit memory usage
                 if sender
-                    .send(WriterMessage::BinarySamples { year, samples })
+                    .send(WriterMessage::BinarySamples {
+                        year,
+                        month,
+                        samples,
+                    })
                     .is_err()
                 {
                     return Err(ObserverError::Render(
@@ -647,8 +672,17 @@ impl SimObserver for DataGenObserver {
                 OutputMode::Stream(writer) => {
                     let _ = writer.flush();
                 }
-                OutputMode::AsyncJsonArchive { sender, handle }
-                | OutputMode::AsyncBinaryArchive { sender, handle } => {
+                OutputMode::AsyncJsonArchive { sender, handle } => {
+                    // Signal shutdown and wait for writer to finish
+                    let _ = sender.send(WriterMessage::Shutdown);
+
+                    if let Some(h) = handle.take() {
+                        if let Err(e) = h.join() {
+                            log::error!("Writer thread panicked: {:?}", e);
+                        }
+                    }
+                }
+                OutputMode::AsyncBinaryArchive { sender, handle } => {
                     // Signal shutdown and wait for writer to finish
                     let _ = sender.send(WriterMessage::Shutdown);
 
