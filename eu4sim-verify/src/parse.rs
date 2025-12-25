@@ -212,6 +212,13 @@ fn parse_binary_gamestate(data: &[u8]) -> Result<ExtractedState> {
     for (&id, province) in query.save().game.provinces.iter() {
         let id_u32 = id.as_u16() as u32;
 
+        // Extract buildings from province (HashMap<String, bool> - key is building name, value is true if present)
+        let buildings: Vec<String> = province
+            .buildings
+            .iter()
+            .filter_map(|(name, &present)| if present { Some(name.clone()) } else { None })
+            .collect();
+
         let extracted = crate::ExtractedProvince {
             id: id_u32,
             name: Some(province.name.clone()),
@@ -221,6 +228,7 @@ fn parse_binary_gamestate(data: &[u8]) -> Result<ExtractedState> {
             base_manpower: Some(province.base_manpower.into()),
             institutions: HashMap::new(), // TODO: Extract institution progress
             local_autonomy: Some(province.local_autonomy.into()),
+            buildings,
         };
 
         provinces.insert(id_u32, extracted);
@@ -242,14 +250,24 @@ fn parse_binary_gamestate(data: &[u8]) -> Result<ExtractedState> {
         let tag_str = tag.to_string();
         let owned = owned_provinces_map.remove(&tag_str).unwrap_or_default();
 
+        // Extract advisor info - simplified extraction from binary format
+        // Binary saves store advisors differently, so we use available data
+        let advisors: Vec<crate::ExtractedAdvisor> = Vec::new(); // TODO: Extract from binary
+
+        // Note: eu4save doesn't expose mana points directly, only in ledger data
+        // For binary saves, we skip mana extraction
         let extracted = crate::ExtractedCountry {
             tag: tag_str.clone(),
             max_manpower: Some(country.max_manpower.into()),
             current_manpower: Some(country.manpower.into()),
             treasury: Some(country.treasury.into()),
+            adm_power: None, // Not directly available in eu4save Country struct
+            dip_power: None,
+            mil_power: None,
             monthly_income: None, // TODO: Extract from ledger
             army_maintenance: None,
             navy_maintenance: None,
+            advisors,
             owned_province_ids: owned,
         };
 
@@ -455,7 +473,101 @@ fn parse_country_block(tag: &str, content: &str) -> crate::ExtractedCountry {
     country.current_manpower = extract_float_value(content, "manpower=");
     country.max_manpower = extract_float_value(content, "max_manpower=");
 
+    // Extract monarch power points
+    country.adm_power = extract_float_value(content, "adm_power=");
+    country.dip_power = extract_float_value(content, "dip_power=");
+    country.mil_power = extract_float_value(content, "mil_power=");
+
+    // Extract advisors
+    country.advisors = extract_advisors(content, tag);
+
     country
+}
+
+/// Extract advisors from country content
+/// Advisors appear in an "advisors={" block with entries like:
+/// { id=123 type="philosopher" skill=2 ... }
+fn extract_advisors(content: &str, tag: &str) -> Vec<crate::ExtractedAdvisor> {
+    let mut advisors = Vec::new();
+
+    // Find the active_advisors block which contains currently hired advisors
+    // Format: active_advisors={ advisor_id_1 advisor_id_2 advisor_id_3 }
+    let active_ids: std::collections::HashSet<String> =
+        if let Some(active_start) = content.find("active_advisors={") {
+            let block_start = active_start + "active_advisors={".len();
+            if let Some(block) = extract_block(&content[block_start..]) {
+                // Parse the IDs from the block
+                block
+                    .split_whitespace()
+                    .filter(|s| s.chars().all(|c| c.is_ascii_digit()))
+                    .map(|s| s.to_string())
+                    .collect()
+            } else {
+                std::collections::HashSet::new()
+            }
+        } else {
+            std::collections::HashSet::new()
+        };
+
+    // Find the advisors block
+    if let Some(advisors_start) = content.find("\n\tadvisors={") {
+        let block_start = advisors_start + "\n\tadvisors={".len();
+        if let Some(advisors_block) = extract_block(&content[block_start..]) {
+            // Parse individual advisor entries
+            // Each advisor is in a block like: { id=123 type="philosopher" skill=2 ... }
+            let advisor_pattern = regex::Regex::new(r"\{[^}]+\}").unwrap();
+            let id_pattern = regex::Regex::new(r"id=(\d+)").unwrap();
+            let type_pattern = regex::Regex::new(r#"type="([^"]+)""#).unwrap();
+            let skill_pattern = regex::Regex::new(r"skill=(\d+)").unwrap();
+
+            for cap in advisor_pattern.find_iter(advisors_block) {
+                let advisor_content = cap.as_str();
+
+                // Extract advisor ID
+                let id = id_pattern
+                    .captures(advisor_content)
+                    .and_then(|c| c.get(1))
+                    .map(|m| m.as_str().to_string());
+
+                // Extract type
+                let advisor_type = type_pattern
+                    .captures(advisor_content)
+                    .and_then(|c| c.get(1))
+                    .map(|m| m.as_str().to_string());
+
+                // Extract skill
+                let skill = skill_pattern
+                    .captures(advisor_content)
+                    .and_then(|c| c.get(1))
+                    .and_then(|m| m.as_str().parse::<u8>().ok())
+                    .unwrap_or(1);
+
+                if let Some(advisor_type) = advisor_type {
+                    let is_hired = id
+                        .as_ref()
+                        .map(|id| active_ids.contains(id))
+                        .unwrap_or(false);
+
+                    advisors.push(crate::ExtractedAdvisor {
+                        advisor_type,
+                        skill,
+                        is_hired,
+                    });
+                }
+            }
+        }
+    }
+
+    if !advisors.is_empty() {
+        log::debug!(
+            "{} has {} advisors ({} hired)",
+            tag,
+            advisors.len(),
+            advisors.iter().filter(|a| a.is_hired).count()
+        );
+    }
+
+    advisors
 }
 
 /// Extract a float value following a pattern like "field=123.456"
@@ -571,5 +683,65 @@ fn parse_province_block(id: u32, content: &str) -> crate::ExtractedProvince {
         province.name = caps.get(1).map(|m| m.as_str().to_string());
     }
 
+    // Extract buildings - look for building_name=yes patterns
+    province.buildings = extract_buildings(content);
+
     province
+}
+
+/// Extract building names from province content
+/// Buildings appear as: marketplace=yes, temple=yes, etc.
+fn extract_buildings(content: &str) -> Vec<String> {
+    // Known building types in EU4
+    static BUILDING_NAMES: &[&str] = &[
+        // Tax buildings
+        "temple",
+        "cathedral",
+        // Production buildings
+        "workshop",
+        "counting_house",
+        // Trade buildings
+        "marketplace",
+        "trade_depot",
+        "stock_exchange",
+        // Manpower buildings
+        "barracks",
+        "training_fields",
+        // Military buildings
+        "fort_15th",
+        "fort_16th",
+        "fort_17th",
+        "fort_18th",
+        "shipyard",
+        "grand_shipyard",
+        "dock",
+        "drydock",
+        // Special buildings
+        "courthouse",
+        "town_hall",
+        "university",
+        "soldier_households",
+        "impressment_offices",
+        "state_house",
+        "textile",
+        "weapons",
+        "plantations",
+        "tradecompany",
+        "wharf",
+        "furnace",
+        "ramparts",
+        "soldiers_monument",
+        "native_earthwork",
+        "native_fortified_house",
+        "native_sweat_lodge",
+    ];
+
+    let mut buildings = Vec::new();
+    for &building in BUILDING_NAMES {
+        let pattern = format!("{}=yes", building);
+        if content.contains(&pattern) {
+            buildings.push(building.to_string());
+        }
+    }
+    buildings
 }

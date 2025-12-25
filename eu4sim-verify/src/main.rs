@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use eu4sim_verify::{extract, melt, parse, predict, report, verify};
+use eu4sim_verify::{diff, extract, melt, parse, predict, report, verify};
 
 #[derive(Parser)]
 #[command(name = "eu4sim-verify")]
@@ -81,6 +81,21 @@ enum Commands {
         /// Path to EU4 game directory
         #[arg(long, env = "EU4_GAME_PATH")]
         game_path: PathBuf,
+    },
+
+    /// Infer actions between two sequential saves (Phase 3)
+    Diff {
+        /// Path to the "before" save file (time T)
+        #[arg(long)]
+        before: PathBuf,
+
+        /// Path to the "after" save file (time T+N)
+        #[arg(long)]
+        after: PathBuf,
+
+        /// Filter to specific country tag
+        #[arg(short, long)]
+        country: Option<String>,
     },
 }
 
@@ -281,6 +296,57 @@ fn main() -> Result<()> {
 
             if failures > 0 {
                 std::process::exit(1);
+            }
+        }
+
+        Commands::Diff {
+            before,
+            after,
+            country,
+        } => {
+            log::info!("Inferring actions from {:?} to {:?}", before, after);
+
+            // Load both saves
+            let before_state = parse::load_save(&before)?;
+            let after_state = parse::load_save(&after)?;
+
+            log::info!(
+                "Before: {} ({} countries, {} provinces)",
+                before_state.meta.date,
+                before_state.countries.len(),
+                before_state.provinces.len()
+            );
+            log::info!(
+                "After: {} ({} countries, {} provinces)",
+                after_state.meta.date,
+                after_state.countries.len(),
+                after_state.provinces.len()
+            );
+
+            // Run diff
+            let result = diff::infer_actions(&before_state, &after_state);
+
+            // Print report, optionally filtered by country
+            if let Some(ref tag) = country {
+                let filtered = diff::filter_by_country(&result, tag);
+                println!();
+                println!(
+                    "=== Actions for {} ({} -> {}) ===",
+                    tag, result.from_date, result.to_date
+                );
+                println!();
+                if filtered.is_empty() {
+                    println!("No actions detected for {}.", tag);
+                } else {
+                    println!("Detected {} actions:", filtered.len());
+                    println!();
+                    for (i, action) in filtered.iter().enumerate() {
+                        println!("  {}. {}", i + 1, action);
+                    }
+                }
+                println!();
+            } else {
+                diff::print_diff_report(&result);
             }
         }
     }

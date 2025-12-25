@@ -1,3 +1,4 @@
+pub mod diff;
 pub mod extract;
 pub mod hydrate;
 pub mod melt;
@@ -37,6 +38,11 @@ pub struct ExtractedCountry {
     pub current_manpower: Option<f64>,
     pub treasury: Option<f64>,
 
+    // Monarch power points
+    pub adm_power: Option<f64>,
+    pub dip_power: Option<f64>,
+    pub mil_power: Option<f64>,
+
     // Income breakdown
     pub monthly_income: Option<MonthlyIncome>,
 
@@ -44,8 +50,22 @@ pub struct ExtractedCountry {
     pub army_maintenance: Option<f64>,
     pub navy_maintenance: Option<f64>,
 
+    // Advisors (type -> skill level)
+    pub advisors: Vec<ExtractedAdvisor>,
+
     // For recalculation
     pub owned_province_ids: Vec<u32>,
+}
+
+/// Advisor state extracted from save
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ExtractedAdvisor {
+    /// Advisor type (e.g., "philosopher", "trader", "army_reformer")
+    pub advisor_type: String,
+    /// Skill level (1-5)
+    pub skill: u8,
+    /// Is this advisor currently hired?
+    pub is_hired: bool,
 }
 
 /// Monthly income breakdown from save
@@ -77,6 +97,9 @@ pub struct ExtractedProvince {
 
     // Modifiers
     pub local_autonomy: Option<f64>,
+
+    // Buildings present in province
+    pub buildings: Vec<String>,
 }
 
 /// Result of verifying a single metric
