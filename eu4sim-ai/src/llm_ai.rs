@@ -283,6 +283,20 @@ impl AiPlayer for LlmAi {
         available_commands: &AvailableCommands,
     ) -> Vec<Command> {
         if available_commands.is_empty() {
+            // Still notify TUI that we were called but had no commands
+            if let Some(ref tx) = self.tui_tx {
+                let msg = LlmMessage {
+                    country: visible_state.observer.clone(),
+                    date: format!(
+                        "{}.{}.{}",
+                        visible_state.date.year, visible_state.date.month, visible_state.date.day
+                    ),
+                    prompt_excerpt: "(no commands available)".to_string(),
+                    response: "PASS".to_string(),
+                    commands: vec![],
+                };
+                let _ = tx.send(msg);
+            }
             return vec![];
         }
 
@@ -372,6 +386,24 @@ impl AiPlayer for LlmAi {
             }
             Err(e) => {
                 log::error!("LlmAi inference failed: {}", e);
+
+                // Still send error to TUI so user can see what's happening
+                if let Some(ref tx) = self.tui_tx {
+                    let msg = LlmMessage {
+                        country: visible_state.observer.clone(),
+                        date: format!(
+                            "{}.{}.{}",
+                            visible_state.date.year,
+                            visible_state.date.month,
+                            visible_state.date.day
+                        ),
+                        prompt_excerpt: "(inference error)".to_string(),
+                        response: format!("ERROR: {}", e),
+                        commands: vec![],
+                    };
+                    let _ = tx.send(msg);
+                }
+
                 vec![] // Pass on error
             }
         }
