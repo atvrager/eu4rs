@@ -172,12 +172,12 @@ fn infer_building_actions(before: &ExtractedState, after: &ExtractedState) -> Ve
     let mut actions = Vec::new();
 
     for (id, after_prov) in &after.provinces {
-        let before_buildings: HashSet<&String> =
-            if let Some(before_prov) = before.provinces.get(id) {
-                before_prov.buildings.iter().collect()
-            } else {
-                HashSet::new()
-            };
+        let before_buildings: HashSet<&String> = if let Some(before_prov) = before.provinces.get(id)
+        {
+            before_prov.buildings.iter().collect()
+        } else {
+            HashSet::new()
+        };
 
         let after_buildings: HashSet<&String> = after_prov.buildings.iter().collect();
 
@@ -205,8 +205,7 @@ fn infer_development_actions(
     for (id, after_prov) in &after.provinces {
         if let Some(before_prov) = before.provinces.get(id) {
             // Check tax dev
-            if let (Some(before_tax), Some(after_tax)) =
-                (before_prov.base_tax, after_prov.base_tax)
+            if let (Some(before_tax), Some(after_tax)) = (before_prov.base_tax, after_prov.base_tax)
             {
                 if after_tax > before_tax {
                     actions.push(InferredAction::DevelopProvince {
@@ -370,7 +369,11 @@ impl std::fmt::Display for InferredAction {
                 let default_name = format!("#{}", province_id);
                 let name = province_name.as_deref().unwrap_or(&default_name);
                 let owner = owner.as_deref().unwrap_or("???");
-                write!(f, "{} built {} in {} ({})", owner, building, name, province_id)
+                write!(
+                    f,
+                    "{} built {} in {} ({})",
+                    owner, building, name, province_id
+                )
             }
             InferredAction::DevelopProvince {
                 province_name,
@@ -401,14 +404,22 @@ impl std::fmt::Display for InferredAction {
                 advisor_type,
                 skill,
             } => {
-                write!(f, "{} dismissed {} (skill {})", country, advisor_type, skill)
+                write!(
+                    f,
+                    "{} dismissed {} (skill {})",
+                    country, advisor_type, skill
+                )
             }
             InferredAction::SpendMana {
                 country,
                 mana_type,
                 amount,
             } => {
-                write!(f, "{} spent {} {} power", country, *amount as i32, mana_type)
+                write!(
+                    f,
+                    "{} spent {} {} power",
+                    country, *amount as i32, mana_type
+                )
             }
             InferredAction::TreasuryChange {
                 country,
@@ -433,19 +444,13 @@ pub fn print_diff_report(result: &DiffResult) {
         "=== Action Diff: {} -> {} ===",
         result.from_date, result.to_date
     );
-    println!(
-        "Analyzed {} countries",
-        result.analyzed_countries.len()
-    );
+    println!("Analyzed {} countries", result.analyzed_countries.len());
     println!();
 
     if result.actions.is_empty() {
         println!("No significant actions detected.");
     } else {
-        println!(
-            "Detected {} actions:",
-            result.actions.len()
-        );
+        println!("Detected {} actions:", result.actions.len());
         println!();
         for (i, action) in result.actions.iter().enumerate() {
             println!("  {}. {}", i + 1, action);
@@ -460,12 +465,8 @@ pub fn filter_by_country<'a>(result: &'a DiffResult, country: &str) -> Vec<&'a I
         .actions
         .iter()
         .filter(|action| match action {
-            InferredAction::BuildBuilding { owner, .. } => {
-                owner.as_deref() == Some(country)
-            }
-            InferredAction::DevelopProvince { owner, .. } => {
-                owner.as_deref() == Some(country)
-            }
+            InferredAction::BuildBuilding { owner, .. } => owner.as_deref() == Some(country),
+            InferredAction::DevelopProvince { owner, .. } => owner.as_deref() == Some(country),
             InferredAction::HireAdvisor { country: c, .. } => c == country,
             InferredAction::DismissAdvisor { country: c, .. } => c == country,
             InferredAction::SpendMana { country: c, .. } => c == country,
@@ -576,10 +577,7 @@ mod tests {
 
         match &result.actions[0] {
             InferredAction::DevelopProvince {
-                dev_type,
-                from,
-                to,
-                ..
+                dev_type, from, to, ..
             } => {
                 assert_eq!(*dev_type, DevType::Tax);
                 assert_eq!(*from, 5.0);
