@@ -690,6 +690,7 @@ def print_stats_from_dict(stats: dict) -> None:
 def format_prompt_from_reader(sample_reader) -> str:
     """Format a training prompt directly from a Cap'n Proto reader.
 
+    Uses multi-action format with categories and local indices.
     Avoids creating intermediate Python dataclasses for better performance.
     """
     state = sample_reader.state
@@ -697,21 +698,41 @@ def format_prompt_from_reader(sample_reader) -> str:
     country = state.ownCountry
 
     lines = [
+        f"<|country|>{state.observer}<|/country|>",
+        "<|state|>",
         f"Date: {date.year}.{date.month}.{date.day}",
-        f"Country: {state.observer}",
-        f"Treasury: {fixed_to_float(country.treasury):.1f}",
+        f"Treasury: {fixed_to_float(country.treasury):.1f} ducats",
         f"Manpower: {fixed_to_float(country.manpower):.1f}",
-        f"Stability: {country.stability}",
-        f"Prestige: {fixed_to_float(country.prestige):.1f}",
-        f"Tech: ADM {country.admTech} / DIP {country.dipTech} / MIL {country.milTech}",
-        f"Mana: ADM {fixed_to_float(country.admMana):.0f} / DIP {fixed_to_float(country.dipMana):.0f} / MIL {fixed_to_float(country.milMana):.0f}",
-        f"At War: {'Yes' if state.atWar else 'No'}",
-        "",
-        "Available Actions:",
+        f"Admin: {fixed_to_float(country.admMana):.0f} / Diplo: {fixed_to_float(country.dipMana):.0f} / Mil: {fixed_to_float(country.milMana):.0f}",
+        "<|/state|>",
+        "<|actions|>",
     ]
 
+    # Group commands by category: {category: [(global_idx, cmd_str), ...]}
+    category_map: dict[str, list[tuple[int, str]]] = {cat: [] for cat in CATEGORIES}
     for i, cmd in enumerate(sample_reader.availableCommands):
-        lines.append(f"  [{i}] {command_to_string_fast(cmd)}")
+        cmd_str = command_to_string_fast(cmd)
+        cat = categorize_command_py(cmd_str)
+        category_map[cat].append((i, cmd_str))
+
+    for cat in CATEGORIES:
+        lines.append(f"{cat}:")
+        lines.append("  0: Pass")
+        cmds = category_map[cat]
+        # Use LOCAL indices: 1, 2, 3... (limited to MAX_COMMANDS_PER_CATEGORY)
+        for local_idx, (_global_idx, cmd_str) in enumerate(
+            cmds[:MAX_COMMANDS_PER_CATEGORY]
+        ):
+            lines.append(f"  {local_idx + 1}: {cmd_str}")
+        # Note if truncated
+        if len(cmds) > MAX_COMMANDS_PER_CATEGORY:
+            lines.append(f"  ... ({len(cmds) - MAX_COMMANDS_PER_CATEGORY} more)")
+
+    lines.append("<|/actions|>")
+    lines.append("<|choice|>")
+    # Add response template
+    for cat in CATEGORIES:
+        lines.append(f"{cat}:")
 
     return "\n".join(lines)
 
@@ -719,20 +740,53 @@ def format_prompt_from_reader(sample_reader) -> str:
 def format_completion_from_reader(sample_reader) -> str:
     """Format a training completion directly from a Cap'n Proto reader.
 
-    Multi-command support: AI can issue multiple commands per tick.
+    Uses multi-action category format with local indices:
+    DIPLOMATIC:1,2
+    MILITARY:0
+    ...
     """
     actions = list(sample_reader.chosenActions)
     commands = list(sample_reader.chosenCommands)
 
     if not actions or (len(actions) == 1 and actions[0] < 0):
-        return "Action: Pass"
+        # No actions = all Pass
+        return (
+            "DIPLOMATIC:0\nMILITARY:0\nECONOMIC:0\nTRADE:0\nCOLONIZATION:0\nOTHER:0\n"
+        )
+
+    # Build category map and global->local mapping from available commands
+    category_map: dict[str, list[tuple[int, str]]] = {cat: [] for cat in CATEGORIES}
+    for i, cmd in enumerate(sample_reader.availableCommands):
+        cmd_str = command_to_string_fast(cmd)
+        cat = categorize_command_py(cmd_str)
+        category_map[cat].append((i, cmd_str))
+
+    # Build global_idx -> (category, local_idx) mapping
+    global_to_local: dict[int, tuple[str, int]] = {}
+    for cat, cmds in category_map.items():
+        for local_idx, (global_idx, _cmd_str) in enumerate(
+            cmds[:MAX_COMMANDS_PER_CATEGORY]
+        ):
+            # local_idx 0 -> display index 1
+            global_to_local[global_idx] = (cat, local_idx + 1)
+
+    # Group chosen commands by category using LOCAL indices
+    category_local_indices: dict[str, list[str]] = {cat: [] for cat in CATEGORIES}
+
+    for global_idx, cmd in zip(actions, commands):
+        if global_idx in global_to_local:
+            cat, local_idx = global_to_local[global_idx]
+            category_local_indices[cat].append(str(local_idx))
+        # else: command was beyond MAX_COMMANDS_PER_CATEGORY, skip
 
     lines = []
-    for idx, cmd in zip(actions, commands):
-        cmd_str = command_to_string_fast(cmd)
-        lines.append(f"Action: [{idx}] {cmd_str}")
+    for cat in CATEGORIES:
+        if category_local_indices[cat]:
+            lines.append(f"{cat}:{','.join(category_local_indices[cat])}")
+        else:
+            lines.append(f"{cat}:0")
 
-    return "\n".join(lines)
+    return "\n".join(lines) + "\n"
 
 
 def iter_training_prompts(path: Path | str) -> Iterator[dict]:
