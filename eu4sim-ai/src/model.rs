@@ -719,16 +719,27 @@ impl Eu4AiModel {
                     if step == 0 {
                         model.clear_kv_cache();
                         // First step: process all tokens
-                        model
-                            .forward(&input_ids, 0)
-                            .context("Gemma3 forward pass failed")?
+                        model.forward(&input_ids, 0).with_context(|| {
+                            format!(
+                                "Gemma3 forward failed: step={}, seq_len={}, input_shape={:?}",
+                                step,
+                                tokens.len(),
+                                input_ids.dims()
+                            )
+                        })?
                     } else {
                         // Incremental: only process last token
                         let last_token =
                             Tensor::new(&[tokens[tokens.len() - 1]], &self.device)?.unsqueeze(0)?;
                         model
                             .forward(&last_token, tokens.len() - 1)
-                            .context("Gemma3 forward pass failed")?
+                            .with_context(|| {
+                                format!(
+                                    "Gemma3 incremental forward failed: step={}, pos={}",
+                                    step,
+                                    tokens.len() - 1
+                                )
+                            })?
                     }
                 }
             };

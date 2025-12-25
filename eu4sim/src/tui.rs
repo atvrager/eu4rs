@@ -418,16 +418,18 @@ fn draw_ui(
 
 /// Render the LLM I/O panel showing most recent prompt/response.
 fn render_llm_panel(f: &mut Frame, area: Rect, llm_log: &[LlmMessage]) {
+    let title = if llm_log.is_empty() {
+        " LLM I/O (waiting) ".to_string()
+    } else {
+        let msg = &llm_log[0];
+        format!(
+            " LLM: {} @ {} ({}ms) ",
+            msg.country, msg.date, msg.inference_ms
+        )
+    };
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(format!(
-            " LLM I/O ({}) ",
-            if llm_log.is_empty() {
-                "waiting".to_string()
-            } else {
-                format!("{} @ {}", llm_log[0].country, llm_log[0].date)
-            }
-        ))
+        .title(title)
         .border_style(Style::default().fg(Color::Cyan));
     let inner = block.inner(area);
     f.render_widget(block, area);

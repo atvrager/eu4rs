@@ -24,6 +24,8 @@ pub struct LlmMessage {
     pub response: String,
     /// Parsed commands (formatted for display)
     pub commands: Vec<String>,
+    /// Inference time in milliseconds (0 for errors)
+    pub inference_ms: u64,
 }
 
 /// LLM-powered AI player.
@@ -282,18 +284,21 @@ impl AiPlayer for LlmAi {
         visible_state: &VisibleWorldState,
         available_commands: &AvailableCommands,
     ) -> Vec<Command> {
+        let date_str = format!(
+            "{}.{}.{}",
+            visible_state.date.year, visible_state.date.month, visible_state.date.day
+        );
+
         if available_commands.is_empty() {
             // Still notify TUI that we were called but had no commands
             if let Some(ref tx) = self.tui_tx {
                 let msg = LlmMessage {
                     country: visible_state.observer.clone(),
-                    date: format!(
-                        "{}.{}.{}",
-                        visible_state.date.year, visible_state.date.month, visible_state.date.day
-                    ),
+                    date: date_str,
                     prompt_excerpt: "(no commands available)".to_string(),
                     response: "PASS".to_string(),
                     commands: vec![],
+                    inference_ms: 0,
                 };
                 let _ = tx.send(msg);
             }
@@ -311,9 +316,11 @@ impl AiPlayer for LlmAi {
             available_commands,
         );
 
-        // Run inference (up to 50 tokens)
+        // Run inference (up to 50 tokens) with timing
+        let infer_start = std::time::Instant::now();
         match self.model.choose_multi_action(prompt, 50) {
             Ok(response) => {
+                let inference_ms = infer_start.elapsed().as_millis() as u64;
                 let commands =
                     Self::parse_multi_action_response(&response, available_commands, &index_map);
 
@@ -323,20 +330,18 @@ impl AiPlayer for LlmAi {
 
                 if commands.is_empty() {
                     log::warn!(
-                        "[LLM] {} @ {}.{}.{} → Pass (no valid actions parsed)",
+                        "[LLM] {} @ {} → Pass ({}ms)",
                         visible_state.observer,
-                        visible_state.date.year,
-                        visible_state.date.month,
-                        visible_state.date.day
+                        date_str,
+                        inference_ms
                     );
                 } else {
                     log::warn!(
-                        "[LLM] {} @ {}.{}.{} → {} actions: {}",
+                        "[LLM] {} @ {} → {} actions ({}ms): {}",
                         visible_state.observer,
-                        visible_state.date.year,
-                        visible_state.date.month,
-                        visible_state.date.day,
+                        date_str,
                         commands.len(),
+                        inference_ms,
                         cmd_strings.join(", ")
                     );
                 }
@@ -369,15 +374,11 @@ impl AiPlayer for LlmAi {
 
                     let msg = LlmMessage {
                         country: visible_state.observer.clone(),
-                        date: format!(
-                            "{}.{}.{}",
-                            visible_state.date.year,
-                            visible_state.date.month,
-                            visible_state.date.day
-                        ),
+                        date: date_str,
                         prompt_excerpt,
                         response: response.clone(),
                         commands: cmd_strings,
+                        inference_ms,
                     };
                     let _ = tx.send(msg); // Ignore send errors (TUI may have closed)
                 }
@@ -385,21 +386,19 @@ impl AiPlayer for LlmAi {
                 commands
             }
             Err(e) => {
-                log::error!("LlmAi inference failed: {}", e);
+                let inference_ms = infer_start.elapsed().as_millis() as u64;
+                // Use {:#} for full error chain
+                log::error!("LlmAi inference failed ({}ms): {:#}", inference_ms, e);
 
                 // Still send error to TUI so user can see what's happening
                 if let Some(ref tx) = self.tui_tx {
                     let msg = LlmMessage {
                         country: visible_state.observer.clone(),
-                        date: format!(
-                            "{}.{}.{}",
-                            visible_state.date.year,
-                            visible_state.date.month,
-                            visible_state.date.day
-                        ),
-                        prompt_excerpt: "(inference error)".to_string(),
-                        response: format!("ERROR: {}", e),
+                        date: date_str,
+                        prompt_excerpt: format!("(error after {}ms)", inference_ms),
+                        response: format!("{:#}", e), // Full error chain
                         commands: vec![],
+                        inference_ms,
                     };
                     let _ = tx.send(msg);
                 }
