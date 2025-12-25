@@ -9,6 +9,22 @@ use anyhow::Result;
 use eu4sim_core::Command;
 use eu4sim_core::ai::{AiPlayer, AvailableCommands, VisibleWorldState};
 use std::path::PathBuf;
+use std::sync::mpsc::Sender;
+
+/// Message containing LLM prompt and response for TUI display.
+#[derive(Debug, Clone)]
+pub struct LlmMessage {
+    /// Country tag making the decision
+    pub country: String,
+    /// Game date as string (e.g., "1445.3.15")
+    pub date: String,
+    /// Truncated prompt (last N lines showing actions)
+    pub prompt_excerpt: String,
+    /// Model response
+    pub response: String,
+    /// Parsed commands (formatted for display)
+    pub commands: Vec<String>,
+}
 
 /// LLM-powered AI player.
 ///
@@ -17,6 +33,8 @@ use std::path::PathBuf;
 pub struct LlmAi {
     model: Eu4AiModel,
     prompt_builder: PromptBuilder,
+    /// Optional sender for TUI display of prompt/response
+    tui_tx: Option<Sender<LlmMessage>>,
 }
 
 impl LlmAi {
@@ -37,7 +55,19 @@ impl LlmAi {
         Ok(Self {
             model,
             prompt_builder: PromptBuilder::new(),
+            tui_tx: None,
         })
+    }
+
+    /// Set a sender for TUI display of LLM I/O.
+    pub fn with_tui_sender(mut self, tx: Sender<LlmMessage>) -> Self {
+        self.tui_tx = Some(tx);
+        self
+    }
+
+    /// Set the TUI sender (mutable version for post-construction).
+    pub fn set_tui_sender(&mut self, tx: Sender<LlmMessage>) {
+        self.tui_tx = Some(tx);
     }
 
     /// Create with SmolLM2 base model and LoRA adapter.
@@ -270,6 +300,9 @@ impl AiPlayer for LlmAi {
                 let commands = Self::parse_multi_action_response(&response, available_commands);
 
                 // Log decision
+                let cmd_strings: Vec<String> =
+                    commands.iter().map(Self::format_command_brief).collect();
+
                 if commands.is_empty() {
                     log::warn!(
                         "[LLM] {} @ {}.{}.{} → Pass (no valid actions parsed)",
@@ -286,12 +319,36 @@ impl AiPlayer for LlmAi {
                         visible_state.date.month,
                         visible_state.date.day,
                         commands.len(),
-                        commands
-                            .iter()
-                            .map(Self::format_command_brief)
-                            .collect::<Vec<_>>()
-                            .join(", ")
+                        cmd_strings.join(", ")
                     );
+                }
+
+                // Send to TUI if connected
+                if let Some(ref tx) = self.tui_tx {
+                    // Extract last ~15 lines of prompt as excerpt (the actions section)
+                    let prompt_excerpt = prompt
+                        .lines()
+                        .rev()
+                        .take(15)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .collect::<Vec<_>>()
+                        .join("\n");
+
+                    let msg = LlmMessage {
+                        country: visible_state.observer.clone(),
+                        date: format!(
+                            "{}.{}.{}",
+                            visible_state.date.year,
+                            visible_state.date.month,
+                            visible_state.date.day
+                        ),
+                        prompt_excerpt,
+                        response: response.clone(),
+                        commands: cmd_strings,
+                    };
+                    let _ = tx.send(msg); // Ignore send errors (TUI may have closed)
                 }
 
                 commands

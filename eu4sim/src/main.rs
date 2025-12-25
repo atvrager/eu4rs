@@ -722,6 +722,10 @@ fn main() -> Result<()> {
         None
     };
 
+    // Create channel for LLM I/O display in TUI (created unconditionally, used if LLM active)
+    let (llm_tx, llm_rx) = std::sync::mpsc::channel::<eu4sim_ai::LlmMessage>();
+    let mut llm_rx_for_tui: Option<std::sync::mpsc::Receiver<eu4sim_ai::LlmMessage>> = None;
+
     // Initialize AI if in observer mode
     // Use BTreeMap for deterministic iteration order
     let mut ais: BTreeMap<String, Box<dyn eu4sim_core::AiPlayer>> = if args.observer {
@@ -798,7 +802,9 @@ fn main() -> Result<()> {
             match result {
                 Ok(ai) => {
                     log::info!("LLM AI loaded successfully for: {:?}", llm_tag);
-                    Some(Box::new(ai))
+                    // Set up TUI sender for LLM I/O display and store receiver
+                    llm_rx_for_tui = Some(llm_rx);
+                    Some(Box::new(ai.with_tui_sender(llm_tx)))
                 }
                 Err(e) => {
                     log::error!("Failed to load LLM AI: {}. Falling back to GreedyAI.", e);
@@ -885,12 +891,12 @@ fn main() -> Result<()> {
                     std::collections::HashMap::new()
                 }
             };
-        Some(tui::TuiSystem::new(
-            map,
-            lookup,
-            args.speed,
-            country_colors,
-        )?)
+        let mut tui = tui::TuiSystem::new(map, lookup, args.speed, country_colors)?;
+        // Connect LLM receiver if LLM is active
+        if let Some(rx) = llm_rx_for_tui.take() {
+            tui.set_llm_receiver(rx);
+        }
+        Some(tui)
     } else {
         None
     };

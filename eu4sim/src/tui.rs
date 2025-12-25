@@ -7,12 +7,13 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use eu4data::map::ProvinceLookup;
+use eu4sim_ai::LlmMessage;
 use eu4sim_core::WorldState;
 use image::RgbaImage;
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     widgets::{Block, Borders, Paragraph},
     Frame, Terminal,
 };
@@ -20,6 +21,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::io::{self, Stdout};
+use std::sync::mpsc::Receiver;
 
 /// TUI system state.
 pub struct TuiSystem {
@@ -45,6 +47,12 @@ pub struct TuiSystem {
     pub last_render_ms: f64,
     /// Country tag -> RGB color mapping (from game data, fallback to hash if empty)
     country_colors: HashMap<String, [u8; 3]>,
+    /// Receiver for LLM I/O messages (optional)
+    llm_rx: Option<Receiver<LlmMessage>>,
+    /// LLM I/O log buffer (most recent first)
+    llm_log: Vec<LlmMessage>,
+    /// Maximum number of LLM messages to keep
+    max_llm_messages: usize,
 }
 
 struct CachedMap {
@@ -85,7 +93,32 @@ impl TuiSystem {
             last_sim_ms: 0.0,
             last_render_ms: 0.0,
             country_colors,
+            llm_rx: None,
+            llm_log: Vec::new(),
+            max_llm_messages: 20,
         })
+    }
+
+    /// Set the LLM message receiver for displaying I/O in the TUI.
+    pub fn set_llm_receiver(&mut self, rx: Receiver<LlmMessage>) {
+        self.llm_rx = Some(rx);
+    }
+
+    /// Drain any pending LLM messages from the channel.
+    fn drain_llm_messages(&mut self) {
+        if let Some(ref rx) = self.llm_rx {
+            while let Ok(msg) = rx.try_recv() {
+                self.llm_log.insert(0, msg);
+                if self.llm_log.len() > self.max_llm_messages {
+                    self.llm_log.truncate(self.max_llm_messages);
+                }
+            }
+        }
+    }
+
+    /// Check if LLM display is active.
+    pub fn has_llm(&self) -> bool {
+        self.llm_rx.is_some()
     }
 
     /// Add an event to the log (most recent at top)
@@ -99,6 +132,9 @@ impl TuiSystem {
 
     pub fn render(&mut self, state: &WorldState, tick: u64, max_ticks: u32) -> Result<()> {
         let render_start = std::time::Instant::now();
+
+        // Drain any pending LLM messages
+        self.drain_llm_messages();
 
         let size = self.terminal.size()?;
         let rect = Rect::new(0, 0, size.width, size.height);
@@ -145,6 +181,8 @@ impl TuiSystem {
         let offset = self.offset;
 
         let event_log_ref = &self.event_log;
+        let llm_log_ref = &self.llm_log;
+        let has_llm = self.has_llm();
         let last_sim_ms = self.last_sim_ms;
         let last_render_ms = self.last_render_ms;
         let country_colors_ref = &self.country_colors;
@@ -164,6 +202,8 @@ impl TuiSystem {
                 scale,
                 offset,
                 event_log_ref,
+                llm_log_ref,
+                has_llm,
                 last_sim_ms,
                 last_render_ms,
                 country_colors_ref,
@@ -296,6 +336,8 @@ fn draw_ui(
     scale: f32,
     offset: (u32, u32),
     event_log: &[String],
+    llm_log: &[LlmMessage],
+    has_llm: bool,
     last_sim_ms: f64,
     last_render_ms: f64,
     country_colors: &HashMap<String, [u8; 3]>,
@@ -311,23 +353,49 @@ fn draw_ui(
         f.render_widget(body, map_area);
     }
 
-    // Render event log panel
-    let events_block = Block::default()
-        .borders(Borders::ALL)
-        .title(" Great Power Events ");
-    let events_inner = events_block.inner(events_area);
-    f.render_widget(events_block, events_area);
+    // Split events panel if LLM is active
+    if has_llm {
+        // Split vertically: events (top 40%) + LLM I/O (bottom 60%)
+        let side_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+            .split(events_area);
 
-    // Render event text (most recent at top)
-    let visible_count = events_inner.height as usize;
-    let events_text = event_log
-        .iter()
-        .take(visible_count)
-        .map(|s| s.as_str())
-        .collect::<Vec<_>>()
-        .join("\n");
-    let events_para = Paragraph::new(events_text);
-    f.render_widget(events_para, events_inner);
+        // Render event log panel (top)
+        let events_block = Block::default().borders(Borders::ALL).title(" GP Events ");
+        let events_inner = events_block.inner(side_chunks[0]);
+        f.render_widget(events_block, side_chunks[0]);
+
+        let visible_count = events_inner.height as usize;
+        let events_text = event_log
+            .iter()
+            .take(visible_count)
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let events_para = Paragraph::new(events_text);
+        f.render_widget(events_para, events_inner);
+
+        // Render LLM I/O panel (bottom)
+        render_llm_panel(f, side_chunks[1], llm_log);
+    } else {
+        // No LLM - render full events panel
+        let events_block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Great Power Events ");
+        let events_inner = events_block.inner(events_area);
+        f.render_widget(events_block, events_area);
+
+        let visible_count = events_inner.height as usize;
+        let events_text = event_log
+            .iter()
+            .take(visible_count)
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let events_para = Paragraph::new(events_text);
+        f.render_widget(events_para, events_inner);
+    }
 
     // Render status bar with timing metrics
     let status = if paused { " PAUSED" } else { "" };
@@ -338,6 +406,65 @@ fn draw_ui(
     );
     let status_bar = Paragraph::new(status_text).style(Style::default().bg(Color::Indexed(236)));
     f.render_widget(status_bar, status_area);
+}
+
+/// Render the LLM I/O panel showing recent prompt/response pairs.
+fn render_llm_panel(f: &mut Frame, area: Rect, llm_log: &[LlmMessage]) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" LLM I/O ")
+        .border_style(Style::default().fg(Color::Cyan));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    if llm_log.is_empty() {
+        let para = Paragraph::new("Waiting for LLM inference...")
+            .style(Style::default().fg(Color::DarkGray));
+        f.render_widget(para, inner);
+        return;
+    }
+
+    // Show the most recent LLM message with details
+    let msg = &llm_log[0];
+
+    // Build display text
+    let mut lines = Vec::new();
+
+    // Header with country and date
+    lines.push(format!("┌─ {} @ {} ─┐", msg.country, msg.date));
+
+    // Response (the model output)
+    lines.push("Response:".to_string());
+    for line in msg.response.lines().take(6) {
+        lines.push(format!("  {}", line));
+    }
+
+    // Commands parsed
+    if msg.commands.is_empty() {
+        lines.push("→ Pass (no actions)".to_string());
+    } else {
+        lines.push(format!("→ {} actions:", msg.commands.len()));
+        for cmd in msg.commands.iter().take(4) {
+            lines.push(format!("  • {}", cmd));
+        }
+        if msg.commands.len() > 4 {
+            lines.push(format!("  ... +{} more", msg.commands.len() - 4));
+        }
+    }
+
+    // Show count of older messages
+    if llm_log.len() > 1 {
+        lines.push(format!("─── {} older ───", llm_log.len() - 1));
+    }
+
+    let text = lines
+        .into_iter()
+        .take(inner.height as usize)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let para = Paragraph::new(text).style(Style::default().add_modifier(Modifier::DIM));
+    f.render_widget(para, inner);
 }
 
 fn render_map(
