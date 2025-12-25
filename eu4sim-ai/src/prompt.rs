@@ -65,11 +65,18 @@ impl PromptBuilder {
         &self.buffer
     }
 
+    /// Maximum commands per category to prevent prompt explosion.
+    /// With 6 categories × 10 commands × ~50 chars = ~3000 chars for actions alone.
+    const MAX_COMMANDS_PER_CATEGORY: usize = 10;
+
     /// Build a multi-action prompt grouped by command category.
     ///
     /// Uses per-category local indices (0=Pass, 1=first action, 2=second action, etc.)
     /// which are more intuitive for the model. The parser must remap these back to
     /// global indices using `parse_multi_action_response`.
+    ///
+    /// Commands are limited to MAX_COMMANDS_PER_CATEGORY per category to keep
+    /// prompt length reasonable (~1000-2000 tokens).
     ///
     /// # Format
     /// ```text
@@ -147,8 +154,22 @@ impl PromptBuilder {
 
             if let Some(cmds) = by_category.get(&category) {
                 // Use local indices: 1, 2, 3, ... (0 is always Pass)
-                for (local_idx, (_global_idx, cmd)) in cmds.iter().enumerate() {
+                // Limit to MAX_COMMANDS_PER_CATEGORY to prevent prompt explosion
+                for (local_idx, (_global_idx, cmd)) in cmds
+                    .iter()
+                    .take(Self::MAX_COMMANDS_PER_CATEGORY)
+                    .enumerate()
+                {
                     writeln!(self.buffer, "  {}: {}", local_idx + 1, format_command(cmd)).unwrap();
+                }
+                // Note if truncated
+                if cmds.len() > Self::MAX_COMMANDS_PER_CATEGORY {
+                    writeln!(
+                        self.buffer,
+                        "  ... ({} more)",
+                        cmds.len() - Self::MAX_COMMANDS_PER_CATEGORY
+                    )
+                    .unwrap();
                 }
             }
         }
@@ -168,6 +189,9 @@ impl PromptBuilder {
     ///
     /// Returns a map: (CommandCategory, local_index) -> global_index
     /// where local_index 0 = Pass (not in map), 1 = first command in category, etc.
+    ///
+    /// Only includes the first MAX_COMMANDS_PER_CATEGORY commands per category
+    /// to match what's shown in the prompt.
     pub fn build_index_map(commands: &[Command]) -> BTreeMap<(CommandCategory, usize), usize> {
         let mut by_category: BTreeMap<CommandCategory, Vec<usize>> = BTreeMap::new();
         for (idx, cmd) in commands.iter().enumerate() {
@@ -176,7 +200,12 @@ impl PromptBuilder {
 
         let mut index_map = BTreeMap::new();
         for (category, global_indices) in by_category {
-            for (local_idx, global_idx) in global_indices.into_iter().enumerate() {
+            // Only map the first MAX_COMMANDS_PER_CATEGORY (matching prompt truncation)
+            for (local_idx, global_idx) in global_indices
+                .into_iter()
+                .take(Self::MAX_COMMANDS_PER_CATEGORY)
+                .enumerate()
+            {
                 // local_idx 0 -> local display index 1
                 index_map.insert((category, local_idx + 1), global_idx);
             }
