@@ -377,12 +377,11 @@ fn draw_ui(
                 .collect::<Vec<_>>()
                 .join("\n")
         };
-        let events_para = Paragraph::new(events_text)
-            .style(if event_log.is_empty() {
-                Style::default().fg(Color::DarkGray)
-            } else {
-                Style::default()
-            });
+        let events_para = Paragraph::new(events_text).style(if event_log.is_empty() {
+            Style::default().fg(Color::DarkGray)
+        } else {
+            Style::default()
+        });
         f.render_widget(events_para, events_inner);
 
         // Render LLM I/O panel (bottom)
@@ -441,19 +440,23 @@ fn render_llm_panel(f: &mut Frame, area: Rect, llm_log: &[LlmMessage]) {
     }
 
     let msg = &llm_log[0];
+    let half_height = (inner.height as usize).saturating_sub(2) / 2;
+
     let mut lines = Vec::new();
 
-    // IN: Show last few lines of prompt (the action choices)
-    lines.push("IN:".to_string());
-    let prompt_lines: Vec<&str> = msg.prompt_excerpt.lines().collect();
-    // Show last 4 lines of prompt excerpt
-    for line in prompt_lines.iter().rev().take(4).rev() {
-        let truncated = if line.len() > 40 {
-            format!("{}...", &line[..37])
+    // IN: Show available actions (truncated to fit)
+    lines.push("IN (actions):".to_string());
+    for line in msg.prompt_excerpt.lines().take(half_height.max(3)) {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let truncated = if trimmed.len() > 38 {
+            format!(" {}...", &trimmed[..35])
         } else {
-            line.to_string()
+            format!(" {}", trimmed)
         };
-        lines.push(format!(" {}", truncated));
+        lines.push(truncated);
     }
 
     lines.push(String::new()); // blank line

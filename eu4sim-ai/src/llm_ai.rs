@@ -325,16 +325,29 @@ impl AiPlayer for LlmAi {
 
                 // Send to TUI if connected
                 if let Some(ref tx) = self.tui_tx {
-                    // Extract last ~15 lines of prompt as excerpt (the actions section)
-                    let prompt_excerpt = prompt
-                        .lines()
-                        .rev()
-                        .take(15)
-                        .collect::<Vec<_>>()
-                        .into_iter()
-                        .rev()
-                        .collect::<Vec<_>>()
-                        .join("\n");
+                    // Extract the <|actions|> section from the prompt
+                    let prompt_excerpt = if let Some(start) = prompt.find("<|actions|>") {
+                        if let Some(end) = prompt.find("<|/actions|>") {
+                            prompt[start + 11..end].trim().to_string()
+                        } else {
+                            prompt[start + 11..]
+                                .lines()
+                                .take(20)
+                                .collect::<Vec<_>>()
+                                .join("\n")
+                        }
+                    } else {
+                        // Fallback: last 15 lines
+                        prompt
+                            .lines()
+                            .rev()
+                            .take(15)
+                            .collect::<Vec<_>>()
+                            .into_iter()
+                            .rev()
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    };
 
                     let msg = LlmMessage {
                         country: visible_state.observer.clone(),
