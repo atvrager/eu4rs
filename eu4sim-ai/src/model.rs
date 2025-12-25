@@ -656,6 +656,135 @@ impl Eu4AiModel {
             .unwrap_or(0))
     }
 
+    /// Generate multi-action response using autoregressive sampling.
+    ///
+    /// Generates up to `max_tokens` tokens or until newline sequence completes
+    /// all 6 categories.
+    pub fn choose_multi_action(&mut self, prompt: &str, max_tokens: usize) -> Result<String> {
+        let infer_start = std::time::Instant::now();
+
+        log::debug!(
+            "=== LLM PROMPT ({} chars) ===\n{}\n=== END ===",
+            prompt.len(),
+            prompt
+        );
+
+        // Tokenize prompt
+        let encoding = self
+            .tokenizer
+            .encode(prompt, true)
+            .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
+        let mut tokens = encoding.get_ids().to_vec();
+
+        if tokens.is_empty() {
+            anyhow::bail!("Tokenization produced empty sequence");
+        }
+
+        log::debug!("Tokenized to {} tokens", tokens.len());
+
+        let mut generated_text = String::new();
+
+        // Autoregressive generation
+        for step in 0..max_tokens {
+            // Convert to tensor
+            let input_ids = Tensor::new(tokens.as_slice(), &self.device)?.unsqueeze(0)?;
+
+            // Forward pass
+            let logits = match &mut self.inner {
+                ModelInner::Llama {
+                    model,
+                    cache,
+                    config,
+                } => {
+                    // For incremental generation, use position = tokens.len() - 1
+                    // and persistent cache
+                    if step == 0 {
+                        // First step: create fresh cache
+                        *cache = Cache::new(true, self.dtype, config, &self.device)
+                            .context("Failed to create KV cache")?;
+                        model
+                            .forward(&input_ids, 0, cache)
+                            .context("LLaMA forward pass failed")?
+                    } else {
+                        // Incremental: only process last token
+                        let last_token =
+                            Tensor::new(&[tokens[tokens.len() - 1]], &self.device)?.unsqueeze(0)?;
+                        model
+                            .forward(&last_token, tokens.len() - 1, cache)
+                            .context("LLaMA forward pass failed")?
+                    }
+                }
+                ModelInner::Gemma3 { model } => {
+                    // Gemma3 manages cache internally
+                    if step == 0 {
+                        model.clear_kv_cache();
+                    }
+                    model
+                        .forward(&input_ids, tokens.len() - 1)
+                        .context("Gemma3 forward pass failed")?
+                }
+            };
+
+            // Extract logits for last position
+            let logits = if logits.dims().len() == 3 {
+                let seq_len = logits.dim(1)?;
+                logits.i((.., seq_len - 1, ..))?.squeeze(0)?
+            } else {
+                logits.squeeze(0)?
+            };
+
+            // Sample next token (greedy for determinism)
+            let next_token = self.sample_greedy(&logits)?;
+            tokens.push(next_token);
+
+            // Decode and append
+            if let Ok(text) = self.tokenizer.decode(&[next_token], false) {
+                generated_text.push_str(&text);
+
+                // Check for completion (all 6 categories present)
+                if self.is_multi_action_complete(&generated_text) {
+                    log::debug!("Multi-action complete after {} tokens", step + 1);
+                    break;
+                }
+            }
+        }
+
+        let infer_time = infer_start.elapsed();
+        log::debug!(
+            "LLM generated {} chars in {:.0}ms ({} tokens)",
+            generated_text.len(),
+            infer_time.as_secs_f64() * 1000.0,
+            generated_text.split_whitespace().count()
+        );
+
+        Ok(generated_text)
+    }
+
+    /// Check if multi-action response is complete (all 6 categories present).
+    fn is_multi_action_complete(&self, text: &str) -> bool {
+        let required = [
+            "DIPLOMATIC:",
+            "MILITARY:",
+            "ECONOMIC:",
+            "TRADE:",
+            "COLONIZATION:",
+            "OTHER:",
+        ];
+        required.iter().all(|cat| text.contains(cat))
+    }
+
+    /// Sample the most likely token (greedy decoding).
+    fn sample_greedy(&self, logits: &Tensor) -> Result<u32> {
+        let logits_vec: Vec<f32> = logits.to_vec1()?;
+        let max_idx = logits_vec
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .map(|(idx, _)| idx)
+            .ok_or_else(|| anyhow::anyhow!("Empty logits"))?;
+        Ok(max_idx as u32)
+    }
+
     /// Get the model architecture.
     pub fn arch(&self) -> ModelArch {
         self.arch

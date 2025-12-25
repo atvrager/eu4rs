@@ -189,7 +189,7 @@ pub type AvailableCommands = Vec<Command>;
 ///
 /// Used to enforce "one diplomatic action per day" while allowing unlimited
 /// military moves, economic actions, etc. in the same tick.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CommandCategory {
     /// Diplomatic actions: one per day max (DeclareWar, OfferPeace, etc.)
     Diplomatic,

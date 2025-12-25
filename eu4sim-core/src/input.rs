@@ -231,3 +231,12 @@ pub enum Command {
     // Meta
     Quit,
 }
+
+impl Command {
+    /// Returns the category of this command for multi-action AI selection.
+    ///
+    /// Wraps the module-level `categorize_command()` function for convenience.
+    pub fn category(&self) -> crate::ai::CommandCategory {
+        crate::ai::categorize_command(self)
+    }
+}

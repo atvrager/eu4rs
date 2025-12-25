@@ -145,6 +145,101 @@ impl LlmAi {
             other => format!("{:?}", other),
         }
     }
+
+    /// Parse multi-action response format.
+    ///
+    /// Expected format:
+    /// ```text
+    /// DIPLOMATIC:1
+    /// MILITARY:2,3
+    /// ECONOMIC:0
+    /// TRADE:0
+    /// COLONIZATION:0
+    /// OTHER:0
+    /// ```
+    ///
+    /// Returns Vec of commands from the available list.
+    /// Invalid indices are skipped with a warning.
+    fn parse_multi_action_response(response: &str, available_commands: &[Command]) -> Vec<Command> {
+        use eu4sim_core::ai::{CommandCategory, categorize_command};
+
+        let mut result = Vec::new();
+
+        for line in response.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+
+            // Parse "CATEGORY:INDEX[,INDEX]*"
+            let Some((cat_str, indices_str)) = line.split_once(':') else {
+                log::warn!("Malformed line (no colon): '{}'", line);
+                continue;
+            };
+
+            let cat_str = cat_str.trim();
+            let indices_str = indices_str.trim();
+
+            // Parse category
+            let category = match cat_str {
+                "DIPLOMATIC" => CommandCategory::Diplomatic,
+                "MILITARY" => CommandCategory::Military,
+                "ECONOMIC" => CommandCategory::Economic,
+                "TRADE" => CommandCategory::Trade,
+                "COLONIZATION" => CommandCategory::Colonization,
+                "OTHER" => CommandCategory::Other,
+                _ => {
+                    log::warn!("Unknown category: '{}'", cat_str);
+                    continue;
+                }
+            };
+
+            // Parse indices (comma-separated)
+            for idx_str in indices_str.split(',') {
+                let idx_str = idx_str.trim();
+                if idx_str.is_empty() {
+                    continue;
+                }
+
+                let Ok(idx) = idx_str.parse::<usize>() else {
+                    log::warn!("Invalid index '{}' for category {}", idx_str, cat_str);
+                    continue;
+                };
+
+                // 0 = Pass, skip
+                if idx == 0 {
+                    continue;
+                }
+
+                // Validate index
+                if idx >= available_commands.len() {
+                    log::warn!(
+                        "Index {} out of range (max {}) for category {}",
+                        idx,
+                        available_commands.len() - 1,
+                        cat_str
+                    );
+                    continue;
+                }
+
+                // Validate category matches
+                let cmd = &available_commands[idx];
+                if categorize_command(cmd) != category {
+                    log::warn!(
+                        "Index {} is {:?} but listed under {}",
+                        idx,
+                        categorize_command(cmd),
+                        cat_str
+                    );
+                    continue;
+                }
+
+                result.push(cmd.clone());
+            }
+        }
+
+        result
+    }
 }
 
 impl AiPlayer for LlmAi {
@@ -157,47 +252,49 @@ impl AiPlayer for LlmAi {
         visible_state: &VisibleWorldState,
         available_commands: &AvailableCommands,
     ) -> Vec<Command> {
-        // Always include Pass as action 0, then up to 9 other actions
-        let max_other_actions = 9;
-        let mut commands: Vec<Command> = vec![Command::Pass];
-        commands.extend(
-            available_commands
-                .iter()
-                .filter(|c| **c != Command::Pass)
-                .take(max_other_actions)
-                .cloned(),
+        if available_commands.is_empty() {
+            return vec![];
+        }
+
+        // Build multi-action prompt
+        let state_text = Self::format_state(visible_state);
+        let prompt = self.prompt_builder.build_multi_action(
+            &visible_state.observer,
+            &state_text,
+            available_commands,
         );
 
-        // Build the prompt
-        let state_text = Self::format_state(visible_state);
-        let prompt = self
-            .prompt_builder
-            .build(&visible_state.observer, &state_text, &commands);
+        // Run inference (up to 50 tokens)
+        match self.model.choose_multi_action(prompt, 50) {
+            Ok(response) => {
+                let commands = Self::parse_multi_action_response(&response, available_commands);
 
-        // Run inference
-        match self.model.choose_action(prompt) {
-            Ok(action_idx) => {
-                if action_idx < commands.len() {
-                    let cmd = &commands[action_idx];
-                    // Always log the decision with action index and description
+                // Log decision
+                if commands.is_empty() {
                     log::warn!(
-                        "[LLM] {} @ {}.{}.{} → [{}] {}",
+                        "[LLM] {} @ {}.{}.{} → Pass (no valid actions parsed)",
+                        visible_state.observer,
+                        visible_state.date.year,
+                        visible_state.date.month,
+                        visible_state.date.day
+                    );
+                } else {
+                    log::warn!(
+                        "[LLM] {} @ {}.{}.{} → {} actions: {}",
                         visible_state.observer,
                         visible_state.date.year,
                         visible_state.date.month,
                         visible_state.date.day,
-                        action_idx,
-                        Self::format_command_brief(cmd)
+                        commands.len(),
+                        commands
+                            .iter()
+                            .map(Self::format_command_brief)
+                            .collect::<Vec<_>>()
+                            .join(", ")
                     );
-                    vec![cmd.clone()]
-                } else {
-                    log::warn!(
-                        "LlmAi returned invalid action index {} (only {} actions available)",
-                        action_idx,
-                        commands.len()
-                    );
-                    vec![]
                 }
+
+                commands
             }
             Err(e) => {
                 log::error!("LlmAi inference failed: {}", e);

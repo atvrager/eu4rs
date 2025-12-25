@@ -4,6 +4,8 @@
 //! that the model can process.
 
 use eu4sim_core::Command;
+use eu4sim_core::ai::CommandCategory;
+use std::collections::BTreeMap;
 use std::fmt::Write;
 
 /// Builds prompts for the AI model.
@@ -63,6 +65,100 @@ impl PromptBuilder {
         &self.buffer
     }
 
+    /// Build a multi-action prompt grouped by command category.
+    ///
+    /// # Format
+    /// ```text
+    /// <|country|>KOR<|/country|>
+    /// <|state|>
+    /// Date: 1445.3.15
+    /// Treasury: 523 ducats
+    /// ...
+    /// <|/state|>
+    /// <|actions|>
+    /// DIPLOMATIC:
+    ///   0: Pass
+    ///   1: Declare war on MNG
+    /// MILITARY:
+    ///   0: Pass
+    ///   2: Move Army 1 to province 123
+    ///   3: Move Army 2 to province 124
+    /// ECONOMIC:
+    ///   0: Pass
+    ///   4: Develop Seoul (admin)
+    /// TRADE:
+    ///   0: Pass
+    /// COLONIZATION:
+    ///   0: Pass
+    /// OTHER:
+    ///   0: Pass
+    /// <|/actions|>
+    /// <|choice|>
+    /// DIPLOMATIC:
+    /// MILITARY:
+    /// ECONOMIC:
+    /// TRADE:
+    /// COLONIZATION:
+    /// OTHER:
+    /// ```
+    pub fn build_multi_action(
+        &mut self,
+        country: &str,
+        state_text: &str,
+        commands: &[Command],
+    ) -> &str {
+        self.buffer.clear();
+
+        // Country tag
+        writeln!(self.buffer, "<|country|>{}<|/country|>", country).unwrap();
+
+        // State description
+        writeln!(self.buffer, "<|state|>\n{}<|/state|>", state_text).unwrap();
+
+        // Group commands by category
+        let mut by_category: BTreeMap<CommandCategory, Vec<(usize, &Command)>> = BTreeMap::new();
+        for (idx, cmd) in commands.iter().enumerate() {
+            by_category
+                .entry(cmd.category())
+                .or_default()
+                .push((idx, cmd));
+        }
+
+        // Actions section grouped by category
+        self.buffer.push_str("<|actions|>\n");
+
+        // All 6 categories in order
+        let all_categories = [
+            CommandCategory::Diplomatic,
+            CommandCategory::Military,
+            CommandCategory::Economic,
+            CommandCategory::Trade,
+            CommandCategory::Colonization,
+            CommandCategory::Other,
+        ];
+
+        for category in all_categories {
+            writeln!(self.buffer, "{}:", category_name(category)).unwrap();
+            self.buffer.push_str("  0: Pass\n");
+
+            if let Some(cmds) = by_category.get(&category) {
+                for (idx, cmd) in cmds {
+                    writeln!(self.buffer, "  {}: {}", idx, format_command(cmd)).unwrap();
+                }
+            }
+        }
+
+        self.buffer.push_str("<|/actions|>\n");
+
+        // Response template
+        self.buffer.push_str("<|choice|>\n");
+        for category in all_categories {
+            writeln!(self.buffer, "{}:", category_name(category)).unwrap();
+        }
+
+        &self.buffer
+    }
+
     /// Build a minimal prompt (for testing or simple scenarios).
     pub fn build_minimal(&mut self, country: &str, date: &str, commands: &[Command]) -> &str {
         self.buffer.clear();
@@ -78,6 +174,18 @@ impl PromptBuilder {
         self.buffer.push_str("<|choice|>");
 
         &self.buffer
+    }
+}
+
+/// Get display name for a command category.
+fn category_name(cat: CommandCategory) -> &'static str {
+    match cat {
+        CommandCategory::Diplomatic => "DIPLOMATIC",
+        CommandCategory::Military => "MILITARY",
+        CommandCategory::Economic => "ECONOMIC",
+        CommandCategory::Trade => "TRADE",
+        CommandCategory::Colonization => "COLONIZATION",
+        CommandCategory::Other => "OTHER",
     }
 }
 

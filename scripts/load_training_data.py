@@ -348,6 +348,38 @@ def command_to_string(cmd_reader) -> str:
         return f"Unknown({which})"
 
 
+def categorize_command_py(cmd_str: str) -> str:
+    """Categorize a command string (heuristic-based).
+
+    Maps command strings to one of 6 categories for multi-action AI:
+    - DIPLOMATIC: War, Peace, Alliance
+    - MILITARY: Move, Recruit, Assign, Merge, Split, Embark
+    - ECONOMIC: Build, Develop, Core, Tech, Institution
+    - TRADE: Merchant, Trade
+    - COLONIZATION: Colony
+    - OTHER: Pass, religion, control
+    """
+    # Check for keywords
+    if any(
+        x in cmd_str
+        for x in ["War", "Peace", "Alliance", "Marriage", "MilitaryAccess", "Rival"]
+    ):
+        return "DIPLOMATIC"
+    elif any(
+        x in cmd_str
+        for x in ["Move", "Recruit", "Assign", "Merge", "Split", "Embark", "Fleet"]
+    ):
+        return "MILITARY"
+    elif any(x in cmd_str for x in ["Build", "Develop", "Core", "Tech", "Institution"]):
+        return "ECONOMIC"
+    elif any(x in cmd_str for x in ["Merchant", "Trade"]):
+        return "TRADE"
+    elif "Colony" in cmd_str:
+        return "COLONIZATION"
+    else:
+        return "OTHER"
+
+
 @dataclass
 class TrainingSample:
     """A single training sample for ML.
@@ -381,42 +413,89 @@ class TrainingSample:
         )
 
     def to_prompt(self) -> str:
-        """Format this sample as a training prompt."""
+        """Format this sample as a training prompt (multi-action format with categories)."""
         state = self.state
         date = state.date
         country = state.own_country
 
         lines = [
+            f"<|country|>{state.observer}<|/country|>",
+            "<|state|>",
             f"Date: {date}",
-            f"Country: {state.observer}",
-            f"Treasury: {country.treasury:.1f}",
+            f"Treasury: {country.treasury:.1f} ducats",
             f"Manpower: {country.manpower:.1f}",
-            f"Stability: {country.stability}",
-            f"Prestige: {country.prestige:.1f}",
-            f"Tech: ADM {country.adm_tech} / DIP {country.dip_tech} / MIL {country.mil_tech}",
-            f"Mana: ADM {country.adm_mana:.0f} / DIP {country.dip_mana:.0f} / MIL {country.mil_mana:.0f}",
-            f"At War: {'Yes' if state.at_war else 'No'}",
-            "",
-            "Available Actions:",
+            f"Admin: {country.adm_mana:.0f} / Diplo: {country.dip_mana:.0f} / Mil: {country.mil_mana:.0f}",
+            "<|/state|>",
+            "<|actions|>",
         ]
 
+        # Group by category
+        CATEGORIES = [
+            "DIPLOMATIC",
+            "MILITARY",
+            "ECONOMIC",
+            "TRADE",
+            "COLONIZATION",
+            "OTHER",
+        ]
+        category_map = {cat: [] for cat in CATEGORIES}
+
         for i, cmd in enumerate(self.available_commands):
-            lines.append(f"  [{i}] {cmd}")
+            cat = categorize_command_py(cmd)
+            category_map[cat].append((i, cmd))
+
+        for cat in CATEGORIES:
+            lines.append(f"{cat}:")
+            lines.append("  0: Pass")
+            for idx, cmd in category_map[cat]:
+                lines.append(f"  {idx}: {cmd}")
+
+        lines.append("<|/actions|>")
+        lines.append("<|choice|>")
 
         return "\n".join(lines)
 
     def to_completion(self) -> str:
-        """Format the chosen actions as a completion.
+        """Format the chosen actions as a completion (multi-action format).
 
-        Multi-command format: each action on its own line.
+        Returns the category-grouped response format:
+        DIPLOMATIC:idx1,idx2
+        MILITARY:idx3
+        ...
         """
         if not self.chosen_commands:
-            return "Action: Pass"
+            # No actions = all Pass
+            return "DIPLOMATIC:0\nMILITARY:0\nECONOMIC:0\nTRADE:0\nCOLONIZATION:0\nOTHER:0\n"
+
+        # Group chosen commands by category
+        category_indices = {
+            "DIPLOMATIC": [],
+            "MILITARY": [],
+            "ECONOMIC": [],
+            "TRADE": [],
+            "COLONIZATION": [],
+            "OTHER": [],
+        }
+
+        for idx, cmd in zip(self.chosen_actions, self.chosen_commands):
+            cat = categorize_command_py(cmd)
+            category_indices[cat].append(str(idx))
 
         lines = []
-        for idx, cmd in zip(self.chosen_actions, self.chosen_commands):
-            lines.append(f"Action: [{idx}] {cmd}")
-        return "\n".join(lines)
+        for cat in [
+            "DIPLOMATIC",
+            "MILITARY",
+            "ECONOMIC",
+            "TRADE",
+            "COLONIZATION",
+            "OTHER",
+        ]:
+            if category_indices[cat]:
+                lines.append(f"{cat}:{','.join(category_indices[cat])}")
+            else:
+                lines.append(f"{cat}:0")
+
+        return "\n".join(lines) + "\n"
 
 
 def load_training_file(path: Path | str) -> list[TrainingSample]:
