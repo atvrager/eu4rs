@@ -902,21 +902,35 @@ pub fn available_commands(
         // Don't offer peace if there's already a pending offer in this war
         let has_pending_offer = war.pending_peace.is_some();
 
-        // OfferPeace with TakeProvinces if we occupy enemy provinces, have war score, AND have a fort
-        if !has_pending_offer && !occupied.is_empty() && our_score > 0 && has_occupied_fort {
-            log::info!(
-                "[PEACE] {} offering TakeProvinces in {} ({} provinces, score={})",
-                country_tag,
-                war.name,
-                occupied.len(),
-                our_score,
-            );
-            available.push(Command::OfferPeace {
-                war_id: war.id,
-                terms: PeaceTerms::TakeProvinces {
-                    provinces: occupied,
-                },
-            });
+        // OfferPeace with TakeProvinces if we occupy enemy provinces, can afford it, AND have a fort
+        if !has_pending_offer && !occupied.is_empty() && has_occupied_fort {
+            let terms = PeaceTerms::TakeProvinces {
+                provinces: occupied.clone(),
+            };
+            let peace_cost = calculate_peace_terms_cost(state, &terms, war, is_attacker);
+
+            if our_score >= peace_cost {
+                log::info!(
+                    "[PEACE] {} offering TakeProvinces in {} ({} provinces, cost={}, score={})",
+                    country_tag,
+                    war.name,
+                    occupied.len(),
+                    peace_cost,
+                    our_score,
+                );
+                available.push(Command::OfferPeace {
+                    war_id: war.id,
+                    terms,
+                });
+            } else {
+                log::debug!(
+                    "[PEACE] {} can't afford TakeProvinces in {}: cost={} > score={}",
+                    country_tag,
+                    war.name,
+                    peace_cost,
+                    our_score,
+                );
+            }
         } else if !occupied.is_empty() && our_score > 0 && !has_occupied_fort {
             // Debug: occupation but no fort
             log::debug!(
