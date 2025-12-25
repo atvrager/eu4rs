@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use eu4sim_verify::{diff, extract, melt, parse, predict, report, verify};
+use eu4sim_verify::{coverage, diff, extract, melt, parse, predict, report, verify};
 
 #[derive(Parser)]
 #[command(name = "eu4sim-verify")]
@@ -96,6 +96,25 @@ enum Commands {
         /// Filter to specific country tag
         #[arg(short, long)]
         country: Option<String>,
+    },
+
+    /// Analyze save field coverage
+    Coverage {
+        /// Save file(s) to scan (can specify multiple)
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+
+        /// Output format (text or json)
+        #[arg(long, default_value = "text")]
+        format: String,
+
+        /// Show all discovered fields
+        #[arg(short, long)]
+        verbose: bool,
+
+        /// Filter to specific category
+        #[arg(long)]
+        category: Option<String>,
     },
 }
 
@@ -347,6 +366,29 @@ fn main() -> Result<()> {
                 println!();
             } else {
                 diff::print_diff_report(&result);
+            }
+        }
+
+        Commands::Coverage {
+            paths,
+            format,
+            verbose,
+            category: _category,
+        } => {
+            log::info!("Scanning {} save file(s) for field coverage", paths.len());
+
+            // Convert paths to references
+            let path_refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
+
+            // Scan all saves
+            let report = coverage::scan_saves(&path_refs)?;
+
+            // Output report
+            if format == "json" {
+                let json = coverage::json_report(&report)?;
+                println!("{}", json);
+            } else {
+                coverage::print_report(&report, verbose);
             }
         }
     }

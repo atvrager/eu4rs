@@ -1,3 +1,4 @@
+pub mod coverage;
 pub mod diff;
 pub mod extract;
 pub mod hydrate;
