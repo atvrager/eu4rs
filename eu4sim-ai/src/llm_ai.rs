@@ -176,22 +176,29 @@ impl LlmAi {
         }
     }
 
-    /// Parse multi-action response format.
+    /// Parse multi-action response format with local per-category indices.
     ///
-    /// Expected format:
+    /// Expected format (uses local indices within each category):
     /// ```text
     /// DIPLOMATIC:1
-    /// MILITARY:2,3
+    /// MILITARY:1,2
     /// ECONOMIC:0
     /// TRADE:0
     /// COLONIZATION:0
     /// OTHER:0
     /// ```
     ///
+    /// Local index 0 = Pass (skip), 1 = first command in category, etc.
+    /// Uses index_map to convert local indices to global command array indices.
+    ///
     /// Returns Vec of commands from the available list.
     /// Invalid indices are skipped with a warning.
-    fn parse_multi_action_response(response: &str, available_commands: &[Command]) -> Vec<Command> {
-        use eu4sim_core::ai::{CommandCategory, categorize_command};
+    fn parse_multi_action_response(
+        response: &str,
+        available_commands: &[Command],
+        index_map: &std::collections::BTreeMap<(eu4sim_core::ai::CommandCategory, usize), usize>,
+    ) -> Vec<Command> {
+        use eu4sim_core::ai::CommandCategory;
 
         let mut result = Vec::new();
 
@@ -224,47 +231,40 @@ impl LlmAi {
                 }
             };
 
-            // Parse indices (comma-separated)
+            // Parse local indices (comma-separated)
             for idx_str in indices_str.split(',') {
                 let idx_str = idx_str.trim();
                 if idx_str.is_empty() {
                     continue;
                 }
 
-                let Ok(idx) = idx_str.parse::<usize>() else {
+                let Ok(local_idx) = idx_str.parse::<usize>() else {
                     log::warn!("Invalid index '{}' for category {}", idx_str, cat_str);
                     continue;
                 };
 
                 // 0 = Pass, skip
-                if idx == 0 {
+                if local_idx == 0 {
                     continue;
                 }
 
-                // Validate index
-                if idx >= available_commands.len() {
+                // Look up global index from local category index
+                let Some(&global_idx) = index_map.get(&(category, local_idx)) else {
                     log::warn!(
-                        "Index {} out of range (max {}) for category {}",
-                        idx,
-                        available_commands.len() - 1,
-                        cat_str
+                        "Local index {} not found in {} (max local: {})",
+                        local_idx,
+                        cat_str,
+                        index_map
+                            .keys()
+                            .filter(|(cat, _)| *cat == category)
+                            .map(|(_, idx)| *idx)
+                            .max()
+                            .unwrap_or(0)
                     );
                     continue;
-                }
+                };
 
-                // Validate category matches
-                let cmd = &available_commands[idx];
-                if categorize_command(cmd) != category {
-                    log::warn!(
-                        "Index {} is {:?} but listed under {}",
-                        idx,
-                        categorize_command(cmd),
-                        cat_str
-                    );
-                    continue;
-                }
-
-                result.push(cmd.clone());
+                result.push(available_commands[global_idx].clone());
             }
         }
 
@@ -286,7 +286,10 @@ impl AiPlayer for LlmAi {
             return vec![];
         }
 
-        // Build multi-action prompt
+        // Build index map for local->global index conversion
+        let index_map = PromptBuilder::build_index_map(available_commands);
+
+        // Build multi-action prompt (uses local per-category indices)
         let state_text = Self::format_state(visible_state);
         let prompt = self.prompt_builder.build_multi_action(
             &visible_state.observer,
@@ -297,7 +300,8 @@ impl AiPlayer for LlmAi {
         // Run inference (up to 50 tokens)
         match self.model.choose_multi_action(prompt, 50) {
             Ok(response) => {
-                let commands = Self::parse_multi_action_response(&response, available_commands);
+                let commands =
+                    Self::parse_multi_action_response(&response, available_commands, &index_map);
 
                 // Log decision
                 let cmd_strings: Vec<String> =

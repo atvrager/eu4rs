@@ -67,6 +67,10 @@ impl PromptBuilder {
 
     /// Build a multi-action prompt grouped by command category.
     ///
+    /// Uses per-category local indices (0=Pass, 1=first action, 2=second action, etc.)
+    /// which are more intuitive for the model. The parser must remap these back to
+    /// global indices using `parse_multi_action_response`.
+    ///
     /// # Format
     /// ```text
     /// <|country|>KOR<|/country|>
@@ -81,11 +85,11 @@ impl PromptBuilder {
     ///   1: Declare war on MNG
     /// MILITARY:
     ///   0: Pass
-    ///   2: Move Army 1 to province 123
-    ///   3: Move Army 2 to province 124
+    ///   1: Move Army 1 to province 123
+    ///   2: Move Army 2 to province 124
     /// ECONOMIC:
     ///   0: Pass
-    ///   4: Develop Seoul (admin)
+    ///   1: Develop Seoul (admin)
     /// TRADE:
     ///   0: Pass
     /// COLONIZATION:
@@ -115,7 +119,7 @@ impl PromptBuilder {
         // State description
         writeln!(self.buffer, "<|state|>\n{}<|/state|>", state_text).unwrap();
 
-        // Group commands by category
+        // Group commands by category, preserving global index
         let mut by_category: BTreeMap<CommandCategory, Vec<(usize, &Command)>> = BTreeMap::new();
         for (idx, cmd) in commands.iter().enumerate() {
             by_category
@@ -142,8 +146,9 @@ impl PromptBuilder {
             self.buffer.push_str("  0: Pass\n");
 
             if let Some(cmds) = by_category.get(&category) {
-                for (idx, cmd) in cmds {
-                    writeln!(self.buffer, "  {}: {}", idx, format_command(cmd)).unwrap();
+                // Use local indices: 1, 2, 3, ... (0 is always Pass)
+                for (local_idx, (_global_idx, cmd)) in cmds.iter().enumerate() {
+                    writeln!(self.buffer, "  {}: {}", local_idx + 1, format_command(cmd)).unwrap();
                 }
             }
         }
@@ -157,6 +162,27 @@ impl PromptBuilder {
         }
 
         &self.buffer
+    }
+
+    /// Build index mapping from local per-category indices to global command indices.
+    ///
+    /// Returns a map: (CommandCategory, local_index) -> global_index
+    /// where local_index 0 = Pass (not in map), 1 = first command in category, etc.
+    pub fn build_index_map(commands: &[Command]) -> BTreeMap<(CommandCategory, usize), usize> {
+        let mut by_category: BTreeMap<CommandCategory, Vec<usize>> = BTreeMap::new();
+        for (idx, cmd) in commands.iter().enumerate() {
+            by_category.entry(cmd.category()).or_default().push(idx);
+        }
+
+        let mut index_map = BTreeMap::new();
+        for (category, global_indices) in by_category {
+            for (local_idx, global_idx) in global_indices.into_iter().enumerate() {
+                // local_idx 0 -> local display index 1
+                index_map.insert((category, local_idx + 1), global_idx);
+            }
+        }
+
+        index_map
     }
 
     /// Build a minimal prompt (for testing or simple scenarios).
