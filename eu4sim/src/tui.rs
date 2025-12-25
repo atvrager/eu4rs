@@ -13,7 +13,7 @@ use image::RgbaImage;
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     widgets::{Block, Borders, Paragraph},
     Frame, Terminal,
 };
@@ -367,13 +367,22 @@ fn draw_ui(
         f.render_widget(events_block, side_chunks[0]);
 
         let visible_count = events_inner.height as usize;
-        let events_text = event_log
-            .iter()
-            .take(visible_count)
-            .map(|s| s.as_str())
-            .collect::<Vec<_>>()
-            .join("\n");
-        let events_para = Paragraph::new(events_text);
+        let events_text = if event_log.is_empty() {
+            "(no wars yet)".to_string()
+        } else {
+            event_log
+                .iter()
+                .take(visible_count)
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let events_para = Paragraph::new(events_text)
+            .style(if event_log.is_empty() {
+                Style::default().fg(Color::DarkGray)
+            } else {
+                Style::default()
+            });
         f.render_widget(events_para, events_inner);
 
         // Render LLM I/O panel (bottom)
@@ -408,11 +417,18 @@ fn draw_ui(
     f.render_widget(status_bar, status_area);
 }
 
-/// Render the LLM I/O panel showing recent prompt/response pairs.
+/// Render the LLM I/O panel showing most recent prompt/response.
 fn render_llm_panel(f: &mut Frame, area: Rect, llm_log: &[LlmMessage]) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(" LLM I/O ")
+        .title(format!(
+            " LLM I/O ({}) ",
+            if llm_log.is_empty() {
+                "waiting".to_string()
+            } else {
+                format!("{} @ {}", llm_log[0].country, llm_log[0].date)
+            }
+        ))
         .border_style(Style::default().fg(Color::Cyan));
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -424,37 +440,28 @@ fn render_llm_panel(f: &mut Frame, area: Rect, llm_log: &[LlmMessage]) {
         return;
     }
 
-    // Show the most recent LLM message with details
     let msg = &llm_log[0];
-
-    // Build display text
     let mut lines = Vec::new();
 
-    // Header with country and date
-    lines.push(format!("┌─ {} @ {} ─┐", msg.country, msg.date));
-
-    // Response (the model output)
-    lines.push("Response:".to_string());
-    for line in msg.response.lines().take(6) {
-        lines.push(format!("  {}", line));
+    // IN: Show last few lines of prompt (the action choices)
+    lines.push("IN:".to_string());
+    let prompt_lines: Vec<&str> = msg.prompt_excerpt.lines().collect();
+    // Show last 4 lines of prompt excerpt
+    for line in prompt_lines.iter().rev().take(4).rev() {
+        let truncated = if line.len() > 40 {
+            format!("{}...", &line[..37])
+        } else {
+            line.to_string()
+        };
+        lines.push(format!(" {}", truncated));
     }
 
-    // Commands parsed
-    if msg.commands.is_empty() {
-        lines.push("→ Pass (no actions)".to_string());
-    } else {
-        lines.push(format!("→ {} actions:", msg.commands.len()));
-        for cmd in msg.commands.iter().take(4) {
-            lines.push(format!("  • {}", cmd));
-        }
-        if msg.commands.len() > 4 {
-            lines.push(format!("  ... +{} more", msg.commands.len() - 4));
-        }
-    }
+    lines.push(String::new()); // blank line
 
-    // Show count of older messages
-    if llm_log.len() > 1 {
-        lines.push(format!("─── {} older ───", llm_log.len() - 1));
+    // OUT: Show the raw model response
+    lines.push("OUT:".to_string());
+    for line in msg.response.lines() {
+        lines.push(format!(" {}", line));
     }
 
     let text = lines
@@ -463,7 +470,7 @@ fn render_llm_panel(f: &mut Frame, area: Rect, llm_log: &[LlmMessage]) {
         .collect::<Vec<_>>()
         .join("\n");
 
-    let para = Paragraph::new(text).style(Style::default().add_modifier(Modifier::DIM));
+    let para = Paragraph::new(text);
     f.render_widget(para, inner);
 }
 

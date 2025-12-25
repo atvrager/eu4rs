@@ -718,10 +718,18 @@ impl Eu4AiModel {
                     // Gemma3 manages cache internally
                     if step == 0 {
                         model.clear_kv_cache();
+                        // First step: process all tokens
+                        model
+                            .forward(&input_ids, 0)
+                            .context("Gemma3 forward pass failed")?
+                    } else {
+                        // Incremental: only process last token
+                        let last_token =
+                            Tensor::new(&[tokens[tokens.len() - 1]], &self.device)?.unsqueeze(0)?;
+                        model
+                            .forward(&last_token, tokens.len() - 1)
+                            .context("Gemma3 forward pass failed")?
                     }
-                    model
-                        .forward(&input_ids, tokens.len() - 1)
-                        .context("Gemma3 forward pass failed")?
                 }
             };
 
