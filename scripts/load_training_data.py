@@ -380,6 +380,19 @@ def categorize_command_py(cmd_str: str) -> str:
         return "OTHER"
 
 
+# Maximum commands per category (must match Rust MAX_COMMANDS_PER_CATEGORY)
+MAX_COMMANDS_PER_CATEGORY = 10
+
+CATEGORIES = [
+    "DIPLOMATIC",
+    "MILITARY",
+    "ECONOMIC",
+    "TRADE",
+    "COLONIZATION",
+    "OTHER",
+]
+
+
 @dataclass
 class TrainingSample:
     """A single training sample for ML.
@@ -412,8 +425,56 @@ class TrainingSample:
             chosen_commands=commands,
         )
 
+    def _build_category_map(self) -> dict[str, list[tuple[int, str]]]:
+        """Group commands by category, preserving global index.
+
+        Returns: {category: [(global_idx, cmd_str), ...]}
+        """
+        category_map: dict[str, list[tuple[int, str]]] = {cat: [] for cat in CATEGORIES}
+        for i, cmd in enumerate(self.available_commands):
+            cat = categorize_command_py(cmd)
+            category_map[cat].append((i, cmd))
+        return category_map
+
+    def _build_local_to_global_map(
+        self, category_map: dict[str, list[tuple[int, str]]]
+    ) -> dict[tuple[str, int], int]:
+        """Build mapping from (category, local_idx) -> global_idx.
+
+        Only includes first MAX_COMMANDS_PER_CATEGORY per category.
+        Local index 1 = first command, 2 = second, etc. (0 = Pass, not mapped)
+        """
+        local_to_global: dict[tuple[str, int], int] = {}
+        for cat, cmds in category_map.items():
+            for local_idx, (global_idx, _cmd) in enumerate(
+                cmds[:MAX_COMMANDS_PER_CATEGORY]
+            ):
+                # local_idx 0 -> display index 1
+                local_to_global[(cat, local_idx + 1)] = global_idx
+        return local_to_global
+
+    def _build_global_to_local_map(
+        self, category_map: dict[str, list[tuple[int, str]]]
+    ) -> dict[int, tuple[str, int]]:
+        """Build mapping from global_idx -> (category, local_idx).
+
+        Only includes first MAX_COMMANDS_PER_CATEGORY per category.
+        """
+        global_to_local: dict[int, tuple[str, int]] = {}
+        for cat, cmds in category_map.items():
+            for local_idx, (global_idx, _cmd) in enumerate(
+                cmds[:MAX_COMMANDS_PER_CATEGORY]
+            ):
+                # local_idx 0 -> display index 1
+                global_to_local[global_idx] = (cat, local_idx + 1)
+        return global_to_local
+
     def to_prompt(self) -> str:
-        """Format this sample as a training prompt (multi-action format with categories)."""
+        """Format this sample as a training prompt (multi-action format with categories).
+
+        Uses LOCAL indices within each category (1, 2, 3...) not global indices.
+        Limited to MAX_COMMANDS_PER_CATEGORY per category.
+        """
         state = self.state
         date = state.date
         country = state.own_country
@@ -429,69 +490,60 @@ class TrainingSample:
             "<|actions|>",
         ]
 
-        # Group by category
-        CATEGORIES = [
-            "DIPLOMATIC",
-            "MILITARY",
-            "ECONOMIC",
-            "TRADE",
-            "COLONIZATION",
-            "OTHER",
-        ]
-        category_map = {cat: [] for cat in CATEGORIES}
-
-        for i, cmd in enumerate(self.available_commands):
-            cat = categorize_command_py(cmd)
-            category_map[cat].append((i, cmd))
+        category_map = self._build_category_map()
 
         for cat in CATEGORIES:
             lines.append(f"{cat}:")
             lines.append("  0: Pass")
-            for idx, cmd in category_map[cat]:
-                lines.append(f"  {idx}: {cmd}")
+            cmds = category_map[cat]
+            # Use LOCAL indices: 1, 2, 3... (limited to MAX_COMMANDS_PER_CATEGORY)
+            for local_idx, (_global_idx, cmd) in enumerate(
+                cmds[:MAX_COMMANDS_PER_CATEGORY]
+            ):
+                lines.append(f"  {local_idx + 1}: {cmd}")
+            # Note if truncated
+            if len(cmds) > MAX_COMMANDS_PER_CATEGORY:
+                lines.append(f"  ... ({len(cmds) - MAX_COMMANDS_PER_CATEGORY} more)")
 
         lines.append("<|/actions|>")
         lines.append("<|choice|>")
+        # Add response template
+        for cat in CATEGORIES:
+            lines.append(f"{cat}:")
 
         return "\n".join(lines)
 
     def to_completion(self) -> str:
         """Format the chosen actions as a completion (multi-action format).
 
-        Returns the category-grouped response format:
-        DIPLOMATIC:idx1,idx2
-        MILITARY:idx3
+        Returns the category-grouped response format with LOCAL indices:
+        DIPLOMATIC:1,2
+        MILITARY:1
         ...
+
+        Actions beyond MAX_COMMANDS_PER_CATEGORY are skipped (not in prompt).
         """
         if not self.chosen_commands:
             # No actions = all Pass
             return "DIPLOMATIC:0\nMILITARY:0\nECONOMIC:0\nTRADE:0\nCOLONIZATION:0\nOTHER:0\n"
 
-        # Group chosen commands by category
-        category_indices = {
-            "DIPLOMATIC": [],
-            "MILITARY": [],
-            "ECONOMIC": [],
-            "TRADE": [],
-            "COLONIZATION": [],
-            "OTHER": [],
-        }
+        # Build global->local mapping
+        category_map = self._build_category_map()
+        global_to_local = self._build_global_to_local_map(category_map)
 
-        for idx, cmd in zip(self.chosen_actions, self.chosen_commands):
-            cat = categorize_command_py(cmd)
-            category_indices[cat].append(str(idx))
+        # Group chosen commands by category using LOCAL indices
+        category_local_indices: dict[str, list[str]] = {cat: [] for cat in CATEGORIES}
+
+        for global_idx, cmd in zip(self.chosen_actions, self.chosen_commands):
+            if global_idx in global_to_local:
+                cat, local_idx = global_to_local[global_idx]
+                category_local_indices[cat].append(str(local_idx))
+            # else: command was beyond MAX_COMMANDS_PER_CATEGORY, skip
 
         lines = []
-        for cat in [
-            "DIPLOMATIC",
-            "MILITARY",
-            "ECONOMIC",
-            "TRADE",
-            "COLONIZATION",
-            "OTHER",
-        ]:
-            if category_indices[cat]:
-                lines.append(f"{cat}:{','.join(category_indices[cat])}")
+        for cat in CATEGORIES:
+            if category_local_indices[cat]:
+                lines.append(f"{cat}:{','.join(category_local_indices[cat])}")
             else:
                 lines.append(f"{cat}:0")
 
