@@ -14,10 +14,12 @@ path = "src/lib.rs"
 
 [dependencies]
 eu4sim-core = { path = "../eu4sim-core" }
+eu4sim = { path = "../eu4sim" }
+eu4data = { path = "../eu4data" }
 eu4save = "0.8"
 jomini = "0.34"
 zip = "2.0"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 anyhow = "1.0"
 log = "0.4"
 env_logger = "0.11"

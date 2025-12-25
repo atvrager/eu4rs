@@ -27,9 +27,23 @@ pub fn load_save(path: &Path) -> Result<ExtractedState> {
             log::debug!("  {}: {} bytes", file.name(), file.size());
         }
 
+        // Read meta file for date/player info
+        let meta = read_meta(&mut archive);
+        log::debug!("Meta: {:?}", meta);
+
         let gamestate = read_gamestate(&mut archive)?;
         log::info!("Read gamestate: {} bytes", gamestate.len());
-        parse_gamestate(&gamestate)
+        let mut state = parse_gamestate(&gamestate)?;
+
+        // Override meta with meta file data if available
+        if let Some((date, player)) = meta {
+            state.meta.date = date;
+            if player.is_some() {
+                state.meta.player = player;
+            }
+        }
+
+        Ok(state)
     } else if data.starts_with(b"EU4txt") || data.starts_with(b"EU4bin") {
         // Plain text or binary file (not zipped)
         log::info!("Detected plain save format (not zipped)");
@@ -69,6 +83,23 @@ fn read_gamestate<R: std::io::Read + std::io::Seek>(
     }
 
     anyhow::bail!("No gamestate file found in save archive")
+}
+
+/// Read date and player from meta file in archive
+fn read_meta<R: std::io::Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
+) -> Option<(String, Option<String>)> {
+    let mut file = archive.by_name("meta").ok()?;
+    let mut content = Vec::new();
+    std::io::Read::read_to_end(&mut file, &mut content).ok()?;
+
+    let text = String::from_utf8_lossy(&content);
+
+    // Extract date from meta
+    let date = extract_date(&text)?;
+    let player = extract_player(&text);
+
+    Some((date, player))
 }
 
 fn parse_gamestate(data: &[u8]) -> Result<ExtractedState> {

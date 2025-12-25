@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use eu4sim_verify::{extract, melt, parse, report, verify};
+use eu4sim_verify::{extract, melt, parse, predict, report, verify};
 
 #[derive(Parser)]
 #[command(name = "eu4sim-verify")]
@@ -62,6 +62,25 @@ enum Commands {
         /// Limit output to first N lines
         #[arg(long)]
         head: Option<usize>,
+    },
+
+    /// Predict state from save T, compare to save T+N
+    Predict {
+        /// Path to the source save file (time T)
+        #[arg(long)]
+        from: PathBuf,
+
+        /// Path to the target save file (time T+N)
+        #[arg(long)]
+        to: PathBuf,
+
+        /// Country tag to compare
+        #[arg(short, long)]
+        country: String,
+
+        /// Path to EU4 game directory
+        #[arg(long, env = "EU4_GAME_PATH")]
+        game_path: PathBuf,
     },
 }
 
@@ -239,6 +258,29 @@ fn main() -> Result<()> {
                 }
             } else {
                 print!("{}", text);
+            }
+        }
+
+        Commands::Predict {
+            from,
+            to,
+            country,
+            game_path,
+        } => {
+            log::info!("Running prediction from {:?} to {:?}", from, to);
+
+            let summary = predict::run_prediction(&game_path, &from, &to, &country)?;
+            predict::print_prediction_report(&summary);
+
+            // Count failures
+            let failures = summary
+                .results
+                .iter()
+                .filter(|r| r.status == predict::PredictionStatus::Fail)
+                .count();
+
+            if failures > 0 {
+                std::process::exit(1);
             }
         }
     }

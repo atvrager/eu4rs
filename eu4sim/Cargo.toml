@@ -3,6 +3,14 @@ name = "eu4sim"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "eu4sim"
+path = "src/lib.rs"
+
+[[bin]]
+name = "eu4sim"
+path = "src/main.rs"
+
 [dependencies]
 eu4sim-core = { path = "../eu4sim-core" }
 eu4sim-ai = { path = "../eu4sim-ai" }

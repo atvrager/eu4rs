@@ -1,6 +1,8 @@
 pub mod extract;
+pub mod hydrate;
 pub mod melt;
 pub mod parse;
+pub mod predict;
 pub mod report;
 pub mod verify;
 
