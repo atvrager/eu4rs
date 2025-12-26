@@ -5,7 +5,7 @@
 use crate::buildings::{BuildingConstruction, BuildingDef};
 use crate::fixed::Fixed;
 use crate::modifiers::{BuildingId, GameModifiers, TradegoodId};
-use crate::state::{CountryState, HashMap, ProvinceId, ProvinceState, Terrain, WorldState};
+use crate::state::{CountryState, HashMap, ProvinceId, ProvinceState, Tag, Terrain, WorldState};
 
 /// Error returned when a building action cannot be performed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -447,6 +447,7 @@ pub fn tick_building_construction(state: &mut WorldState) {
 
     // Collect completed buildings first to avoid borrow issues
     let mut completed: Vec<(ProvinceId, BuildingId)> = Vec::new();
+    let mut had_completion = false;
 
     for province_id in province_ids {
         let Some(province) = state.provinces.get_mut(&province_id) else {
@@ -461,6 +462,7 @@ pub fn tick_building_construction(state: &mut WorldState) {
 
         if construction.progress >= construction.required {
             completed.push((province_id, construction.building_id));
+            had_completion = true;
         }
     }
 
@@ -505,6 +507,11 @@ pub fn tick_building_construction(state: &mut WorldState) {
             );
         }
     }
+
+    // Recompute country-level modifiers from all buildings if any completed
+    if had_completion {
+        recompute_country_modifiers_from_buildings(state);
+    }
 }
 
 /// Recompute modifiers for a single province based on its buildings.
@@ -514,8 +521,16 @@ pub fn recompute_province_modifiers(
     building_defs: &HashMap<BuildingId, BuildingDef>,
     modifiers: &mut GameModifiers,
 ) {
+    // Accumulate all province-level modifiers from buildings
     let mut tax_mod = Fixed::ZERO;
     let mut prod_eff = Fixed::ZERO;
+    let mut trade_power = Fixed::ZERO;
+    let mut manpower_mod = Fixed::ZERO;
+    let mut sailors_mod = Fixed::ZERO;
+    let mut defensiveness = Fixed::ZERO;
+    let mut ship_repair = Fixed::ZERO;
+    let mut ship_cost = Fixed::ZERO;
+    let mut trade_goods = Fixed::ZERO;
 
     for building_id in province.buildings.iter() {
         if let Some(def) = building_defs.get(&building_id) {
@@ -525,10 +540,32 @@ pub fn recompute_province_modifiers(
             if let Some(v) = def.local_production_efficiency {
                 prod_eff += v;
             }
+            if let Some(v) = def.local_trade_power {
+                trade_power += v;
+            }
+            if let Some(v) = def.local_manpower_modifier {
+                manpower_mod += v;
+            }
+            if let Some(v) = def.local_sailors_modifier {
+                sailors_mod += v;
+            }
+            if let Some(v) = def.local_defensiveness {
+                defensiveness += v;
+            }
+            if let Some(v) = def.local_ship_repair {
+                ship_repair += v;
+            }
+            if let Some(v) = def.local_ship_cost {
+                ship_cost += v;
+            }
+            if let Some(v) = def.trade_goods_size {
+                trade_goods += v;
+            }
         }
     }
 
-    // Update or remove from modifiers
+    // Update or remove province modifiers
+    // Pattern: insert if non-zero, remove if zero
     if tax_mod != Fixed::ZERO {
         modifiers.province_tax_modifier.insert(province_id, tax_mod);
     } else {
@@ -543,6 +580,122 @@ pub fn recompute_province_modifiers(
         modifiers
             .province_production_efficiency
             .remove(&province_id);
+    }
+
+    if trade_power != Fixed::ZERO {
+        modifiers
+            .province_trade_power
+            .insert(province_id, trade_power);
+    } else {
+        modifiers.province_trade_power.remove(&province_id);
+    }
+
+    if manpower_mod != Fixed::ZERO {
+        modifiers
+            .province_manpower_modifier
+            .insert(province_id, manpower_mod);
+    } else {
+        modifiers.province_manpower_modifier.remove(&province_id);
+    }
+
+    if sailors_mod != Fixed::ZERO {
+        modifiers
+            .province_sailors_modifier
+            .insert(province_id, sailors_mod);
+    } else {
+        modifiers.province_sailors_modifier.remove(&province_id);
+    }
+
+    if defensiveness != Fixed::ZERO {
+        modifiers
+            .province_defensiveness
+            .insert(province_id, defensiveness);
+    } else {
+        modifiers.province_defensiveness.remove(&province_id);
+    }
+
+    if ship_repair != Fixed::ZERO {
+        modifiers
+            .province_ship_repair
+            .insert(province_id, ship_repair);
+    } else {
+        modifiers.province_ship_repair.remove(&province_id);
+    }
+
+    if ship_cost != Fixed::ZERO {
+        modifiers.province_ship_cost.insert(province_id, ship_cost);
+    } else {
+        modifiers.province_ship_cost.remove(&province_id);
+    }
+
+    if trade_goods != Fixed::ZERO {
+        modifiers
+            .province_trade_goods_size
+            .insert(province_id, trade_goods);
+    } else {
+        modifiers.province_trade_goods_size.remove(&province_id);
+    }
+}
+
+/// Recompute country-level modifiers from all buildings.
+///
+/// Aggregates modifiers like `land_forcelimit` and `naval_forcelimit` from all provinces.
+/// Should be called when buildings change or provinces change ownership.
+pub fn recompute_country_modifiers_from_buildings(state: &mut WorldState) {
+    // Clear existing building-sourced country modifiers
+    // (We'll rebuild them from scratch)
+
+    // Aggregate per country
+    let mut land_fl: HashMap<Tag, i32> = HashMap::new();
+    let mut naval_fl: HashMap<Tag, i32> = HashMap::new();
+    let mut ship_speed: HashMap<Tag, Fixed> = HashMap::new();
+
+    for province in state.provinces.values() {
+        let Some(owner) = &province.owner else {
+            continue;
+        };
+
+        for building_id in province.buildings.iter() {
+            if let Some(def) = state.building_defs.get(&building_id) {
+                if let Some(v) = def.land_forcelimit {
+                    *land_fl.entry(owner.clone()).or_insert(0) += v as i32;
+                }
+                if let Some(v) = def.naval_forcelimit {
+                    *naval_fl.entry(owner.clone()).or_insert(0) += v as i32;
+                }
+                if let Some(v) = def.ship_recruit_speed {
+                    *ship_speed.entry(owner.clone()).or_insert(Fixed::ZERO) += v;
+                }
+            }
+        }
+    }
+
+    // Update country modifiers
+    for (tag, value) in land_fl {
+        if value != 0 {
+            state
+                .modifiers
+                .country_land_forcelimit
+                .insert(tag, Fixed::from_int(value as i64));
+        }
+    }
+
+    for (tag, value) in naval_fl {
+        if value != 0 {
+            state
+                .modifiers
+                .country_naval_forcelimit
+                .insert(tag, Fixed::from_int(value as i64));
+        }
+    }
+
+    for (tag, value) in ship_speed {
+        if value != Fixed::ZERO {
+            state
+                .modifiers
+                .country_global_ship_recruit_speed
+                .insert(tag, value);
+        }
     }
 }
 
@@ -642,6 +795,13 @@ mod tests {
             local_production_efficiency: None,
             local_trade_power: None,
             local_manpower_modifier: None,
+            local_sailors_modifier: None,
+            local_defensiveness: None,
+            local_ship_repair: None,
+            local_ship_cost: None,
+            land_forcelimit: None,
+            naval_forcelimit: None,
+            ship_recruit_speed: None,
             fort_level: None,
             trade_goods_size: None,
         }
@@ -823,5 +983,122 @@ mod tests {
         province.buildings.insert(BuildingId(1));
         assert_eq!(recompute_fort_level(&province, &defs, false), 4);
         assert_eq!(recompute_fort_level(&province, &defs, true), 5); // + capital
+    }
+
+    #[test]
+    fn test_recompute_province_modifiers() {
+        let province_id = ProvinceId::from(100u32);
+        let mut province = make_province();
+        let mut modifiers = GameModifiers::default();
+        let mut defs = HashMap::new();
+
+        // Create building with multiple modifiers
+        let mut temple = make_building_def(0, "temple");
+        temple.local_tax_modifier = Some(Fixed::from_f32(0.4));
+        temple.local_production_efficiency = Some(Fixed::from_f32(0.1));
+        defs.insert(BuildingId(0), temple);
+
+        let mut workshop = make_building_def(1, "workshop");
+        workshop.local_production_efficiency = Some(Fixed::from_f32(0.5));
+        workshop.local_trade_power = Some(Fixed::from_f32(0.5));
+        defs.insert(BuildingId(1), workshop);
+
+        // No buildings yet
+        recompute_province_modifiers(province_id, &province, &defs, &mut modifiers);
+        assert!(!modifiers.province_tax_modifier.contains_key(&province_id));
+
+        // Add temple
+        province.buildings.insert(BuildingId(0));
+        recompute_province_modifiers(province_id, &province, &defs, &mut modifiers);
+        assert_eq!(
+            modifiers.province_tax_modifier.get(&province_id),
+            Some(&Fixed::from_f32(0.4))
+        );
+        assert_eq!(
+            modifiers.province_production_efficiency.get(&province_id),
+            Some(&Fixed::from_f32(0.1))
+        );
+
+        // Add workshop (modifiers should stack)
+        province.buildings.insert(BuildingId(1));
+        recompute_province_modifiers(province_id, &province, &defs, &mut modifiers);
+        assert_eq!(
+            modifiers.province_production_efficiency.get(&province_id),
+            Some(&Fixed::from_f32(0.6)) // 0.1 + 0.5
+        );
+        assert_eq!(
+            modifiers.province_trade_power.get(&province_id),
+            Some(&Fixed::from_f32(0.5))
+        );
+    }
+
+    #[test]
+    fn test_recompute_province_modifiers_sailors_and_naval() {
+        let province_id = ProvinceId::from(200u32);
+        let mut province = make_province();
+        let mut modifiers = GameModifiers::default();
+        let mut defs = HashMap::new();
+
+        let mut dock = make_building_def(0, "dock");
+        dock.local_sailors_modifier = Some(Fixed::from_f32(0.5));
+        dock.local_ship_cost = Some(Fixed::from_f32(-0.1));
+        dock.local_ship_repair = Some(Fixed::from_f32(0.25));
+        defs.insert(BuildingId(0), dock);
+
+        province.buildings.insert(BuildingId(0));
+        recompute_province_modifiers(province_id, &province, &defs, &mut modifiers);
+
+        assert_eq!(
+            modifiers.province_sailors_modifier.get(&province_id),
+            Some(&Fixed::from_f32(0.5))
+        );
+        assert_eq!(
+            modifiers.province_ship_cost.get(&province_id),
+            Some(&Fixed::from_f32(-0.1))
+        );
+        assert_eq!(
+            modifiers.province_ship_repair.get(&province_id),
+            Some(&Fixed::from_f32(0.25))
+        );
+    }
+
+    #[test]
+    fn test_recompute_province_modifiers_fort_and_defensiveness() {
+        let province_id = ProvinceId::from(300u32);
+        let mut province = make_province();
+        let mut modifiers = GameModifiers::default();
+        let mut defs = HashMap::new();
+
+        let mut ramparts = make_building_def(0, "ramparts");
+        ramparts.local_defensiveness = Some(Fixed::from_f32(0.25));
+        defs.insert(BuildingId(0), ramparts);
+
+        province.buildings.insert(BuildingId(0));
+        recompute_province_modifiers(province_id, &province, &defs, &mut modifiers);
+
+        assert_eq!(
+            modifiers.province_defensiveness.get(&province_id),
+            Some(&Fixed::from_f32(0.25))
+        );
+    }
+
+    #[test]
+    fn test_recompute_province_modifiers_trade_goods_size() {
+        let province_id = ProvinceId::from(400u32);
+        let mut province = make_province();
+        let mut modifiers = GameModifiers::default();
+        let mut defs = HashMap::new();
+
+        let mut manufactory = make_building_def(0, "textile_manufactory");
+        manufactory.trade_goods_size = Some(Fixed::ONE);
+        defs.insert(BuildingId(0), manufactory);
+
+        province.buildings.insert(BuildingId(0));
+        recompute_province_modifiers(province_id, &province, &defs, &mut modifiers);
+
+        assert_eq!(
+            modifiers.province_trade_goods_size.get(&province_id),
+            Some(&Fixed::ONE)
+        );
     }
 }

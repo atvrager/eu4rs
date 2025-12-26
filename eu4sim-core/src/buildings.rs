@@ -84,11 +84,22 @@ pub struct BuildingDef {
     /// Building this one replaces (e.g., Cathedral replaces Temple).
     pub replaces_building: Option<BuildingId>,
 
-    // Effects
+    // Effects - Province-level modifiers
     pub local_tax_modifier: Option<Fixed>,
     pub local_production_efficiency: Option<Fixed>,
     pub local_trade_power: Option<Fixed>,
     pub local_manpower_modifier: Option<Fixed>,
+    pub local_sailors_modifier: Option<Fixed>,
+    pub local_defensiveness: Option<Fixed>,
+    pub local_ship_repair: Option<Fixed>,
+    pub local_ship_cost: Option<Fixed>,
+
+    // Effects - Country-level modifiers (aggregated from all provinces)
+    pub land_forcelimit: Option<u8>,
+    pub naval_forcelimit: Option<u8>,
+    pub ship_recruit_speed: Option<Fixed>,
+
+    // Effects - Special
     pub fort_level: Option<u8>,
     /// Manufactories add +1 trade goods produced.
     pub trade_goods_size: Option<Fixed>,

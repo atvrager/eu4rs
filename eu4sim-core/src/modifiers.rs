@@ -56,6 +56,34 @@ pub struct GameModifiers {
     /// Applied to base tax.
     pub province_tax_modifier: HashMap<ProvinceId, Fixed>,
 
+    /// Province-level trade power modifier (from buildings like Marketplace).
+    /// Applied as: (1 + modifier) multiplier to provincial trade power.
+    pub province_trade_power: HashMap<ProvinceId, Fixed>,
+
+    /// Province-level manpower modifier (from buildings like Barracks).
+    /// Applied as: (1 + modifier) multiplier to provincial manpower.
+    pub province_manpower_modifier: HashMap<ProvinceId, Fixed>,
+
+    /// Province-level sailors modifier (from buildings like Dock).
+    /// Applied as: (1 + modifier) multiplier to provincial sailors.
+    pub province_sailors_modifier: HashMap<ProvinceId, Fixed>,
+
+    /// Province-level trade goods size modifier (from Manufactories).
+    /// Applied as: additive bonus to trade goods produced.
+    pub province_trade_goods_size: HashMap<ProvinceId, Fixed>,
+
+    /// Province-level defensiveness modifier (from forts, ramparts).
+    /// Applied as: (1 + modifier) multiplier to fort defense.
+    pub province_defensiveness: HashMap<ProvinceId, Fixed>,
+
+    /// Province-level ship repair modifier (from Shipyards, Drydocks).
+    /// Applied as: (1 + modifier) multiplier to ship repair speed.
+    pub province_ship_repair: HashMap<ProvinceId, Fixed>,
+
+    /// Province-level ship cost modifier (from Dock, Drydock).
+    /// Applied as: (1 + modifier) multiplier to ship construction cost.
+    pub province_ship_cost: HashMap<ProvinceId, Fixed>,
+
     /// Country-level land maintenance modifier.
     /// Applied as: (1 + modifier) multiplier for army cost.
     pub land_maintenance_modifier: HashMap<Tag, Fixed>,
