@@ -30,7 +30,15 @@ pub fn develop_province(
         .get_mut(&country)
         .ok_or_else(|| anyhow!("Country {} not found", country))?;
 
-    let cost = Fixed::from_int(50);
+    // Apply development cost modifier
+    let base_cost = Fixed::from_int(50);
+    let dev_cost_mod = state
+        .modifiers
+        .country_development_cost
+        .get(&country)
+        .copied()
+        .unwrap_or(Fixed::ZERO);
+    let cost = base_cost.mul(Fixed::ONE + dev_cost_mod).max(Fixed::ONE); // Minimum cost of 1
 
     match dev_type {
         DevType::Tax => {

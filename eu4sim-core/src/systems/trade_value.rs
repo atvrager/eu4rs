@@ -14,7 +14,7 @@
 //! from trade nodes, not directly from production.
 
 use crate::fixed::Fixed;
-use crate::state::WorldState;
+use crate::state::{Tag, WorldState};
 
 /// Runs the monthly trade value tick.
 ///
@@ -129,12 +129,16 @@ fn propagate_trade_value(state: &mut WorldState) {
         }
 
         // Count steering merchants toward each downstream target
+        // Also collect steering countries for modifier application
         let mut steering_count: std::collections::HashMap<crate::trade::TradeNodeId, u32> =
             std::collections::HashMap::new();
+        let mut steering_countries: std::collections::HashSet<Tag> =
+            std::collections::HashSet::new();
         for merchant in &merchants {
             if let MerchantAction::Steer { target } = &merchant.action {
                 if downstream_nodes.contains(target) {
                     *steering_count.entry(*target).or_insert(0) += 1;
+                    steering_countries.insert(merchant.owner.clone());
                 }
             }
         }
@@ -179,8 +183,29 @@ fn propagate_trade_value(state: &mut WorldState) {
         // Apply steering magnification: +5% per steering merchant
         // Total magnified = forwarded × (1 + 0.05 × total_steering_merchants)
         let total_steering: u32 = steering_count.values().sum();
-        let magnification = Fixed::ONE + Fixed::from_f32(0.05 * total_steering as f32);
-        let magnified_value = forwarded.mul(magnification);
+        let base_magnification = Fixed::ONE + Fixed::from_f32(0.05 * total_steering as f32);
+
+        // Apply country trade_steering modifiers for countries with steering merchants
+        // Each country's modifier increases their steering effectiveness
+        let mut steering_mod_sum = Fixed::ZERO;
+        for tag in &steering_countries {
+            let steering_mod = state
+                .modifiers
+                .country_trade_steering
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            steering_mod_sum += steering_mod;
+        }
+
+        // Apply average steering modifier to magnification
+        let modifier_factor = if !steering_countries.is_empty() {
+            Fixed::ONE + steering_mod_sum.div(Fixed::from_int(steering_countries.len() as i64))
+        } else {
+            Fixed::ONE
+        };
+
+        let magnified_value = forwarded.mul(base_magnification).mul(modifier_factor);
 
         // Distribute to downstream nodes
         // Weight by steering: nodes with steering get proportionally more

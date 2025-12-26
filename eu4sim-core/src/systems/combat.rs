@@ -403,17 +403,45 @@ fn calculate_side_damage(
     let effective_dice = ((dice as i8 + general_bonus).clamp(0, 9)) as u8;
 
     let mut total_damage = Fixed::ZERO;
+    let mut owner_for_discipline: Option<&str> = None;
 
     // Front row damage
     for (army_id, reg_idx) in line.front.iter().flatten() {
         if let Some(army) = state.armies.get(army_id) {
+            if owner_for_discipline.is_none() {
+                owner_for_discipline = Some(&army.owner);
+            }
             if let Some(reg) = army.regiments.get(*reg_idx) {
                 let base = get_regiment_phase_damage(reg.type_, battle.phase);
+
+                // Apply unit power modifier based on regiment type
+                let unit_power = match reg.type_ {
+                    RegimentType::Infantry => state
+                        .modifiers
+                        .country_infantry_power
+                        .get(&army.owner)
+                        .copied()
+                        .unwrap_or(Fixed::ZERO),
+                    RegimentType::Cavalry => state
+                        .modifiers
+                        .country_cavalry_power
+                        .get(&army.owner)
+                        .copied()
+                        .unwrap_or(Fixed::ZERO),
+                    RegimentType::Artillery => state
+                        .modifiers
+                        .country_artillery_power
+                        .get(&army.owner)
+                        .copied()
+                        .unwrap_or(Fixed::ZERO),
+                };
+                let modified_base = Fixed::from_f32(base).mul(Fixed::ONE + unit_power);
+
                 // Damage formula: base * (effective_dice + 5) / 10 * (strength / 1000)
                 let dice_factor =
                     Fixed::from_int(effective_dice as i64 + 5).div(Fixed::from_int(10));
                 let strength_factor = reg.strength.div(Fixed::from_int(defines::REGIMENT_SIZE));
-                let dmg = Fixed::from_f32(base).mul(dice_factor).mul(strength_factor);
+                let dmg = modified_base.mul(dice_factor).mul(strength_factor);
                 total_damage += dmg;
             }
         }
@@ -422,17 +450,41 @@ fn calculate_side_damage(
     // Back row (artillery) deals damage too
     for (army_id, reg_idx) in &line.back {
         if let Some(army) = state.armies.get(army_id) {
+            if owner_for_discipline.is_none() {
+                owner_for_discipline = Some(&army.owner);
+            }
             if let Some(reg) = army.regiments.get(*reg_idx) {
                 if reg.type_ == RegimentType::Artillery {
                     let base = get_regiment_phase_damage(reg.type_, battle.phase);
+
+                    // Apply artillery power modifier
+                    let unit_power = state
+                        .modifiers
+                        .country_artillery_power
+                        .get(&army.owner)
+                        .copied()
+                        .unwrap_or(Fixed::ZERO);
+                    let modified_base = Fixed::from_f32(base).mul(Fixed::ONE + unit_power);
+
                     let dice_factor =
                         Fixed::from_int(effective_dice as i64 + 5).div(Fixed::from_int(10));
                     let strength_factor = reg.strength.div(Fixed::from_int(defines::REGIMENT_SIZE));
-                    let dmg = Fixed::from_f32(base).mul(dice_factor).mul(strength_factor);
+                    let dmg = modified_base.mul(dice_factor).mul(strength_factor);
                     total_damage += dmg;
                 }
             }
         }
+    }
+
+    // Apply discipline modifier to all damage dealt by this side
+    if let Some(owner) = owner_for_discipline {
+        let discipline = state
+            .modifiers
+            .country_discipline
+            .get(owner)
+            .copied()
+            .unwrap_or(Fixed::ZERO);
+        total_damage = total_damage.mul(Fixed::ONE + discipline);
     }
 
     // Apply terrain penalty to attacker (considers maneuver difference and river crossing)

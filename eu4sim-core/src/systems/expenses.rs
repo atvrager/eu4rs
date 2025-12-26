@@ -12,10 +12,29 @@ pub fn run_expenses_tick(state: &mut WorldState) {
 
     for army in state.armies.values() {
         let mut cost = Fixed::ZERO;
-        for _reg in &army.regiments {
-            // Simplified: All regiments cost BASE for now
-            // Future: Modifiers by type (Cav expensive)
-            cost += Fixed::from_f32(defines::BASE_ARMY_COST);
+        for reg in &army.regiments {
+            // Base cost per regiment
+            let base_cost = Fixed::from_f32(defines::BASE_ARMY_COST);
+
+            // Apply unit-type specific cost modifier
+            let type_mod = match reg.type_ {
+                crate::state::RegimentType::Infantry => state
+                    .modifiers
+                    .country_infantry_cost
+                    .get(&army.owner)
+                    .copied()
+                    .unwrap_or(Fixed::ZERO),
+                crate::state::RegimentType::Cavalry => state
+                    .modifiers
+                    .country_cavalry_cost
+                    .get(&army.owner)
+                    .copied()
+                    .unwrap_or(Fixed::ZERO),
+                crate::state::RegimentType::Artillery => Fixed::ZERO, // No artillery_cost modifier yet
+            };
+
+            let modified_cost = base_cost.mul(Fixed::ONE + type_mod);
+            cost += modified_cost;
         }
         *army_costs.entry(army.owner.clone()).or_insert(Fixed::ZERO) += cost;
     }

@@ -63,6 +63,76 @@ pub struct GameModifiers {
     /// Country-level fort maintenance modifier.
     /// Applied as: (1 + modifier) multiplier for fort cost.
     pub fort_maintenance_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level discipline modifier.
+    /// Applied as: (1 + modifier) multiplier to damage dealt in combat.
+    pub country_discipline: HashMap<Tag, Fixed>,
+
+    /// Country-level morale bonus.
+    /// Applied as: (1 + modifier) multiplier to base morale.
+    pub country_morale: HashMap<Tag, Fixed>,
+
+    /// Country-level infantry power modifier.
+    /// Applied as: (1 + modifier) multiplier to infantry damage.
+    pub country_infantry_power: HashMap<Tag, Fixed>,
+
+    /// Country-level cavalry power modifier.
+    /// Applied as: (1 + modifier) multiplier to cavalry damage.
+    pub country_cavalry_power: HashMap<Tag, Fixed>,
+
+    /// Country-level artillery power modifier.
+    /// Applied as: (1 + modifier) multiplier to artillery damage.
+    pub country_artillery_power: HashMap<Tag, Fixed>,
+
+    /// Country-level goods produced modifier.
+    /// Applied as: (1 + modifier) multiplier to province goods production.
+    pub country_goods_produced: HashMap<Tag, Fixed>,
+
+    /// Country-level trade efficiency modifier.
+    /// Applied as: (1 + modifier) multiplier to trade income collection.
+    pub country_trade_efficiency: HashMap<Tag, Fixed>,
+
+    /// Country-level global trade power modifier.
+    /// Applied as: (1 + modifier) multiplier to provincial trade power.
+    pub country_trade_power: HashMap<Tag, Fixed>,
+
+    /// Country-level trade steering modifier.
+    /// Applied as: (1 + modifier) multiplier to trade value steering.
+    pub country_trade_steering: HashMap<Tag, Fixed>,
+
+    /// Country-level development cost modifier.
+    /// Applied as: (1 + modifier) multiplier to monarch point cost for development.
+    /// Negative values make development cheaper.
+    pub country_development_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level core creation modifier.
+    /// Applied as: (1 + modifier) multiplier to coring time and cost.
+    /// Negative values make coring faster/cheaper.
+    pub country_core_creation: HashMap<Tag, Fixed>,
+
+    /// Country-level aggressive expansion impact modifier.
+    /// Applied as: (1 + modifier) multiplier to AE gained from conquest.
+    /// Negative values reduce AE impact.
+    pub country_ae_impact: HashMap<Tag, Fixed>,
+
+    /// Country-level diplomatic reputation modifier.
+    /// Applied as additive bonus to diplomatic actions.
+    pub country_diplomatic_reputation: HashMap<Tag, Fixed>,
+
+    /// Country-level infantry cost modifier.
+    /// Applied as: (1 + modifier) multiplier to infantry maintenance cost.
+    /// Negative values reduce cost.
+    pub country_infantry_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level cavalry cost modifier.
+    /// Applied as: (1 + modifier) multiplier to cavalry maintenance cost.
+    /// Negative values reduce cost.
+    pub country_cavalry_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level mercenary cost modifier.
+    /// Applied as: (1 + modifier) multiplier to mercenary maintenance cost.
+    /// Negative values reduce cost.
+    pub country_mercenary_cost: HashMap<Tag, Fixed>,
 }
 
 impl GameModifiers {

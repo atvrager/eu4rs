@@ -81,10 +81,38 @@ impl ModifierStubTracker {
     pub fn is_implemented(key: &str) -> bool {
         matches!(
             key,
+            // Tax
             "global_tax_modifier"
+            // Maintenance
                 | "land_maintenance_modifier"
                 | "fort_maintenance_modifier"
+            // Production
                 | "production_efficiency"
+            // Combat
+                | "discipline"
+                | "morale_of_armies"
+                | "land_morale"
+                | "infantry_power"
+                | "infantry_combat_ability"
+                | "cavalry_power"
+                | "cavalry_combat_ability"
+                | "artillery_power"
+            // Trade/Production
+                | "goods_produced_modifier"
+                | "goods_produced"
+                | "trade_efficiency"
+                | "global_trade_power"
+                | "trade_steering"
+            // Administrative
+                | "development_cost"
+                | "core_creation"
+                | "ae_impact"
+                | "diplomatic_reputation"
+            // Military Maintenance
+                | "infantry_cost"
+                | "cavalry_cost"
+                | "mercenary_cost"
+                | "mercenary_maintenance"
         )
     }
 }
@@ -132,6 +160,190 @@ pub fn apply_modifier(
                 .unwrap_or(Fixed::ZERO);
             modifiers
                 .fort_maintenance_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Combat modifiers ===
+        "discipline" => {
+            let current = modifiers
+                .country_discipline
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_discipline
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "morale_of_armies" | "land_morale" => {
+            let current = modifiers
+                .country_morale
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_morale
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "infantry_power" | "infantry_combat_ability" => {
+            let current = modifiers
+                .country_infantry_power
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_infantry_power
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "cavalry_power" | "cavalry_combat_ability" => {
+            let current = modifiers
+                .country_cavalry_power
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_cavalry_power
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "artillery_power" => {
+            let current = modifiers
+                .country_artillery_power
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_artillery_power
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Production/Trade modifiers ===
+        "goods_produced_modifier" | "goods_produced" => {
+            let current = modifiers
+                .country_goods_produced
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_goods_produced
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "trade_efficiency" => {
+            let current = modifiers
+                .country_trade_efficiency
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_trade_efficiency
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "global_trade_power" => {
+            let current = modifiers
+                .country_trade_power
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_trade_power
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "trade_steering" => {
+            let current = modifiers
+                .country_trade_steering
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_trade_steering
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Administrative modifiers ===
+        "development_cost" => {
+            let current = modifiers
+                .country_development_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_development_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "core_creation" => {
+            let current = modifiers
+                .country_core_creation
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_core_creation
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "ae_impact" => {
+            let current = modifiers
+                .country_ae_impact
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_ae_impact
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "diplomatic_reputation" => {
+            let current = modifiers
+                .country_diplomatic_reputation
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_diplomatic_reputation
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Military maintenance modifiers ===
+        "infantry_cost" => {
+            let current = modifiers
+                .country_infantry_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_infantry_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "cavalry_cost" => {
+            let current = modifiers
+                .country_cavalry_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_cavalry_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "mercenary_cost" | "mercenary_maintenance" => {
+            let current = modifiers
+                .country_mercenary_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_mercenary_cost
                 .insert(tag.to_string(), current + entry.value);
             true
         }
@@ -320,7 +532,7 @@ mod tests {
                 IdeaDef {
                     name: "idea_2".into(),
                     position: 1,
-                    modifiers: vec![ModifierEntry::from_f32("cavalry_power", 0.15)], // Stub
+                    modifiers: vec![ModifierEntry::from_f32("global_manpower_modifier", 0.15)], // Stub
                 },
             ],
             ..Default::default()
@@ -364,13 +576,192 @@ mod tests {
         let mut modifiers = GameModifiers::default();
         let tracker = ModifierStubTracker::new();
 
-        let entry = ModifierEntry::from_f32("cavalry_power", 0.15);
+        let entry = ModifierEntry::from_f32("global_manpower_modifier", 0.25);
         let applied = apply_modifier(&mut modifiers, "FRA", &entry, &tracker);
 
         assert!(!applied);
         assert!(tracker
             .unimplemented_keys()
-            .contains(&"cavalry_power".to_string()));
+            .contains(&"global_manpower_modifier".to_string()));
+    }
+
+    #[test]
+    fn test_apply_discipline_modifier() {
+        let mut modifiers = GameModifiers::default();
+        let tracker = ModifierStubTracker::new();
+
+        let entry = ModifierEntry::from_f32("discipline", 0.05);
+        let applied = apply_modifier(&mut modifiers, "PRU", &entry, &tracker);
+
+        assert!(applied);
+        assert_eq!(
+            modifiers.country_discipline.get("PRU"),
+            Some(&Fixed::from_f32(0.05))
+        );
+    }
+
+    #[test]
+    fn test_apply_morale_modifier() {
+        let mut modifiers = GameModifiers::default();
+        let tracker = ModifierStubTracker::new();
+
+        // Test morale_of_armies
+        let entry1 = ModifierEntry::from_f32("morale_of_armies", 0.15);
+        let applied1 = apply_modifier(&mut modifiers, "FRA", &entry1, &tracker);
+        assert!(applied1);
+
+        // Test land_morale alias
+        let entry2 = ModifierEntry::from_f32("land_morale", 0.10);
+        let applied2 = apply_modifier(&mut modifiers, "FRA", &entry2, &tracker);
+        assert!(applied2);
+
+        // Both should sum
+        assert_eq!(
+            modifiers.country_morale.get("FRA"),
+            Some(&Fixed::from_f32(0.25))
+        );
+    }
+
+    #[test]
+    fn test_apply_unit_power_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let tracker = ModifierStubTracker::new();
+
+        // Infantry power
+        let inf_entry = ModifierEntry::from_f32("infantry_power", 0.10);
+        assert!(apply_modifier(&mut modifiers, "SWE", &inf_entry, &tracker));
+        assert_eq!(
+            modifiers.country_infantry_power.get("SWE"),
+            Some(&Fixed::from_f32(0.10))
+        );
+
+        // Cavalry power with alias
+        let cav_entry1 = ModifierEntry::from_f32("cavalry_power", 0.15);
+        let cav_entry2 = ModifierEntry::from_f32("cavalry_combat_ability", 0.10);
+        assert!(apply_modifier(&mut modifiers, "POL", &cav_entry1, &tracker));
+        assert!(apply_modifier(&mut modifiers, "POL", &cav_entry2, &tracker));
+        assert_eq!(
+            modifiers.country_cavalry_power.get("POL"),
+            Some(&Fixed::from_f32(0.25))
+        );
+
+        // Artillery power
+        let art_entry = ModifierEntry::from_f32("artillery_power", 0.05);
+        assert!(apply_modifier(&mut modifiers, "FRA", &art_entry, &tracker));
+        assert_eq!(
+            modifiers.country_artillery_power.get("FRA"),
+            Some(&Fixed::from_f32(0.05))
+        );
+    }
+
+    #[test]
+    fn test_apply_trade_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let tracker = ModifierStubTracker::new();
+
+        // goods_produced_modifier (with alias)
+        let entry1 = ModifierEntry::from_f32("goods_produced_modifier", 0.10);
+        assert!(apply_modifier(&mut modifiers, "NED", &entry1, &tracker));
+        let entry2 = ModifierEntry::from_f32("goods_produced", 0.05);
+        assert!(apply_modifier(&mut modifiers, "NED", &entry2, &tracker));
+        assert_eq!(
+            modifiers.country_goods_produced.get("NED"),
+            Some(&Fixed::from_f32(0.15))
+        );
+
+        // trade_efficiency
+        let entry3 = ModifierEntry::from_f32("trade_efficiency", 0.20);
+        assert!(apply_modifier(&mut modifiers, "VEN", &entry3, &tracker));
+        assert_eq!(
+            modifiers.country_trade_efficiency.get("VEN"),
+            Some(&Fixed::from_f32(0.20))
+        );
+
+        // global_trade_power
+        let entry4 = ModifierEntry::from_f32("global_trade_power", 0.15);
+        assert!(apply_modifier(&mut modifiers, "POR", &entry4, &tracker));
+        assert_eq!(
+            modifiers.country_trade_power.get("POR"),
+            Some(&Fixed::from_f32(0.15))
+        );
+
+        // trade_steering
+        let entry5 = ModifierEntry::from_f32("trade_steering", 0.25);
+        assert!(apply_modifier(&mut modifiers, "GEN", &entry5, &tracker));
+        assert_eq!(
+            modifiers.country_trade_steering.get("GEN"),
+            Some(&Fixed::from_f32(0.25))
+        );
+    }
+
+    #[test]
+    fn test_apply_administrative_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let tracker = ModifierStubTracker::new();
+
+        // development_cost
+        let entry1 = ModifierEntry::from_f32("development_cost", -0.10);
+        assert!(apply_modifier(&mut modifiers, "FRA", &entry1, &tracker));
+        assert_eq!(
+            modifiers.country_development_cost.get("FRA"),
+            Some(&Fixed::from_f32(-0.10))
+        );
+
+        // core_creation
+        let entry2 = ModifierEntry::from_f32("core_creation", -0.25);
+        assert!(apply_modifier(&mut modifiers, "ADM", &entry2, &tracker));
+        assert_eq!(
+            modifiers.country_core_creation.get("ADM"),
+            Some(&Fixed::from_f32(-0.25))
+        );
+
+        // ae_impact
+        let entry3 = ModifierEntry::from_f32("ae_impact", -0.20);
+        assert!(apply_modifier(&mut modifiers, "DIP", &entry3, &tracker));
+        assert_eq!(
+            modifiers.country_ae_impact.get("DIP"),
+            Some(&Fixed::from_f32(-0.20))
+        );
+
+        // diplomatic_reputation
+        let entry4 = ModifierEntry::from_f32("diplomatic_reputation", 2.0);
+        assert!(apply_modifier(&mut modifiers, "AUS", &entry4, &tracker));
+        assert_eq!(
+            modifiers.country_diplomatic_reputation.get("AUS"),
+            Some(&Fixed::from_f32(2.0))
+        );
+    }
+
+    #[test]
+    fn test_apply_maintenance_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let tracker = ModifierStubTracker::new();
+
+        // infantry_cost
+        let entry1 = ModifierEntry::from_f32("infantry_cost", -0.10);
+        assert!(apply_modifier(&mut modifiers, "PRU", &entry1, &tracker));
+        assert_eq!(
+            modifiers.country_infantry_cost.get("PRU"),
+            Some(&Fixed::from_f32(-0.10))
+        );
+
+        // cavalry_cost
+        let entry2 = ModifierEntry::from_f32("cavalry_cost", -0.15);
+        assert!(apply_modifier(&mut modifiers, "POL", &entry2, &tracker));
+        assert_eq!(
+            modifiers.country_cavalry_cost.get("POL"),
+            Some(&Fixed::from_f32(-0.15))
+        );
+
+        // mercenary_cost (with alias)
+        let entry3 = ModifierEntry::from_f32("mercenary_cost", -0.25);
+        assert!(apply_modifier(&mut modifiers, "VEN", &entry3, &tracker));
+        let entry4 = ModifierEntry::from_f32("mercenary_maintenance", -0.10);
+        assert!(apply_modifier(&mut modifiers, "VEN", &entry4, &tracker));
+        assert_eq!(
+            modifiers.country_mercenary_cost.get("VEN"),
+            Some(&Fixed::from_f32(-0.35))
+        );
     }
 
     #[test]
@@ -395,9 +786,9 @@ mod tests {
             recalculate_idea_modifiers(&mut modifiers, "TST", &country, &registry, &tracker);
 
         // Start (0.10) + idea_1 (-0.10 land maintenance) + bonus (0.05) = applied
-        // idea_2 cavalry_power = stubbed
+        // idea_2 global_manpower_modifier = stubbed
         assert_eq!(stats.applied, 3); // global_tax x2 + land_maintenance
-        assert_eq!(stats.stubbed, 1); // cavalry_power
+        assert_eq!(stats.stubbed, 1); // global_manpower_modifier
 
         // Check tax modifier was applied (0.10 start + 0.05 bonus = 0.15)
         assert_eq!(
@@ -414,7 +805,7 @@ mod tests {
         // Check stubs were tracked
         assert!(tracker
             .unimplemented_keys()
-            .contains(&"cavalry_power".to_string()));
+            .contains(&"global_manpower_modifier".to_string()));
     }
 
     #[test]
@@ -424,6 +815,6 @@ mod tests {
 
         assert_eq!(counts.get("global_tax_modifier"), Some(&2)); // start + bonus
         assert_eq!(counts.get("land_maintenance_modifier"), Some(&1));
-        assert_eq!(counts.get("cavalry_power"), Some(&1));
+        assert_eq!(counts.get("global_manpower_modifier"), Some(&1));
     }
 }

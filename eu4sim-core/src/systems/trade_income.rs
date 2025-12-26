@@ -118,13 +118,22 @@ fn calculate_trade_income(state: &WorldState) -> HashMap<Tag, Fixed> {
         let base_income = node.total_value.mul(power_share);
 
         // Apply merchant efficiency bonus
-        let efficiency = if has_merchant {
+        let merchant_efficiency = if has_merchant {
             Fixed::ONE + Fixed::from_f32(MERCHANT_COLLECTION_BONUS)
         } else {
             Fixed::ONE
         };
 
-        let final_income = base_income.mul(efficiency);
+        // Apply country trade efficiency modifier
+        let trade_eff_mod = state
+            .modifiers
+            .country_trade_efficiency
+            .get(&tag)
+            .copied()
+            .unwrap_or(Fixed::ZERO);
+        let total_efficiency = merchant_efficiency.mul(Fixed::ONE + trade_eff_mod);
+
+        let final_income = base_income.mul(total_efficiency);
 
         // Accumulate (country may collect from multiple nodes)
         *income.entry(tag).or_insert(Fixed::ZERO) += final_income;

@@ -150,12 +150,21 @@ fn calculate_provincial_power(state: &mut WorldState) {
         };
         power += cot_bonus;
 
+        // Apply country global trade power modifier
+        let trade_power_mod = state
+            .modifiers
+            .country_trade_power
+            .get(owner)
+            .copied()
+            .unwrap_or(Fixed::ZERO);
+        let modified_power = power.mul(Fixed::ONE + trade_power_mod);
+
         // Accumulate power to country in node
         if let Some(node) = state.trade_nodes.get_mut(&node_id) {
             *node
                 .country_power
                 .entry(owner.clone())
-                .or_insert(Fixed::ZERO) += power;
+                .or_insert(Fixed::ZERO) += modified_power;
         }
     }
 }

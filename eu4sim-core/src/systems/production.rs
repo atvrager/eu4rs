@@ -49,9 +49,18 @@ pub fn run_production_tick(state: &mut WorldState, config: &EconomyConfig) {
         };
 
         // Goods produced = base_production × 0.2 (all Fixed)
-        let goods_produced = province
+        let base_goods_produced = province
             .base_production
             .mul(config.base_production_multiplier);
+
+        // Apply country goods_produced modifier
+        let goods_produced_mod = state
+            .modifiers
+            .country_goods_produced
+            .get(owner)
+            .copied()
+            .unwrap_or(Fixed::ZERO);
+        let goods_produced = base_goods_produced.mul(Fixed::ONE + goods_produced_mod);
 
         // Effective price (base + event modifier)
         // TODO(review): Log warning when price is missing to catch data integrity bugs

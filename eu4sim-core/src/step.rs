@@ -1197,12 +1197,22 @@ fn execute_command(
                 }
             });
 
+            // Calculate max morale with country modifier
+            let base_morale = Fixed::from_f32(eu4data::defines::combat::BASE_MORALE);
+            let morale_mod = state
+                .modifiers
+                .country_morale
+                .get(country_tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            let max_morale = base_morale.mul(Fixed::ONE + morale_mod);
+
             if let Some(army_id) = existing_army_id {
                 if let Some(army) = state.armies.get_mut(&army_id) {
                     army.regiments.push(crate::state::Regiment {
                         type_: *unit_type,
                         strength: Fixed::from_int(1000),
-                        morale: Fixed::from_f32(eu4data::defines::combat::BASE_MORALE),
+                        morale: max_morale,
                     });
                     army.recompute_counts();
                 }
@@ -1227,7 +1237,7 @@ fn execute_command(
                         regiments: vec![crate::state::Regiment {
                             type_: *unit_type,
                             strength: Fixed::from_int(1000),
-                            morale: Fixed::from_f32(eu4data::defines::combat::BASE_MORALE),
+                            morale: max_morale,
                         }],
                         movement: None,
                         embarked_on: None,
@@ -2644,7 +2654,16 @@ fn apply_aggressive_expansion(state: &mut WorldState, conqueror: &str, provinces
     }
 
     let ae_per_dev = Fixed::ONE; // 1 AE per 1 dev
-    let total_ae = Fixed::from_int(total_dev) * ae_per_dev;
+    let base_ae = Fixed::from_int(total_dev) * ae_per_dev;
+
+    // Apply ae_impact modifier
+    let ae_impact_mod = state
+        .modifiers
+        .country_ae_impact
+        .get(conqueror)
+        .copied()
+        .unwrap_or(Fixed::ZERO);
+    let total_ae = base_ae.mul(Fixed::ONE + ae_impact_mod);
 
     // Apply AE to all countries
     let country_tags: Vec<String> = state.countries.keys().cloned().collect();

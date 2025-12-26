@@ -79,7 +79,18 @@ pub fn start_coring(
     }
 
     // Check and deduct ADM cost
-    let cost = calculate_coring_cost(province);
+    let base_cost = calculate_coring_cost(province);
+
+    // Apply core_creation modifier to cost
+    let core_creation_mod = state
+        .modifiers
+        .country_core_creation
+        .get(&country)
+        .copied()
+        .unwrap_or(Fixed::ZERO);
+    let cost_factor = Fixed::ONE + core_creation_mod;
+    let cost = base_cost.mul(cost_factor).max(Fixed::ONE); // Minimum cost of 1
+
     let country_state = state
         .countries
         .get_mut(&country)
@@ -94,13 +105,17 @@ pub fn start_coring(
 
     country_state.adm_mana -= cost;
 
+    // Apply core_creation modifier to time
+    let base_time = BASE_CORING_TIME as f32;
+    let modified_time = (base_time * (1.0 + core_creation_mod.to_f32())).max(1.0) as u8;
+
     // Start coring progress
     if let Some(province) = state.provinces.get_mut(&province_id) {
         province.coring_progress = Some(CoringProgress {
             coring_country: country.clone(),
             start_date: current_date,
             progress: 0,
-            required: BASE_CORING_TIME,
+            required: modified_time,
         });
     }
 
