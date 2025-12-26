@@ -217,6 +217,244 @@ pub struct GameModifiers {
     /// Country-level accepted cultures limit.
     /// Applied as additive bonus to maximum accepted cultures.
     pub country_num_accepted_cultures: HashMap<Tag, Fixed>,
+
+    // === Diplomacy & Relations (6 modifiers) ===
+    /// Country-level improve relations modifier.
+    /// Applied as: (1 + modifier) multiplier to improve relations speed.
+    pub country_improve_relation_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level diplomat count bonus.
+    /// Applied as additive bonus to number of available diplomats.
+    pub country_diplomats: HashMap<Tag, Fixed>,
+
+    /// Country-level diplomatic annexation cost modifier.
+    /// Applied as: (1 + modifier) multiplier to diplomatic annexation cost.
+    pub country_diplomatic_annexation_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level vassal income modifier.
+    /// Applied as: (1 + modifier) multiplier to vassal income.
+    pub country_vassal_income: HashMap<Tag, Fixed>,
+
+    /// Country-level fabricate claims cost modifier.
+    /// Applied as: (1 + modifier) multiplier to fabricate claims cost.
+    pub country_fabricate_claims_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level spy offense modifier.
+    /// Applied as additive bonus to spy network construction.
+    pub country_spy_offence: HashMap<Tag, Fixed>,
+
+    // === Technology & Development (3 modifiers) ===
+    /// Country-level general technology cost modifier.
+    /// Applied as: (1 + modifier) multiplier to all tech costs.
+    pub country_technology_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level administrative technology cost modifier.
+    /// Applied as: (1 + modifier) multiplier to ADM tech cost.
+    pub country_adm_tech_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level governing capacity modifier.
+    /// Applied as: (1 + modifier) multiplier to governing capacity.
+    pub country_governing_capacity: HashMap<Tag, Fixed>,
+
+    // === Military Force Limits & Manpower (4 modifiers) ===
+    /// Country-level land force limit modifier.
+    /// Applied as: (1 + modifier) multiplier to land force limit.
+    pub country_land_forcelimit: HashMap<Tag, Fixed>,
+
+    /// Country-level naval force limit modifier.
+    /// Applied as: (1 + modifier) multiplier to naval force limit.
+    pub country_naval_forcelimit: HashMap<Tag, Fixed>,
+
+    /// Country-level global sailors modifier.
+    /// Applied as: (1 + modifier) multiplier to maximum sailors.
+    pub country_global_sailors: HashMap<Tag, Fixed>,
+
+    /// Country-level sailor maintenance modifier.
+    /// Applied as: (1 + modifier) multiplier to sailor maintenance cost.
+    pub country_sailor_maintenance: HashMap<Tag, Fixed>,
+
+    // === Military Tradition & Leaders (6 modifiers) ===
+    /// Country-level army tradition gain.
+    /// Applied as additive bonus to monthly army tradition.
+    pub country_army_tradition: HashMap<Tag, Fixed>,
+
+    /// Country-level army tradition decay.
+    /// Applied as: (1 + modifier) multiplier to army tradition decay.
+    pub country_army_tradition_decay: HashMap<Tag, Fixed>,
+
+    /// Country-level navy tradition gain.
+    /// Applied as additive bonus to monthly navy tradition.
+    pub country_navy_tradition: HashMap<Tag, Fixed>,
+
+    /// Country-level land leader shock bonus.
+    /// Applied as additive bonus to land leader shock skill.
+    pub country_leader_land_shock: HashMap<Tag, Fixed>,
+
+    /// Country-level land leader maneuver bonus.
+    /// Applied as additive bonus to land leader maneuver skill.
+    pub country_leader_land_manuever: HashMap<Tag, Fixed>,
+
+    /// Country-level prestige decay modifier.
+    /// Applied as: (1 + modifier) multiplier to prestige decay.
+    pub country_prestige_decay: HashMap<Tag, Fixed>,
+
+    // === Combat Modifiers (6 modifiers) ===
+    /// Country-level fire damage modifier.
+    /// Applied as: (1 + modifier) multiplier to fire phase damage dealt.
+    pub country_fire_damage: HashMap<Tag, Fixed>,
+
+    /// Country-level shock damage modifier.
+    /// Applied as: (1 + modifier) multiplier to shock phase damage dealt.
+    pub country_shock_damage: HashMap<Tag, Fixed>,
+
+    /// Country-level shock damage received modifier.
+    /// Applied as: (1 + modifier) multiplier to shock damage taken.
+    pub country_shock_damage_received: HashMap<Tag, Fixed>,
+
+    /// Country-level naval morale modifier.
+    /// Applied as: (1 + modifier) multiplier to base naval morale.
+    pub country_naval_morale: HashMap<Tag, Fixed>,
+
+    /// Country-level siege ability modifier.
+    /// Applied as: (1 + modifier) multiplier to siege progress.
+    pub country_siege_ability: HashMap<Tag, Fixed>,
+
+    /// Country-level movement speed modifier.
+    /// Applied as: (1 + modifier) multiplier to army movement speed.
+    pub country_movement_speed: HashMap<Tag, Fixed>,
+
+    // === Attrition & War Exhaustion (2 modifiers) ===
+    /// Country-level land attrition modifier.
+    /// Applied as: (1 + modifier) multiplier to land attrition.
+    pub country_land_attrition: HashMap<Tag, Fixed>,
+
+    /// Country-level war exhaustion modifier.
+    /// Applied as: (1 + modifier) multiplier to war exhaustion gain.
+    pub country_war_exhaustion: HashMap<Tag, Fixed>,
+
+    // === Naval Costs & Power (7 modifiers) ===
+    /// Country-level global ship cost modifier.
+    /// Applied as: (1 + modifier) multiplier to all ship costs.
+    pub country_global_ship_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level light ship cost modifier.
+    /// Applied as: (1 + modifier) multiplier to light ship cost.
+    pub country_light_ship_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level ship durability modifier.
+    /// Applied as: (1 + modifier) multiplier to ship durability.
+    pub country_ship_durability: HashMap<Tag, Fixed>,
+
+    /// Country-level galley power modifier.
+    /// Applied as: (1 + modifier) multiplier to galley combat ability.
+    pub country_galley_power: HashMap<Tag, Fixed>,
+
+    /// Country-level privateer efficiency modifier.
+    /// Applied as: (1 + modifier) multiplier to privateer income.
+    pub country_privateer_efficiency: HashMap<Tag, Fixed>,
+
+    /// Country-level global ship trade power modifier.
+    /// Applied as: (1 + modifier) multiplier to ship trade power.
+    pub country_global_ship_trade_power: HashMap<Tag, Fixed>,
+
+    /// Country-level trade range modifier.
+    /// Applied as: (1 + modifier) multiplier to trade range.
+    pub country_trade_range: HashMap<Tag, Fixed>,
+
+    // === Trade Power (2 modifiers) ===
+    /// Country-level own trade power modifier.
+    /// Applied as: (1 + modifier) multiplier to trade power in owned provinces.
+    pub country_global_own_trade_power: HashMap<Tag, Fixed>,
+
+    /// Country-level provincial trade power modifier.
+    /// Applied as: (1 + modifier) multiplier to provincial trade power.
+    pub country_global_prov_trade_power: HashMap<Tag, Fixed>,
+
+    // === Mercenary Modifiers (1 modifier) ===
+    /// Country-level mercenary maintenance modifier.
+    /// Applied as: (1 + modifier) multiplier to mercenary maintenance cost.
+    pub country_merc_maintenance: HashMap<Tag, Fixed>,
+
+    // === Colonization & Expansion (3 modifiers) ===
+    /// Country-level colonist count bonus.
+    /// Applied as additive bonus to number of available colonists.
+    pub country_colonists: HashMap<Tag, Fixed>,
+
+    /// Country-level global colonial growth modifier.
+    /// Applied as additive bonus to colonial growth rate.
+    pub country_global_colonial_growth: HashMap<Tag, Fixed>,
+
+    /// Country-level years of nationalism modifier.
+    /// Applied as: (1 + modifier) multiplier to years of nationalism.
+    pub country_years_of_nationalism: HashMap<Tag, Fixed>,
+
+    // === Religion & Tolerance (6 modifiers) ===
+    /// Country-level tolerance of heretics.
+    /// Applied as additive bonus to tolerance (reduces unrest from heretic provinces).
+    pub country_tolerance_heretic: HashMap<Tag, Fixed>,
+
+    /// Country-level tolerance of heathens.
+    /// Applied as additive bonus to tolerance (reduces unrest from heathen provinces).
+    pub country_tolerance_heathen: HashMap<Tag, Fixed>,
+
+    /// Country-level religious unity modifier.
+    /// Applied as: (1 + modifier) multiplier to religious unity.
+    pub country_religious_unity: HashMap<Tag, Fixed>,
+
+    /// Country-level global heretic missionary strength.
+    /// Applied as additive bonus to missionary strength against heretics.
+    pub country_global_heretic_missionary_strength: HashMap<Tag, Fixed>,
+
+    /// Country-level papal influence gain.
+    /// Applied as additive bonus to monthly papal influence (Catholic nations).
+    pub country_papal_influence: HashMap<Tag, Fixed>,
+
+    /// Country-level church power modifier.
+    /// Applied as: (1 + modifier) multiplier to church power gain (Protestant nations).
+    pub country_church_power: HashMap<Tag, Fixed>,
+
+    // === Advisors (3 modifiers) ===
+    /// Country-level advisor cost modifier.
+    /// Applied as: (1 + modifier) multiplier to advisor maintenance cost.
+    pub country_advisor_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level advisor pool modifier.
+    /// Applied as additive bonus to advisor pool size.
+    pub country_advisor_pool: HashMap<Tag, Fixed>,
+
+    /// Country-level culture conversion cost modifier.
+    /// Applied as: (1 + modifier) multiplier to culture conversion cost.
+    pub country_culture_conversion_cost: HashMap<Tag, Fixed>,
+
+    // === Economy & State (4 modifiers) ===
+    /// Country-level inflation reduction.
+    /// Applied as additive bonus to yearly inflation reduction.
+    pub country_inflation_reduction: HashMap<Tag, Fixed>,
+
+    /// Country-level global autonomy modifier.
+    /// Applied as additive bonus/penalty to all province autonomy.
+    pub country_global_autonomy: HashMap<Tag, Fixed>,
+
+    /// Country-level state maintenance modifier.
+    /// Applied as: (1 + modifier) multiplier to state maintenance cost.
+    pub country_state_maintenance: HashMap<Tag, Fixed>,
+
+    /// Country-level garrison size modifier.
+    /// Applied as: (1 + modifier) multiplier to fort garrison size.
+    pub country_garrison_size: HashMap<Tag, Fixed>,
+
+    // === Special Mechanics (4 modifiers) ===
+    /// Country-level institution spread modifier.
+    /// Applied as: (1 + modifier) multiplier to institution spread rate.
+    pub country_global_institution_spread: HashMap<Tag, Fixed>,
+
+    /// Country-level heir chance modifier.
+    /// Applied as: (1 + modifier) multiplier to heir chance.
+    pub country_heir_chance: HashMap<Tag, Fixed>,
+
+    /// Country-level caravan power modifier.
+    /// Applied as: (1 + modifier) multiplier to caravan trade power.
+    pub country_caravan_power: HashMap<Tag, Fixed>,
 }
 
 impl GameModifiers {
