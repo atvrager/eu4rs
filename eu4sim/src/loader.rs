@@ -396,7 +396,6 @@ pub fn load_initial_state(
         generic_count,
         national_count
     );
-
     // Initialize national ideas for each country
     // Note: national_ideas_progress starts at 0 - it unlocks as you unlock ideas from picked groups
     for (tag, country) in &mut countries {

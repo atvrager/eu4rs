@@ -687,6 +687,72 @@ pub struct GameModifiers {
     /// Country-level liberty desire from subject development.
     /// Applied as: (1 + modifier) multiplier to liberty desire from development.
     pub country_liberty_desire_from_subject_development: HashMap<Tag, Fixed>,
+
+    // === Naval Combat & Morale (1 modifier) ===
+    /// Country-level sunk ship morale hit received modifier.
+    /// Applied as: (1 + modifier) multiplier to morale damage when ships are sunk.
+    pub country_sunk_ship_morale_hit_recieved: HashMap<Tag, Fixed>,
+
+    // === Naval Recovery (1 modifier) ===
+    /// Country-level sailors recovery speed modifier.
+    /// Applied as: (1 + modifier) multiplier to sailors recovery rate.
+    pub country_sailors_recovery_speed: HashMap<Tag, Fixed>,
+
+    // === Tech Costs (2 modifiers) ===
+    /// Country-level military tech cost modifier.
+    /// Applied as: (1 + modifier) multiplier to military technology cost.
+    pub country_mil_tech_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level diplomatic tech cost modifier.
+    /// Applied as: (1 + modifier) multiplier to diplomatic technology cost.
+    pub country_dip_tech_cost: HashMap<Tag, Fixed>,
+
+    // === Government & Absolutism (4 modifiers) ===
+    /// Country-level max absolutism modifier.
+    /// Applied as: additive bonus to maximum absolutism cap.
+    pub country_max_absolutism: HashMap<Tag, Fixed>,
+
+    /// Country-level number of pronoiars modifier.
+    /// Applied as: additive bonus to pronoia (Byzantine land grant) count.
+    pub country_num_of_pronoiars: HashMap<Tag, Fixed>,
+
+    /// Country-level max revolutionary zeal modifier.
+    /// Applied as: additive bonus to maximum revolutionary zeal cap.
+    pub country_max_revolutionary_zeal: HashMap<Tag, Fixed>,
+
+    /// Country-level possible policy slots modifier.
+    /// Applied as: additive bonus to number of policy slots.
+    pub country_possible_policy: HashMap<Tag, Fixed>,
+
+    // === Power Projection (1 modifier) ===
+    /// Country-level power projection from insults modifier.
+    /// Applied as: (1 + modifier) multiplier to power projection gained from insults.
+    pub country_power_projection_from_insults: HashMap<Tag, Fixed>,
+
+    // === Rebellion & Unrest (1 modifier) ===
+    /// Country-level harsh treatment cost modifier.
+    /// Applied as: (1 + modifier) multiplier to harsh treatment cost.
+    pub country_harsh_treatment_cost: HashMap<Tag, Fixed>,
+
+    // === Leaders (1 modifier) ===
+    /// Country-level free leader pool modifier.
+    /// Applied as: additive bonus to free leader pool size.
+    pub country_free_leader_pool: HashMap<Tag, Fixed>,
+
+    // === Naval Combat Bonuses (1 modifier) ===
+    /// Country-level own coast naval combat bonus.
+    /// Applied as: additive bonus to naval combat when fighting in own coastal waters.
+    pub country_own_coast_naval_combat_bonus: HashMap<Tag, Fixed>,
+
+    // === Technology & Innovation (1 modifier) ===
+    /// Country-level institution embracement cost modifier.
+    /// Applied as: (1 + modifier) multiplier to institution embracement cost.
+    pub country_embracement_cost: HashMap<Tag, Fixed>,
+
+    // === Military Costs (1 modifier) ===
+    /// Country-level artillery cost modifier.
+    /// Applied as: (1 + modifier) multiplier to artillery recruitment cost.
+    pub country_artillery_cost: HashMap<Tag, Fixed>,
 }
 
 impl GameModifiers {

@@ -282,6 +282,30 @@ impl ModifierStubTracker {
                 | "build_time"
                 | "promote_culture_cost"
                 | "liberty_desire_from_subject_development"
+            // Naval Combat & Morale
+                | "sunk_ship_morale_hit_recieved"
+            // Naval Recovery
+                | "sailors_recovery_speed"
+            // Tech Costs
+                | "mil_tech_cost_modifier"
+                | "dip_tech_cost_modifier"
+            // Government & Absolutism
+                | "max_absolutism"
+                | "num_of_pronoiars"
+                | "max_revolutionary_zeal"
+                | "possible_policy"
+            // Power Projection
+                | "power_projection_from_insults"
+            // Rebellion & Unrest
+                | "harsh_treatment_cost"
+            // Leaders
+                | "free_leader_pool"
+            // Naval Combat Bonuses
+                | "own_coast_naval_combat_bonus"
+            // Technology & Innovation
+                | "embracement_cost"
+            // Military Costs
+                | "artillery_cost"
         )
     }
 }
@@ -1360,6 +1384,96 @@ pub fn apply_modifier(
             true
         }
 
+        // === Naval Combat & Morale ===
+        "sunk_ship_morale_hit_recieved" => {
+            let current = modifiers.country_sunk_ship_morale_hit_recieved.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_sunk_ship_morale_hit_recieved.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Naval Recovery ===
+        "sailors_recovery_speed" => {
+            let current = modifiers.country_sailors_recovery_speed.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_sailors_recovery_speed.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Tech Costs ===
+        "mil_tech_cost_modifier" => {
+            let current = modifiers.country_mil_tech_cost.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_mil_tech_cost.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "dip_tech_cost_modifier" => {
+            let current = modifiers.country_dip_tech_cost.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_dip_tech_cost.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Government & Absolutism ===
+        "max_absolutism" => {
+            let current = modifiers.country_max_absolutism.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_max_absolutism.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "num_of_pronoiars" => {
+            let current = modifiers.country_num_of_pronoiars.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_num_of_pronoiars.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "max_revolutionary_zeal" => {
+            let current = modifiers.country_max_revolutionary_zeal.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_max_revolutionary_zeal.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "possible_policy" => {
+            let current = modifiers.country_possible_policy.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_possible_policy.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Power Projection ===
+        "power_projection_from_insults" => {
+            let current = modifiers.country_power_projection_from_insults.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_power_projection_from_insults.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Rebellion & Unrest ===
+        "harsh_treatment_cost" => {
+            let current = modifiers.country_harsh_treatment_cost.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_harsh_treatment_cost.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Leaders ===
+        "free_leader_pool" => {
+            let current = modifiers.country_free_leader_pool.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_free_leader_pool.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Naval Combat Bonuses ===
+        "own_coast_naval_combat_bonus" => {
+            let current = modifiers.country_own_coast_naval_combat_bonus.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_own_coast_naval_combat_bonus.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Technology & Innovation ===
+        "embracement_cost" => {
+            let current = modifiers.country_embracement_cost.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_embracement_cost.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Military Costs ===
+        "artillery_cost" => {
+            let current = modifiers.country_artillery_cost.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_artillery_cost.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
         // === All other modifiers are stubs ===
         _ => {
             stubs.track(&entry.key);
@@ -1588,13 +1702,14 @@ mod tests {
         let mut modifiers = GameModifiers::default();
         let tracker = ModifierStubTracker::new();
 
-        let entry = ModifierEntry::from_f32("dip_tech_cost_modifier", -0.05);
+        // Use a modifier that definitely doesn't exist
+        let entry = ModifierEntry::from_f32("unknown_test_modifier_xyz", 0.1);
         let applied = apply_modifier(&mut modifiers, "FRA", &entry, &tracker);
 
         assert!(!applied);
         assert!(tracker
             .unimplemented_keys()
-            .contains(&"dip_tech_cost_modifier".to_string()));
+            .contains(&"unknown_test_modifier_xyz".to_string()));
     }
 
     #[test]
@@ -2537,6 +2652,211 @@ mod tests {
         ];
 
         for modifier in new_modifiers {
+            assert!(
+                ModifierStubTracker::is_implemented(modifier),
+                "Modifier {} should be implemented",
+                modifier
+            );
+        }
+    }
+
+    #[test]
+    fn test_apply_final_naval_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let stubs = ModifierStubTracker::new();
+        let tag = "ENG";
+
+        // Test sunk_ship_morale_hit_recieved
+        let entry = ModifierEntry::new("sunk_ship_morale_hit_recieved", Fixed::from_f32(-0.33));
+        assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
+        assert_eq!(
+            modifiers.country_sunk_ship_morale_hit_recieved.get(tag),
+            Some(&Fixed::from_f32(-0.33))
+        );
+
+        // Test sailors_recovery_speed
+        let entry = ModifierEntry::new("sailors_recovery_speed", Fixed::from_f32(0.2));
+        assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
+        assert_eq!(
+            modifiers.country_sailors_recovery_speed.get(tag),
+            Some(&Fixed::from_f32(0.2))
+        );
+
+        // Test own_coast_naval_combat_bonus
+        let entry = ModifierEntry::new("own_coast_naval_combat_bonus", Fixed::from_int(1));
+        assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
+        assert_eq!(
+            modifiers.country_own_coast_naval_combat_bonus.get(tag),
+            Some(&Fixed::from_int(1))
+        );
+    }
+
+    #[test]
+    fn test_apply_tech_cost_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let stubs = ModifierStubTracker::new();
+        let tag = "PRU";
+
+        // Test mil_tech_cost_modifier
+        let entry = ModifierEntry::new("mil_tech_cost_modifier", Fixed::from_f32(-0.1));
+        assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
+        assert_eq!(
+            modifiers.country_mil_tech_cost.get(tag),
+            Some(&Fixed::from_f32(-0.1))
+        );
+
+        // Test dip_tech_cost_modifier
+        let entry = ModifierEntry::new("dip_tech_cost_modifier", Fixed::from_f32(-0.05));
+        assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
+        assert_eq!(
+            modifiers.country_dip_tech_cost.get(tag),
+            Some(&Fixed::from_f32(-0.05))
+        );
+
+        // Test stacking multiple sources
+        let entry2 = ModifierEntry::new("mil_tech_cost_modifier", Fixed::from_f32(-0.05));
+        assert!(apply_modifier(&mut modifiers, tag, &entry2, &stubs));
+        assert_eq!(
+            modifiers.country_mil_tech_cost.get(tag),
+            Some(&Fixed::from_f32(-0.15))
+        );
+    }
+
+    #[test]
+    fn test_apply_government_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let stubs = ModifierStubTracker::new();
+        let tag = "FRA";
+
+        // Test max_absolutism
+        let entry = ModifierEntry::new("max_absolutism", Fixed::from_int(5));
+        assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
+        assert_eq!(
+            modifiers.country_max_absolutism.get(tag),
+            Some(&Fixed::from_int(5))
+        );
+
+        // Test num_of_pronoiars
+        let entry = ModifierEntry::new("num_of_pronoiars", Fixed::from_int(2));
+        assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
+        assert_eq!(
+            modifiers.country_num_of_pronoiars.get(tag),
+            Some(&Fixed::from_int(2))
+        );
+
+        // Test max_revolutionary_zeal
+        let entry = ModifierEntry::new("max_revolutionary_zeal", Fixed::from_int(10));
+        assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
+        assert_eq!(
+            modifiers.country_max_revolutionary_zeal.get(tag),
+            Some(&Fixed::from_int(10))
+        );
+
+        // Test possible_policy
+        let entry = ModifierEntry::new("possible_policy", Fixed::from_int(1));
+        assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
+        assert_eq!(
+            modifiers.country_possible_policy.get(tag),
+            Some(&Fixed::from_int(1))
+        );
+    }
+
+    #[test]
+    fn test_apply_power_projection_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let stubs = ModifierStubTracker::new();
+        let tag = "GBR";
+
+        // Test power_projection_from_insults
+        let entry = ModifierEntry::new("power_projection_from_insults", Fixed::from_f32(0.5));
+        assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
+        assert_eq!(
+            modifiers.country_power_projection_from_insults.get(tag),
+            Some(&Fixed::from_f32(0.5))
+        );
+    }
+
+    #[test]
+    fn test_apply_rebellion_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let stubs = ModifierStubTracker::new();
+        let tag = "TUR";
+
+        // Test harsh_treatment_cost
+        let entry = ModifierEntry::new("harsh_treatment_cost", Fixed::from_f32(-0.25));
+        assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
+        assert_eq!(
+            modifiers.country_harsh_treatment_cost.get(tag),
+            Some(&Fixed::from_f32(-0.25))
+        );
+    }
+
+    #[test]
+    fn test_apply_leader_pool_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let stubs = ModifierStubTracker::new();
+        let tag = "RUS";
+
+        // Test free_leader_pool
+        let entry = ModifierEntry::new("free_leader_pool", Fixed::from_int(1));
+        assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
+        assert_eq!(
+            modifiers.country_free_leader_pool.get(tag),
+            Some(&Fixed::from_int(1))
+        );
+    }
+
+    #[test]
+    fn test_apply_innovation_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let stubs = ModifierStubTracker::new();
+        let tag = "SPA";
+
+        // Test embracement_cost
+        let entry = ModifierEntry::new("embracement_cost", Fixed::from_f32(-0.1));
+        assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
+        assert_eq!(
+            modifiers.country_embracement_cost.get(tag),
+            Some(&Fixed::from_f32(-0.1))
+        );
+    }
+
+    #[test]
+    fn test_apply_artillery_cost_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let stubs = ModifierStubTracker::new();
+        let tag = "BRA";
+
+        // Test artillery_cost
+        let entry = ModifierEntry::new("artillery_cost", Fixed::from_f32(-0.15));
+        assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
+        assert_eq!(
+            modifiers.country_artillery_cost.get(tag),
+            Some(&Fixed::from_f32(-0.15))
+        );
+    }
+
+    #[test]
+    fn test_all_14_final_modifiers_implemented() {
+        // Verify all 14 final modifiers are recognized as implemented
+        let final_modifiers = [
+            "sunk_ship_morale_hit_recieved",
+            "sailors_recovery_speed",
+            "mil_tech_cost_modifier",
+            "dip_tech_cost_modifier",
+            "max_absolutism",
+            "num_of_pronoiars",
+            "max_revolutionary_zeal",
+            "possible_policy",
+            "power_projection_from_insults",
+            "harsh_treatment_cost",
+            "free_leader_pool",
+            "own_coast_naval_combat_bonus",
+            "embracement_cost",
+            "artillery_cost",
+        ];
+
+        for modifier in final_modifiers {
             assert!(
                 ModifierStubTracker::is_implemented(modifier),
                 "Modifier {} should be implemented",
