@@ -50,10 +50,28 @@ pub fn run_manpower_tick(state: &mut WorldState) {
                 .get(&tag)
                 .copied()
                 .unwrap_or(Fixed::ZERO);
-            let max = Fixed::from_int(defines::BASE_MANPOWER) + province_sum;
+            let base_max = Fixed::from_int(defines::BASE_MANPOWER) + province_sum;
+
+            // Apply global manpower modifier
+            let manpower_mod = state
+                .modifiers
+                .country_manpower
+                .get(&tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            let max = base_max.mul(Fixed::ONE + manpower_mod);
 
             // Recovery: Max / 120 (120 months = 10 years)
-            let recovery = max.div(Fixed::from_int(defines::RECOVERY_MONTHS));
+            let base_recovery = max.div(Fixed::from_int(defines::RECOVERY_MONTHS));
+
+            // Apply manpower recovery speed modifier
+            let recovery_speed_mod = state
+                .modifiers
+                .country_manpower_recovery_speed
+                .get(&tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            let recovery = base_recovery.mul(Fixed::ONE + recovery_speed_mod);
 
             // Only grant recovery if below max (don't recover while overcapped)
             if country.manpower < max {

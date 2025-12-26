@@ -19,6 +19,15 @@ pub fn run_stats_tick(state: &mut WorldState) {
     let tags: Vec<String> = state.countries.keys().cloned().collect();
     for tag in tags {
         if let Some(country) = state.countries.get_mut(&tag) {
+            // Apply monthly prestige gain from modifiers
+            let prestige_gain = state
+                .modifiers
+                .country_prestige
+                .get(&tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            country.prestige.add(prestige_gain);
+
             // Prestige decays toward 0 - Fame is but a shadow that shrinks as the sun moves.
             country.prestige.decay_toward(Fixed::ZERO, DECAY_RATE);
 

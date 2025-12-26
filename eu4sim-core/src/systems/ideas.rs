@@ -113,6 +113,32 @@ impl ModifierStubTracker {
                 | "cavalry_cost"
                 | "mercenary_cost"
                 | "mercenary_maintenance"
+            // Manpower/Stats
+                | "global_manpower_modifier"
+                | "prestige"
+                | "devotion"
+                | "horde_unity"
+                | "legitimacy"
+                | "republican_tradition"
+                | "meritocracy"
+            // Fort/Stability
+                | "defensiveness"
+                | "global_unrest"
+                | "stability_cost_modifier"
+            // Tolerance/Religion
+                | "tolerance_own"
+            // Economic
+                | "global_trade_goods_size_modifier"
+                | "build_cost"
+            // Military
+                | "manpower_recovery_speed"
+                | "hostile_attrition"
+            // Diplomatic/Culture
+                | "diplomatic_upkeep"
+                | "idea_cost"
+                | "merchants"
+                | "global_missionary_strength"
+                | "num_accepted_cultures"
         )
     }
 }
@@ -348,6 +374,236 @@ pub fn apply_modifier(
             true
         }
 
+        // === Manpower/Stats modifiers ===
+        "global_manpower_modifier" => {
+            let current = modifiers
+                .country_manpower
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_manpower
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "prestige" => {
+            let current = modifiers
+                .country_prestige
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_prestige
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "devotion" => {
+            let current = modifiers
+                .country_devotion
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_devotion
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "horde_unity" => {
+            let current = modifiers
+                .country_horde_unity
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_horde_unity
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "legitimacy" => {
+            let current = modifiers
+                .country_legitimacy
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_legitimacy
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "republican_tradition" => {
+            let current = modifiers
+                .country_republican_tradition
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_republican_tradition
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "meritocracy" => {
+            let current = modifiers
+                .country_meritocracy
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_meritocracy
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "defensiveness" => {
+            let current = modifiers
+                .country_defensiveness
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_defensiveness
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "global_unrest" => {
+            let current = modifiers
+                .country_unrest
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_unrest
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "stability_cost_modifier" => {
+            let current = modifiers
+                .country_stability_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_stability_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Tolerance/Religion modifiers ===
+        "tolerance_own" => {
+            let current = modifiers
+                .country_tolerance_own
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_tolerance_own
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Economic modifiers ===
+        "global_trade_goods_size_modifier" => {
+            let current = modifiers
+                .country_trade_goods_size
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_trade_goods_size
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "build_cost" => {
+            let current = modifiers
+                .country_build_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_build_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Military modifiers ===
+        "manpower_recovery_speed" => {
+            let current = modifiers
+                .country_manpower_recovery_speed
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_manpower_recovery_speed
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "hostile_attrition" => {
+            let current = modifiers
+                .country_hostile_attrition
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_hostile_attrition
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Diplomatic/Culture modifiers ===
+        "diplomatic_upkeep" => {
+            let current = modifiers
+                .country_diplomatic_upkeep
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_diplomatic_upkeep
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "idea_cost" => {
+            let current = modifiers
+                .country_idea_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_idea_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "merchants" => {
+            let current = modifiers
+                .country_merchants
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_merchants
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "global_missionary_strength" => {
+            let current = modifiers
+                .country_missionary_strength
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_missionary_strength
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "num_accepted_cultures" => {
+            let current = modifiers
+                .country_num_accepted_cultures
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_num_accepted_cultures
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
         // === All other modifiers are stubs ===
         _ => {
             stubs.track(&entry.key);
@@ -576,13 +832,13 @@ mod tests {
         let mut modifiers = GameModifiers::default();
         let tracker = ModifierStubTracker::new();
 
-        let entry = ModifierEntry::from_f32("global_manpower_modifier", 0.25);
+        let entry = ModifierEntry::from_f32("improve_relation_modifier", 0.25);
         let applied = apply_modifier(&mut modifiers, "FRA", &entry, &tracker);
 
         assert!(!applied);
         assert!(tracker
             .unimplemented_keys()
-            .contains(&"global_manpower_modifier".to_string()));
+            .contains(&"improve_relation_modifier".to_string()));
     }
 
     #[test]
@@ -765,6 +1021,190 @@ mod tests {
     }
 
     #[test]
+    fn test_apply_manpower_stats_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let tracker = ModifierStubTracker::new();
+
+        // global_manpower_modifier
+        let entry1 = ModifierEntry::from_f32("global_manpower_modifier", 0.25);
+        assert!(apply_modifier(&mut modifiers, "MOS", &entry1, &tracker));
+        assert_eq!(
+            modifiers.country_manpower.get("MOS"),
+            Some(&Fixed::from_f32(0.25))
+        );
+
+        // prestige
+        let entry2 = ModifierEntry::from_f32("prestige", 1.0);
+        assert!(apply_modifier(&mut modifiers, "FRA", &entry2, &tracker));
+        assert_eq!(
+            modifiers.country_prestige.get("FRA"),
+            Some(&Fixed::from_f32(1.0))
+        );
+
+        // devotion (theocracy government stat)
+        let entry3 = ModifierEntry::from_f32("devotion", 0.5);
+        assert!(apply_modifier(&mut modifiers, "PAP", &entry3, &tracker));
+        assert_eq!(
+            modifiers.country_devotion.get("PAP"),
+            Some(&Fixed::from_f32(0.5))
+        );
+
+        // horde_unity (steppe horde government stat)
+        let entry4 = ModifierEntry::from_f32("horde_unity", 1.0);
+        assert!(apply_modifier(&mut modifiers, "KZH", &entry4, &tracker));
+        assert_eq!(
+            modifiers.country_horde_unity.get("KZH"),
+            Some(&Fixed::from_f32(1.0))
+        );
+
+        // legitimacy (monarchy government stat)
+        let entry5 = ModifierEntry::from_f32("legitimacy", 0.5);
+        assert!(apply_modifier(&mut modifiers, "CAS", &entry5, &tracker));
+        assert_eq!(
+            modifiers.country_legitimacy.get("CAS"),
+            Some(&Fixed::from_f32(0.5))
+        );
+    }
+
+    #[test]
+    fn test_apply_government_and_stability_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let tracker = ModifierStubTracker::new();
+
+        // republican_tradition (republic government stat)
+        let entry1 = ModifierEntry::from_f32("republican_tradition", 0.5);
+        assert!(apply_modifier(&mut modifiers, "VEN", &entry1, &tracker));
+        assert_eq!(
+            modifiers.country_republican_tradition.get("VEN"),
+            Some(&Fixed::from_f32(0.5))
+        );
+
+        // meritocracy (celestial empire government stat)
+        let entry2 = ModifierEntry::from_f32("meritocracy", 1.0);
+        assert!(apply_modifier(&mut modifiers, "MNG", &entry2, &tracker));
+        assert_eq!(
+            modifiers.country_meritocracy.get("MNG"),
+            Some(&Fixed::from_f32(1.0))
+        );
+
+        // defensiveness (fort defense bonus)
+        let entry3 = ModifierEntry::from_f32("defensiveness", 0.25);
+        assert!(apply_modifier(&mut modifiers, "BYZ", &entry3, &tracker));
+        assert_eq!(
+            modifiers.country_defensiveness.get("BYZ"),
+            Some(&Fixed::from_f32(0.25))
+        );
+
+        // global_unrest (province unrest modifier)
+        let entry4 = ModifierEntry::from_f32("global_unrest", -2.0);
+        assert!(apply_modifier(&mut modifiers, "PRU", &entry4, &tracker));
+        assert_eq!(
+            modifiers.country_unrest.get("PRU"),
+            Some(&Fixed::from_f32(-2.0))
+        );
+
+        // stability_cost_modifier (stability increase cost)
+        let entry5 = ModifierEntry::from_f32("stability_cost_modifier", -0.10);
+        assert!(apply_modifier(&mut modifiers, "FRA", &entry5, &tracker));
+        assert_eq!(
+            modifiers.country_stability_cost.get("FRA"),
+            Some(&Fixed::from_f32(-0.10))
+        );
+    }
+
+    #[test]
+    fn test_apply_tolerance_and_economy_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let tracker = ModifierStubTracker::new();
+
+        // tolerance_own
+        let entry1 = ModifierEntry::from_f32("tolerance_own", 2.0);
+        assert!(apply_modifier(&mut modifiers, "SPA", &entry1, &tracker));
+        assert_eq!(
+            modifiers.country_tolerance_own.get("SPA"),
+            Some(&Fixed::from_f32(2.0))
+        );
+
+        // global_trade_goods_size_modifier
+        let entry2 = ModifierEntry::from_f32("global_trade_goods_size_modifier", 0.10);
+        assert!(apply_modifier(&mut modifiers, "ENG", &entry2, &tracker));
+        assert_eq!(
+            modifiers.country_trade_goods_size.get("ENG"),
+            Some(&Fixed::from_f32(0.10))
+        );
+
+        // build_cost
+        let entry3 = ModifierEntry::from_f32("build_cost", -0.10);
+        assert!(apply_modifier(&mut modifiers, "PRU", &entry3, &tracker));
+        assert_eq!(
+            modifiers.country_build_cost.get("PRU"),
+            Some(&Fixed::from_f32(-0.10))
+        );
+
+        // manpower_recovery_speed
+        let entry4 = ModifierEntry::from_f32("manpower_recovery_speed", 0.20);
+        assert!(apply_modifier(&mut modifiers, "RUS", &entry4, &tracker));
+        assert_eq!(
+            modifiers.country_manpower_recovery_speed.get("RUS"),
+            Some(&Fixed::from_f32(0.20))
+        );
+
+        // hostile_attrition
+        let entry5 = ModifierEntry::from_f32("hostile_attrition", 1.0);
+        assert!(apply_modifier(&mut modifiers, "SWE", &entry5, &tracker));
+        assert_eq!(
+            modifiers.country_hostile_attrition.get("SWE"),
+            Some(&Fixed::from_f32(1.0))
+        );
+    }
+
+    #[test]
+    fn test_apply_diplomatic_and_culture_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let tracker = ModifierStubTracker::new();
+
+        // diplomatic_upkeep
+        let entry1 = ModifierEntry::from_f32("diplomatic_upkeep", 1.0);
+        assert!(apply_modifier(&mut modifiers, "FRA", &entry1, &tracker));
+        assert_eq!(
+            modifiers.country_diplomatic_upkeep.get("FRA"),
+            Some(&Fixed::from_f32(1.0))
+        );
+
+        // idea_cost
+        let entry2 = ModifierEntry::from_f32("idea_cost", -0.10);
+        assert!(apply_modifier(&mut modifiers, "PRU", &entry2, &tracker));
+        assert_eq!(
+            modifiers.country_idea_cost.get("PRU"),
+            Some(&Fixed::from_f32(-0.10))
+        );
+
+        // merchants
+        let entry3 = ModifierEntry::from_f32("merchants", 1.0);
+        assert!(apply_modifier(&mut modifiers, "VEN", &entry3, &tracker));
+        assert_eq!(
+            modifiers.country_merchants.get("VEN"),
+            Some(&Fixed::from_f32(1.0))
+        );
+
+        // global_missionary_strength
+        let entry4 = ModifierEntry::from_f32("global_missionary_strength", 0.02);
+        assert!(apply_modifier(&mut modifiers, "SPA", &entry4, &tracker));
+        assert_eq!(
+            modifiers.country_missionary_strength.get("SPA"),
+            Some(&Fixed::from_f32(0.02))
+        );
+
+        // num_accepted_cultures
+        let entry5 = ModifierEntry::from_f32("num_accepted_cultures", 2.0);
+        assert!(apply_modifier(&mut modifiers, "TUR", &entry5, &tracker));
+        assert_eq!(
+            modifiers.country_num_accepted_cultures.get("TUR"),
+            Some(&Fixed::from_f32(2.0))
+        );
+    }
+
+    #[test]
     fn test_recalculate_idea_modifiers() {
         let registry = make_test_registry();
         let mut modifiers = GameModifiers::default();
@@ -785,10 +1225,9 @@ mod tests {
         let stats =
             recalculate_idea_modifiers(&mut modifiers, "TST", &country, &registry, &tracker);
 
-        // Start (0.10) + idea_1 (-0.10 land maintenance) + bonus (0.05) = applied
-        // idea_2 global_manpower_modifier = stubbed
-        assert_eq!(stats.applied, 3); // global_tax x2 + land_maintenance
-        assert_eq!(stats.stubbed, 1); // global_manpower_modifier
+        // Start (0.10) + idea_1 (-0.10 land maintenance) + bonus (0.05) + idea_2 (global_manpower) = applied
+        assert_eq!(stats.applied, 4); // global_tax x2 + land_maintenance + global_manpower_modifier
+        assert_eq!(stats.stubbed, 0);
 
         // Check tax modifier was applied (0.10 start + 0.05 bonus = 0.15)
         assert_eq!(
@@ -802,10 +1241,11 @@ mod tests {
             Some(&Fixed::from_f32(-0.10))
         );
 
-        // Check stubs were tracked
-        assert!(tracker
-            .unimplemented_keys()
-            .contains(&"global_manpower_modifier".to_string()));
+        // Check global_manpower_modifier was applied
+        assert_eq!(
+            modifiers.country_manpower.get("TST"),
+            Some(&Fixed::from_f32(0.15))
+        );
     }
 
     #[test]

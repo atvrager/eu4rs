@@ -133,6 +133,90 @@ pub struct GameModifiers {
     /// Applied as: (1 + modifier) multiplier to mercenary maintenance cost.
     /// Negative values reduce cost.
     pub country_mercenary_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level global manpower modifier.
+    /// Applied as: (1 + modifier) multiplier to maximum manpower pool.
+    pub country_manpower: HashMap<Tag, Fixed>,
+
+    /// Country-level monthly prestige gain.
+    /// Applied as additive bonus to prestige per month.
+    pub country_prestige: HashMap<Tag, Fixed>,
+
+    /// Country-level devotion gain (for Theocracy governments).
+    /// Applied as additive bonus to monthly devotion.
+    pub country_devotion: HashMap<Tag, Fixed>,
+
+    /// Country-level horde unity gain (for Steppe Horde governments).
+    /// Applied as additive bonus to monthly horde unity.
+    pub country_horde_unity: HashMap<Tag, Fixed>,
+
+    /// Country-level legitimacy gain (for Monarchy governments).
+    /// Applied as additive bonus to monthly legitimacy.
+    pub country_legitimacy: HashMap<Tag, Fixed>,
+
+    /// Country-level republican tradition gain (for Republic governments).
+    /// Applied as additive bonus to monthly republican tradition.
+    pub country_republican_tradition: HashMap<Tag, Fixed>,
+
+    /// Country-level meritocracy gain (for Celestial Empire government).
+    /// Applied as additive bonus to monthly meritocracy.
+    pub country_meritocracy: HashMap<Tag, Fixed>,
+
+    /// Country-level defensiveness modifier.
+    /// Applied as: (1 + modifier) multiplier to fort defense strength.
+    pub country_defensiveness: HashMap<Tag, Fixed>,
+
+    /// Country-level global unrest modifier.
+    /// Applied as additive penalty/bonus to province unrest.
+    pub country_unrest: HashMap<Tag, Fixed>,
+
+    /// Country-level stability cost modifier.
+    /// Applied as: (1 + modifier) multiplier to stability increase cost.
+    /// Negative values make stability cheaper.
+    pub country_stability_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level tolerance of the true faith.
+    /// Applied as additive bonus to tolerance (reduces unrest from same religion provinces).
+    pub country_tolerance_own: HashMap<Tag, Fixed>,
+
+    /// Country-level global trade goods size modifier.
+    /// Applied as: (1 + modifier) multiplier to goods produced.
+    /// Functionally equivalent to goods_produced_modifier.
+    pub country_trade_goods_size: HashMap<Tag, Fixed>,
+
+    /// Country-level build cost modifier.
+    /// Applied as: (1 + modifier) multiplier to building construction cost.
+    /// Negative values make buildings cheaper.
+    pub country_build_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level manpower recovery speed modifier.
+    /// Applied as: (1 + modifier) multiplier to monthly manpower recovery.
+    pub country_manpower_recovery_speed: HashMap<Tag, Fixed>,
+
+    /// Country-level hostile attrition modifier.
+    /// Applied to enemy armies in your territory.
+    pub country_hostile_attrition: HashMap<Tag, Fixed>,
+
+    /// Country-level diplomatic relations limit.
+    /// Applied as additive bonus to maximum diplomatic relations.
+    pub country_diplomatic_upkeep: HashMap<Tag, Fixed>,
+
+    /// Country-level idea cost modifier.
+    /// Applied as: (1 + modifier) multiplier to idea group unlock cost.
+    /// Negative values make ideas cheaper.
+    pub country_idea_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level merchant bonus.
+    /// Applied as additive bonus to number of available merchants.
+    pub country_merchants: HashMap<Tag, Fixed>,
+
+    /// Country-level global missionary strength.
+    /// Applied as additive bonus to missionary conversion strength.
+    pub country_missionary_strength: HashMap<Tag, Fixed>,
+
+    /// Country-level accepted cultures limit.
+    /// Applied as additive bonus to maximum accepted cultures.
+    pub country_num_accepted_cultures: HashMap<Tag, Fixed>,
 }
 
 impl GameModifiers {

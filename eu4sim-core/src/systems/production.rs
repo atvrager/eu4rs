@@ -53,14 +53,21 @@ pub fn run_production_tick(state: &mut WorldState, config: &EconomyConfig) {
             .base_production
             .mul(config.base_production_multiplier);
 
-        // Apply country goods_produced modifier
+        // Apply country goods_produced modifiers (both goods_produced and global_trade_goods_size stack)
         let goods_produced_mod = state
             .modifiers
             .country_goods_produced
             .get(owner)
             .copied()
             .unwrap_or(Fixed::ZERO);
-        let goods_produced = base_goods_produced.mul(Fixed::ONE + goods_produced_mod);
+        let trade_goods_size_mod = state
+            .modifiers
+            .country_trade_goods_size
+            .get(owner)
+            .copied()
+            .unwrap_or(Fixed::ZERO);
+        let goods_produced =
+            base_goods_produced.mul(Fixed::ONE + goods_produced_mod + trade_goods_size_mod);
 
         // Effective price (base + event modifier)
         // TODO(review): Log warning when price is missing to catch data integrity bugs
