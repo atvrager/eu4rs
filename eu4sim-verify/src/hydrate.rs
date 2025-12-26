@@ -101,6 +101,46 @@ pub fn hydrate_from_save(
     }
     log::info!("Updated {} countries from save", countries_updated);
 
+    // Override subjects with save data
+    // The base state already has subjects from history/diplomacy, but save file
+    // may have different relationships (new vassals, released subjects, etc.)
+    let mut subjects_updated = 0;
+    world.diplomacy.subjects.clear(); // Start fresh with save data
+    for (subject_tag, save_subject) in &save.subjects {
+        // Look up subject type ID by name
+        if let Some(type_id) = world.subject_types.id_by_name(&save_subject.subject_type) {
+            let relationship = eu4sim_core::state::SubjectRelationship {
+                overlord: save_subject.overlord.clone(),
+                subject: save_subject.subject.clone(),
+                subject_type: type_id,
+                start_date: save_subject
+                    .start_date
+                    .as_ref()
+                    .and_then(|s| parse_date(s).ok())
+                    .unwrap_or(date),
+                liberty_desire: 0,
+                integration_progress: 0,
+                integrating: false,
+            };
+            world
+                .diplomacy
+                .subjects
+                .insert(subject_tag.clone(), relationship);
+            subjects_updated += 1;
+        } else {
+            log::warn!(
+                "Unknown subject type '{}' for {} -> {}",
+                save_subject.subject_type,
+                save_subject.overlord,
+                save_subject.subject
+            );
+        }
+    }
+    log::info!(
+        "Updated {} subject relationships from save",
+        subjects_updated
+    );
+
     // Clear armies/fleets for passive simulation
     // (Korea at game start has no active wars, so this is fine)
     let armies_cleared = world.armies.len();

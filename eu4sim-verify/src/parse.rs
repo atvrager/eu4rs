@@ -274,16 +274,30 @@ fn parse_binary_gamestate(data: &[u8]) -> Result<ExtractedState> {
         countries.insert(tag_str, extracted);
     }
 
+    // Extract subject relationships from diplomacy.dependencies
+    let mut subjects = HashMap::new();
+    for dep in &query.save().game.diplomacy.dependencies {
+        let subject = crate::ExtractedSubject {
+            overlord: dep.first.to_string(),
+            subject: dep.second.to_string(),
+            subject_type: dep.subject_type.clone(),
+            start_date: dep.start_date.map(|d| d.iso_8601().to_string()),
+        };
+        subjects.insert(subject.subject.clone(), subject);
+    }
+
     log::info!(
-        "Extracted {} countries, {} provinces",
+        "Extracted {} countries, {} provinces, {} subjects",
         countries.len(),
-        provinces.len()
+        provinces.len(),
+        subjects.len()
     );
 
     Ok(ExtractedState {
         meta,
         countries,
         provinces,
+        subjects,
     })
 }
 
@@ -342,6 +356,7 @@ fn parse_text_content(text: &str) -> Result<ExtractedState> {
         },
         countries: HashMap::new(),
         provinces: HashMap::new(),
+        subjects: HashMap::new(),
     };
 
     // Extract country data
@@ -350,10 +365,14 @@ fn parse_text_content(text: &str) -> Result<ExtractedState> {
     // Extract province data
     extract_provinces(text, &mut state)?;
 
+    // Extract subject relationships from diplomacy section
+    extract_subjects(text, &mut state)?;
+
     log::info!(
-        "Extracted {} countries, {} provinces",
+        "Extracted {} countries, {} provinces, {} subjects",
         state.countries.len(),
-        state.provinces.len()
+        state.provinces.len(),
+        state.subjects.len()
     );
 
     Ok(state)
@@ -687,6 +706,84 @@ fn parse_province_block(id: u32, content: &str) -> crate::ExtractedProvince {
     province.buildings = extract_buildings(content);
 
     province
+}
+
+/// Extract subject relationships from diplomacy section
+/// Dependencies appear as: dependency={ first="FRA" second="PRO" subject_type="vassal" ... }
+fn extract_subjects(text: &str, state: &mut ExtractedState) -> Result<()> {
+    // Find the diplomacy section
+    let diplomacy_start = text.find("\ndiplomacy={");
+    if diplomacy_start.is_none() {
+        log::debug!("Could not find diplomacy section");
+        return Ok(());
+    }
+
+    let section_start = diplomacy_start.unwrap() + "\ndiplomacy={".len();
+    let diplomacy_section = if let Some(section_content) = extract_block(&text[section_start..]) {
+        section_content
+    } else {
+        log::warn!("Could not find end of diplomacy section");
+        return Ok(());
+    };
+
+    log::debug!(
+        "Found diplomacy section at offset {} ({} chars)",
+        diplomacy_start.unwrap(),
+        diplomacy_section.len()
+    );
+
+    // Find dependency blocks: dependency={ first="TAG" second="TAG" subject_type="type" ... }
+    let dependency_pattern =
+        regex::Regex::new(r"dependency=\{").context("Failed to compile dependency regex")?;
+
+    let first_pattern = regex::Regex::new(r#"first="([A-Z]{3})""#).unwrap();
+    let second_pattern = regex::Regex::new(r#"second="([A-Z]{3})""#).unwrap();
+    let type_pattern = regex::Regex::new(r#"subject_type="([^"]+)""#).unwrap();
+    let date_pattern = regex::Regex::new(r"start_date=(\d+\.\d+\.\d+)").unwrap();
+
+    for m in dependency_pattern.find_iter(diplomacy_section) {
+        let block_start = m.end();
+        if let Some(block_content) = extract_block(&diplomacy_section[block_start..]) {
+            // Extract first (overlord)
+            let overlord = first_pattern
+                .captures(block_content)
+                .and_then(|c| c.get(1))
+                .map(|m| m.as_str().to_string());
+
+            // Extract second (subject)
+            let subject = second_pattern
+                .captures(block_content)
+                .and_then(|c| c.get(1))
+                .map(|m| m.as_str().to_string());
+
+            // Extract subject_type
+            let subject_type = type_pattern
+                .captures(block_content)
+                .and_then(|c| c.get(1))
+                .map(|m| m.as_str().to_string());
+
+            // Extract start_date
+            let start_date = date_pattern
+                .captures(block_content)
+                .and_then(|c| c.get(1))
+                .map(|m| m.as_str().to_string());
+
+            if let (Some(overlord), Some(subject), Some(subject_type)) =
+                (overlord, subject, subject_type)
+            {
+                let relationship = crate::ExtractedSubject {
+                    overlord,
+                    subject: subject.clone(),
+                    subject_type,
+                    start_date,
+                };
+                state.subjects.insert(subject, relationship);
+            }
+        }
+    }
+
+    log::info!("Extracted {} subject relationships", state.subjects.len());
+    Ok(())
 }
 
 /// Extract building names from province content

@@ -46,6 +46,8 @@ impl WorldStateBuilder {
                 building_name_to_id: HashMap::default(),
                 building_defs: HashMap::default(),
                 building_upgraded_by: HashMap::<BuildingId, BuildingId>::default(),
+                // Subject type system
+                subject_types: Default::default(),
             },
         }
     }

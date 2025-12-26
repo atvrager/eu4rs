@@ -17,6 +17,21 @@ pub struct ExtractedState {
     pub meta: SaveMeta,
     pub countries: HashMap<String, ExtractedCountry>,
     pub provinces: HashMap<u32, ExtractedProvince>,
+    /// Subject relationships: vassal tag -> relationship details
+    pub subjects: HashMap<String, ExtractedSubject>,
+}
+
+/// Subject relationship extracted from save
+#[derive(Debug, Clone, Default)]
+pub struct ExtractedSubject {
+    /// Overlord country tag (e.g., "FRA")
+    pub overlord: String,
+    /// Subject country tag (e.g., "PRO")
+    pub subject: String,
+    /// Subject type name (e.g., "vassal", "march", "personal_union")
+    pub subject_type: String,
+    /// When the relationship started (YYYY.M.D format)
+    pub start_date: Option<String>,
 }
 
 /// Save file metadata

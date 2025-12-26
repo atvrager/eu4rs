@@ -18,6 +18,8 @@ pub enum ActionError {
     AlreadyAtWar { target: String },
     #[error("Cannot declare war on self")]
     CannotDeclareWarOnSelf,
+    #[error("Cannot declare war within same realm: {attacker} and {target} share overlord")]
+    SameRealmWar { attacker: String, target: String },
     #[error("Army not found: {army_id}")]
     ArmyNotFound { army_id: u32 },
     #[error("Army {army_id} is not owned by {tag}")]
@@ -490,6 +492,49 @@ fn call_allies_to_war(
 }
 
 /// Add a country to a war on the specified side.
+/// Subjects auto-join their overlord's wars based on subject type.
+///
+/// Unlike allies (who get a choice for offensive wars), subjects with
+/// `joins_overlords_wars = true` auto-join both offensive and defensive wars.
+/// Tributaries (`joins_overlords_wars = false`) never auto-join.
+fn call_subjects_to_war(
+    state: &mut WorldState,
+    war_id: crate::state::WarId,
+    overlord: &str,
+    side: crate::input::WarSide,
+) {
+    // Get all subjects of this overlord
+    let subjects: Vec<String> = state
+        .diplomacy
+        .get_subjects(overlord)
+        .iter()
+        .filter_map(|rel| {
+            // Check if this subject type auto-joins wars
+            let subject_def = state.subject_types.get(rel.subject_type);
+            if subject_def.is_some_and(|def| def.joins_overlords_wars) {
+                Some(rel.subject.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    for subject in subjects {
+        join_war(state, &subject, war_id, side);
+        log::info!(
+            "{} (subject of {}) auto-joins war {} as {:?}",
+            subject,
+            overlord,
+            war_id,
+            side
+        );
+
+        // Recursively add subjects of subjects (if any)
+        // This handles cases like Austria -> Hungary -> Bohemia (PU chains)
+        call_subjects_to_war(state, war_id, &subject, side);
+    }
+}
+
 fn join_war(
     state: &mut WorldState,
     country: &str,
@@ -881,6 +926,11 @@ pub fn available_commands(
                     && !state
                         .diplomacy
                         .has_active_truce(country_tag, &target_tag, state.date)
+                    && !state.diplomacy.in_same_realm(
+                        country_tag,
+                        &target_tag,
+                        &state.subject_types,
+                    )
                 {
                     // DeclareWar - The ultimate test of an empire's foundation. 🛡️
                     available.push(Command::DeclareWar {
@@ -1408,6 +1458,17 @@ fn execute_command(
                 });
             }
 
+            // Cannot attack your own subjects or overlord (unless they're tributaries)
+            if state
+                .diplomacy
+                .in_same_realm(country_tag, target, &state.subject_types)
+            {
+                return Err(ActionError::SameRealmWar {
+                    attacker: country_tag.to_string(),
+                    target: target.clone(),
+                });
+            }
+
             // Apply No-CB stability penalty
             if cb.is_none() {
                 if let Some(country) = state.countries.get_mut(country_tag) {
@@ -1442,6 +1503,10 @@ fn execute_command(
             // Call allies to join the war
             call_allies_to_war(state, war_id, country_tag, true); // Attacker's allies
             call_allies_to_war(state, war_id, target, false); // Defender's allies (auto-join)
+
+            // Call subjects to join the war (based on subject type)
+            call_subjects_to_war(state, war_id, country_tag, crate::input::WarSide::Attacker);
+            call_subjects_to_war(state, war_id, target, crate::input::WarSide::Defender);
 
             // Mark diplomatic action cooldown
             if let Some(country) = state.countries.get_mut(country_tag) {
@@ -4425,5 +4490,282 @@ mod tests {
         assert_eq!(state.armies.len(), 1);
         assert!(state.armies.contains_key(&2));
         assert!(!state.armies.contains_key(&1));
+    }
+
+    // === Subject relationship war restriction tests ===
+
+    #[test]
+    fn test_declare_war_on_vassal_blocked() {
+        use crate::state::Date;
+        use crate::subjects::{SubjectTypeDef, SubjectTypeRegistry};
+
+        // Create registry with vassal type
+        let mut registry = SubjectTypeRegistry::new();
+        registry.add(SubjectTypeDef {
+            name: "vassal".into(),
+            joins_overlords_wars: true,
+            ..Default::default()
+        });
+
+        // Create state with FRA as overlord of PRO
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("FRA")
+            .with_country("PRO")
+            .build();
+
+        // Set up subject relationship
+        state.subject_types = registry;
+        let start_date = Date::new(1444, 11, 11);
+        state
+            .diplomacy
+            .add_subject("FRA", "PRO", state.subject_types.vassal_id, start_date)
+            .unwrap();
+
+        // FRA tries to declare war on PRO (should fail)
+        let result = execute_command(
+            &mut state,
+            "FRA",
+            &Command::DeclareWar {
+                target: "PRO".to_string(),
+                cb: None,
+            },
+            None,
+        );
+
+        assert!(
+            matches!(result, Err(ActionError::SameRealmWar { .. })),
+            "Expected SameRealmWar error, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_declare_war_on_tributary_allowed() {
+        use crate::state::Date;
+        use crate::subjects::{SubjectTypeDef, SubjectTypeRegistry};
+
+        // Create registry with tributary type (doesn't join wars)
+        let mut registry = SubjectTypeRegistry::new();
+        registry.add(SubjectTypeDef {
+            name: "vassal".into(),
+            joins_overlords_wars: true,
+            ..Default::default()
+        });
+        registry.add(SubjectTypeDef {
+            name: "tributary_state".into(),
+            joins_overlords_wars: false, // Key difference
+            is_voluntary: true,
+            ..Default::default()
+        });
+
+        // Create state with MNG as overlord of KOR (tributary)
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("MNG")
+            .with_country("KOR")
+            .build();
+
+        state.subject_types = registry;
+        let start_date = Date::new(1444, 11, 11);
+        state
+            .diplomacy
+            .add_subject("MNG", "KOR", state.subject_types.tributary_id, start_date)
+            .unwrap();
+
+        // MNG tries to declare war on KOR (should succeed - tributaries can war overlord)
+        let result = execute_command(
+            &mut state,
+            "MNG",
+            &Command::DeclareWar {
+                target: "KOR".to_string(),
+                cb: None,
+            },
+            None,
+        );
+
+        assert!(
+            result.is_ok(),
+            "Expected war declaration to succeed for tributary, got {:?}",
+            result
+        );
+        assert!(state.diplomacy.are_at_war("MNG", "KOR"));
+    }
+
+    #[test]
+    fn test_vassals_auto_join_overlord_war() {
+        use crate::state::Date;
+        use crate::subjects::{SubjectTypeDef, SubjectTypeRegistry};
+
+        // Create registry with vassal type (joins wars)
+        let mut registry = SubjectTypeRegistry::new();
+        registry.add(SubjectTypeDef {
+            name: "vassal".into(),
+            joins_overlords_wars: true,
+            ..Default::default()
+        });
+
+        // Create state: FRA is overlord of PRO (vassal), ENG is independent
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("FRA")
+            .with_country("PRO")
+            .with_country("ENG")
+            .build();
+
+        state.subject_types = registry;
+        let start_date = Date::new(1444, 11, 11);
+        state
+            .diplomacy
+            .add_subject("FRA", "PRO", state.subject_types.vassal_id, start_date)
+            .unwrap();
+
+        // FRA declares war on ENG
+        let result = execute_command(
+            &mut state,
+            "FRA",
+            &Command::DeclareWar {
+                target: "ENG".to_string(),
+                cb: None,
+            },
+            None,
+        );
+
+        assert!(result.is_ok(), "War declaration should succeed");
+
+        // PRO should auto-join as attacker
+        let war = state.diplomacy.wars.values().next().unwrap();
+        assert!(
+            war.attackers.contains(&"FRA".to_string()),
+            "FRA should be attacker"
+        );
+        assert!(
+            war.attackers.contains(&"PRO".to_string()),
+            "PRO (vassal) should auto-join as attacker"
+        );
+        assert!(
+            war.defenders.contains(&"ENG".to_string()),
+            "ENG should be defender"
+        );
+    }
+
+    #[test]
+    fn test_vassals_auto_join_defensive_war() {
+        use crate::state::Date;
+        use crate::subjects::{SubjectTypeDef, SubjectTypeRegistry};
+
+        // Create registry with vassal type (joins wars)
+        let mut registry = SubjectTypeRegistry::new();
+        registry.add(SubjectTypeDef {
+            name: "vassal".into(),
+            joins_overlords_wars: true,
+            ..Default::default()
+        });
+
+        // Create state: FRA is overlord of PRO (vassal), ENG is independent
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("FRA")
+            .with_country("PRO")
+            .with_country("ENG")
+            .build();
+
+        state.subject_types = registry;
+        let start_date = Date::new(1444, 11, 11);
+        state
+            .diplomacy
+            .add_subject("FRA", "PRO", state.subject_types.vassal_id, start_date)
+            .unwrap();
+
+        // ENG declares war on FRA (defensive war for FRA)
+        let result = execute_command(
+            &mut state,
+            "ENG",
+            &Command::DeclareWar {
+                target: "FRA".to_string(),
+                cb: None,
+            },
+            None,
+        );
+
+        assert!(result.is_ok(), "War declaration should succeed");
+
+        // PRO should auto-join as defender alongside FRA
+        let war = state.diplomacy.wars.values().next().unwrap();
+        assert!(
+            war.attackers.contains(&"ENG".to_string()),
+            "ENG should be attacker"
+        );
+        assert!(
+            war.defenders.contains(&"FRA".to_string()),
+            "FRA should be defender"
+        );
+        assert!(
+            war.defenders.contains(&"PRO".to_string()),
+            "PRO (vassal) should auto-join as defender"
+        );
+    }
+
+    #[test]
+    fn test_tributaries_do_not_auto_join_wars() {
+        use crate::state::Date;
+        use crate::subjects::{SubjectTypeDef, SubjectTypeRegistry};
+
+        // Create registry with tributary type (doesn't join wars)
+        let mut registry = SubjectTypeRegistry::new();
+        registry.add(SubjectTypeDef {
+            name: "vassal".into(),
+            joins_overlords_wars: true,
+            ..Default::default()
+        });
+        registry.add(SubjectTypeDef {
+            name: "tributary_state".into(),
+            joins_overlords_wars: false, // Key: tributaries don't auto-join
+            is_voluntary: true,
+            ..Default::default()
+        });
+
+        // Create state: MNG is overlord of KOR (tributary), JAP is independent
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("MNG")
+            .with_country("KOR")
+            .with_country("JAP")
+            .build();
+
+        state.subject_types = registry;
+        let start_date = Date::new(1444, 11, 11);
+        state
+            .diplomacy
+            .add_subject("MNG", "KOR", state.subject_types.tributary_id, start_date)
+            .unwrap();
+
+        // MNG declares war on JAP
+        let result = execute_command(
+            &mut state,
+            "MNG",
+            &Command::DeclareWar {
+                target: "JAP".to_string(),
+                cb: None,
+            },
+            None,
+        );
+
+        assert!(result.is_ok(), "War declaration should succeed");
+
+        // KOR should NOT auto-join (tributaries don't join overlord wars)
+        let war = state.diplomacy.wars.values().next().unwrap();
+        assert!(
+            war.attackers.contains(&"MNG".to_string()),
+            "MNG should be attacker"
+        );
+        assert!(
+            !war.attackers.contains(&"KOR".to_string()),
+            "KOR (tributary) should NOT auto-join"
+        );
+        assert!(
+            war.defenders.contains(&"JAP".to_string()),
+            "JAP should be defender"
+        );
     }
 }

@@ -1,12 +1,34 @@
 use anyhow::Result;
 use eu4sim_core::modifiers::TradegoodId;
 use eu4sim_core::state::{
-    Army, CountryState, Date, HashMap as ImHashMap, ProvinceState, Regiment, RegimentType, Terrain,
+    Army, CountryState, Date, HashMap as ImHashMap, ProvinceState, Regiment, RegimentType,
+    SubjectRelationship, Terrain,
 };
+use eu4sim_core::subjects::{RawSubjectType, SubjectTypeRegistry};
 use eu4sim_core::trade::{CountryTradeState, TradeNodeId, TradeNodeState, TradeTopology};
 use eu4sim_core::{Fixed, WorldState};
 use std::collections::HashMap as StdHashMap;
 use std::path::Path;
+
+/// Convert from eu4data's RawSubjectType to eu4sim-core's RawSubjectType.
+fn convert_raw_subject_type(raw: eu4data::subject_types::RawSubjectType) -> RawSubjectType {
+    RawSubjectType {
+        name: raw.name,
+        copy_from: raw.copy_from,
+        count: raw.count,
+        joins_overlords_wars: raw.joins_overlords_wars,
+        overlord_protects_external: raw.overlord_protects_external,
+        can_fight_independence_war: raw.can_fight_independence_war,
+        takes_diplo_slot: raw.takes_diplo_slot,
+        can_be_integrated: raw.can_be_integrated,
+        has_overlords_ruler: raw.has_overlords_ruler,
+        is_voluntary: raw.is_voluntary,
+        base_liberty_desire: raw.base_liberty_desire,
+        liberty_desire_development_ratio: raw.liberty_desire_development_ratio,
+        pays_overlord: raw.pays_overlord,
+        forcelimit_to_overlord: raw.forcelimit_to_overlord,
+    }
+}
 
 /// Parse terrain string to Terrain enum
 fn parse_terrain(terrain_str: &str) -> Option<Terrain> {
@@ -303,7 +325,70 @@ pub fn load_initial_state(
 
     log::info!("Initialized {} armies", armies.len());
 
-    // 3. Assemble State
+    // 5. Load Subject Types
+    log::info!("Loading subject types...");
+    let raw_subject_types = eu4data::subject_types::load_subject_types(game_path)
+        .map_err(|e| anyhow::anyhow!("Failed to load subject types: {}", e))?;
+    let subject_types = SubjectTypeRegistry::from_raw(
+        raw_subject_types
+            .into_values()
+            .map(convert_raw_subject_type),
+    );
+    log::info!(
+        "Loaded {} subject types (vassal={:?}, tributary={:?})",
+        subject_types.len(),
+        subject_types.vassal_id,
+        subject_types.tributary_id
+    );
+
+    // 6. Load Diplomatic History (subjects, alliances, etc.)
+    log::info!("Loading diplomatic history...");
+    let diplomacy_entries = eu4data::diplomacy::load_diplomacy_history(game_path)
+        .map_err(|e| anyhow::anyhow!("Failed to load diplomacy: {}", e))?;
+    let date_str = format!(
+        "{}.{}.{}",
+        start_date.year, start_date.month, start_date.day
+    );
+    let active_diplomacy = eu4data::diplomacy::filter_active_at_date(&diplomacy_entries, &date_str);
+
+    // Build subject relationships from diplomacy entries
+    let mut subjects: StdHashMap<String, SubjectRelationship> = StdHashMap::new();
+    for entry in &active_diplomacy {
+        // Determine subject type from relationship
+        let subject_type_name = match entry.relation_type.as_str() {
+            "vassal" => "vassal",
+            "march" => "march",
+            "union" => "personal_union",
+            "dependency" => entry.subject_type.as_deref().unwrap_or("vassal"),
+            _ => continue, // Skip alliances, marriages, etc. for now
+        };
+
+        let Some(type_id) = subject_types.id_by_name(subject_type_name) else {
+            log::warn!(
+                "Unknown subject type '{}' for {} -> {}",
+                subject_type_name,
+                entry.first,
+                entry.second
+            );
+            continue;
+        };
+
+        let relationship = SubjectRelationship {
+            overlord: entry.first.clone(),
+            subject: entry.second.clone(),
+            subject_type: type_id,
+            start_date,
+            liberty_desire: 0,
+            integration_progress: 0,
+            integrating: false,
+        };
+
+        subjects.insert(entry.second.clone(), relationship);
+    }
+
+    log::info!("Loaded {} subject relationships", subjects.len());
+
+    // 7. Assemble State
     Ok((
         WorldState {
             date: start_date,
@@ -313,7 +398,10 @@ pub fn load_initial_state(
             countries: countries.into(),
             base_goods_prices: base_prices.into(),
             modifiers: Default::default(),
-            diplomacy: Default::default(),
+            diplomacy: eu4sim_core::state::DiplomacyState {
+                subjects: subjects.into(),
+                ..Default::default()
+            },
             global: Default::default(),
             armies: armies.into(),
             next_army_id,
@@ -339,6 +427,8 @@ pub fn load_initial_state(
             building_name_to_id: ImHashMap::default(),
             building_defs: ImHashMap::default(),
             building_upgraded_by: ImHashMap::default(),
+            // Subject type system
+            subject_types,
         },
         adjacency,
     ))

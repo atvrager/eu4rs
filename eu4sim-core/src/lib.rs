@@ -66,6 +66,7 @@ pub use ai::{AiPlayer, GreedyAI, RandomAi, VisibilityMode, VisibleWorldState};
 pub mod modifiers;
 pub mod state;
 pub mod step;
+pub mod subjects;
 pub mod systems;
 pub mod testing;
 
@@ -79,8 +80,9 @@ pub use modifiers::{BuildingId, GameModifiers, TradegoodId};
 pub use observer::datagen::{DataGenObserver, TrainingSample};
 pub use observer::event_log::{EventLogObserver, GameEvent};
 pub use observer::{ObserverConfig, ObserverError, ObserverRegistry, SimObserver, Snapshot};
-pub use state::{InstitutionId, TechType, WorldState};
+pub use state::{InstitutionId, SubjectRelationship, TechType, WorldState};
 pub use step::{step_world, ActionError};
+pub use subjects::{SubjectTypeDef, SubjectTypeId, SubjectTypeRegistry};
 pub use systems::{run_production_tick, EconomyConfig};
 pub use trade::{
     CountryTradeState, MerchantAction, MerchantState, ProvinceTradeState, TradeNodeId,

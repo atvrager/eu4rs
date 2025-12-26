@@ -57,6 +57,21 @@ pub enum InferredAction {
         delta: f64,
         likely_cause: String,
     },
+
+    /// A new subject relationship was created (vassalize, PU, etc.)
+    Vassalize {
+        overlord: String,
+        subject: String,
+        subject_type: String,
+    },
+
+    /// A subject relationship ended (release, independence, integration)
+    ReleaseSubject {
+        overlord: String,
+        subject: String,
+        subject_type: String,
+        likely_cause: String,
+    },
 }
 
 /// Type of development
@@ -118,6 +133,9 @@ pub fn infer_actions(before: &ExtractedState, after: &ExtractedState) -> DiffRes
 
     // Find development changes
     actions.extend(infer_development_actions(before, after));
+
+    // Find subject relationship changes
+    actions.extend(infer_subject_actions(before, after));
 
     // Find advisor changes per country
     for (tag, after_country) in &after.countries {
@@ -303,6 +321,45 @@ fn infer_advisor_actions(
     actions
 }
 
+/// Infer subject relationship changes (new vassals, releases, integrations)
+fn infer_subject_actions(before: &ExtractedState, after: &ExtractedState) -> Vec<InferredAction> {
+    let mut actions = Vec::new();
+
+    // Check for new subject relationships (in after but not in before)
+    for (subject_tag, after_rel) in &after.subjects {
+        if !before.subjects.contains_key(subject_tag) {
+            actions.push(InferredAction::Vassalize {
+                overlord: after_rel.overlord.clone(),
+                subject: after_rel.subject.clone(),
+                subject_type: after_rel.subject_type.clone(),
+            });
+        }
+    }
+
+    // Check for ended subject relationships (in before but not in after)
+    for (subject_tag, before_rel) in &before.subjects {
+        if !after.subjects.contains_key(subject_tag) {
+            // Determine likely cause based on whether the country still exists
+            let likely_cause = if after.countries.contains_key(subject_tag) {
+                // Country still exists - could be independence or release
+                "independence or release".to_string()
+            } else {
+                // Country no longer exists - could be integration/annexation
+                "integration or annexation".to_string()
+            };
+
+            actions.push(InferredAction::ReleaseSubject {
+                overlord: before_rel.overlord.clone(),
+                subject: before_rel.subject.clone(),
+                subject_type: before_rel.subject_type.clone(),
+                likely_cause,
+            });
+        }
+    }
+
+    actions
+}
+
 /// Infer significant monarch power spending
 fn infer_mana_changes(
     tag: &str,
@@ -433,6 +490,25 @@ impl std::fmt::Display for InferredAction {
                     country, sign, delta, likely_cause
                 )
             }
+            InferredAction::Vassalize {
+                overlord,
+                subject,
+                subject_type,
+            } => {
+                write!(f, "{} made {} a {}", overlord, subject, subject_type)
+            }
+            InferredAction::ReleaseSubject {
+                overlord,
+                subject,
+                subject_type,
+                likely_cause,
+            } => {
+                write!(
+                    f,
+                    "{} lost {} ({}) - {}",
+                    overlord, subject, subject_type, likely_cause
+                )
+            }
         }
     }
 }
@@ -471,6 +547,8 @@ pub fn filter_by_country<'a>(result: &'a DiffResult, country: &str) -> Vec<&'a I
             InferredAction::DismissAdvisor { country: c, .. } => c == country,
             InferredAction::SpendMana { country: c, .. } => c == country,
             InferredAction::TreasuryChange { country: c, .. } => c == country,
+            InferredAction::Vassalize { overlord, .. } => overlord == country,
+            InferredAction::ReleaseSubject { overlord, .. } => overlord == country,
         })
         .collect()
 }
@@ -491,6 +569,7 @@ mod tests {
             },
             countries: HashMap::new(),
             provinces: HashMap::new(),
+            subjects: HashMap::new(),
         }
     }
 
@@ -594,5 +673,120 @@ mod tests {
 
         let result = infer_actions(&before, &after);
         assert!(result.actions.is_empty());
+    }
+
+    #[test]
+    fn test_detect_new_vassal() {
+        let before = make_test_state("1444.11.11");
+        let mut after = make_test_state("1445.01.01");
+
+        // Add a new vassal in "after"
+        after.subjects.insert(
+            "PRO".to_string(),
+            crate::ExtractedSubject {
+                overlord: "FRA".to_string(),
+                subject: "PRO".to_string(),
+                subject_type: "vassal".to_string(),
+                start_date: Some("1445.1.1".to_string()),
+            },
+        );
+
+        let result = infer_actions(&before, &after);
+        assert_eq!(result.actions.len(), 1);
+
+        match &result.actions[0] {
+            InferredAction::Vassalize {
+                overlord,
+                subject,
+                subject_type,
+            } => {
+                assert_eq!(overlord, "FRA");
+                assert_eq!(subject, "PRO");
+                assert_eq!(subject_type, "vassal");
+            }
+            _ => panic!("Expected Vassalize action"),
+        }
+    }
+
+    #[test]
+    fn test_detect_subject_released() {
+        let mut before = make_test_state("1444.11.11");
+        let mut after = make_test_state("1445.01.01");
+
+        // Add vassal in "before"
+        before.subjects.insert(
+            "ORL".to_string(),
+            crate::ExtractedSubject {
+                overlord: "FRA".to_string(),
+                subject: "ORL".to_string(),
+                subject_type: "appanage".to_string(),
+                start_date: Some("1444.1.1".to_string()),
+            },
+        );
+
+        // Subject still exists as independent country in "after"
+        after.countries.insert(
+            "ORL".to_string(),
+            crate::ExtractedCountry {
+                tag: "ORL".to_string(),
+                ..Default::default()
+            },
+        );
+
+        let result = infer_actions(&before, &after);
+        assert_eq!(result.actions.len(), 1);
+
+        match &result.actions[0] {
+            InferredAction::ReleaseSubject {
+                overlord,
+                subject,
+                likely_cause,
+                ..
+            } => {
+                assert_eq!(overlord, "FRA");
+                assert_eq!(subject, "ORL");
+                assert!(likely_cause.contains("independence") || likely_cause.contains("release"));
+            }
+            _ => panic!("Expected ReleaseSubject action"),
+        }
+    }
+
+    #[test]
+    fn test_detect_subject_integrated() {
+        let mut before = make_test_state("1444.11.11");
+        let after = make_test_state("1470.01.01");
+
+        // Add vassal in "before"
+        before.subjects.insert(
+            "ORL".to_string(),
+            crate::ExtractedSubject {
+                overlord: "FRA".to_string(),
+                subject: "ORL".to_string(),
+                subject_type: "vassal".to_string(),
+                start_date: Some("1444.1.1".to_string()),
+            },
+        );
+
+        // Subject no longer exists in "after" (integrated)
+        // Note: ORL not in after.countries
+
+        let result = infer_actions(&before, &after);
+        assert_eq!(result.actions.len(), 1);
+
+        match &result.actions[0] {
+            InferredAction::ReleaseSubject {
+                overlord,
+                subject,
+                likely_cause,
+                ..
+            } => {
+                assert_eq!(overlord, "FRA");
+                assert_eq!(subject, "ORL");
+                assert!(
+                    likely_cause.contains("integration") || likely_cause.contains("annexation")
+                );
+            }
+            _ => panic!("Expected ReleaseSubject action"),
+        }
     }
 }
