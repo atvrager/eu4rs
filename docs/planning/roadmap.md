@@ -4,7 +4,7 @@ This document tracks the implementation status of the eu4rs simulation engine an
 
 ## Overview
 
-**Current Focus**: Phase 5 & 6 - Advanced Military + Diplomacy & AI
+**Current Focus**: Phase 6 - Modifier System & Advanced Diplomacy
 **Next Up**: Phase 7 - Advanced Economy
 
 ---
@@ -54,21 +54,24 @@ Military unit management and recurring expenses.
 
 Basic war system with combat resolution.
 
-- [x] **Diplomatic Relations**: Alliance, Rival relationship tracking
 - [x] **War Declaration**: `DeclareWar` command with attacker/defender coalitions
-- [x] **Combat System**: Daily combat resolution when hostile armies meet
-  - Power-based casualty calculation
-  - Regiment destruction when strength reaches zero
-  - Army removal when all regiments destroyed
+- [x] **Combat System**: Daily combat resolution when hostile armies meet (1,467 lines)
+  - EU4-authentic battle phases (Fire/Shock alternation every 3 days)
+  - Discipline affects damage, cavalry ratio penalties
+  - 10:1 stackwipe mechanics
+  - River crossing penalties, terrain modifiers
 - [x] **Combat Power**: Type-based modifiers (Infantry: 1.0, Cavalry: 1.5, Artillery: 1.2)
 - [x] **Stability & Prestige System**: Bounded value types for stability (-3 to +3), prestige, army tradition
   - Monthly decay for prestige and tradition (~5%/year)
   - No-CB war penalty (-2 stability)
   - Peace term effects (White Peace: -10 prestige, Full Annexation: +25)
+- [x] **Peace System**: War resolution with land transfer
+  - TakeProvinces peace terms with occupied enemy provinces
+  - Fort requirement: must occupy a fort to take provinces
+  - War score validation for peace term costs
+- [x] **Truce System**: 5-year cooling off period between warring parties
 
-**Key Files**: [combat.rs](../../eu4sim-core/src/systems/combat.rs), [step.rs](../../eu4sim-core/src/step.rs), [bounded.rs](../../eu4sim-core/src/bounded.rs), [stats.rs](../../eu4sim-core/src/systems/stats.rs)
-
-**Limitations**: Alliances not enforced, no peace treaties yet
+**Key Files**: [combat.rs](../../eu4sim-core/src/systems/combat.rs), [step.rs](../../eu4sim-core/src/step.rs), [bounded.rs](../../eu4sim-core/src/bounded.rs)
 
 ---
 
@@ -90,66 +93,112 @@ Deterministic army/fleet movement with A* pathfinding.
   - Boarding/disembarking mechanics implemented
 - [x] **Property Tests**: Movement monotonicity verification
 - [x] **Dynamic Costs**: Terrain-based movement costs
-  - Resolves borrow checker blocker via two-pass pattern
-- [ ] **Zone of Control**: Fort logic restricting movement
-- [ ] **Attrition**: Supply limit calculations and monthly losses
 
 **Key Files**: [movement.rs](../../eu4sim-core/src/systems/movement.rs), [game_pathfinding](../../game_pathfinding/)
 
-**Next Steps**: Dynamic movement costs, zone of control
-
 ---
 
-## Phase 5: Advanced Military 🔄 **IN PROGRESS**
+## Phase 5: Advanced Military ✅ **COMPLETE**
 
 *Target: v0.2.0*
 
 Enhanced combat and military management.
 
-- [ ] **Terrain Effects**: Movement costs and combat modifiers
-  - River crossings, mountain penalties
-  - Terrain-specific combat bonuses
-- [x] **Siege System**: Fort siege mechanics
+- [x] **Siege System**: Fort siege mechanics (726 lines)
   - Siege progress calculation (30-day phases, RNG-based resolution)
   - Fort level affects siege difficulty
   - Armies persist until siege completes
-  - ⚠️ TODO: Remove instant occupation for unfortified provinces
-- [ ] **Leaders**: General/Admiral stats and bonuses
-  - Command, fire, shock, maneuver
-  - Leader assignment to armies/fleets
-- [ ] **Morale System**: Unit morale and rout mechanics
-- [x] **Truce System**: 5-year cooling off period between warring parties
-- [ ] **Supply Lines**: Attrition based on supply limit
-  - Province supply capacity
-  - Distance from capital/ports
+- [x] **Naval Combat**: Ship combat mechanics (846 lines)
+- [x] **Generals**: Leader recruitment and assignment
+  - `RecruitGeneral` command (50 MIL)
+  - `AssignGeneral` / `UnassignGeneral` commands
+  - Fire, shock, maneuver, siege stats
+- [x] **Truce Enforcement**: 5-year cooling period after peace
+- [x] **Zone of Control**: Fort logic restricting movement
+- [x] **Strait Blocking**: Enemy fleets block sea crossings
+- [x] **Attrition System**: Supply limits and monthly losses (412 lines)
+
+**Key Files**: [siege.rs](../../eu4sim-core/src/systems/siege.rs), [naval_combat.rs](../../eu4sim-core/src/systems/naval_combat.rs), [attrition.rs](../../eu4sim-core/src/systems/attrition.rs)
 
 ---
 
-## Phase 6: Diplomacy & AI 🔄 **IN PROGRESS**
+## Phase 6: AI & Economy 🔄 **IN PROGRESS**
 
 *Target: v0.3.0*
 
-Expanded diplomatic actions and heuristic AI foundation.
+Expanded AI capabilities and economic depth.
 
-- [x] **Peace Treaties**: War resolution with land transfer
-  - TakeProvinces peace terms with occupied enemy provinces
-  - Fort requirement: must occupy a fort to take provinces
-  - War score validation for peace term costs
-  - ⚠️ TODO: TUI events for battle results, siege completions, peace transfers
-- [ ] **Alliance Enforcement**: Defensive pact call-to-arms
-- [ ] **Casus Belli System**: War justification mechanics
+### Completed
 - [x] **AI Crate Refactor**: Extract `eu4sim-ai` crate from `eu4sim-core/src/ai/`
-  - Keep `RandomAi` (existing)
-  - Prepare trait interface for multiple implementations
-- [x] **GreedyBot**: Heuristic AI that makes locally-optimal decisions
+- [x] **GreedyBot**: Heuristic AI that makes locally-optimal decisions (714 lines)
   - Economy: Prioritize high-ROI buildings, develop best provinces
   - Military: Attack weak neighbors, siege forts, persist sieges
-  - gp-only mode: Only 8 GP greedy AIs, passive auto-accept for minors
   - Action ranking logic (reusable for ML prompt filtering later)
   - Serves as training data generator for learned AI
 - [x] **Available Commands API**: `fn available_commands(&WorldState, &Tag) -> Vec<Command>`
-  - Required for both GreedyBot and learned AI
   - Enumerates all legal actions for a country this tick
+  - 600+ lines of validation logic
+- [x] **LLM AI**: Candle inference integration (v0.1.9)
+  - SmolLM2-360M base model with LoRA adapters
+  - 600-1000ms inference time (CPU F32)
+  - Cap'n Proto training data format
+- [x] **Trade System**: Trade node mechanics (1,622 lines across 3 files)
+  - Trade power calculation
+  - Value steering and collection
+  - Merchant assignment (`SendMerchant`, `RecallMerchant`)
+- [x] **Buildings**: Province buildings with construction queue (827 lines)
+  - 26 building types from EU4 data
+  - Construction costs and time
+  - Economic/military bonuses
+  - `BuildInProvince`, `CancelConstruction`, `DemolishBuilding` commands
+- [x] **Technology**: Tech groups and advancement (62 lines)
+  - ADM/DIP/MIL tech levels (1-32)
+  - Linear cost formula: 600 + (level × 60)
+  - `BuyTech` command
+- [x] **Institutions**: Institution spread mechanics (121 lines)
+  - Monthly spread based on development
+  - `EmbraceInstitution` command
+  - 10% presence requirement
+- [x] **Ideas System**: National and generic idea groups (429 lines + data)
+  - 50 generic groups + 400 national idea sets
+  - 7 ideas per group + completion bonuses
+  - `PickIdeaGroup`, `UnlockIdea` commands
+- [x] **Colonization**: Standing order colonies (50 lines)
+  - `StartColony` / `AbandonColony` commands
+  - Fixed growth rate (~1000 settlers/year)
+- [x] **Development**: Province development purchasing (60 lines)
+  - `DevelopProvince` command (50 mana/click for Tax/Production/Manpower)
+- [x] **Coring System**: Province coring to reduce overextension (343 lines)
+  - `Core` command (10 ADM per dev, 36 months)
+- [x] **Subjects & Vassals**: Relationship tracking
+  - Data structures for vassal/subject types
+- [x] **Coalitions**: Aggressive expansion tracking (271 lines)
+  - Coalition formation based on AE threshold
+  - War participation tracking
+- [x] **Reformation**: Religion spread system (254 lines)
+  - Simplified spread logic via adjacency
+
+### In Progress
+- [ ] **Modifier System Wiring**: Connect idea modifiers to actual mechanics
+  - **Current Status**: Only 4/400+ modifiers implemented
+    - `global_tax_modifier` ✓
+    - `land_maintenance_modifier` ✓
+    - `fort_maintenance_modifier` ✓
+    - `production_efficiency` ✓
+  - **Next**: Wire top 20 modifiers by frequency (discipline, cavalry_power, goods_produced, etc.)
+  - **Blocker**: Ideas parse correctly but 96% of modifiers have no gameplay effect
+- [ ] **Alliance Enforcement**: Defensive pact call-to-arms
+  - Data structures exist, `CallAllyToWar` / `JoinWar` commands defined
+  - Pending diplomacy queue implemented
+  - **Missing**: Acceptance logic, honor penalty
+- [ ] **Advanced Diplomacy Commands**: 12 stubbed commands need implementation
+  - `OfferAlliance`, `BreakAlliance`, `AcceptAlliance`, `RejectAlliance`
+  - `OfferRoyalMarriage`, `BreakRoyalMarriage`, `AcceptRoyalMarriage`, `RejectRoyalMarriage`
+  - `RequestMilitaryAccess`, `CancelMilitaryAccess`, `GrantMilitaryAccess`, `DenyMilitaryAccess`
+  - `SetRival`, `RemoveRival`
+- [ ] **Religion Commands**: 3 stubbed commands need implementation
+  - `AssignMissionary`, `RecallMissionary`, `ConvertCountryReligion`
+- [ ] **Casus Belli System**: War justification mechanics beyond no-CB
 
 ---
 
@@ -157,16 +206,14 @@ Expanded diplomatic actions and heuristic AI foundation.
 
 *Target: v0.4.0*
 
-Trade, buildings, and economic complexity.
+Trade expansion and economic complexity.
 
-- [ ] **Trade System**: Trade node mechanics
-  - Trade power calculation
-  - Value steering and collection
-- [ ] **Buildings**: Province buildings with effects
-  - Construction costs and time
-  - Economic/military bonuses
-- [ ] **Technology**: Tech groups and advancement
-- [ ] **Institutions**: Institution spread mechanics
+- [ ] **Trade Companies**: Asia/Africa trade posts
+- [ ] **Privateering**: Disrupting enemy trade
+- [ ] **Mercantilism**: Trade policy mechanics
+- [ ] **Building Effects**: Wire building bonuses to production/tax/manpower
+- [ ] **Tech Effects**: Apply tech bonuses to units, economy, institutions
+- [ ] **Modifier Stacking**: Complete implementation of remaining 396+ modifiers
 
 ---
 
@@ -217,6 +264,55 @@ Parallel development track for rendering and debugging.
 
 ---
 
+## Implementation Reality Check
+
+### Command Status (34 Total)
+
+**✅ Fully Implemented (19 commands)**:
+- Buildings: `BuildInProvince`, `CancelConstruction`, `DemolishBuilding`
+- Military: `Move`, `MoveFleet`, `Embark`, `Disembark`, `MergeArmies`
+- War: `DeclareWar`, `OfferPeace`, `AcceptPeace`, `RejectPeace`, `JoinWar`, `CallAllyToWar`
+- Economy: `DevelopProvince`, `BuyTech`, `EmbraceInstitution`, `Core`
+- Ideas: `PickIdeaGroup`, `UnlockIdea`
+- Trade: `SendMerchant`, `RecallMerchant`, `UpgradeCenterOfTrade`
+- Colonization: `StartColony`, `AbandonColony`
+- Generals: `RecruitGeneral`, `AssignGeneral`, `UnassignGeneral`
+- Recruitment: `RecruitRegiment`
+
+**❌ Stubbed (15 commands)**:
+- Diplomacy (12): Alliance/RM offers/responses, military access, rivals
+- Religion (3): Missionary assignment, country conversion
+- Other: `SplitArmy`, `MoveCapital`
+
+### System Metrics
+
+```
+Total LOC:           22,546 (eu4sim-core/src)
+System Modules:      25 files (9,229 LOC)
+Unit Tests:          494 tests
+Combat System:       1,467 lines
+Buildings:           827 lines
+Naval Combat:        846 lines
+Siege:              726 lines
+Trade (3 files):    1,622 lines
+Movement:            479 lines
+Ideas:              429 lines
+Attrition:          412 lines
+
+Daily Ticks:         4 systems
+Monthly Ticks:       19 systems
+```
+
+### Modifier System Reality
+
+**Architecture**: `ModifierStubTracker` tracks 400+ modifier types from ideas data
+**Applied**: Only 4 modifiers actually affect gameplay
+**Impact**: Ideas can be picked and unlocked, but ~96% have no mechanical effect
+
+**Next Steps**: Wire top 20 modifiers by frequency to close this gap
+
+---
+
 ## Contributing
 
 Before starting work on a feature:
@@ -226,7 +322,7 @@ Before starting work on a feature:
 3. **Follow property-based testing** workflow ([guide](../development/testing/property-based-testing.md))
 4. **Run CI** before committing: `cargo xtask ci`
 
-**Priority**: Phase 5 siege system complete. Focus on Phase 5/6 remaining items (terrain, morale, alliance enforcement).
+**Priority**: Phase 6 modifier wiring. Focus on connecting idea modifiers to actual mechanics.
 
 ---
 
@@ -257,18 +353,19 @@ Train small language models (360M-2B params) to play EU4. See [Learned AI Design
 - [ ] Multiple personality adapters (aggressive, diplomatic, etc.)
 
 ### TUI Rendering Mode
+
 Play EU4 in your terminal! A text-based interface using `ratatui` or similar:
 - ASCII map with country colors
 - Command-line input for orders
 - Turn-based or simplified real-time
 - Perfect for SSH sessions or low-resource environments
-- Could start with observer mode, add interaction later
 
 ### Performance Instrumentation
+
 - `--benchmark` flag to measure simulation speed
 - Phase-by-phase timing breakdown
 - Track progress toward sub-10-minute full game goal
 
 ---
 
-*Last updated: 2025-12-24* (v0.2.0)
+*Last updated: 2025-12-26*
