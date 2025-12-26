@@ -209,6 +209,79 @@ impl ModifierStubTracker {
                 | "global_institution_spread"
                 | "heir_chance"
                 | "caravan_power"
+            // Missionary & Conversion
+                | "missionaries"
+            // Naval Power & Combat
+                | "light_ship_power"
+                | "heavy_ship_power"
+                | "naval_maintenance_modifier"
+                | "naval_attrition"
+            // Mercenary Modifiers
+                | "mercenary_discipline"
+                | "mercenary_manpower"
+            // War & Peace
+                | "unjustified_demands"
+                | "province_warscore_cost"
+            // Diplomacy & Travel
+                | "envoy_travel_time"
+                | "reduced_liberty_desire"
+            // Military Recruitment
+                | "global_regiment_cost"
+                | "global_regiment_recruit_speed"
+            // Economy & Finance
+                | "interest"
+                | "prestige_from_land"
+                | "loot_amount"
+            // Military Leaders
+                | "leader_land_fire"
+                | "leader_siege"
+                | "leader_naval_fire"
+                | "leader_naval_manuever"
+            // Naval Costs
+                | "galley_cost"
+                | "global_ship_recruit_speed"
+            // Government & Reform
+                | "reform_progress_growth"
+                | "administrative_efficiency"
+                | "yearly_absolutism"
+            // Religion & Faith
+                | "monthly_fervor_increase"
+                | "monthly_piety"
+            // Estate Loyalty
+                | "burghers_loyalty_modifier"
+                | "nobles_loyalty_modifier"
+                | "church_loyalty_modifier"
+            // Military Combat
+                | "recover_army_morale_speed"
+                | "fire_damage_received"
+                | "cavalry_flanking"
+                | "cav_to_inf_ratio"
+                | "reinforce_speed"
+            // Espionage & Defense
+                | "global_spy_defence"
+                | "rebel_support_efficiency"
+            // Military Tradition & Decay
+                | "navy_tradition_decay"
+                | "army_tradition_from_battle"
+            // Naval Combat
+                | "embargo_efficiency"
+                | "allowed_marine_fraction"
+                | "capture_ship_chance"
+            // Vassal & Subject
+                | "vassal_forcelimit_bonus"
+                | "same_culture_advisor_cost"
+            // Siege & Fortification
+                | "global_garrison_growth"
+                | "war_exhaustion_cost"
+            // Trade
+                | "global_foreign_trade_power"
+                | "range"
+            // Miscellaneous
+                | "female_advisor_chance"
+                | "yearly_corruption"
+                | "build_time"
+                | "promote_culture_cost"
+                | "liberty_desire_from_subject_development"
         )
     }
 }
@@ -982,6 +1055,311 @@ pub fn apply_modifier(
             true
         }
 
+        // === Missionary & Conversion ===
+        "missionaries" => {
+            let current = modifiers.country_missionaries.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_missionaries.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Naval Power & Combat ===
+        "light_ship_power" => {
+            let current = modifiers.country_light_ship_power.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_light_ship_power.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "heavy_ship_power" => {
+            let current = modifiers.country_heavy_ship_power.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_heavy_ship_power.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "naval_maintenance_modifier" => {
+            let current = modifiers.country_naval_maintenance.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_naval_maintenance.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "naval_attrition" => {
+            let current = modifiers.country_naval_attrition.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_naval_attrition.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Mercenary Modifiers ===
+        "mercenary_discipline" => {
+            let current = modifiers.country_mercenary_discipline.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_mercenary_discipline.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "mercenary_manpower" => {
+            let current = modifiers.country_mercenary_manpower.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_mercenary_manpower.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === War & Peace ===
+        "unjustified_demands" => {
+            let current = modifiers.country_unjustified_demands.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_unjustified_demands.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "province_warscore_cost" => {
+            let current = modifiers.country_province_warscore_cost.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_province_warscore_cost.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Diplomacy & Travel ===
+        "envoy_travel_time" => {
+            let current = modifiers.country_envoy_travel_time.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_envoy_travel_time.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "reduced_liberty_desire" => {
+            let current = modifiers.country_reduced_liberty_desire.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_reduced_liberty_desire.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Military Recruitment ===
+        "global_regiment_cost" => {
+            let current = modifiers.country_global_regiment_cost.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_global_regiment_cost.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "global_regiment_recruit_speed" => {
+            let current = modifiers.country_global_regiment_recruit_speed.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_global_regiment_recruit_speed.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Economy & Finance ===
+        "interest" => {
+            let current = modifiers.country_interest.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_interest.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "prestige_from_land" => {
+            let current = modifiers.country_prestige_from_land.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_prestige_from_land.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "loot_amount" => {
+            let current = modifiers.country_loot_amount.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_loot_amount.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Military Leaders ===
+        "leader_land_fire" => {
+            let current = modifiers.country_leader_land_fire.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_leader_land_fire.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "leader_siege" => {
+            let current = modifiers.country_leader_siege.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_leader_siege.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "leader_naval_fire" => {
+            let current = modifiers.country_leader_naval_fire.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_leader_naval_fire.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "leader_naval_manuever" => {
+            let current = modifiers.country_leader_naval_manuever.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_leader_naval_manuever.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Naval Costs ===
+        "galley_cost" => {
+            let current = modifiers.country_galley_cost.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_galley_cost.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "global_ship_recruit_speed" => {
+            let current = modifiers.country_global_ship_recruit_speed.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_global_ship_recruit_speed.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Government & Reform ===
+        "reform_progress_growth" => {
+            let current = modifiers.country_reform_progress_growth.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_reform_progress_growth.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "administrative_efficiency" => {
+            let current = modifiers.country_administrative_efficiency.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_administrative_efficiency.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "yearly_absolutism" => {
+            let current = modifiers.country_yearly_absolutism.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_yearly_absolutism.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Religion & Faith ===
+        "monthly_fervor_increase" => {
+            let current = modifiers.country_monthly_fervor_increase.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_monthly_fervor_increase.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "monthly_piety" => {
+            let current = modifiers.country_monthly_piety.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_monthly_piety.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Estate Loyalty ===
+        "burghers_loyalty_modifier" => {
+            let current = modifiers.country_burghers_loyalty.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_burghers_loyalty.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "nobles_loyalty_modifier" => {
+            let current = modifiers.country_nobles_loyalty.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_nobles_loyalty.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "church_loyalty_modifier" => {
+            let current = modifiers.country_church_loyalty.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_church_loyalty.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Military Combat ===
+        "recover_army_morale_speed" => {
+            let current = modifiers.country_recover_army_morale_speed.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_recover_army_morale_speed.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "fire_damage_received" => {
+            let current = modifiers.country_fire_damage_received.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_fire_damage_received.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "cavalry_flanking" => {
+            let current = modifiers.country_cavalry_flanking.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_cavalry_flanking.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "cav_to_inf_ratio" => {
+            let current = modifiers.country_cav_to_inf_ratio.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_cav_to_inf_ratio.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "reinforce_speed" => {
+            let current = modifiers.country_reinforce_speed.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_reinforce_speed.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Espionage & Defense ===
+        "global_spy_defence" => {
+            let current = modifiers.country_global_spy_defence.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_global_spy_defence.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "rebel_support_efficiency" => {
+            let current = modifiers.country_rebel_support_efficiency.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_rebel_support_efficiency.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Military Tradition & Decay ===
+        "navy_tradition_decay" => {
+            let current = modifiers.country_navy_tradition_decay.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_navy_tradition_decay.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "army_tradition_from_battle" => {
+            let current = modifiers.country_army_tradition_from_battle.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_army_tradition_from_battle.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Naval Combat ===
+        "embargo_efficiency" => {
+            let current = modifiers.country_embargo_efficiency.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_embargo_efficiency.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "allowed_marine_fraction" => {
+            let current = modifiers.country_allowed_marine_fraction.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_allowed_marine_fraction.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "capture_ship_chance" => {
+            let current = modifiers.country_capture_ship_chance.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_capture_ship_chance.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Vassal & Subject ===
+        "vassal_forcelimit_bonus" => {
+            let current = modifiers.country_vassal_forcelimit_bonus.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_vassal_forcelimit_bonus.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "same_culture_advisor_cost" => {
+            let current = modifiers.country_same_culture_advisor_cost.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_same_culture_advisor_cost.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Siege & Fortification ===
+        "global_garrison_growth" => {
+            let current = modifiers.country_global_garrison_growth.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_global_garrison_growth.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "war_exhaustion_cost" => {
+            let current = modifiers.country_war_exhaustion_cost.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_war_exhaustion_cost.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Trade ===
+        "global_foreign_trade_power" => {
+            let current = modifiers.country_global_foreign_trade_power.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_global_foreign_trade_power.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "range" => {
+            let current = modifiers.country_range.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_range.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Miscellaneous ===
+        "female_advisor_chance" => {
+            let current = modifiers.country_female_advisor_chance.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_female_advisor_chance.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "yearly_corruption" => {
+            let current = modifiers.country_yearly_corruption.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_yearly_corruption.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "build_time" => {
+            let current = modifiers.country_build_time.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_build_time.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "promote_culture_cost" => {
+            let current = modifiers.country_promote_culture_cost.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_promote_culture_cost.insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "liberty_desire_from_subject_development" => {
+            let current = modifiers.country_liberty_desire_from_subject_development.get(tag).copied().unwrap_or(Fixed::ZERO);
+            modifiers.country_liberty_desire_from_subject_development.insert(tag.to_string(), current + entry.value);
+            true
+        }
+
         // === All other modifiers are stubs ===
         _ => {
             stubs.track(&entry.key);
@@ -1210,13 +1588,13 @@ mod tests {
         let mut modifiers = GameModifiers::default();
         let tracker = ModifierStubTracker::new();
 
-        let entry = ModifierEntry::from_f32("recover_army_morale_speed", 0.25);
+        let entry = ModifierEntry::from_f32("dip_tech_cost_modifier", -0.05);
         let applied = apply_modifier(&mut modifiers, "FRA", &entry, &tracker);
 
         assert!(!applied);
         assert!(tracker
             .unimplemented_keys()
-            .contains(&"recover_army_morale_speed".to_string()));
+            .contains(&"dip_tech_cost_modifier".to_string()));
     }
 
     #[test]
@@ -1984,6 +2362,178 @@ mod tests {
             "advisor_cost", "advisor_pool", "culture_conversion_cost",
             "inflation_reduction", "global_autonomy", "state_maintenance_modifier", "garrison_size",
             "global_institution_spread", "heir_chance", "caravan_power",
+        ];
+
+        for modifier in new_modifiers {
+            assert!(
+                ModifierStubTracker::is_implemented(modifier),
+                "Modifier {} should be implemented",
+                modifier
+            );
+        }
+    }
+
+    #[test]
+    fn test_apply_naval_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let stubs = ModifierStubTracker::new();
+
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("light_ship_power", 0.20), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("heavy_ship_power", 0.15), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("naval_maintenance_modifier", -0.10), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("naval_attrition", -0.25), &stubs);
+
+        assert_eq!(modifiers.country_light_ship_power.get("TST"), Some(&Fixed::from_f32(0.20)));
+        assert_eq!(modifiers.country_heavy_ship_power.get("TST"), Some(&Fixed::from_f32(0.15)));
+        assert_eq!(modifiers.country_naval_maintenance.get("TST"), Some(&Fixed::from_f32(-0.10)));
+        assert_eq!(modifiers.country_naval_attrition.get("TST"), Some(&Fixed::from_f32(-0.25)));
+    }
+
+    #[test]
+    fn test_apply_mercenary_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let stubs = ModifierStubTracker::new();
+
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("mercenary_discipline", 0.05), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("mercenary_manpower", 0.25), &stubs);
+
+        assert_eq!(modifiers.country_mercenary_discipline.get("TST"), Some(&Fixed::from_f32(0.05)));
+        assert_eq!(modifiers.country_mercenary_manpower.get("TST"), Some(&Fixed::from_f32(0.25)));
+    }
+
+    #[test]
+    fn test_apply_war_and_diplomacy_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let stubs = ModifierStubTracker::new();
+
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("unjustified_demands", -0.50), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("province_warscore_cost", -0.10), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("envoy_travel_time", -0.25), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::new("reduced_liberty_desire", Fixed::from_int(-10)), &stubs);
+
+        assert_eq!(modifiers.country_unjustified_demands.get("TST"), Some(&Fixed::from_f32(-0.50)));
+        assert_eq!(modifiers.country_province_warscore_cost.get("TST"), Some(&Fixed::from_f32(-0.10)));
+        assert_eq!(modifiers.country_envoy_travel_time.get("TST"), Some(&Fixed::from_f32(-0.25)));
+        assert_eq!(modifiers.country_reduced_liberty_desire.get("TST"), Some(&Fixed::from_int(-10)));
+    }
+
+    #[test]
+    fn test_apply_recruitment_and_economy_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let stubs = ModifierStubTracker::new();
+
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("global_regiment_cost", -0.10), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("global_regiment_recruit_speed", 0.25), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("interest", -0.50), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("prestige_from_land", 0.10), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("loot_amount", 0.50), &stubs);
+
+        assert_eq!(modifiers.country_global_regiment_cost.get("TST"), Some(&Fixed::from_f32(-0.10)));
+        assert_eq!(modifiers.country_global_regiment_recruit_speed.get("TST"), Some(&Fixed::from_f32(0.25)));
+        assert_eq!(modifiers.country_interest.get("TST"), Some(&Fixed::from_f32(-0.50)));
+        assert_eq!(modifiers.country_prestige_from_land.get("TST"), Some(&Fixed::from_f32(0.10)));
+        assert_eq!(modifiers.country_loot_amount.get("TST"), Some(&Fixed::from_f32(0.50)));
+    }
+
+    #[test]
+    fn test_apply_leader_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let stubs = ModifierStubTracker::new();
+
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::new("leader_land_fire", Fixed::from_int(1)), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::new("leader_siege", Fixed::from_int(1)), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::new("leader_naval_fire", Fixed::from_int(1)), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::new("leader_naval_manuever", Fixed::from_int(1)), &stubs);
+
+        assert_eq!(modifiers.country_leader_land_fire.get("TST"), Some(&Fixed::from_int(1)));
+        assert_eq!(modifiers.country_leader_siege.get("TST"), Some(&Fixed::from_int(1)));
+        assert_eq!(modifiers.country_leader_naval_fire.get("TST"), Some(&Fixed::from_int(1)));
+        assert_eq!(modifiers.country_leader_naval_manuever.get("TST"), Some(&Fixed::from_int(1)));
+    }
+
+    #[test]
+    fn test_apply_government_reform_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let stubs = ModifierStubTracker::new();
+
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("reform_progress_growth", 0.25), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("administrative_efficiency", 0.05), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("yearly_absolutism", 0.50), &stubs);
+
+        assert_eq!(modifiers.country_reform_progress_growth.get("TST"), Some(&Fixed::from_f32(0.25)));
+        assert_eq!(modifiers.country_administrative_efficiency.get("TST"), Some(&Fixed::from_f32(0.05)));
+        assert_eq!(modifiers.country_yearly_absolutism.get("TST"), Some(&Fixed::from_f32(0.50)));
+    }
+
+    #[test]
+    fn test_apply_estate_loyalty_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let stubs = ModifierStubTracker::new();
+
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("burghers_loyalty_modifier", 0.10), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("nobles_loyalty_modifier", 0.10), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("church_loyalty_modifier", 0.10), &stubs);
+
+        assert_eq!(modifiers.country_burghers_loyalty.get("TST"), Some(&Fixed::from_f32(0.10)));
+        assert_eq!(modifiers.country_nobles_loyalty.get("TST"), Some(&Fixed::from_f32(0.10)));
+        assert_eq!(modifiers.country_church_loyalty.get("TST"), Some(&Fixed::from_f32(0.10)));
+    }
+
+    #[test]
+    fn test_apply_combat_and_reinforcement_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let stubs = ModifierStubTracker::new();
+
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("recover_army_morale_speed", 0.10), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("fire_damage_received", -0.10), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("cavalry_flanking", 0.50), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("cav_to_inf_ratio", 0.25), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("reinforce_speed", 0.33), &stubs);
+
+        assert_eq!(modifiers.country_recover_army_morale_speed.get("TST"), Some(&Fixed::from_f32(0.10)));
+        assert_eq!(modifiers.country_fire_damage_received.get("TST"), Some(&Fixed::from_f32(-0.10)));
+        assert_eq!(modifiers.country_cavalry_flanking.get("TST"), Some(&Fixed::from_f32(0.50)));
+        assert_eq!(modifiers.country_cav_to_inf_ratio.get("TST"), Some(&Fixed::from_f32(0.25)));
+        assert_eq!(modifiers.country_reinforce_speed.get("TST"), Some(&Fixed::from_f32(0.33)));
+    }
+
+    #[test]
+    fn test_apply_espionage_and_tradition_modifiers() {
+        let mut modifiers = GameModifiers::default();
+        let stubs = ModifierStubTracker::new();
+
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("global_spy_defence", 0.20), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("rebel_support_efficiency", 0.50), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("navy_tradition_decay", -0.01), &stubs);
+        apply_modifier(&mut modifiers, "TST", &ModifierEntry::from_f32("army_tradition_from_battle", 0.50), &stubs);
+
+        assert_eq!(modifiers.country_global_spy_defence.get("TST"), Some(&Fixed::from_f32(0.20)));
+        assert_eq!(modifiers.country_rebel_support_efficiency.get("TST"), Some(&Fixed::from_f32(0.50)));
+        assert_eq!(modifiers.country_navy_tradition_decay.get("TST"), Some(&Fixed::from_f32(-0.01)));
+        assert_eq!(modifiers.country_army_tradition_from_battle.get("TST"), Some(&Fixed::from_f32(0.50)));
+    }
+
+    #[test]
+    fn test_all_50_new_modifiers_implemented() {
+        let new_modifiers = vec![
+            "missionaries", "light_ship_power", "heavy_ship_power", "naval_maintenance_modifier", "naval_attrition",
+            "mercenary_discipline", "mercenary_manpower",
+            "unjustified_demands", "province_warscore_cost", "envoy_travel_time", "reduced_liberty_desire",
+            "global_regiment_cost", "global_regiment_recruit_speed",
+            "interest", "prestige_from_land", "loot_amount",
+            "leader_land_fire", "leader_siege", "leader_naval_fire", "leader_naval_manuever",
+            "galley_cost", "global_ship_recruit_speed",
+            "reform_progress_growth", "administrative_efficiency", "yearly_absolutism",
+            "monthly_fervor_increase", "monthly_piety",
+            "burghers_loyalty_modifier", "nobles_loyalty_modifier", "church_loyalty_modifier",
+            "recover_army_morale_speed", "fire_damage_received", "cavalry_flanking", "cav_to_inf_ratio", "reinforce_speed",
+            "global_spy_defence", "rebel_support_efficiency",
+            "navy_tradition_decay", "army_tradition_from_battle",
+            "embargo_efficiency", "allowed_marine_fraction", "capture_ship_chance",
+            "vassal_forcelimit_bonus", "same_culture_advisor_cost",
+            "global_garrison_growth", "war_exhaustion_cost",
+            "global_foreign_trade_power", "range",
+            "female_advisor_chance", "yearly_corruption", "build_time", "promote_culture_cost", "liberty_desire_from_subject_development",
         ];
 
         for modifier in new_modifiers {
