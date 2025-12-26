@@ -35,13 +35,11 @@ When implementing multi-file changes:
 
 ## Documentation Requirements
 
-After implementing features that add systems, complete roadmap items, or change tier status:
+After implementing features that add systems or complete roadmap items:
 
 | File | When to Update |
 |------|----------------|
-| `docs/planning/mid-term-status.md` | Mark items `[x]`, update tier table |
 | `docs/planning/roadmap.md` | Mark phase items complete |
-| `docs/design/simulation/complete-game-target.md` | Update system status |
 
 Always update the `Last updated:` date. Use `/finalize-commit` for full checklist.
 

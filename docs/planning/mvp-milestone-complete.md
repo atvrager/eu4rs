@@ -107,7 +107,6 @@ See [roadmap.md](./roadmap.md) for the full feature roadmap.
 
 ## Documentation References
 
-- [complete-game-target.md](../design/simulation/complete-game-target.md) - Full system tier definitions
 - [truce-system.md](../design/simulation/truce-system.md) - Truce mechanics design
 - [learned-ai.md](../design/simulation/learned-ai.md) - ML training architecture
 
