@@ -44,6 +44,7 @@ pub mod diplomacy;
 pub mod discovery;
 pub mod generated;
 pub mod history;
+pub mod ideas;
 pub mod localisation;
 pub mod manifest;
 pub mod map;

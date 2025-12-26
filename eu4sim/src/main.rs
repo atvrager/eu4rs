@@ -214,6 +214,8 @@ fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGra
         building_upgraded_by: Default::default(),
         // Subject type system
         subject_types: Default::default(),
+        // Idea system
+        idea_groups: Default::default(),
     };
 
     (state, adj)

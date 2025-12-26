@@ -1,14 +1,55 @@
 use anyhow::Result;
+use eu4sim_core::ideas::{IdeaGroupRegistry, RawIdea, RawIdeaGroup};
 use eu4sim_core::modifiers::TradegoodId;
 use eu4sim_core::state::{
     Army, CountryState, Date, HashMap as ImHashMap, ProvinceState, Regiment, RegimentType,
     SubjectRelationship, Terrain,
 };
 use eu4sim_core::subjects::{RawSubjectType, SubjectTypeRegistry};
+use eu4sim_core::systems::ideas::{recalculate_idea_modifiers, ModifierStubTracker};
 use eu4sim_core::trade::{CountryTradeState, TradeNodeId, TradeNodeState, TradeTopology};
 use eu4sim_core::{Fixed, WorldState};
 use std::collections::HashMap as StdHashMap;
 use std::path::Path;
+
+/// Convert from eu4data's RawIdeaGroup to eu4sim-core's RawIdeaGroup.
+fn convert_raw_idea_group(raw: eu4data::ideas::RawIdeaGroup) -> RawIdeaGroup {
+    RawIdeaGroup {
+        name: raw.name,
+        category: raw.category.map(|c| match c {
+            eu4data::ideas::RawIdeaCategory::Adm => "ADM".to_string(),
+            eu4data::ideas::RawIdeaCategory::Dip => "DIP".to_string(),
+            eu4data::ideas::RawIdeaCategory::Mil => "MIL".to_string(),
+        }),
+        is_free: raw.is_free,
+        required_tag: raw.required_tag,
+        start_modifiers: raw
+            .start_modifiers
+            .into_iter()
+            .map(|m| (m.key, m.value))
+            .collect(),
+        bonus_modifiers: raw
+            .bonus_modifiers
+            .into_iter()
+            .map(|m| (m.key, m.value))
+            .collect(),
+        ideas: raw
+            .ideas
+            .into_iter()
+            .enumerate()
+            .map(|(i, idea)| RawIdea {
+                name: idea.name,
+                position: i as u8,
+                modifiers: idea
+                    .modifiers
+                    .into_iter()
+                    .map(|m| (m.key, m.value))
+                    .collect(),
+            })
+            .collect(),
+        ai_will_do_factor: raw.ai_will_do_factor,
+    }
+}
 
 /// Convert from eu4data's RawSubjectType to eu4sim-core's RawSubjectType.
 fn convert_raw_subject_type(raw: eu4data::subject_types::RawSubjectType) -> RawSubjectType {
@@ -341,6 +382,40 @@ pub fn load_initial_state(
         subject_types.tributary_id
     );
 
+    // 5b. Load Idea Groups
+    log::info!("Loading idea groups...");
+    let raw_idea_groups = eu4data::ideas::load_idea_groups(game_path)
+        .map_err(|e| anyhow::anyhow!("Failed to load idea groups: {}", e))?;
+    let idea_groups =
+        IdeaGroupRegistry::from_raw(raw_idea_groups.into_values().map(convert_raw_idea_group));
+    let national_count = idea_groups.national_groups().count();
+    let generic_count = idea_groups.generic_groups().count();
+    log::info!(
+        "Loaded {} idea groups ({} generic, {} national)",
+        idea_groups.len(),
+        generic_count,
+        national_count
+    );
+
+    // Initialize national ideas for each country
+    // Note: national_ideas_progress starts at 0 - it unlocks as you unlock ideas from picked groups
+    for (tag, country) in &mut countries {
+        if let Some(national) = idea_groups.national_ideas_for(tag) {
+            country.ideas.national_ideas = Some(national.id);
+            // Progress starts at 0 - start modifier is free, but individual ideas
+            // unlock based on total ideas from picked generic groups
+            country.ideas.national_ideas_progress = 0;
+        }
+    }
+    let countries_with_national = countries
+        .values()
+        .filter(|c| c.ideas.national_ideas.is_some())
+        .count();
+    log::info!(
+        "Initialized national ideas for {} countries",
+        countries_with_national
+    );
+
     // 6. Load Diplomatic History (subjects, alliances, etc.)
     log::info!("Loading diplomatic history...");
     let diplomacy_entries = eu4data::diplomacy::load_diplomacy_history(game_path)
@@ -388,7 +463,25 @@ pub fn load_initial_state(
 
     log::info!("Loaded {} subject relationships", subjects.len());
 
-    // 7. Assemble State
+    // 7. Apply idea modifiers for all countries
+    log::info!("Applying idea modifiers...");
+    let stub_tracker = ModifierStubTracker::new();
+    let mut modifiers = eu4sim_core::modifiers::GameModifiers::default();
+
+    for (tag, country) in &countries {
+        recalculate_idea_modifiers(&mut modifiers, tag, country, &idea_groups, &stub_tracker);
+    }
+
+    // Report unimplemented modifiers (useful for roadmap)
+    let unimplemented_count = stub_tracker.unimplemented_count();
+    if unimplemented_count > 0 {
+        log::debug!(
+            "Idea modifiers: {} unique unimplemented (stub discovery)",
+            unimplemented_count
+        );
+    }
+
+    // 8. Assemble State
     Ok((
         WorldState {
             date: start_date,
@@ -397,7 +490,7 @@ pub fn load_initial_state(
             provinces: provinces.into(),
             countries: countries.into(),
             base_goods_prices: base_prices.into(),
-            modifiers: Default::default(),
+            modifiers,
             diplomacy: eu4sim_core::state::DiplomacyState {
                 subjects: subjects.into(),
                 ..Default::default()
@@ -429,6 +522,8 @@ pub fn load_initial_state(
             building_upgraded_by: ImHashMap::default(),
             // Subject type system
             subject_types,
+            // Idea system
+            idea_groups,
         },
         adjacency,
     ))

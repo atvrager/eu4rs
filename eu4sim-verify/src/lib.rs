@@ -69,6 +69,9 @@ pub struct ExtractedCountry {
     // Advisors (type -> skill level)
     pub advisors: Vec<ExtractedAdvisor>,
 
+    // Ideas
+    pub ideas: ExtractedIdeas,
+
     // For recalculation
     pub owned_province_ids: Vec<u32>,
 }
@@ -82,6 +85,26 @@ pub struct ExtractedAdvisor {
     pub skill: u8,
     /// Is this advisor currently hired?
     pub is_hired: bool,
+}
+
+/// Idea group state extracted from save
+#[derive(Debug, Clone, Default)]
+pub struct ExtractedIdeaGroup {
+    /// Idea group name (e.g., "aristocracy_ideas", "FRA_ideas")
+    pub name: String,
+    /// Number of ideas unlocked in this group (0-7)
+    pub ideas_unlocked: u8,
+}
+
+/// Country idea state extracted from save
+#[derive(Debug, Clone, Default)]
+pub struct ExtractedIdeas {
+    /// National idea group name (if any)
+    pub national_ideas: Option<String>,
+    /// National ideas unlocked (0-7)
+    pub national_ideas_progress: u8,
+    /// Picked generic idea groups with unlock progress
+    pub idea_groups: Vec<ExtractedIdeaGroup>,
 }
 
 /// Monthly income breakdown from save

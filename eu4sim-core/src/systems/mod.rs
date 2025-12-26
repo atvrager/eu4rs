@@ -8,6 +8,7 @@ pub mod combat;
 pub mod coring;
 pub mod development;
 pub mod expenses;
+pub mod ideas;
 pub mod institutions;
 pub mod mana;
 pub mod manpower;
@@ -39,6 +40,10 @@ pub use coring::{
 };
 pub use development::develop_province;
 pub use expenses::run_expenses_tick;
+pub use ideas::{
+    apply_modifier, print_modifier_report, recalculate_idea_modifiers, scan_all_modifiers,
+    IdeaModifierStats, ModifierStubTracker,
+};
 pub use institutions::{embrace_institution, tick_institution_spread};
 pub use mana::run_mana_tick;
 pub use manpower::run_manpower_tick;

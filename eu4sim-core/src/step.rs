@@ -93,6 +93,21 @@ pub enum ActionError {
     CoringFailed { message: String },
     #[error("Invalid command: {message}")]
     InvalidCommand { message: String },
+    // Idea errors
+    #[error("Invalid idea group: {group_id:?}")]
+    InvalidIdeaGroup { group_id: crate::ideas::IdeaGroupId },
+    #[error("Cannot pick national idea group: {group_id:?}")]
+    CannotPickNationalIdeas { group_id: crate::ideas::IdeaGroupId },
+    #[error("Maximum of 8 idea groups already picked")]
+    MaxIdeaGroupsReached,
+    #[error("Idea group already picked: {group_id:?}")]
+    IdeaGroupAlreadyPicked { group_id: crate::ideas::IdeaGroupId },
+    #[error("Idea group not yet picked: {group_id:?}")]
+    IdeaGroupNotPicked { group_id: crate::ideas::IdeaGroupId },
+    #[error("All 7 ideas already unlocked in group: {group_id:?}")]
+    AllIdeasUnlocked { group_id: crate::ideas::IdeaGroupId },
+    #[error("Insufficient tech for idea: need {required}, have {current}")]
+    InsufficientTechForIdea { required: u8, current: u8 },
 }
 
 /// Advance the world by one tick.
@@ -1775,6 +1790,164 @@ fn execute_command(
             })?;
 
             log::info!("{} embraced institution {}", country_tag, institution);
+
+            Ok(())
+        }
+        Command::PickIdeaGroup { group_id } => {
+            use crate::ideas::IdeaCategory;
+
+            // Validate country exists
+            let country = state
+                .countries
+                .get(country_tag)
+                .ok_or(ActionError::CountryNotFound {
+                    tag: country_tag.to_string(),
+                })?;
+
+            // Validate idea group exists
+            let group = state
+                .idea_groups
+                .get(*group_id)
+                .ok_or(ActionError::InvalidIdeaGroup {
+                    group_id: *group_id,
+                })?;
+
+            // Cannot pick national ideas (they are auto-assigned)
+            if group.is_national {
+                return Err(ActionError::CannotPickNationalIdeas {
+                    group_id: *group_id,
+                });
+            }
+
+            // Cannot pick more than 8 idea groups
+            const MAX_IDEA_GROUPS: usize = 8;
+            if country.ideas.groups.len() >= MAX_IDEA_GROUPS {
+                return Err(ActionError::MaxIdeaGroupsReached);
+            }
+
+            // Cannot pick same group twice
+            if country.ideas.groups.contains_key(group_id) {
+                return Err(ActionError::IdeaGroupAlreadyPicked {
+                    group_id: *group_id,
+                });
+            }
+
+            // Check if we have required tech level (3 + 4 per group)
+            let required_tech = 3 + (country.ideas.groups.len() as u8 * 4);
+            let current_tech = match group.category {
+                Some(IdeaCategory::Adm) => country.adm_tech,
+                Some(IdeaCategory::Dip) => country.dip_tech,
+                Some(IdeaCategory::Mil) => country.mil_tech,
+                None => country.adm_tech, // Fallback to ADM if no category
+            };
+            if current_tech < required_tech {
+                return Err(ActionError::InsufficientTechForIdea {
+                    required: required_tech,
+                    current: current_tech,
+                });
+            }
+
+            // Pick the idea group (0 ideas unlocked initially)
+            let country =
+                state
+                    .countries
+                    .get_mut(country_tag)
+                    .ok_or(ActionError::CountryNotFound {
+                        tag: country_tag.to_string(),
+                    })?;
+            country.ideas.groups.insert(*group_id, 0);
+
+            log::info!(
+                "{} picked idea group {} (slot {})",
+                country_tag,
+                group.name,
+                country.ideas.groups.len()
+            );
+
+            Ok(())
+        }
+        Command::UnlockIdea { group_id } => {
+            use crate::ideas::IdeaCategory;
+
+            // Validate country exists
+            let country = state
+                .countries
+                .get(country_tag)
+                .ok_or(ActionError::CountryNotFound {
+                    tag: country_tag.to_string(),
+                })?;
+
+            // Validate idea group was picked
+            let ideas_unlocked =
+                *country
+                    .ideas
+                    .groups
+                    .get(group_id)
+                    .ok_or(ActionError::IdeaGroupNotPicked {
+                        group_id: *group_id,
+                    })?;
+
+            // Cannot unlock more than 7 ideas
+            if ideas_unlocked >= 7 {
+                return Err(ActionError::AllIdeasUnlocked {
+                    group_id: *group_id,
+                });
+            }
+
+            // Validate idea group exists and get category
+            let group = state
+                .idea_groups
+                .get(*group_id)
+                .ok_or(ActionError::InvalidIdeaGroup {
+                    group_id: *group_id,
+                })?;
+
+            // Check mana cost (400 base per idea)
+            const IDEA_COST: Fixed = Fixed::from_int(400);
+            let (mana_type, current_mana) = match group.category {
+                Some(IdeaCategory::Adm) => ("ADM", country.adm_mana),
+                Some(IdeaCategory::Dip) => ("DIP", country.dip_mana),
+                Some(IdeaCategory::Mil) => ("MIL", country.mil_mana),
+                None => ("ADM", country.adm_mana), // Fallback to ADM
+            };
+
+            if current_mana < IDEA_COST {
+                return Err(ActionError::InsufficientMana);
+            }
+
+            // Spend mana and unlock idea
+            let country =
+                state
+                    .countries
+                    .get_mut(country_tag)
+                    .ok_or(ActionError::CountryNotFound {
+                        tag: country_tag.to_string(),
+                    })?;
+
+            match group.category {
+                Some(IdeaCategory::Adm) => country.adm_mana -= IDEA_COST,
+                Some(IdeaCategory::Dip) => country.dip_mana -= IDEA_COST,
+                Some(IdeaCategory::Mil) => country.mil_mana -= IDEA_COST,
+                None => country.adm_mana -= IDEA_COST,
+            }
+
+            country.ideas.groups.insert(*group_id, ideas_unlocked + 1);
+
+            // Sync national idea progress: unlocks based on total ideas from generic groups
+            let total_generic_ideas: u8 = country.ideas.groups.values().copied().sum();
+            if country.ideas.national_ideas.is_some() {
+                country.ideas.national_ideas_progress = total_generic_ideas.min(7);
+            }
+
+            log::info!(
+                "{} unlocked idea {}/{} in {} (cost 400 {}, national progress: {}/7)",
+                country_tag,
+                ideas_unlocked + 1,
+                7,
+                group.name,
+                mana_type,
+                country.ideas.national_ideas_progress
+            );
 
             Ok(())
         }

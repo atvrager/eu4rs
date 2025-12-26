@@ -504,6 +504,10 @@ pub struct WorldState {
     /// Subject type definitions (loaded from common/subject_types/, immutable).
     #[serde(skip)]
     pub subject_types: crate::subjects::SubjectTypeRegistry,
+
+    /// Idea group definitions (loaded from common/ideas/, immutable).
+    #[serde(skip)]
+    pub idea_groups: crate::ideas::IdeaGroupRegistry,
 }
 
 impl WorldState {
@@ -784,6 +788,9 @@ pub struct CountryState {
     /// High AE (>50) can trigger coalition formation.
     #[serde(default)]
     pub aggressive_expansion: HashMap<Tag, Fixed>,
+    /// Idea state: which groups and ideas this country has.
+    #[serde(default)]
+    pub ideas: crate::ideas::CountryIdeaState,
 }
 
 /// Breakdown of monthly income by source.
@@ -822,6 +829,7 @@ impl Default for CountryState {
             pending_call_to_arms: std::collections::HashMap::new(),
             overextension: Fixed::ZERO,
             aggressive_expansion: HashMap::new(),
+            ideas: crate::ideas::CountryIdeaState::default(),
         }
     }
 }

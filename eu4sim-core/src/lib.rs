@@ -59,6 +59,7 @@ pub mod training_capnp {
     include!(concat!(env!("OUT_DIR"), "/training_capnp.rs"));
 }
 pub mod fixed;
+pub mod ideas;
 pub mod input;
 pub mod metrics;
 pub mod observer;
@@ -74,6 +75,7 @@ pub use bounded::{new_prestige, new_stability, new_tradition, BoundedFixed, Boun
 pub use buildings::{BuildingConstruction, BuildingDef, BuildingSet, BuildingSlotSource};
 pub use config::SimConfig;
 pub use fixed::Fixed;
+pub use ideas::{CountryIdeaState, IdeaCategory, IdeaGroupDef, IdeaGroupId, IdeaGroupRegistry};
 pub use input::{Command, PlayerInputs};
 pub use metrics::SimMetrics;
 pub use modifiers::{BuildingId, GameModifiers, TradegoodId};

@@ -143,6 +143,8 @@ impl ExtractedFieldRegistry {
                 // Advisors
                 "advisors",
                 "active_advisors",
+                // Ideas
+                "active_idea_groups",
             ]
             .into_iter()
             .collect(),

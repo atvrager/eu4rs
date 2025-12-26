@@ -256,6 +256,10 @@ fn parse_binary_gamestate(data: &[u8]) -> Result<ExtractedState> {
 
         // Note: eu4save doesn't expose mana points directly, only in ledger data
         // For binary saves, we skip mana extraction
+
+        // Extract ideas from active_idea_groups
+        let ideas = extract_ideas_from_binary(country);
+
         let extracted = crate::ExtractedCountry {
             tag: tag_str.clone(),
             max_manpower: Some(country.max_manpower.into()),
@@ -268,6 +272,7 @@ fn parse_binary_gamestate(data: &[u8]) -> Result<ExtractedState> {
             army_maintenance: None,
             navy_maintenance: None,
             advisors,
+            ideas,
             owned_province_ids: owned,
         };
 
@@ -299,6 +304,32 @@ fn parse_binary_gamestate(data: &[u8]) -> Result<ExtractedState> {
         provinces,
         subjects,
     })
+}
+
+/// Extract ideas from binary save country data
+fn extract_ideas_from_binary(country: &eu4save::models::Country) -> crate::ExtractedIdeas {
+    let mut ideas = crate::ExtractedIdeas::default();
+
+    // eu4save exposes active_idea_groups as Vec<(String, u8)>
+    for (group_name, ideas_unlocked) in &country.active_idea_groups {
+        // Detect if this is a national idea (TAG_ideas pattern)
+        let is_national = group_name.len() >= 6 && group_name.ends_with("_ideas") && {
+            let prefix = &group_name[..group_name.len() - 6];
+            prefix.len() == 3 && prefix.chars().all(|c| c.is_ascii_uppercase())
+        };
+
+        if is_national {
+            ideas.national_ideas = Some(group_name.clone());
+            ideas.national_ideas_progress = *ideas_unlocked;
+        } else {
+            ideas.idea_groups.push(crate::ExtractedIdeaGroup {
+                name: group_name.clone(),
+                ideas_unlocked: *ideas_unlocked,
+            });
+        }
+    }
+
+    ideas
 }
 
 /// Find tokens file in standard locations
@@ -500,6 +531,9 @@ fn parse_country_block(tag: &str, content: &str) -> crate::ExtractedCountry {
     // Extract advisors
     country.advisors = extract_advisors(content, tag);
 
+    // Extract ideas
+    country.ideas = extract_ideas(content, tag);
+
     country
 }
 
@@ -587,6 +621,59 @@ fn extract_advisors(content: &str, tag: &str) -> Vec<crate::ExtractedAdvisor> {
     }
 
     advisors
+}
+
+/// Extract idea groups from country content
+/// Ideas appear in an "active_idea_groups={" block with entries like:
+/// aristocracy_ideas=7
+/// diplomatic_ideas=3
+fn extract_ideas(content: &str, tag: &str) -> crate::ExtractedIdeas {
+    let mut ideas = crate::ExtractedIdeas::default();
+
+    // Find active_idea_groups block
+    if let Some(ideas_start) = content.find("active_idea_groups={") {
+        let block_start = ideas_start + "active_idea_groups={".len();
+        if let Some(ideas_block) = extract_block(&content[block_start..]) {
+            // Parse idea group entries: group_name=count
+            let entry_pattern = regex::Regex::new(r"(\w+_ideas)=(\d+)").unwrap();
+
+            for cap in entry_pattern.captures_iter(ideas_block) {
+                let group_name = cap.get(1).map(|m| m.as_str().to_string()).unwrap();
+                let ideas_unlocked: u8 = cap
+                    .get(2)
+                    .and_then(|m| m.as_str().parse().ok())
+                    .unwrap_or(0);
+
+                // Detect if this is a national idea (TAG_ideas pattern)
+                let is_national = group_name.len() >= 6 && group_name.ends_with("_ideas") && {
+                    let prefix = &group_name[..group_name.len() - 6];
+                    prefix.len() == 3 && prefix.chars().all(|c| c.is_ascii_uppercase())
+                };
+
+                if is_national {
+                    ideas.national_ideas = Some(group_name);
+                    ideas.national_ideas_progress = ideas_unlocked;
+                } else {
+                    ideas.idea_groups.push(crate::ExtractedIdeaGroup {
+                        name: group_name,
+                        ideas_unlocked,
+                    });
+                }
+            }
+        }
+    }
+
+    if ideas.national_ideas.is_some() || !ideas.idea_groups.is_empty() {
+        log::debug!(
+            "{} has {} idea groups, national: {:?} ({}/7)",
+            tag,
+            ideas.idea_groups.len(),
+            ideas.national_ideas,
+            ideas.national_ideas_progress
+        );
+    }
+
+    ideas
 }
 
 /// Extract a float value following a pattern like "field=123.456"

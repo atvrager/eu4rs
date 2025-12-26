@@ -233,7 +233,9 @@ pub fn categorize_command(cmd: &Command) -> CommandCategory {
         | Command::BuyTech { .. }
         | Command::EmbraceInstitution { .. }
         | Command::BuildInProvince { .. }
-        | Command::Core { .. } => CommandCategory::Economic,
+        | Command::Core { .. }
+        | Command::PickIdeaGroup { .. }
+        | Command::UnlockIdea { .. } => CommandCategory::Economic,
 
         // Trade: unlimited
         Command::SendMerchant { .. }

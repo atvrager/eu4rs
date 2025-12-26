@@ -1,4 +1,5 @@
 use crate::ai::VisibleWorldState;
+use crate::ideas::IdeaGroupId;
 use crate::state::{ArmyId, FleetId, InstitutionId, PeaceTerms, ProvinceId, Tag, TechType, WarId};
 use crate::trade::{MerchantAction, TradeNodeId};
 use serde::{Deserialize, Serialize};
@@ -110,6 +111,20 @@ pub enum Command {
     },
     EmbraceInstitution {
         institution: InstitutionId,
+    },
+
+    // Ideas
+    /// Pick a new idea group (max 8 per country).
+    /// Cannot pick national idea groups (they are auto-assigned).
+    /// Costs no mana to pick, but unlocking ideas does.
+    PickIdeaGroup {
+        group_id: IdeaGroupId,
+    },
+    /// Unlock the next idea in a picked idea group.
+    /// Costs 400 base mana of the group's category (ADM/DIP/MIL).
+    /// Reduced by idea cost modifiers.
+    UnlockIdea {
+        group_id: IdeaGroupId,
     },
 
     // Trade
