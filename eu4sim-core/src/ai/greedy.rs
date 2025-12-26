@@ -274,6 +274,46 @@ impl GreedyAI {
                 }
             }
             Command::RejectPeace { .. } => -500, // Risky/Proud
+
+            // Buildings - Long-term economic investment
+            Command::BuildInProvince { building, .. } => {
+                // Don't build if low on gold (reserve for emergencies)
+                if state.own_country.treasury < crate::fixed::Fixed::from_int(300) {
+                    return Self::PENALTY_MANA_SAVING;
+                }
+
+                // Prioritize buildings by economic impact
+                // Manufactories are most valuable, then income buildings
+                let building_lower = building.to_lowercase();
+                if building_lower.contains("manufactory")
+                    || building_lower.contains("weapons")
+                    || building_lower.contains("textile")
+                    || building_lower.contains("plantations")
+                {
+                    400 // Manufactories: +1 trade goods produced
+                } else if building_lower.contains("workshop") || building_lower.contains("counting")
+                {
+                    250 // Production efficiency
+                } else if building_lower.contains("temple") || building_lower.contains("cathedral")
+                {
+                    200 // Tax income
+                } else if building_lower.contains("market")
+                    || building_lower.contains("trade")
+                    || building_lower.contains("stock")
+                {
+                    180 // Trade power
+                } else if building_lower.contains("barracks") || building_lower.contains("training")
+                {
+                    150 // Manpower
+                } else if building_lower.contains("fort") {
+                    100 // Defensive - situational value
+                } else {
+                    50 // Other buildings
+                }
+            }
+            Command::CancelConstruction { .. } => -100, // Only cancel if desperate
+            Command::DemolishBuilding { .. } => -500,   // Almost never demolish
+
             Command::Pass => 0,
             _ => 10, // Default for other legal commands
         }

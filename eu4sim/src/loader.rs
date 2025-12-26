@@ -205,6 +205,9 @@ pub fn load_initial_state(
             trade: Default::default(),
             cores,
             coring_progress: None,
+            buildings: Default::default(),
+            building_construction: None,
+            has_port: false, // TODO: Detect from coastal + port buildings
         };
         provinces.insert(id, p.clone());
 
@@ -332,6 +335,10 @@ pub fn load_initial_state(
             trade_nodes: trade_nodes.into(),
             province_trade_node: province_trade_node.into(),
             trade_topology,
+            // Building system
+            building_name_to_id: ImHashMap::default(),
+            building_defs: ImHashMap::default(),
+            building_upgraded_by: ImHashMap::default(),
         },
         adjacency,
     ))

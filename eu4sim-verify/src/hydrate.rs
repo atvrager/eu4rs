@@ -56,6 +56,21 @@ pub fn hydrate_from_save(
                 prov.base_manpower = Fixed::from_f32(mp as f32);
             }
 
+            // Hydrate buildings from save
+            // Note: This requires building_name_to_id to be populated
+            // which happens when building definitions are loaded from game files.
+            for building_name in &save_prov.buildings {
+                if let Some(&building_id) = world.building_name_to_id.get(building_name) {
+                    prov.buildings.insert(building_id);
+                } else {
+                    log::trace!(
+                        "Building '{}' not found in definitions (province {})",
+                        building_name,
+                        id
+                    );
+                }
+            }
+
             provinces_updated += 1;
         }
     }

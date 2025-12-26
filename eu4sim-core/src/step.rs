@@ -70,6 +70,8 @@ pub enum ActionError {
     AlreadyEmbraced { institution: String },
     #[error("Institution {institution} not present in enough development (need 10%)")]
     InstitutionNotPresent { institution: String },
+    #[error("Invalid action: {reason}")]
+    InvalidAction { reason: String },
     #[error("Already at max tech level")]
     MaxTechReached,
     #[error("War declarations blocked during first month (tick {tick} < 30)")]
@@ -212,6 +214,9 @@ pub fn step_world(
 
         // Coring - Progress active coring and complete after 36 months. 🛡️
         crate::systems::tick_coring(&mut new_state);
+
+        // Building construction - Progress and complete buildings
+        crate::systems::tick_building_construction(&mut new_state);
 
         // Recalculate overextension (uncored dev causes OE penalties)
         crate::systems::recalculate_overextension(&mut new_state);
@@ -569,6 +574,27 @@ pub fn available_commands(
                     province: *prov_id,
                     dev_type: DevType::Manpower,
                 });
+            }
+
+            // BuildInProvince - Transform the land with lasting structures.
+            let buildable = crate::systems::available_buildings(
+                prov,
+                country,
+                &state.building_defs,
+                &state.building_upgraded_by,
+            );
+            for building_id in buildable {
+                if let Some(def) = state.building_defs.get(&building_id) {
+                    available.push(Command::BuildInProvince {
+                        province: *prov_id,
+                        building: def.name.clone(),
+                    });
+                }
+            }
+
+            // CancelConstruction - Halt work and reclaim invested gold.
+            if prov.building_construction.is_some() {
+                available.push(Command::CancelConstruction { province: *prov_id });
             }
         }
     }
@@ -1024,13 +1050,26 @@ fn execute_command(
     adjacency: Option<&eu4data::adjacency::AdjacencyGraph>,
 ) -> Result<(), ActionError> {
     match cmd {
-        Command::BuildInProvince {
-            province: _,
-            building: _,
-        } => {
-            // Stub implementation
-            log::info!("Player {} building something (stub)", country_tag);
-            Ok(())
+        Command::BuildInProvince { province, building } => {
+            crate::systems::start_construction(state, *province, building, country_tag).map_err(
+                |e| ActionError::InvalidAction {
+                    reason: e.to_string(),
+                },
+            )
+        }
+        Command::CancelConstruction { province } => {
+            crate::systems::cancel_construction_manual(state, *province, country_tag)
+                .map(|_| ())
+                .map_err(|e| ActionError::InvalidAction {
+                    reason: e.to_string(),
+                })
+        }
+        Command::DemolishBuilding { province, building } => {
+            crate::systems::demolish_building(state, *province, building, country_tag).map_err(
+                |e| ActionError::InvalidAction {
+                    reason: e.to_string(),
+                },
+            )
         }
         Command::RecruitRegiment {
             province,

@@ -298,17 +298,9 @@ fn get_manual_annotations(category: DataCategory) -> HashMap<&'static str, Manua
     // Manual types (below) follow the same pattern but live in top-level modules.
     // To override a generated type, create a manual implementation and add it here.
 
+    // Note: common/countries is excluded from codegen (ruler name weights, not schema data)
+    // Country definitions come from history/countries instead
     match category {
-        DataCategory::Countries => {
-            field!("color", true, true, Some("Essential for political map"));
-            field!(
-                "graphical_culture",
-                false,
-                false,
-                Some("For unit models and city graphics")
-            );
-            field!("<date>", false, false, Some("Time-dependent properties"));
-        }
         DataCategory::HistoryProvinces => {
             // Auto-load from Struct
             for f in crate::history::ProvinceHistory::fields() {
@@ -466,17 +458,9 @@ mod tests {
     #[test]
     fn test_analyze_coverage_mock() {
         let dir = tempdir().unwrap();
-        let common = dir.path().join("common");
-        let countries_dir = common.join("countries");
         let history_dir = dir.path().join("history/provinces");
 
-        fs::create_dir_all(&countries_dir).unwrap();
         fs::create_dir_all(&history_dir).unwrap();
-
-        // Create 2 country files
-        fs::write(countries_dir.join("Sweden.txt"), "color = { 1 1 1 }").unwrap();
-        // Empty file parses OK (it's just empty AST)
-        fs::write(countries_dir.join("Denmark.txt"), "").unwrap();
 
         // Create 1 valid history file and 1 invalid
         let p1 = history_dir.join("1.txt");
@@ -487,15 +471,6 @@ mod tests {
         fs::write(&p2, "key =").unwrap();
 
         let report = analyze_coverage(dir.path(), false).unwrap();
-
-        // Find Countries category
-        let country_cat = report
-            .categories
-            .iter()
-            .find(|c| c.category == DataCategory::Countries)
-            .unwrap();
-        assert_eq!(country_cat.game_files, 2);
-        assert_eq!(country_cat.parsed_files, 2); // Both valid (empty is valid)
 
         // Find HistoryProvinces category
         let hist_cat = report

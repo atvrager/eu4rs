@@ -5,14 +5,25 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 
 ## Advisors History
 
-- **Total Known Fields:** 1
-- **Parsed:** 1 (100.0%)
+- **Total Known Fields:** 12
+- **Parsed:** 11 (91.7%)
 - **Visualized:** 0 (0.0%)
 - **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
-| `advisor` | ✅ | - | - |  |
+| `advisor_id` | ✅ | - | - |  |
+| `culture` | ✅ | - | - |  |
+| `date` | ✅ | - | - |  |
+| `death_date` | ✅ | - | - |  |
+| `discount` | ✅ | - | - |  |
+| `female` | ✅ | - | - |  |
+| `location` | ✅ | - | - |  |
+| `name` | ✅ | - | - |  |
+| `r#type` | ✅ | - | - |  |
+| `religion` | ✅ | - | - |  |
+| `skill` | ✅ | - | - |  |
+| `type` | ❌ | - | - |  |
 
 ## Advisortypes
 
@@ -187,68 +198,35 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 
 ## Buildings
 
-- **Total Known Fields:** 55
-- **Parsed:** 55 (100.0%)
+- **Total Known Fields:** 22
+- **Parsed:** 22 (100.0%)
 - **Visualized:** 0 (0.0%)
 - **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
-| `add_dev_from_building` | ✅ | - | - |  |
-| `add_development_from_building` | ✅ | - | - |  |
-| `add_development_from_upgrading_or_building` | ✅ | - | - |  |
-| `add_province_modifier` | ✅ | - | - |  |
-| `advisor_cost` | ✅ | - | - |  |
-| `allowed_num_of_buildings` | ✅ | - | - |  |
-| `block_slave_raid` | ✅ | - | - |  |
-| `blockade_force_required` | ✅ | - | - |  |
-| `diplomatic_reputation` | ✅ | - | - |  |
-| `factor` | ✅ | - | - |  |
-| `fort_level` | ✅ | - | - |  |
-| `global_trade_goods_size_modifier` | ✅ | - | - |  |
-| `has_dlc` | ✅ | - | - |  |
-| `has_port` | ✅ | - | - |  |
-| `hostile_disembark_speed` | ✅ | - | - |  |
-| `hostile_fleet_attrition` | ✅ | - | - |  |
-| `land_forcelimit` | ✅ | - | - |  |
-| `local_autonomy` | ✅ | - | - |  |
-| `local_defender_dice_roll_bonus` | ✅ | - | - |  |
-| `local_defensiveness` | ✅ | - | - |  |
-| `local_development_cost` | ✅ | - | - |  |
-| `local_governing_cost` | ✅ | - | - |  |
-| `local_governing_cost_increase` | ✅ | - | - |  |
-| `local_has_galleass` | ✅ | - | - |  |
-| `local_has_man_of_war` | ✅ | - | - |  |
-| `local_hostile_attrition` | ✅ | - | - |  |
-| `local_hostile_movement_speed` | ✅ | - | - |  |
-| `local_manpower` | ✅ | - | - |  |
-| `local_manpower_modifier` | ✅ | - | - |  |
-| `local_missionary_strength` | ✅ | - | - |  |
-| `local_production_efficiency` | ✅ | - | - |  |
-| `local_sailors` | ✅ | - | - |  |
-| `local_sailors_modifier` | ✅ | - | - |  |
-| `local_ship_cost` | ✅ | - | - |  |
-| `local_ship_repair` | ✅ | - | - |  |
-| `local_state_maintenance_modifier` | ✅ | - | - |  |
-| `local_tax_modifier` | ✅ | - | - |  |
-| `min_local_autonomy` | ✅ | - | - |  |
+| `ai_will_do` | ✅ | - | - |  |
+| `allow_in_gold_provinces` | ✅ | - | - |  |
+| `bonus_manufactory` | ✅ | - | - |  |
+| `bonus_modifier` | ✅ | - | - |  |
+| `build_trigger` | ✅ | - | - |  |
+| `cost` | ✅ | - | - |  |
+| `government_specific` | ✅ | - | - |  |
+| `influencing_fort` | ✅ | - | - |  |
+| `keep_trigger` | ✅ | - | - |  |
+| `make_obsolete` | ✅ | - | - |  |
+| `manufactory` | ✅ | - | - |  |
 | `modifier` | ✅ | - | - |  |
-| `monthly_reform_progress_building` | ✅ | - | - |  |
-| `naval_forcelimit` | ✅ | - | - |  |
-| `on_built_tax_building_effect` | ✅ | - | - |  |
-| `on_province_tax_building_built_estate_privileges_effect` | ✅ | - | - |  |
-| `on_province_tax_building_destroyed_estate_privileges_effect` | ✅ | - | - |  |
-| `owner` | ✅ | - | - |  |
-| `province_trade_power_modifier` | ✅ | - | - |  |
-| `remove_dev_from_building` | ✅ | - | - |  |
-| `remove_development_from_building` | ✅ | - | - |  |
-| `remove_province_modifier` | ✅ | - | - |  |
-| `ship_recruit_speed` | ✅ | - | - |  |
-| `statewide_governing_cost` | ✅ | - | - |  |
-| `trade_goods_size` | ✅ | - | - |  |
-| `trade_goods_size_modifier` | ✅ | - | - |  |
-| `tribal_development_growth` | ✅ | - | - |  |
-| `update_improved_military_buildings_modifier` | ✅ | - | - |  |
+| `on_built` | ✅ | - | - |  |
+| `on_construction_canceled` | ✅ | - | - |  |
+| `on_construction_started` | ✅ | - | - |  |
+| `on_destroyed` | ✅ | - | - |  |
+| `on_obsolete` | ✅ | - | - |  |
+| `one_per_country` | ✅ | - | - |  |
+| `onmap` | ✅ | - | - |  |
+| `potential` | ✅ | - | - |  |
+| `show_separate` | ✅ | - | - |  |
+| `time` | ✅ | - | - |  |
 
 ## Cb Types
 
@@ -457,40 +435,10 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 | `wool` | ✅ | - | - |  |
 | `zapotek` | ✅ | - | - |  |
 
-## Countries
-
-- **Total Known Fields:** 20
-- **Parsed:** 18 (90.0%)
-- **Visualized:** 1 (5.0%)
-- **Simulated:** 0 (0.0%)
-
-| Field | Parsed | Visualized | Simulated | Notes |
-|-------|--------|------------|-----------|-------|
-| `color` | ✅ | ✅ | - | Essential for political map |
-| `all_your_core_are_belong_to_us` | ✅ | - | - |  |
-| `army_names` | ✅ | - | - |  |
-| `cannot_form_from_collapse_nation` | ✅ | - | - |  |
-| `colonial_parent` | ✅ | - | - |  |
-| `fleet_names` | ✅ | - | - |  |
-| `historical_council` | ✅ | - | - |  |
-| `historical_idea_groups` | ✅ | - | - |  |
-| `historical_score` | ✅ | - | - |  |
-| `historical_units` | ✅ | - | - |  |
-| `leader_names` | ✅ | - | - |  |
-| `monarch_names` | ✅ | - | - |  |
-| `preferred_religion` | ✅ | - | - |  |
-| `random_nation_chance` | ✅ | - | - |  |
-| `revolutionary_colors` | ✅ | - | - |  |
-| `right_to_bear_arms` | ✅ | - | - |  |
-| `ship_names` | ✅ | - | - |  |
-| `special_unit_culture` | ✅ | - | - |  |
-| `<date>` | ❌ | - | - | Time-dependent properties |
-| `graphical_culture` | ❌ | - | - | For unit models and city graphics |
-
 ## Countries History
 
-- **Total Known Fields:** 36
-- **Parsed:** 35 (97.2%)
+- **Total Known Fields:** 69
+- **Parsed:** 69 (100.0%)
 - **Visualized:** 0 (0.0%)
 - **Simulated:** 0 (0.0%)
 
@@ -499,39 +447,72 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 | `add_accepted_culture` | ✅ | - | - |  |
 | `add_army_professionalism` | ✅ | - | - |  |
 | `add_army_tradition` | ✅ | - | - |  |
+| `add_country_modifier` | ✅ | - | - |  |
+| `add_estate_loyalty` | ✅ | - | - |  |
 | `add_government_reform` | ✅ | - | - |  |
 | `add_harmonized_religion` | ✅ | - | - |  |
+| `add_heir_personality` | ✅ | - | - |  |
 | `add_historical_friend` | ✅ | - | - |  |
 | `add_historical_rival` | ✅ | - | - |  |
+| `add_opinion` | ✅ | - | - |  |
 | `add_piety` | ✅ | - | - |  |
 | `add_prestige` | ✅ | - | - |  |
+| `add_queen_personality` | ✅ | - | - |  |
+| `add_ruler_modifier` | ✅ | - | - |  |
+| `add_ruler_personality` | ✅ | - | - |  |
 | `add_truce_with` | ✅ | - | - |  |
 | `capital` | ✅ | - | - |  |
-| `change_brahmins_or_church_land_share_effect` | ✅ | - | - |  |
-| `change_dhimmi_or_church_land_share_effect` | ✅ | - | - |  |
+| `catalonia_area` | ✅ | - | - |  |
 | `change_estate_land_share` | ✅ | - | - |  |
-| `change_jains_or_burghers_land_share_effect` | ✅ | - | - |  |
-| `change_rajputs_or_marathas_or_nobles_land_share_effect` | ✅ | - | - |  |
-| `change_vaisyas_or_burghers_land_share_effect` | ✅ | - | - |  |
-| `date` | ✅ | - | - |  |
+| `change_price` | ✅ | - | - |  |
+| `change_unit_type` | ✅ | - | - |  |
+| `changed_tag_from` | ✅ | - | - |  |
+| `clear_scripted_personalities` | ✅ | - | - |  |
+| `clr_country_flag` | ✅ | - | - |  |
+| `decision` | ✅ | - | - |  |
+| `discover_province` | ✅ | - | - |  |
 | `elector` | ✅ | - | - |  |
-| `federation` | ✅ | - | - |  |
+| `enable_hre_leagues` | ✅ | - | - |  |
+| `estate` | ✅ | - | - |  |
+| `every_province` | ✅ | - | - |  |
 | `fixed_capital` | ✅ | - | - |  |
 | `government` | ✅ | - | - |  |
 | `government_rank` | ✅ | - | - |  |
+| `heir` | ✅ | - | - |  |
+| `hide_ambient_object` | ✅ | - | - |  |
 | `historical_friend` | ✅ | - | - |  |
 | `historical_rival` | ✅ | - | - |  |
+| `join_league` | ✅ | - | - |  |
+| `leader` | ✅ | - | - |  |
+| `leave_league` | ✅ | - | - |  |
+| `mashriq_region` | ✅ | - | - |  |
+| `members` | ✅ | - | - |  |
 | `mercantilism` | ✅ | - | - |  |
+| `monarch` | ✅ | - | - |  |
+| `monarch_consort` | ✅ | - | - |  |
+| `name` | ✅ | - | - |  |
 | `national_focus` | ✅ | - | - |  |
 | `primary_culture` | ✅ | - | - |  |
+| `queen` | ✅ | - | - |  |
 | `religion` | ✅ | - | - |  |
 | `religious_school` | ✅ | - | - |  |
+| `remove_accepted_culture` | ✅ | - | - |  |
+| `remove_country_modifier` | ✅ | - | - |  |
+| `remove_estate_privilege` | ✅ | - | - |  |
+| `revolution_target` | ✅ | - | - |  |
 | `secondary_religion` | ✅ | - | - |  |
+| `set_country_flag` | ✅ | - | - |  |
 | `set_estate_privilege` | ✅ | - | - |  |
+| `set_global_flag` | ✅ | - | - |  |
+| `set_heir_flag` | ✅ | - | - |  |
+| `set_hre_religion_treaty` | ✅ | - | - |  |
+| `set_legacy_government` | ✅ | - | - |  |
+| `set_ruler_flag` | ✅ | - | - |  |
+| `share` | ✅ | - | - |  |
+| `show_ambient_object` | ✅ | - | - |  |
 | `technology_group` | ✅ | - | - |  |
 | `unit_type` | ✅ | - | - |  |
 | `unlock_cult` | ✅ | - | - |  |
-| `<date>` | ❌ | - | - |  |
 
 ## Country Colors
 
@@ -1068,22 +1049,21 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 
 ## Diplomacy History
 
-- **Total Known Fields:** 9
-- **Parsed:** 8 (88.9%)
+- **Total Known Fields:** 8
+- **Parsed:** 8 (100.0%)
 - **Visualized:** 0 (0.0%)
 - **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
-| `alliance` | ✅ | - | - |  |
-| `date` | ✅ | - | - |  |
-| `dependency` | ✅ | - | - |  |
-| `guarantee` | ✅ | - | - |  |
-| `march` | ✅ | - | - |  |
-| `royal_marriage` | ✅ | - | - |  |
-| `union` | ✅ | - | - |  |
-| `vassal` | ✅ | - | - |  |
-| `<date>` | ❌ | - | - |  |
+| `celestial_emperor` | ✅ | - | - |  |
+| `emperor` | ✅ | - | - |  |
+| `end_date` | ✅ | - | - |  |
+| `first` | ✅ | - | - |  |
+| `second` | ✅ | - | - |  |
+| `start_date` | ✅ | - | - |  |
+| `subject_type` | ✅ | - | - |  |
+| `trade_league` | ✅ | - | - |  |
 
 ## Diplomatic Actions
 
@@ -3702,13 +3682,15 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 
 ## Prices
 
-- **Total Known Fields:** 0
-- **Parsed:** 0 (NaN%)
-- **Visualized:** 0 (NaN%)
-- **Simulated:** 0 (NaN%)
+- **Total Known Fields:** 2
+- **Parsed:** 2 (100.0%)
+- **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
+| `base_price` | ✅ | - | - |  |
+| `goldtype` | ✅ | - | - |  |
 
 ## Professionalism
 
@@ -3743,10 +3725,10 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 
 ## Provinces History
 
-- **Total Known Fields:** 37
-- **Parsed:** 36 (97.3%)
-- **Visualized:** 4 (10.8%)
-- **Simulated:** 5 (13.5%)
+- **Total Known Fields:** 57
+- **Parsed:** 56 (98.2%)
+- **Visualized:** 4 (7.0%)
+- **Simulated:** 5 (8.8%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
@@ -3754,6 +3736,7 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 | `owner` | ✅ | ✅ | - |  |
 | `religion` | ✅ | ✅ | - |  |
 | `trade_goods` | ✅ | ✅ | - |  |
+| `add_base_tax` | ✅ | - | - |  |
 | `add_brahmins_or_church_effect` | ✅ | - | - |  |
 | `add_claim` | ✅ | - | - |  |
 | `add_core` | ✅ | - | ✅ |  |
@@ -3763,6 +3746,8 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 | `add_permanent_province_modifier` | ✅ | - | - |  |
 | `add_province_triggered_modifier` | ✅ | - | - |  |
 | `add_rajputs_or_marathas_or_nobles_effect` | ✅ | - | - |  |
+| `add_to_trade_company` | ✅ | - | - |  |
+| `add_trade_company_investment` | ✅ | - | - |  |
 | `add_trade_modifier` | ✅ | - | - |  |
 | `add_vaisyas_or_burghers_effect` | ✅ | - | - |  |
 | `base_manpower` | ✅ | - | ✅ |  |
@@ -3770,22 +3755,39 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 | `base_tax` | ✅ | - | ✅ |  |
 | `capital` | ✅ | - | - |  |
 | `center_of_trade` | ✅ | - | - |  |
+| `change_province_name` | ✅ | - | - |  |
 | `controller` | ✅ | - | - |  |
-| `date` | ✅ | - | - |  |
 | `discovered_by` | ✅ | - | - |  |
+| `duration` | ✅ | - | - |  |
 | `extra_cost` | ✅ | - | - |  |
 | `fort_15th` | ✅ | - | ✅ |  |
+| `fort_16th` | ✅ | - | - |  |
+| `fort_17th` | ✅ | - | - |  |
+| `fort_18th` | ✅ | - | - |  |
 | `hre` | ✅ | - | - |  |
 | `is_city` | ✅ | - | - |  |
+| `key` | ✅ | - | - |  |
 | `latent_trade_goods` | ✅ | - | - |  |
+| `name` | ✅ | - | - |  |
 | `native_ferocity` | ✅ | - | - |  |
 | `native_hostileness` | ✅ | - | - |  |
 | `native_size` | ✅ | - | - |  |
+| `power` | ✅ | - | - |  |
+| `reformation_center` | ✅ | - | - |  |
+| `remove_claim` | ✅ | - | - |  |
+| `remove_core` | ✅ | - | - |  |
+| `remove_province_modifier` | ✅ | - | - |  |
+| `remove_province_triggered_modifier` | ✅ | - | - |  |
+| `rename_capital` | ✅ | - | - |  |
+| `revolt` | ✅ | - | - |  |
 | `revolt_risk` | ✅ | - | - |  |
 | `seat_in_parliament` | ✅ | - | - |  |
+| `set_global_flag` | ✅ | - | - |  |
 | `shipyard` | ✅ | - | - |  |
+| `textile` | ✅ | - | - |  |
 | `tribal_owner` | ✅ | - | - |  |
 | `unrest` | ✅ | - | - |  |
+| `who` | ✅ | - | - |  |
 | `<date>` | ❌ | - | - | Time-dependent properties (not yet parsed) |
 
 ## Rebel Types
@@ -4522,13 +4524,30 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 
 ## Units
 
-- **Total Known Fields:** 0
-- **Parsed:** 0 (NaN%)
-- **Visualized:** 0 (NaN%)
-- **Simulated:** 0 (NaN%)
+- **Total Known Fields:** 17
+- **Parsed:** 16 (94.1%)
+- **Visualized:** 0 (0.0%)
+- **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
+| `base_cannons` | ✅ | - | - |  |
+| `blockade` | ✅ | - | - |  |
+| `defensive_fire` | ✅ | - | - |  |
+| `defensive_morale` | ✅ | - | - |  |
+| `defensive_shock` | ✅ | - | - |  |
+| `hull_size` | ✅ | - | - |  |
+| `maneuver` | ✅ | - | - |  |
+| `offensive_fire` | ✅ | - | - |  |
+| `offensive_morale` | ✅ | - | - |  |
+| `offensive_shock` | ✅ | - | - |  |
+| `r#type` | ✅ | - | - |  |
+| `sail_speed` | ✅ | - | - |  |
+| `sailors` | ✅ | - | - |  |
+| `sprite_level` | ✅ | - | - |  |
+| `trade_power` | ✅ | - | - |  |
+| `unit_type` | ✅ | - | - |  |
+| `type` | ❌ | - | - |  |
 
 ## Units Display
 
@@ -4571,16 +4590,23 @@ It defines which EU4 data fields are currently parsed and used by `eu4rs` projec
 
 ## Wars History
 
-- **Total Known Fields:** 5
-- **Parsed:** 4 (80.0%)
+- **Total Known Fields:** 12
+- **Parsed:** 11 (91.7%)
 - **Visualized:** 0 (0.0%)
 - **Simulated:** 0 (0.0%)
 
 | Field | Parsed | Visualized | Simulated | Notes |
 |-------|--------|------------|-----------|-------|
-| `date` | ✅ | - | - |  |
+| `add_attacker` | ✅ | - | - |  |
+| `add_defender` | ✅ | - | - |  |
+| `battle` | ✅ | - | - |  |
+| `casus_belli` | ✅ | - | - |  |
 | `name` | ✅ | - | - |  |
+| `province` | ✅ | - | - |  |
+| `r#type` | ✅ | - | - |  |
+| `rem_attacker` | ✅ | - | - |  |
+| `rem_defender` | ✅ | - | - |  |
 | `succession` | ✅ | - | - |  |
-| `war_goal` | ✅ | - | - |  |
-| `<date>` | ❌ | - | - |  |
+| `tag` | ✅ | - | - |  |
+| `type` | ❌ | - | - |  |
 

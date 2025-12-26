@@ -484,6 +484,22 @@ pub struct WorldState {
     /// Cached topological order for trade propagation (computed once at init).
     #[serde(skip)]
     pub trade_topology: TradeTopology,
+
+    // =========================================================================
+    // Building System
+    // =========================================================================
+    /// Building name to ID mapping (for save hydration and command parsing).
+    #[serde(skip)]
+    pub building_name_to_id: HashMap<String, crate::modifiers::BuildingId>,
+
+    /// Building definitions (loaded from game files, immutable).
+    #[serde(skip)]
+    pub building_defs: HashMap<crate::modifiers::BuildingId, crate::buildings::BuildingDef>,
+
+    /// Reverse lookup: which building is this one replaced by?
+    /// E.g., Temple -> Cathedral means building_upgraded_by[temple] = cathedral.
+    #[serde(skip)]
+    pub building_upgraded_by: HashMap<crate::modifiers::BuildingId, crate::modifiers::BuildingId>,
 }
 
 impl WorldState {
@@ -684,6 +700,15 @@ pub struct ProvinceState {
     /// In-progress coring (owner country working to establish a core).
     #[serde(default)]
     pub coring_progress: Option<CoringProgress>,
+    /// Completed buildings in this province (bitmask for efficiency).
+    #[serde(default)]
+    pub buildings: crate::buildings::BuildingSet,
+    /// Active building construction (only one at a time per province).
+    #[serde(default)]
+    pub building_construction: Option<crate::buildings::BuildingConstruction>,
+    /// Whether this province has a port (required for naval buildings).
+    #[serde(default)]
+    pub has_port: bool,
 }
 
 /// Progress towards establishing a core on a province.

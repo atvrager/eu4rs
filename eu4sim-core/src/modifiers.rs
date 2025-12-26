@@ -14,6 +14,23 @@ use std::collections::HashMap;
 #[derive(Hash, Eq, PartialEq, Clone, Copy, Debug, Default, Serialize, Deserialize)]
 pub struct TradegoodId(pub u16);
 
+/// Type-safe building identifier.
+///
+/// Sequential IDs (0..N) enable efficient bitmask storage via [`crate::buildings::BuildingSet`].
+/// EU4 has ~70 buildings, so `u8` is sufficient.
+#[derive(
+    Hash, Eq, PartialEq, Clone, Copy, Debug, Default, Serialize, Deserialize, PartialOrd, Ord,
+)]
+pub struct BuildingId(pub u8);
+
+impl BuildingId {
+    /// Convert to bitmask position for [`crate::buildings::BuildingSet`].
+    #[inline]
+    pub fn as_mask(self) -> u128 {
+        1u128 << self.0
+    }
+}
+
 /// Dynamic game state modifiable by events.
 ///
 /// Keys are typed IDs for safety; values are [`Fixed`] for determinism.
@@ -105,5 +122,23 @@ mod tests {
         assert!(mods.goods_price_mods.is_empty());
         assert!(mods.province_production_efficiency.is_empty());
         assert!(mods.province_autonomy.is_empty());
+    }
+
+    #[test]
+    fn test_building_id_equality() {
+        let temple = BuildingId(0);
+        let workshop = BuildingId(1);
+        let temple2 = BuildingId(0);
+
+        assert_eq!(temple, temple2);
+        assert_ne!(temple, workshop);
+    }
+
+    #[test]
+    fn test_building_id_as_mask() {
+        assert_eq!(BuildingId(0).as_mask(), 1);
+        assert_eq!(BuildingId(1).as_mask(), 2);
+        assert_eq!(BuildingId(7).as_mask(), 128);
+        assert_eq!(BuildingId(63).as_mask(), 1u128 << 63);
     }
 }

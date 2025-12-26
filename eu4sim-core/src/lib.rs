@@ -47,6 +47,7 @@
 
 pub mod ai;
 pub mod bounded;
+pub mod buildings;
 pub mod config;
 pub mod trade;
 
@@ -69,11 +70,12 @@ pub mod systems;
 pub mod testing;
 
 pub use bounded::{new_prestige, new_stability, new_tradition, BoundedFixed, BoundedInt};
+pub use buildings::{BuildingConstruction, BuildingDef, BuildingSet, BuildingSlotSource};
 pub use config::SimConfig;
 pub use fixed::Fixed;
 pub use input::{Command, PlayerInputs};
 pub use metrics::SimMetrics;
-pub use modifiers::{GameModifiers, TradegoodId};
+pub use modifiers::{BuildingId, GameModifiers, TradegoodId};
 pub use observer::datagen::{DataGenObserver, TrainingSample};
 pub use observer::event_log::{EventLogObserver, GameEvent};
 pub use observer::{ObserverConfig, ObserverError, ObserverRegistry, SimObserver, Snapshot};

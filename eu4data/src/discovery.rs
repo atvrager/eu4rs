@@ -183,6 +183,11 @@ pub struct DiscoveredCategory {
 pub fn discover_categories(eu4_path: &Path) -> Result<Vec<DiscoveredCategory>, std::io::Error> {
     let mut categories = Vec::new();
 
+    // Categories to skip entirely (not useful for simulation)
+    // - countries: Contains ruler name weights like "'Abbas #0 = 1", not schema data
+    //   This produces a 42k line struct that causes stack overflow in compilation.
+    const EXCLUDED_CATEGORIES: &[&str] = &["countries"];
+
     // Scan common/ subdirectories
     let common_dir = eu4_path.join("common");
     if common_dir.exists() {
@@ -190,13 +195,19 @@ pub fn discover_categories(eu4_path: &Path) -> Result<Vec<DiscoveredCategory>, s
             let entry = entry?;
             if entry.file_type()?.is_dir() {
                 let folder_name = entry.file_name().to_string_lossy().to_string();
+
+                // Skip excluded categories
+                if EXCLUDED_CATEGORIES.contains(&folder_name.as_str()) {
+                    continue;
+                }
                 let variant_name = folder_to_variant(&folder_name);
                 let display_name = folder_to_display(&folder_name);
                 let path_suffix = format!("common/{}", folder_name);
 
                 // Heuristic: most common/ folders are nested (group -> items)
-                // Exception: countries/ is flat
-                let is_nested = folder_name != "countries";
+                // Exceptions: folders where items are directly at root level
+                // Note: "countries" is in EXCLUDED_CATEGORIES, so not listed here
+                let is_nested = !matches!(folder_name.as_str(), "buildings" | "prices" | "units");
 
                 categories.push(DiscoveredCategory {
                     variant_name,
@@ -416,25 +427,50 @@ fn extract_keys_from_ast(root: &EU4TxtParseNode, is_nested: bool) -> Vec<(String
         }
     } else {
         // Flat files: keys are at root level (e.g., countries, province history)
+        // For files like buildings where each top-level key has a block value,
+        // we extract fields from INSIDE those blocks (cost, time, modifier, etc.)
         for child in &root.children {
             if let EU4TxtAstItem::Assignment = child.entry
                 && let Some(lhs) = child.children.first()
+                && let Some(rhs) = child.children.get(1)
             {
-                let mut key = node_to_string(lhs);
-                // Normalize date keys (e.g., 1444.1.1) to <date>
-                if is_date_key(&key) {
-                    key = "<date>".to_string();
-                }
-                // Skip script logic
+                let key = node_to_string(lhs);
+                // Skip script logic at top level
                 if is_script_logic(&key) {
                     continue;
                 }
-                let val = child
-                    .children
-                    .get(1)
-                    .map(node_to_string)
-                    .unwrap_or_default();
-                results.push((key.replace("\"", ""), val));
+
+                // If the RHS is a block, extract fields from inside it
+                // This handles structures like: building_name = { cost = 100 time = 12 }
+                if let EU4TxtAstItem::AssignmentList = rhs.entry {
+                    for field in &rhs.children {
+                        if let EU4TxtAstItem::Assignment = field.entry
+                            && let Some(field_lhs) = field.children.first()
+                        {
+                            let mut field_key = node_to_string(field_lhs);
+                            if is_date_key(&field_key) {
+                                field_key = "<date>".to_string();
+                            }
+                            if is_script_logic(&field_key) {
+                                continue;
+                            }
+                            let field_val = field
+                                .children
+                                .get(1)
+                                .map(node_to_string)
+                                .unwrap_or_default();
+                            results.push((field_key.replace("\"", ""), field_val));
+                        }
+                    }
+                } else {
+                    // Simple key = value at root level
+                    let mut key = key;
+                    if is_date_key(&key) {
+                        key = "<date>".to_string();
+                    }
+                    let val = node_to_string(rhs);
+                    results.push((key.replace("\"", ""), val));
+                }
             }
         }
     }

@@ -615,6 +615,9 @@ mod tests {
                 trade: Default::default(),
                 cores: Default::default(),
                 coring_progress: None,
+                buildings: Default::default(),
+                building_construction: None,
+                has_port: false,
             },
         );
 
@@ -749,6 +752,9 @@ mod tests {
                 trade: Default::default(),
                 cores: Default::default(),
                 coring_progress: None,
+                buildings: Default::default(),
+                building_construction: None,
+                has_port: false,
             },
         );
 
@@ -818,6 +824,9 @@ mod tests {
                 trade: Default::default(),
                 cores: Default::default(),
                 coring_progress: None,
+                buildings: Default::default(),
+                building_construction: None,
+                has_port: false,
             },
         );
 

@@ -43,8 +43,17 @@ pub enum DevType {
 pub enum Command {
     // ===== IMPLEMENTED COMMANDS =====
 
-    // Economic
+    // Economic - Buildings
     BuildInProvince {
+        province: ProvinceId,
+        building: String,
+    },
+    /// Cancel an in-progress construction (100% refund).
+    CancelConstruction {
+        province: ProvinceId,
+    },
+    /// Demolish a completed building (no refund).
+    DemolishBuilding {
         province: ProvinceId,
         building: String,
     },

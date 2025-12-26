@@ -1,6 +1,7 @@
 //! Simulation systems.
 
 pub mod attrition;
+pub mod buildings;
 pub mod coalitions;
 pub mod colonization;
 pub mod combat;
@@ -24,6 +25,12 @@ pub mod trade_value;
 pub mod war_score;
 
 pub use attrition::run_attrition_tick;
+pub use buildings::{
+    available_buildings, can_build, cancel_construction_conquest, cancel_construction_manual,
+    demolish_building, max_building_slots, recompute_fort_level, recompute_province_modifiers,
+    start_construction, tick_building_construction, transfer_construction_diplomatic,
+    validate_manufactory_on_goods_change, BuildingError,
+};
 pub use coalitions::run_coalition_tick;
 pub use colonization::run_colonization_tick;
 pub use combat::run_combat_tick;
