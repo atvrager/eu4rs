@@ -1779,19 +1779,21 @@ fn execute_command(
                         let access_key_1 = (attacker.clone(), defender.clone());
                         let access_key_2 = (defender.clone(), attacker.clone());
 
-                        if state.diplomacy.military_access.remove(&access_key_1).is_some() {
-                            log::debug!(
-                                "War revoked military access: {} → {}",
-                                attacker,
-                                defender
-                            );
+                        if state
+                            .diplomacy
+                            .military_access
+                            .remove(&access_key_1)
+                            .is_some()
+                        {
+                            log::debug!("War revoked military access: {} → {}", attacker, defender);
                         }
-                        if state.diplomacy.military_access.remove(&access_key_2).is_some() {
-                            log::debug!(
-                                "War revoked military access: {} → {}",
-                                defender,
-                                attacker
-                            );
+                        if state
+                            .diplomacy
+                            .military_access
+                            .remove(&access_key_2)
+                            .is_some()
+                        {
+                            log::debug!("War revoked military access: {} → {}", defender, attacker);
                         }
                     }
                 }
@@ -2794,7 +2796,11 @@ fn execute_command(
                 country.last_diplomatic_action = Some(state.date);
             }
 
-            log::info!("{} broke alliance with {} (-25 prestige)", country_tag, target);
+            log::info!(
+                "{} broke alliance with {} (-25 prestige)",
+                country_tag,
+                target
+            );
             Ok(())
         }
         Command::OfferRoyalMarriage { target } => {
@@ -3127,9 +3133,7 @@ fn execute_command(
                 });
             }
             if !state.countries.contains_key(from) {
-                return Err(ActionError::CountryNotFound {
-                    tag: from.clone(),
-                });
+                return Err(ActionError::CountryNotFound { tag: from.clone() });
             }
 
             // Validate offer exists
@@ -3173,9 +3177,7 @@ fn execute_command(
                 });
             }
             if !state.countries.contains_key(from) {
-                return Err(ActionError::CountryNotFound {
-                    tag: from.clone(),
-                });
+                return Err(ActionError::CountryNotFound { tag: from.clone() });
             }
 
             // Validate offer exists
@@ -3204,9 +3206,7 @@ fn execute_command(
                 });
             }
             if !state.countries.contains_key(from) {
-                return Err(ActionError::CountryNotFound {
-                    tag: from.clone(),
-                });
+                return Err(ActionError::CountryNotFound { tag: from.clone() });
             }
 
             // Validate offer exists
@@ -3229,7 +3229,11 @@ fn execute_command(
                 .relations
                 .insert(key, RelationType::RoyalMarriage);
 
-            log::info!("{} accepted royal marriage offer from {}", country_tag, from);
+            log::info!(
+                "{} accepted royal marriage offer from {}",
+                country_tag,
+                from
+            );
             Ok(())
         }
         Command::RejectRoyalMarriage { from } => {
@@ -3242,9 +3246,7 @@ fn execute_command(
                 });
             }
             if !state.countries.contains_key(from) {
-                return Err(ActionError::CountryNotFound {
-                    tag: from.clone(),
-                });
+                return Err(ActionError::CountryNotFound { tag: from.clone() });
             }
 
             // Validate offer exists
@@ -3260,7 +3262,11 @@ fn execute_command(
             // Remove offer
             state.diplomacy.pending_marriage_offers.remove(&offer_key);
 
-            log::info!("{} rejected royal marriage offer from {}", country_tag, from);
+            log::info!(
+                "{} rejected royal marriage offer from {}",
+                country_tag,
+                from
+            );
             Ok(())
         }
         Command::GrantMilitaryAccess { to } => {
@@ -3273,9 +3279,7 @@ fn execute_command(
                 });
             }
             if !state.countries.contains_key(to) {
-                return Err(ActionError::CountryNotFound {
-                    tag: to.clone(),
-                });
+                return Err(ActionError::CountryNotFound { tag: to.clone() });
             }
 
             // Validate request exists
@@ -3310,9 +3314,7 @@ fn execute_command(
                 });
             }
             if !state.countries.contains_key(to) {
-                return Err(ActionError::CountryNotFound {
-                    tag: to.clone(),
-                });
+                return Err(ActionError::CountryNotFound { tag: to.clone() });
             }
 
             // Validate request exists
@@ -5936,7 +5938,11 @@ mod tests {
 
         // Diplomatic cooldown should be set
         assert_eq!(
-            new_state.countries.get("SWE").unwrap().last_diplomatic_action,
+            new_state
+                .countries
+                .get("SWE")
+                .unwrap()
+                .last_diplomatic_action,
             Some(new_state.date)
         );
     }
@@ -6131,7 +6137,11 @@ mod tests {
 
         // Diplomatic cooldown should be set
         assert_eq!(
-            new_state.countries.get("SWE").unwrap().last_diplomatic_action,
+            new_state
+                .countries
+                .get("SWE")
+                .unwrap()
+                .last_diplomatic_action,
             Some(new_state.date)
         );
     }

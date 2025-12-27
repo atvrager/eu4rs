@@ -204,17 +204,24 @@ Expanded AI capabilities and economic depth.
   - Crown land management (`SeizeLand`, `SaleLand` commands)
   - 26 estate-specific modifiers (loyalty, influence, privilege slots)
   - Disaster detection (100% influence + <30% loyalty)
+- [x] **Advanced Diplomacy Commands**: Full diplomatic relations system (14 commands + integration)
+  - **Alliances** (4): `OfferAlliance`, `AcceptAlliance`, `RejectAlliance`, `BreakAlliance`
+  - **Royal Marriages** (4): `OfferRoyalMarriage`, `AcceptRoyalMarriage`, `RejectRoyalMarriage`, `BreakRoyalMarriage`
+  - **Military Access** (4): `RequestMilitaryAccess`, `GrantMilitaryAccess`, `DenyMilitaryAccess`, `CancelMilitaryAccess`
+  - **Rivals** (2): `SetRival`, `RemoveRival`
+  - Pending offer tracking (directional offers with acceptance/rejection)
+  - Mutual offer auto-acceptance for alliances and marriages
+  - Diplomatic cooldown system (one diplomatic action per day)
+  - War integration: declarations automatically break alliances, royal marriages, and military access between enemies
+  - Royal marriage war penalty: -1 stability when attacking an RM partner
+  - AI integration: neighbor-based offer generation, response handling
+  - 25+ test cases covering all commands and integration points
 
 ### In Progress
 - [ ] **Alliance Enforcement**: Defensive pact call-to-arms
   - Data structures exist, `CallAllyToWar` / `JoinWar` commands defined
   - Pending diplomacy queue implemented
   - **Missing**: Acceptance logic, honor penalty
-- [ ] **Advanced Diplomacy Commands**: 12 stubbed commands need implementation
-  - `OfferAlliance`, `BreakAlliance`, `AcceptAlliance`, `RejectAlliance`
-  - `OfferRoyalMarriage`, `BreakRoyalMarriage`, `AcceptRoyalMarriage`, `RejectRoyalMarriage`
-  - `RequestMilitaryAccess`, `CancelMilitaryAccess`, `GrantMilitaryAccess`, `DenyMilitaryAccess`
-  - `SetRival`, `RemoveRival`
 - [ ] **Religion Commands**: 3 stubbed commands need implementation
   - `AssignMissionary`, `RecallMissionary`, `ConvertCountryReligion`
 - [ ] **Casus Belli System**: War justification mechanics beyond no-CB
