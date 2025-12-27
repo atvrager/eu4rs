@@ -993,6 +993,90 @@ pub struct GameModifiers {
     /// Country-level global monthly devastation modifier.
     /// Applied as additive modifier to monthly devastation change.
     pub country_global_monthly_devastation: HashMap<Tag, Fixed>,
+
+    // === Batch 1: Positions 21-25 (Frequency-Driven) ===
+    /// Country-level monarch military power bonus.
+    /// Applied as additive bonus to ruler's military skill.
+    pub country_monarch_military_power: HashMap<Tag, Fixed>,
+
+    /// Country-level center of trade upgrade cost modifier.
+    /// Applied as: (1 + modifier) multiplier to upgrade cost.
+    pub country_center_of_trade_upgrade_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level accept vassalization reasons modifier.
+    /// Applied as: additive bonus to AI acceptance of vassalization.
+    pub country_accept_vassalization_reasons: HashMap<Tag, Fixed>,
+
+    /// Country-level Brahmins (Hindu) estate loyalty modifier.
+    /// Applied as: additive bonus to estate loyalty.
+    pub country_brahmins_hindu_loyalty_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level Brahmins (Muslim) estate loyalty modifier.
+    /// Applied as: additive bonus to estate loyalty.
+    pub country_brahmins_muslim_loyalty_modifier: HashMap<Tag, Fixed>,
+
+    // === Batch 2: Positions 26-30 (Frequency-Driven) ===
+    /// Country-level tolerance of heathens capacity modifier.
+    /// Applied as: additive bonus to max tolerance of heathens.
+    pub country_tolerance_of_heathens_capacity: HashMap<Tag, Fixed>,
+
+    /// Country-level possible military policy slots modifier.
+    /// Applied as: additive bonus to available MIL policy slots.
+    pub country_possible_mil_policy: HashMap<Tag, Fixed>,
+
+    /// Country-level curia powers cost modifier.
+    /// Applied as: (1 + modifier) multiplier to curia power costs.
+    pub country_curia_powers_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level expand administration cost modifier.
+    /// Applied as: (1 + modifier) multiplier to expansion cost.
+    pub country_expand_administration_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level loyalty change on revoked privilege modifier.
+    /// Applied as: additive modifier to loyalty penalty when revoking.
+    pub country_loyalty_change_on_revoked: HashMap<Tag, Fixed>,
+
+    // === Batch 3: Positions 31-35 (Frequency-Driven) ===
+    /// Country-level great project upgrade cost modifier.
+    /// Applied as: (1 + modifier) multiplier to upgrade cost.
+    pub country_great_project_upgrade_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level gold depletion chance modifier.
+    /// Applied as: (1 + modifier) multiplier to depletion chance.
+    pub country_gold_depletion_chance_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level global supply limit modifier.
+    /// Applied as: (1 + modifier) multiplier to province supply limits.
+    pub country_global_supply_limit_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level general cost modifier.
+    /// Applied as: (1 + modifier) multiplier to general recruitment cost.
+    pub country_general_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level leader cost modifier (generals + admirals).
+    /// Applied as: (1 + modifier) multiplier to all leader costs.
+    pub country_leader_cost: HashMap<Tag, Fixed>,
+
+    // === Batch 4: Positions 36-40 (Frequency-Driven) ===
+    /// Country-level cavalry fire pips bonus.
+    /// Applied as: additive bonus to cavalry fire pips.
+    pub country_cavalry_fire: HashMap<Tag, Fixed>,
+
+    /// Country-level war taxes cost modifier.
+    /// Applied as: (1 + modifier) multiplier to war taxes cost.
+    pub country_war_taxes_cost_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level Vaisyas estate loyalty modifier.
+    /// Applied as: additive bonus to estate loyalty.
+    pub country_vaisyas_loyalty_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level max hostile attrition modifier.
+    /// Applied as: additive bonus to attrition dealt to enemies.
+    pub country_max_hostile_attrition: HashMap<Tag, Fixed>,
+
+    /// Country-level nobles influence modifier.
+    /// Applied as: additive modifier to nobles estate influence.
+    pub country_nobles_influence_modifier: HashMap<Tag, Fixed>,
 }
 
 impl GameModifiers {

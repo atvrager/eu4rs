@@ -369,6 +369,30 @@ impl ModifierStubTracker {
             // Province Management
                 | "manpower_in_true_faith_provinces"
                 | "global_monthly_devastation"
+            // Batch 1: Positions 21-25 (Frequency-Driven)
+                | "monarch_military_power"
+                | "center_of_trade_upgrade_cost"
+                | "accept_vassalization_reasons"
+                | "brahmins_hindu_loyalty_modifier"
+                | "brahmins_muslim_loyalty_modifier"
+            // Batch 2: Positions 26-30 (Frequency-Driven)
+                | "tolerance_of_heathens_capacity"
+                | "possible_mil_policy"
+                | "curia_powers_cost"
+                | "expand_administration_cost"
+                | "loyalty_change_on_revoked"
+            // Batch 3: Positions 31-35 (Frequency-Driven)
+                | "great_project_upgrade_cost"
+                | "gold_depletion_chance_modifier"
+                | "global_supply_limit_modifier"
+                | "general_cost"
+                | "leader_cost"
+            // Batch 4: Positions 36-40 (Frequency-Driven)
+                | "cavalry_fire"
+                | "war_taxes_cost_modifier"
+                | "vaisyas_loyalty_modifier"
+                | "max_hostile_attrition"
+                | "nobles_influence_modifier"
         )
     }
 }
@@ -2838,6 +2862,234 @@ pub fn apply_modifier(
                 .unwrap_or(Fixed::ZERO);
             modifiers
                 .country_global_monthly_devastation
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Batch 1: Positions 21-25 (Frequency-Driven) ===
+        "monarch_military_power" => {
+            let current = modifiers
+                .country_monarch_military_power
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_monarch_military_power
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "center_of_trade_upgrade_cost" => {
+            let current = modifiers
+                .country_center_of_trade_upgrade_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_center_of_trade_upgrade_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "accept_vassalization_reasons" => {
+            let current = modifiers
+                .country_accept_vassalization_reasons
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_accept_vassalization_reasons
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "brahmins_hindu_loyalty_modifier" => {
+            let current = modifiers
+                .country_brahmins_hindu_loyalty_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_brahmins_hindu_loyalty_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "brahmins_muslim_loyalty_modifier" => {
+            let current = modifiers
+                .country_brahmins_muslim_loyalty_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_brahmins_muslim_loyalty_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Batch 2: Positions 26-30 (Frequency-Driven) ===
+        "tolerance_of_heathens_capacity" => {
+            let current = modifiers
+                .country_tolerance_of_heathens_capacity
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_tolerance_of_heathens_capacity
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "possible_mil_policy" => {
+            let current = modifiers
+                .country_possible_mil_policy
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_possible_mil_policy
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "curia_powers_cost" => {
+            let current = modifiers
+                .country_curia_powers_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_curia_powers_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "expand_administration_cost" => {
+            let current = modifiers
+                .country_expand_administration_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_expand_administration_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "loyalty_change_on_revoked" => {
+            let current = modifiers
+                .country_loyalty_change_on_revoked
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_loyalty_change_on_revoked
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Batch 3: Positions 31-35 (Frequency-Driven) ===
+        "great_project_upgrade_cost" => {
+            let current = modifiers
+                .country_great_project_upgrade_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_great_project_upgrade_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "gold_depletion_chance_modifier" => {
+            let current = modifiers
+                .country_gold_depletion_chance_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_gold_depletion_chance_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "global_supply_limit_modifier" => {
+            let current = modifiers
+                .country_global_supply_limit_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_global_supply_limit_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "general_cost" => {
+            let current = modifiers
+                .country_general_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_general_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "leader_cost" => {
+            let current = modifiers
+                .country_leader_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_leader_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Batch 4: Positions 36-40 (Frequency-Driven) ===
+        "cavalry_fire" => {
+            let current = modifiers
+                .country_cavalry_fire
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_cavalry_fire
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "war_taxes_cost_modifier" => {
+            let current = modifiers
+                .country_war_taxes_cost_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_war_taxes_cost_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "vaisyas_loyalty_modifier" => {
+            let current = modifiers
+                .country_vaisyas_loyalty_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_vaisyas_loyalty_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "max_hostile_attrition" => {
+            let current = modifiers
+                .country_max_hostile_attrition
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_max_hostile_attrition
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "nobles_influence_modifier" => {
+            let current = modifiers
+                .country_nobles_influence_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_nobles_influence_modifier
                 .insert(tag.to_string(), current + entry.value);
             true
         }
