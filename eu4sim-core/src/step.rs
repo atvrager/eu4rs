@@ -1748,6 +1748,55 @@ fn execute_command(
             call_subjects_to_war(state, war_id, country_tag, crate::input::WarSide::Attacker);
             call_subjects_to_war(state, war_id, target, crate::input::WarSide::Defender);
 
+            // Break diplomatic relations between enemies (war cleanup)
+            // Get the war with updated attacker/defender lists (after allies/subjects joined)
+            if let Some(war) = state.diplomacy.wars.get(&war_id) {
+                let attackers = war.attackers.clone();
+                let defenders = war.defenders.clone();
+
+                for attacker in &attackers {
+                    for defender in &defenders {
+                        let key = DiplomacyState::sorted_pair(attacker, defender);
+
+                        // Remove alliance if exists
+                        if state.diplomacy.relations.get(&key) == Some(&RelationType::Alliance) {
+                            state.diplomacy.relations.remove(&key);
+                            log::debug!("War broke alliance between {} and {}", attacker, defender);
+                        }
+
+                        // Remove royal marriage if exists
+                        if state.diplomacy.relations.get(&key) == Some(&RelationType::RoyalMarriage)
+                        {
+                            state.diplomacy.relations.remove(&key);
+                            log::debug!(
+                                "War broke royal marriage between {} and {}",
+                                attacker,
+                                defender
+                            );
+                        }
+
+                        // Revoke military access (both directions)
+                        let access_key_1 = (attacker.clone(), defender.clone());
+                        let access_key_2 = (defender.clone(), attacker.clone());
+
+                        if state.diplomacy.military_access.remove(&access_key_1).is_some() {
+                            log::debug!(
+                                "War revoked military access: {} → {}",
+                                attacker,
+                                defender
+                            );
+                        }
+                        if state.diplomacy.military_access.remove(&access_key_2).is_some() {
+                            log::debug!(
+                                "War revoked military access: {} → {}",
+                                defender,
+                                attacker
+                            );
+                        }
+                    }
+                }
+            }
+
             // Mark diplomatic action cooldown
             if let Some(country) = state.countries.get_mut(country_tag) {
                 country.last_diplomatic_action = Some(state.date);
@@ -6598,8 +6647,6 @@ mod tests {
 
     #[test]
     fn test_war_breaks_royal_marriage() {
-        // This test will be properly implemented in Commit 6 (war integration cleanup)
-        // For now, verify that wars are created (marriage breaking happens in Commit 6)
         let mut state = WorldStateBuilder::new()
             .date(1444, 12, 11)
             .with_country("SWE")
@@ -6628,8 +6675,8 @@ mod tests {
         // War should be created
         assert_eq!(state.diplomacy.wars.len(), 1);
 
-        // NOTE: Marriage breaking on war will be tested properly in Commit 6
-        // For now, the marriage still exists (limitation)
+        // Royal marriage should be broken by war
+        assert!(state.diplomacy.relations.get(&key).is_none());
     }
 
     #[test]
@@ -6794,8 +6841,6 @@ mod tests {
 
     #[test]
     fn test_war_revokes_military_access() {
-        // This test will be properly implemented in Commit 6 (war integration cleanup)
-        // For now, verify that wars are created (access revocation happens in Commit 6)
         let mut state = WorldStateBuilder::new()
             .date(1444, 12, 11)
             .with_country("SWE")
@@ -6823,7 +6868,75 @@ mod tests {
         // War should be created
         assert_eq!(state.diplomacy.wars.len(), 1);
 
-        // NOTE: Access revocation on war will be tested properly in Commit 6
-        // For now, the access still exists (limitation)
+        // Military access should be revoked by war
+        assert!(!state
+            .diplomacy
+            .military_access
+            .contains_key(&("DEN".to_string(), "SWE".to_string())));
+    }
+
+    #[test]
+    fn test_war_breaks_all_relations() {
+        // Comprehensive test: war should break all diplomatic relations between enemies
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .with_country("NOR")
+            .build();
+
+        // Set up multiple relations between countries
+        // SWE and DEN: alliance + royal marriage + military access
+        let key_swe_den = DiplomacyState::sorted_pair("SWE", "DEN");
+        state
+            .diplomacy
+            .relations
+            .insert(key_swe_den.clone(), RelationType::Alliance);
+        state
+            .diplomacy
+            .military_access
+            .insert(("SWE".to_string(), "DEN".to_string()), true);
+        state
+            .diplomacy
+            .military_access
+            .insert(("DEN".to_string(), "SWE".to_string()), true);
+
+        // Create alliance between DEN and NOR (this should remain after war)
+        let key_den_nor = DiplomacyState::sorted_pair("DEN", "NOR");
+        state
+            .diplomacy
+            .relations
+            .insert(key_den_nor.clone(), RelationType::Alliance);
+
+        // SWE declares war on DEN
+        execute_command(
+            &mut state,
+            "SWE",
+            &Command::DeclareWar {
+                target: "DEN".to_string(),
+                cb: None,
+            },
+            None,
+        )
+        .unwrap();
+
+        // Alliance between SWE and DEN should be broken
+        assert!(state.diplomacy.relations.get(&key_swe_den).is_none());
+
+        // Military access (both directions) should be revoked
+        assert!(!state
+            .diplomacy
+            .military_access
+            .contains_key(&("SWE".to_string(), "DEN".to_string())));
+        assert!(!state
+            .diplomacy
+            .military_access
+            .contains_key(&("DEN".to_string(), "SWE".to_string())));
+
+        // Alliance between DEN and NOR should remain (not at war)
+        assert_eq!(
+            state.diplomacy.relations.get(&key_den_nor),
+            Some(&RelationType::Alliance)
+        );
     }
 }
