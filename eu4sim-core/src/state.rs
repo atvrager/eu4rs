@@ -818,6 +818,11 @@ pub struct CountryState {
     /// Estate state (loyalty, influence, privileges).
     #[serde(default)]
     pub estates: crate::estates::CountryEstateState,
+    /// Countries marked as rivals (max 3).
+    /// Rivals provide power projection bonus and AE reduction against them.
+    /// Unilateral relationship: you can rival someone who doesn't rival you back.
+    #[serde(default)]
+    pub rivals: std::collections::HashSet<Tag>,
 }
 
 /// Breakdown of monthly income by source.
@@ -862,6 +867,7 @@ impl Default for CountryState {
             enabled_policies: Vec::new(),
             policy_slots: 0,
             estates: crate::estates::CountryEstateState::default(),
+            rivals: std::collections::HashSet::new(),
         }
     }
 }
@@ -870,6 +876,7 @@ impl Default for CountryState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RelationType {
     Alliance,
+    RoyalMarriage,
     Rival,
 }
 
@@ -977,6 +984,16 @@ pub struct DiplomacyState {
     /// Keyed by subject since each country can only have one overlord.
     #[serde(default)]
     pub subjects: HashMap<Tag, SubjectRelationship>,
+    /// Pending alliance offers awaiting response: (offerer, target) -> date offered
+    /// Unsorted pairs (directional: who → whom)
+    #[serde(default)]
+    pub pending_alliance_offers: HashMap<(Tag, Tag), Date>,
+    /// Pending royal marriage offers awaiting response: (offerer, target) -> date offered
+    #[serde(default)]
+    pub pending_marriage_offers: HashMap<(Tag, Tag), Date>,
+    /// Pending military access requests awaiting response: (requester, grantor) -> date requested
+    #[serde(default)]
+    pub pending_access_requests: HashMap<(Tag, Tag), Date>,
 }
 
 impl DiplomacyState {
