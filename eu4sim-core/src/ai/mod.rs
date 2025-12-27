@@ -220,7 +220,11 @@ pub fn categorize_command(cmd: &Command) -> CommandCategory {
         | Command::OfferAlliance { .. }
         | Command::AcceptAlliance { .. }
         | Command::RejectAlliance { .. }
-        | Command::BreakAlliance { .. } => CommandCategory::Diplomatic,
+        | Command::BreakAlliance { .. }
+        | Command::OfferRoyalMarriage { .. }
+        | Command::AcceptRoyalMarriage { .. }
+        | Command::RejectRoyalMarriage { .. }
+        | Command::BreakRoyalMarriage { .. } => CommandCategory::Diplomatic,
 
         // Military: unlimited
         Command::Move { .. }
