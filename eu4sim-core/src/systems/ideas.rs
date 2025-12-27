@@ -306,6 +306,69 @@ impl ModifierStubTracker {
                 | "embracement_cost"
             // Military Costs
                 | "artillery_cost"
+            // Policy-Specific Modifiers (49 modifiers)
+            // Colonization
+                | "colonist_placement_chance"
+                | "native_uprising_chance"
+                | "native_assimilation"
+            // Naval Combat & Morale
+                | "recover_navy_morale_speed"
+                | "global_naval_engagement_modifier"
+                | "naval_tradition_from_battle"
+                | "prestige_from_naval"
+                | "disengagement_chance"
+                | "leader_naval_shock"
+                | "movement_speed_in_fleet_modifier"
+                | "morale_damage_received"
+            // Army Composition
+                | "artillery_fraction"
+                | "cavalry_fraction"
+                | "infantry_fraction"
+            // Economy & Trade
+                | "mercantilism_cost"
+                | "global_tariffs"
+                | "monthly_favor_modifier"
+            // Siege & Fortification
+                | "siege_blockade_progress"
+                | "blockade_efficiency"
+                | "garrison_damage"
+                | "artillery_level_modifier"
+                | "artillery_levels_available_vs_fort"
+            // Military Costs & Efficiency
+                | "morale_damage"
+                | "reinforce_cost_modifier"
+                | "drill_gain_modifier"
+                | "yearly_army_professionalism"
+                | "special_unit_forcelimit"
+            // Development & Culture
+                | "development_cost_in_primary_culture"
+                | "colony_development_boost"
+            // Diplomacy & Subjects
+                | "rival_border_fort_maintenance"
+                | "reduced_liberty_desire_on_same_continent"
+                | "years_to_integrate_personal_union"
+                | "monthly_federation_favor_growth"
+                | "all_estate_loyalty_equilibrium"
+            // Religion & Authority
+                | "prestige_per_development_from_conversion"
+                | "yearly_patriarch_authority"
+                | "yearly_harmony"
+                | "yearly_karma_decay"
+            // Government & Leaders
+                | "innovativeness_gain"
+                | "raze_power_gain"
+                | "monarch_lifespan"
+                | "reelection_cost"
+                | "mil_advisor_cost"
+            // War & Diplomacy
+                | "warscore_cost_vs_other_religion"
+                | "global_rebel_suppression_efficiency"
+            // Naval Infrastructure
+                | "global_ship_repair"
+                | "transport_attrition"
+            // Province Management
+                | "manpower_in_true_faith_provinces"
+                | "global_monthly_devastation"
         )
     }
 }
@@ -2208,6 +2271,573 @@ pub fn apply_modifier(
                 .unwrap_or(Fixed::ZERO);
             modifiers
                 .country_artillery_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Policy-Specific Modifiers (49 modifiers) ===
+
+        // === Colonization ===
+        "colonist_placement_chance" => {
+            let current = modifiers
+                .country_colonist_placement_chance
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_colonist_placement_chance
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "native_uprising_chance" => {
+            let current = modifiers
+                .country_native_uprising_chance
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_native_uprising_chance
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "native_assimilation" => {
+            let current = modifiers
+                .country_native_assimilation
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_native_assimilation
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Naval Combat & Morale ===
+        "recover_navy_morale_speed" => {
+            let current = modifiers
+                .country_recover_navy_morale_speed
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_recover_navy_morale_speed
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "global_naval_engagement_modifier" => {
+            let current = modifiers
+                .country_global_naval_engagement_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_global_naval_engagement_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "naval_tradition_from_battle" => {
+            let current = modifiers
+                .country_naval_tradition_from_battle
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_naval_tradition_from_battle
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "prestige_from_naval" => {
+            let current = modifiers
+                .country_prestige_from_naval
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_prestige_from_naval
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "disengagement_chance" => {
+            let current = modifiers
+                .country_disengagement_chance
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_disengagement_chance
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "leader_naval_shock" => {
+            let current = modifiers
+                .country_leader_naval_shock
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_leader_naval_shock
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "movement_speed_in_fleet_modifier" => {
+            let current = modifiers
+                .country_movement_speed_in_fleet_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_movement_speed_in_fleet_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "morale_damage_received" => {
+            let current = modifiers
+                .country_morale_damage_received
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_morale_damage_received
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Army Composition ===
+        "artillery_fraction" => {
+            let current = modifiers
+                .country_artillery_fraction
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_artillery_fraction
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "cavalry_fraction" => {
+            let current = modifiers
+                .country_cavalry_fraction
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_cavalry_fraction
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "infantry_fraction" => {
+            let current = modifiers
+                .country_infantry_fraction
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_infantry_fraction
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Economy & Trade ===
+        "mercantilism_cost" => {
+            let current = modifiers
+                .country_mercantilism_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_mercantilism_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "global_tariffs" => {
+            let current = modifiers
+                .country_global_tariffs
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_global_tariffs
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "monthly_favor_modifier" => {
+            let current = modifiers
+                .country_monthly_favor_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_monthly_favor_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Siege & Fortification ===
+        "siege_blockade_progress" => {
+            let current = modifiers
+                .country_siege_blockade_progress
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_siege_blockade_progress
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "blockade_efficiency" => {
+            let current = modifiers
+                .country_blockade_efficiency
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_blockade_efficiency
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "garrison_damage" => {
+            let current = modifiers
+                .country_garrison_damage
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_garrison_damage
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "artillery_level_modifier" => {
+            let current = modifiers
+                .country_artillery_level_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_artillery_level_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "artillery_levels_available_vs_fort" => {
+            let current = modifiers
+                .country_artillery_levels_available_vs_fort
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_artillery_levels_available_vs_fort
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Military Costs & Efficiency ===
+        "morale_damage" => {
+            let current = modifiers
+                .country_morale_damage
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_morale_damage
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "reinforce_cost_modifier" => {
+            let current = modifiers
+                .country_reinforce_cost_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_reinforce_cost_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "drill_gain_modifier" => {
+            let current = modifiers
+                .country_drill_gain_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_drill_gain_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "yearly_army_professionalism" => {
+            let current = modifiers
+                .country_yearly_army_professionalism
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_yearly_army_professionalism
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "special_unit_forcelimit" => {
+            let current = modifiers
+                .country_special_unit_forcelimit
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_special_unit_forcelimit
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Development & Culture ===
+        "development_cost_in_primary_culture" => {
+            let current = modifiers
+                .country_development_cost_in_primary_culture
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_development_cost_in_primary_culture
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "colony_development_boost" => {
+            let current = modifiers
+                .country_colony_development_boost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_colony_development_boost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Diplomacy & Subjects ===
+        "rival_border_fort_maintenance" => {
+            let current = modifiers
+                .country_rival_border_fort_maintenance
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_rival_border_fort_maintenance
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "reduced_liberty_desire_on_same_continent" => {
+            let current = modifiers
+                .country_reduced_liberty_desire_on_same_continent
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_reduced_liberty_desire_on_same_continent
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "years_to_integrate_personal_union" => {
+            let current = modifiers
+                .country_years_to_integrate_personal_union
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_years_to_integrate_personal_union
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "monthly_federation_favor_growth" => {
+            let current = modifiers
+                .country_monthly_federation_favor_growth
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_monthly_federation_favor_growth
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "all_estate_loyalty_equilibrium" => {
+            let current = modifiers
+                .country_all_estate_loyalty_equilibrium
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_all_estate_loyalty_equilibrium
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Religion & Authority ===
+        "prestige_per_development_from_conversion" => {
+            let current = modifiers
+                .country_prestige_per_development_from_conversion
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_prestige_per_development_from_conversion
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "yearly_patriarch_authority" => {
+            let current = modifiers
+                .country_yearly_patriarch_authority
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_yearly_patriarch_authority
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "yearly_harmony" => {
+            let current = modifiers
+                .country_yearly_harmony
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_yearly_harmony
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "yearly_karma_decay" => {
+            let current = modifiers
+                .country_yearly_karma_decay
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_yearly_karma_decay
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Government & Leaders ===
+        "innovativeness_gain" => {
+            let current = modifiers
+                .country_innovativeness_gain
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_innovativeness_gain
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "raze_power_gain" => {
+            let current = modifiers
+                .country_raze_power_gain
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_raze_power_gain
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "monarch_lifespan" => {
+            let current = modifiers
+                .country_monarch_lifespan
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_monarch_lifespan
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "reelection_cost" => {
+            let current = modifiers
+                .country_reelection_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_reelection_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "mil_advisor_cost" => {
+            let current = modifiers
+                .country_mil_advisor_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_mil_advisor_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === War & Diplomacy ===
+        "warscore_cost_vs_other_religion" => {
+            let current = modifiers
+                .country_warscore_cost_vs_other_religion
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_warscore_cost_vs_other_religion
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "global_rebel_suppression_efficiency" => {
+            let current = modifiers
+                .country_global_rebel_suppression_efficiency
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_global_rebel_suppression_efficiency
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Naval Infrastructure ===
+        "global_ship_repair" => {
+            let current = modifiers
+                .country_global_ship_repair
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_global_ship_repair
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "transport_attrition" => {
+            let current = modifiers
+                .country_transport_attrition
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_transport_attrition
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Province Management ===
+        "manpower_in_true_faith_provinces" => {
+            let current = modifiers
+                .country_manpower_in_true_faith_provinces
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_manpower_in_true_faith_provinces
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "global_monthly_devastation" => {
+            let current = modifiers
+                .country_global_monthly_devastation
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_global_monthly_devastation
                 .insert(tag.to_string(), current + entry.value);
             true
         }

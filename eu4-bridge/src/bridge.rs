@@ -152,6 +152,8 @@ impl ExtractedState {
             overextension: Fixed::ZERO, // Can't extract from OCR yet
             aggressive_expansion: Default::default(), // Can't extract from OCR yet
             ideas: Default::default(),  // Can't extract from OCR yet
+            enabled_policies: Default::default(), // Can't extract from OCR yet
+            policy_slots: 0,            // Can't extract from OCR yet
         };
 
         VisibleWorldState {

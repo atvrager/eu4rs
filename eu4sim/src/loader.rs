@@ -480,6 +480,23 @@ pub fn load_initial_state(
         );
     }
 
+    // 7b. Calculate policy slots and apply policy modifiers
+    log::info!("Calculating policy slots and applying policy modifiers...");
+    let policy_registry = eu4sim_core::systems::PolicyRegistry::new();
+
+    for (tag, country) in &mut countries {
+        // Calculate available policy slots based on completed idea groups
+        country.policy_slots = eu4sim_core::systems::calculate_policy_slots(&country.ideas);
+
+        // Apply policy modifiers (currently empty, will be populated when loading policies)
+        eu4sim_core::systems::apply_policy_modifiers(
+            tag,
+            &country.enabled_policies,
+            &policy_registry,
+            &mut modifiers,
+        );
+    }
+
     // 8. Assemble State
     Ok((
         WorldState {
@@ -523,6 +540,8 @@ pub fn load_initial_state(
             subject_types,
             // Idea system
             idea_groups,
+            // Policy system
+            policies: policy_registry,
         },
         adjacency,
     ))

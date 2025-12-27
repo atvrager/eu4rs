@@ -50,7 +50,10 @@ pub use mana::run_mana_tick;
 pub use manpower::run_manpower_tick;
 pub use movement::run_movement_tick;
 pub use naval_combat::run_naval_combat_tick;
-pub use policies::{apply_policy_modifiers, PolicyCategory, PolicyDef, PolicyId, PolicyRegistry};
+pub use policies::{
+    apply_policy_modifiers, calculate_policy_slots, can_enable_policy, disable_policy,
+    enable_policy, PolicyCategory, PolicyDef, PolicyError, PolicyId, PolicyRegistry,
+};
 pub use production::{run_production_tick, EconomyConfig};
 pub use reformation::run_reformation_tick;
 pub use siege::{run_siege_tick, start_occupation};

@@ -50,6 +50,8 @@ impl WorldStateBuilder {
                 subject_types: Default::default(),
                 // Idea system
                 idea_groups: Default::default(),
+                // Policy system
+                policies: Default::default(),
             },
         }
     }

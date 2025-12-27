@@ -508,6 +508,10 @@ pub struct WorldState {
     /// Idea group definitions (loaded from common/ideas/, immutable).
     #[serde(skip)]
     pub idea_groups: crate::ideas::IdeaGroupRegistry,
+
+    /// Policy definitions (loaded from common/policies/, immutable).
+    #[serde(skip)]
+    pub policies: crate::systems::PolicyRegistry,
 }
 
 impl WorldState {
@@ -791,6 +795,12 @@ pub struct CountryState {
     /// Idea state: which groups and ideas this country has.
     #[serde(default)]
     pub ideas: crate::ideas::CountryIdeaState,
+    /// Enabled policies (combinations of idea groups granting bonuses).
+    #[serde(default)]
+    pub enabled_policies: Vec<crate::systems::PolicyId>,
+    /// Number of policy slots available (increases with completed idea groups).
+    #[serde(default)]
+    pub policy_slots: u8,
 }
 
 /// Breakdown of monthly income by source.
@@ -830,6 +840,8 @@ impl Default for CountryState {
             overextension: Fixed::ZERO,
             aggressive_expansion: HashMap::new(),
             ideas: crate::ideas::CountryIdeaState::default(),
+            enabled_policies: Vec::new(),
+            policy_slots: 0,
         }
     }
 }
