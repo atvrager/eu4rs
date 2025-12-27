@@ -208,7 +208,7 @@ pub enum CommandCategory {
 /// Categorize a command for multi-action AI selection.
 pub fn categorize_command(cmd: &Command) -> CommandCategory {
     match cmd {
-        // Diplomatic: one per day (except Accept/Reject which have no cooldown)
+        // Diplomatic: one per day (except Accept/Reject/Grant/Deny which have no cooldown)
         Command::DeclareWar { .. }
         | Command::OfferPeace { .. }
         | Command::AcceptPeace { .. }
@@ -224,7 +224,11 @@ pub fn categorize_command(cmd: &Command) -> CommandCategory {
         | Command::OfferRoyalMarriage { .. }
         | Command::AcceptRoyalMarriage { .. }
         | Command::RejectRoyalMarriage { .. }
-        | Command::BreakRoyalMarriage { .. } => CommandCategory::Diplomatic,
+        | Command::BreakRoyalMarriage { .. }
+        | Command::RequestMilitaryAccess { .. }
+        | Command::GrantMilitaryAccess { .. }
+        | Command::DenyMilitaryAccess { .. }
+        | Command::CancelMilitaryAccess { .. } => CommandCategory::Diplomatic,
 
         // Military: unlimited
         Command::Move { .. }

@@ -1248,6 +1248,61 @@ pub fn available_commands(
                 }
             }
         }
+
+        // CancelMilitaryAccess - offer to cancel access for each country that has access
+        for (access_key, _) in &state.diplomacy.military_access {
+            let (granter, requester) = access_key;
+            if granter == country_tag {
+                available.push(Command::CancelMilitaryAccess {
+                    target: requester.clone(),
+                });
+            }
+        }
+
+        // RequestMilitaryAccess - for neighbors without access
+        if let Some(graph) = adjacency {
+            let mut potential_neighbors = std::collections::HashSet::new();
+
+            // Find neighbors (reuse neighbor finding logic)
+            for (prov_id, prov) in &state.provinces {
+                if prov.owner.as_deref() == Some(country_tag) {
+                    for neighbor_id in graph.neighbors(*prov_id) {
+                        if let Some(neighbor) = state.provinces.get(&neighbor_id) {
+                            if let Some(owner) = &neighbor.owner {
+                                if owner != country_tag {
+                                    potential_neighbors.insert(owner.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            for target in potential_neighbors {
+                let access_key = (target.clone(), country_tag.to_string());
+                let request_key = (country_tag.to_string(), target.clone());
+
+                // Request if: not at war, no access, no pending request
+                if !state.diplomacy.are_at_war(country_tag, &target)
+                    && !state.diplomacy.military_access.contains_key(&access_key)
+                    && !state
+                        .diplomacy
+                        .pending_access_requests
+                        .contains_key(&request_key)
+                {
+                    available.push(Command::RequestMilitaryAccess { target });
+                }
+            }
+        }
+    }
+
+    // Grant/Deny pending military access requests (no cooldown)
+    for (request_key, _date) in &state.diplomacy.pending_access_requests {
+        let (from, to) = request_key;
+        if to == country_tag {
+            available.push(Command::GrantMilitaryAccess { to: from.clone() });
+            available.push(Command::DenyMilitaryAccess { to: from.clone() });
+        }
     }
 
     available
@@ -2809,12 +2864,94 @@ fn execute_command(
             log::info!("{} broke royal marriage with {}", country_tag, target);
             Ok(())
         }
-        Command::RequestMilitaryAccess { .. } => {
-            log::warn!("RequestMilitaryAccess not implemented yet");
+        Command::RequestMilitaryAccess { target } => {
+            // One diplomatic action per day - check if already acted today
+            if let Some(country) = state.countries.get(country_tag) {
+                if country.last_diplomatic_action == Some(state.date) {
+                    return Err(ActionError::DiplomaticActionCooldown);
+                }
+            }
+
+            // Validate both countries exist
+            if !state.countries.contains_key(country_tag) {
+                return Err(ActionError::CountryNotFound {
+                    tag: country_tag.to_string(),
+                });
+            }
+            if !state.countries.contains_key(target) {
+                return Err(ActionError::CountryNotFound {
+                    tag: target.clone(),
+                });
+            }
+
+            // Cannot request from self
+            if country_tag == target {
+                return Err(ActionError::InvalidAction {
+                    reason: "Cannot request military access from yourself".to_string(),
+                });
+            }
+
+            // Cannot request if at war
+            if state.diplomacy.are_at_war(country_tag, target) {
+                return Err(ActionError::InvalidAction {
+                    reason: "Cannot request military access during war".to_string(),
+                });
+            }
+
+            // Check if already has access
+            let access_key = (target.clone(), country_tag.to_string());
+            if state.diplomacy.military_access.contains_key(&access_key) {
+                return Ok(()); // Silently succeed
+            }
+
+            // Create pending request
+            let request_key = (country_tag.to_string(), target.clone());
+            state
+                .diplomacy
+                .pending_access_requests
+                .insert(request_key, state.date);
+
+            if let Some(country) = state.countries.get_mut(country_tag) {
+                country.last_diplomatic_action = Some(state.date);
+            }
+
+            log::info!("{} requested military access from {}", country_tag, target);
             Ok(())
         }
-        Command::CancelMilitaryAccess { .. } => {
-            log::warn!("CancelMilitaryAccess not implemented yet");
+        Command::CancelMilitaryAccess { target } => {
+            // One diplomatic action per day - check if already acted today
+            if let Some(country) = state.countries.get(country_tag) {
+                if country.last_diplomatic_action == Some(state.date) {
+                    return Err(ActionError::DiplomaticActionCooldown);
+                }
+            }
+
+            // Validate both countries exist
+            if !state.countries.contains_key(country_tag) {
+                return Err(ActionError::CountryNotFound {
+                    tag: country_tag.to_string(),
+                });
+            }
+            if !state.countries.contains_key(target) {
+                return Err(ActionError::CountryNotFound {
+                    tag: target.clone(),
+                });
+            }
+
+            // Check if actually has access (country_tag is the granter, target is the one with access)
+            let access_key = (country_tag.to_string(), target.clone());
+            if !state.diplomacy.military_access.contains_key(&access_key) {
+                return Ok(()); // Silently succeed if no access granted
+            }
+
+            // Remove military access
+            state.diplomacy.military_access.remove(&access_key);
+
+            if let Some(country) = state.countries.get_mut(country_tag) {
+                country.last_diplomatic_action = Some(state.date);
+            }
+
+            log::info!("{} cancelled military access for {}", country_tag, target);
             Ok(())
         }
         Command::SetRival { target } => {
@@ -3077,12 +3214,72 @@ fn execute_command(
             log::info!("{} rejected royal marriage offer from {}", country_tag, from);
             Ok(())
         }
-        Command::GrantMilitaryAccess { .. } => {
-            log::warn!("GrantMilitaryAccess not implemented yet");
+        Command::GrantMilitaryAccess { to } => {
+            // NO cooldown for responses (can grant multiple in one day)
+
+            // Validate both countries exist
+            if !state.countries.contains_key(country_tag) {
+                return Err(ActionError::CountryNotFound {
+                    tag: country_tag.to_string(),
+                });
+            }
+            if !state.countries.contains_key(to) {
+                return Err(ActionError::CountryNotFound {
+                    tag: to.clone(),
+                });
+            }
+
+            // Validate request exists
+            let request_key = (to.clone(), country_tag.to_string());
+            if !state
+                .diplomacy
+                .pending_access_requests
+                .contains_key(&request_key)
+            {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("No military access request from {}", to),
+                });
+            }
+
+            // Remove request, grant access
+            state.diplomacy.pending_access_requests.remove(&request_key);
+
+            // Military access: (granter, requester) -> true
+            let access_key = (country_tag.to_string(), to.clone());
+            state.diplomacy.military_access.insert(access_key, true);
+
+            log::info!("{} granted military access to {}", country_tag, to);
             Ok(())
         }
-        Command::DenyMilitaryAccess { .. } => {
-            log::warn!("DenyMilitaryAccess not implemented yet");
+        Command::DenyMilitaryAccess { to } => {
+            // NO cooldown for responses (can deny multiple in one day)
+
+            // Validate both countries exist
+            if !state.countries.contains_key(country_tag) {
+                return Err(ActionError::CountryNotFound {
+                    tag: country_tag.to_string(),
+                });
+            }
+            if !state.countries.contains_key(to) {
+                return Err(ActionError::CountryNotFound {
+                    tag: to.clone(),
+                });
+            }
+
+            // Validate request exists
+            let request_key = (to.clone(), country_tag.to_string());
+            if !state
+                .diplomacy
+                .pending_access_requests
+                .contains_key(&request_key)
+            {
+                return Ok(()); // Silently succeed if no request
+            }
+
+            // Remove request
+            state.diplomacy.pending_access_requests.remove(&request_key);
+
+            log::info!("{} denied military access to {}", country_tag, to);
             Ok(())
         }
         Command::AssignMissionary { .. } => {
@@ -6433,5 +6630,200 @@ mod tests {
 
         // NOTE: Marriage breaking on war will be tested properly in Commit 6
         // For now, the marriage still exists (limitation)
+    }
+
+    #[test]
+    fn test_request_military_access_success() {
+        let state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        let inputs = vec![PlayerInputs {
+            country: "SWE".to_string(),
+            commands: vec![Command::RequestMilitaryAccess {
+                target: "DEN".to_string(),
+            }],
+            available_commands: vec![],
+            visible_state: None,
+        }];
+
+        let new_state = step_world(
+            &state,
+            &inputs,
+            None,
+            &crate::config::SimConfig::default(),
+            None,
+        );
+
+        // Pending request should exist
+        let request_key = ("SWE".to_string(), "DEN".to_string());
+        assert!(new_state
+            .diplomacy
+            .pending_access_requests
+            .contains_key(&request_key));
+    }
+
+    #[test]
+    fn test_grant_military_access_success() {
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        // Create pending request from SWE to DEN
+        state
+            .diplomacy
+            .pending_access_requests
+            .insert(("SWE".to_string(), "DEN".to_string()), state.date);
+
+        // DEN grants access
+        execute_command(
+            &mut state,
+            "DEN",
+            &Command::GrantMilitaryAccess {
+                to: "SWE".to_string(),
+            },
+            None,
+        )
+        .unwrap();
+
+        // Military access should be granted (DEN is granter, SWE is requester)
+        let access_key = ("DEN".to_string(), "SWE".to_string());
+        assert!(state.diplomacy.military_access.contains_key(&access_key));
+
+        // Pending request should be removed
+        assert!(!state
+            .diplomacy
+            .pending_access_requests
+            .contains_key(&("SWE".to_string(), "DEN".to_string())));
+    }
+
+    #[test]
+    fn test_deny_military_access_success() {
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        // Create pending request from SWE to DEN
+        state
+            .diplomacy
+            .pending_access_requests
+            .insert(("SWE".to_string(), "DEN".to_string()), state.date);
+
+        // DEN denies access
+        execute_command(
+            &mut state,
+            "DEN",
+            &Command::DenyMilitaryAccess {
+                to: "SWE".to_string(),
+            },
+            None,
+        )
+        .unwrap();
+
+        // Pending request should be removed
+        assert!(!state
+            .diplomacy
+            .pending_access_requests
+            .contains_key(&("SWE".to_string(), "DEN".to_string())));
+
+        // No access should be granted
+        assert!(!state
+            .diplomacy
+            .military_access
+            .contains_key(&("DEN".to_string(), "SWE".to_string())));
+    }
+
+    #[test]
+    fn test_cancel_military_access_success() {
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        // DEN grants access to SWE
+        state
+            .diplomacy
+            .military_access
+            .insert(("DEN".to_string(), "SWE".to_string()), true);
+
+        // DEN cancels access
+        execute_command(
+            &mut state,
+            "DEN",
+            &Command::CancelMilitaryAccess {
+                target: "SWE".to_string(),
+            },
+            None,
+        )
+        .unwrap();
+
+        // Access should be removed
+        assert!(!state
+            .diplomacy
+            .military_access
+            .contains_key(&("DEN".to_string(), "SWE".to_string())));
+    }
+
+    #[test]
+    fn test_military_access_movement_integration() {
+        // This test verifies that the existing movement system respects military access
+        // The actual integration is already in can_army_enter -> has_military_access
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        // Grant military access from DEN to SWE
+        state
+            .diplomacy
+            .military_access
+            .insert(("DEN".to_string(), "SWE".to_string()), true);
+
+        // Verify has_military_access works
+        assert!(state.diplomacy.has_military_access("SWE", "DEN"));
+        assert!(!state.diplomacy.has_military_access("DEN", "SWE")); // Asymmetric
+    }
+
+    #[test]
+    fn test_war_revokes_military_access() {
+        // This test will be properly implemented in Commit 6 (war integration cleanup)
+        // For now, verify that wars are created (access revocation happens in Commit 6)
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        // DEN grants access to SWE
+        state
+            .diplomacy
+            .military_access
+            .insert(("DEN".to_string(), "SWE".to_string()), true);
+
+        // SWE declares war on DEN
+        execute_command(
+            &mut state,
+            "SWE",
+            &Command::DeclareWar {
+                target: "DEN".to_string(),
+                cb: None,
+            },
+            None,
+        )
+        .unwrap();
+
+        // War should be created
+        assert_eq!(state.diplomacy.wars.len(), 1);
+
+        // NOTE: Access revocation on war will be tested properly in Commit 6
+        // For now, the access still exists (limitation)
     }
 }
