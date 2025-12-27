@@ -929,6 +929,107 @@ pub struct GameModifiers {
     /// Applied as additive bonus to all estate loyalty equilibrium.
     pub country_all_estate_loyalty_equilibrium: HashMap<Tag, Fixed>,
 
+    // === Estate-Specific Modifiers (26 modifiers) ===
+    // Estate Loyalty (14 modifiers)
+    /// Country-level dhimmi loyalty modifier.
+    /// Applied as additive bonus to dhimmi estate loyalty equilibrium.
+    pub country_dhimmi_loyalty_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level maratha loyalty modifier.
+    /// Applied as additive bonus to maratha estate loyalty equilibrium.
+    pub country_maratha_loyalty_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level rajput loyalty modifier.
+    /// Applied as additive bonus to rajput estate loyalty equilibrium.
+    pub country_rajput_loyalty_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level eunuchs loyalty modifier.
+    /// Applied as additive bonus to eunuchs estate loyalty equilibrium.
+    pub country_eunuchs_loyalty_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level ghulams loyalty modifier.
+    /// Applied as additive bonus to ghulams estate loyalty equilibrium.
+    pub country_ghulams_loyalty_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level janissaries loyalty modifier.
+    /// Applied as additive bonus to janissaries estate loyalty equilibrium.
+    pub country_janissaries_loyalty_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level qizilbash loyalty modifier.
+    /// Applied as additive bonus to qizilbash estate loyalty equilibrium.
+    pub country_qizilbash_loyalty_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level jains loyalty modifier.
+    /// Applied as additive bonus to jains estate loyalty equilibrium.
+    pub country_jains_loyalty_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level nomadic tribes loyalty modifier.
+    /// Applied as additive bonus to nomadic tribes estate loyalty equilibrium.
+    pub country_nomadic_tribes_loyalty_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level nobles loyalty modifier.
+    /// Applied as additive bonus to nobles estate loyalty equilibrium.
+    pub country_nobles_loyalty_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level burghers loyalty modifier.
+    /// Applied as additive bonus to burghers estate loyalty equilibrium.
+    pub country_burghers_loyalty_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level clergy loyalty modifier.
+    /// Applied as additive bonus to clergy estate loyalty equilibrium.
+    pub country_clergy_loyalty_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level brahmins hindu loyalty modifier.
+    /// Applied as additive bonus to brahmins estate loyalty equilibrium (Hindu).
+    pub country_brahmins_hindu_loyalty_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level brahmins muslim loyalty modifier.
+    /// Applied as additive bonus to brahmins estate loyalty equilibrium (Muslim).
+    pub country_brahmins_muslim_loyalty_modifier: HashMap<Tag, Fixed>,
+
+    // Estate Influence (3 modifiers)
+    /// Country-level nobles influence modifier.
+    /// Applied as additive bonus to nobles estate influence.
+    pub country_nobles_influence_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level burghers influence modifier.
+    /// Applied as additive bonus to burghers estate influence.
+    pub country_burghers_influence_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level pirate republic captains influence.
+    /// Applied as additive bonus to pirate captains estate influence.
+    pub country_pr_captains_influence: HashMap<Tag, Fixed>,
+
+    // Privilege Slots (5 modifiers)
+    /// Country-level all estate possible privileges modifier.
+    /// Applied as additive bonus to maximum privilege slots for all estates.
+    pub country_all_estate_possible_privileges: HashMap<Tag, Fixed>,
+
+    /// Country-level estate interaction cooldown modifier.
+    /// Applied as: (1 + modifier) multiplier to estate interaction cooldown.
+    pub country_estate_interaction_cooldown_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level cossacks privilege slots modifier.
+    /// Applied as additive bonus to cossacks estate privilege slots.
+    pub country_cossacks_privilege_slots: HashMap<Tag, Fixed>,
+
+    /// Country-level ghulams privilege slots modifier.
+    /// Applied as additive bonus to ghulams estate privilege slots.
+    pub country_ghulams_privilege_slots: HashMap<Tag, Fixed>,
+
+    /// Country-level qizilbash privilege slots modifier.
+    /// Applied as additive bonus to qizilbash estate privilege slots.
+    pub country_qizilbash_privilege_slots: HashMap<Tag, Fixed>,
+
+    // Special Units (2 modifiers)
+    /// Country-level allowed samurai fraction modifier.
+    /// Applied as additive bonus to maximum samurai fraction of army.
+    pub country_allowed_samurai_fraction: HashMap<Tag, Fixed>,
+
+    /// Country-level amount of banners modifier.
+    /// Applied as additive bonus to number of banner units (Manchu).
+    pub country_amount_of_banners: HashMap<Tag, Fixed>,
+
     // === Religion & Authority (4 modifiers) ===
     /// Country-level prestige per development from conversion modifier.
     /// Applied as: (1 + modifier) multiplier to prestige from converting provinces.
@@ -1007,14 +1108,6 @@ pub struct GameModifiers {
     /// Applied as: additive bonus to AI acceptance of vassalization.
     pub country_accept_vassalization_reasons: HashMap<Tag, Fixed>,
 
-    /// Country-level Brahmins (Hindu) estate loyalty modifier.
-    /// Applied as: additive bonus to estate loyalty.
-    pub country_brahmins_hindu_loyalty_modifier: HashMap<Tag, Fixed>,
-
-    /// Country-level Brahmins (Muslim) estate loyalty modifier.
-    /// Applied as: additive bonus to estate loyalty.
-    pub country_brahmins_muslim_loyalty_modifier: HashMap<Tag, Fixed>,
-
     // === Batch 2: Positions 26-30 (Frequency-Driven) ===
     /// Country-level tolerance of heathens capacity modifier.
     /// Applied as: additive bonus to max tolerance of heathens.
@@ -1073,10 +1166,6 @@ pub struct GameModifiers {
     /// Country-level max hostile attrition modifier.
     /// Applied as: additive bonus to attrition dealt to enemies.
     pub country_max_hostile_attrition: HashMap<Tag, Fixed>,
-
-    /// Country-level nobles influence modifier.
-    /// Applied as: additive modifier to nobles estate influence.
-    pub country_nobles_influence_modifier: HashMap<Tag, Fixed>,
 
     // === Quick Wins Batch 1: Policy & Monarch Power (9 modifiers) ===
     /// Country-level free military policy slots.

@@ -154,6 +154,9 @@ impl ExtractedState {
             ideas: Default::default(),  // Can't extract from OCR yet
             enabled_policies: Default::default(), // Can't extract from OCR yet
             policy_slots: 0,            // Can't extract from OCR yet
+            government_type: Default::default(), // Can't extract from OCR yet
+            government_reforms: Default::default(), // Can't extract from OCR yet
+            estates: Default::default(), // Can't extract from OCR yet
         };
 
         VisibleWorldState {

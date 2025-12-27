@@ -393,6 +393,26 @@ impl ModifierStubTracker {
                 | "vaisyas_loyalty_modifier"
                 | "max_hostile_attrition"
                 | "nobles_influence_modifier"
+            // Estate-Specific Modifiers (19 additional)
+                | "dhimmi_loyalty_modifier"
+                | "maratha_loyalty_modifier"
+                | "rajput_loyalty_modifier"
+                | "eunuchs_loyalty_modifier"
+                | "ghulams_loyalty_modifier"
+                | "janissaries_loyalty_modifier"
+                | "qizilbash_loyalty_modifier"
+                | "jains_loyalty_modifier"
+                | "nomadic_tribes_loyalty_modifier"
+                | "clergy_loyalty_modifier"
+                | "burghers_influence_modifier"
+                | "pr_captains_influence"
+                | "all_estate_possible_privileges"
+                | "estate_interaction_cooldown_modifier"
+                | "cossacks_privilege_slots"
+                | "ghulams_privilege_slots"
+                | "qizilbash_privilege_slots"
+                | "allowed_samurai_fraction"
+                | "amount_of_banners"
             // Quick Wins Batch 1: Policy & Monarch Power
                 | "free_mil_policy"
                 | "free_adm_policy"
@@ -1896,6 +1916,223 @@ pub fn apply_modifier(
                 .unwrap_or(Fixed::ZERO);
             modifiers
                 .country_church_loyalty
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Estate-Specific Loyalty Modifiers ===
+        "clergy_loyalty_modifier" => {
+            let current = modifiers
+                .country_clergy_loyalty_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_clergy_loyalty_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "dhimmi_loyalty_modifier" => {
+            let current = modifiers
+                .country_dhimmi_loyalty_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_dhimmi_loyalty_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "maratha_loyalty_modifier" => {
+            let current = modifiers
+                .country_maratha_loyalty_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_maratha_loyalty_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "rajput_loyalty_modifier" => {
+            let current = modifiers
+                .country_rajput_loyalty_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_rajput_loyalty_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "eunuchs_loyalty_modifier" => {
+            let current = modifiers
+                .country_eunuchs_loyalty_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_eunuchs_loyalty_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "ghulams_loyalty_modifier" => {
+            let current = modifiers
+                .country_ghulams_loyalty_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_ghulams_loyalty_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "janissaries_loyalty_modifier" => {
+            let current = modifiers
+                .country_janissaries_loyalty_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_janissaries_loyalty_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "qizilbash_loyalty_modifier" => {
+            let current = modifiers
+                .country_qizilbash_loyalty_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_qizilbash_loyalty_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "jains_loyalty_modifier" => {
+            let current = modifiers
+                .country_jains_loyalty_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_jains_loyalty_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "nomadic_tribes_loyalty_modifier" => {
+            let current = modifiers
+                .country_nomadic_tribes_loyalty_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_nomadic_tribes_loyalty_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Estate Influence Modifiers ===
+        "burghers_influence_modifier" => {
+            let current = modifiers
+                .country_burghers_influence_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_burghers_influence_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "pr_captains_influence" => {
+            let current = modifiers
+                .country_pr_captains_influence
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_pr_captains_influence
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Estate Privilege Slots ===
+        "all_estate_possible_privileges" => {
+            let current = modifiers
+                .country_all_estate_possible_privileges
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_all_estate_possible_privileges
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "estate_interaction_cooldown_modifier" => {
+            let current = modifiers
+                .country_estate_interaction_cooldown_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_estate_interaction_cooldown_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "cossacks_privilege_slots" => {
+            let current = modifiers
+                .country_cossacks_privilege_slots
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_cossacks_privilege_slots
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "ghulams_privilege_slots" => {
+            let current = modifiers
+                .country_ghulams_privilege_slots
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_ghulams_privilege_slots
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "qizilbash_privilege_slots" => {
+            let current = modifiers
+                .country_qizilbash_privilege_slots
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_qizilbash_privilege_slots
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Special Units ===
+        "allowed_samurai_fraction" => {
+            let current = modifiers
+                .country_allowed_samurai_fraction
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_allowed_samurai_fraction
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "amount_of_banners" => {
+            let current = modifiers
+                .country_amount_of_banners
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_amount_of_banners
                 .insert(tag.to_string(), current + entry.value);
             true
         }

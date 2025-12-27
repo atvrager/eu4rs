@@ -49,6 +49,7 @@ pub mod ai;
 pub mod bounded;
 pub mod buildings;
 pub mod config;
+pub mod estates;
 pub mod trade;
 
 // Cap'n Proto generated schema for training data serialization.
@@ -59,6 +60,7 @@ pub mod training_capnp {
     include!(concat!(env!("OUT_DIR"), "/training_capnp.rs"));
 }
 pub mod fixed;
+pub mod government;
 pub mod ideas;
 pub mod input;
 pub mod metrics;
@@ -74,7 +76,14 @@ pub mod testing;
 pub use bounded::{new_prestige, new_stability, new_tradition, BoundedFixed, BoundedInt};
 pub use buildings::{BuildingConstruction, BuildingDef, BuildingSet, BuildingSlotSource};
 pub use config::SimConfig;
+pub use estates::{
+    CountryEstateState, EstateRegistry, EstateState, EstateTypeDef, EstateTypeId, PrivilegeDef,
+    PrivilegeId,
+};
 pub use fixed::Fixed;
+pub use government::{
+    CountryGovernmentState, GovernmentCategory, GovernmentRegistry, GovernmentTypeId, ReformId,
+};
 pub use ideas::{CountryIdeaState, IdeaCategory, IdeaGroupDef, IdeaGroupId, IdeaGroupRegistry};
 pub use input::{Command, PlayerInputs};
 pub use metrics::SimMetrics;

@@ -42,6 +42,7 @@ pub mod cultures;
 pub mod defines;
 pub mod diplomacy;
 pub mod discovery;
+pub mod estates;
 pub mod generated;
 pub mod history;
 pub mod ideas;

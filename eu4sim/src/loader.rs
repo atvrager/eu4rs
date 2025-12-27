@@ -102,6 +102,45 @@ fn convert_raw_subject_type(raw: eu4data::subject_types::RawSubjectType) -> RawS
     }
 }
 
+/// Build estate registry from loaded raw data.
+fn build_estate_registry(
+    _raw_estates: StdHashMap<String, eu4data::estates::RawEstate>,
+    _raw_privileges: Vec<eu4data::estates::RawPrivilege>,
+) -> eu4sim_core::estates::EstateRegistry {
+    use eu4sim_core::estates::{EstateRegistry, EstateTypeId};
+
+    let registry = EstateRegistry::new(); // Start with hardcoded estates
+
+    // Map estate names to IDs (using hardcoded mapping for now)
+    let mut estate_name_to_id = StdHashMap::new();
+    estate_name_to_id.insert("estate_nobles", EstateTypeId::NOBLES);
+    estate_name_to_id.insert("estate_church", EstateTypeId::CLERGY);
+    estate_name_to_id.insert("estate_burghers", EstateTypeId::BURGHERS);
+    estate_name_to_id.insert("estate_dhimmi", EstateTypeId::DHIMMI);
+    estate_name_to_id.insert("estate_cossacks", EstateTypeId::COSSACKS);
+    estate_name_to_id.insert("estate_nomadic_tribes", EstateTypeId::TRIBES);
+    estate_name_to_id.insert("estate_jains", EstateTypeId::JAINS);
+    estate_name_to_id.insert("estate_maratha", EstateTypeId::MARATHAS);
+    estate_name_to_id.insert("estate_rajput", EstateTypeId::RAJPUTS);
+    estate_name_to_id.insert("estate_brahmins", EstateTypeId::BRAHMINS);
+    estate_name_to_id.insert("estate_eunuchs", EstateTypeId::EUNUCHS);
+    estate_name_to_id.insert("estate_janissaries", EstateTypeId::JANISSARIES);
+    estate_name_to_id.insert("estate_qizilbash", EstateTypeId::QIZILBASH);
+    estate_name_to_id.insert("estate_ghulams", EstateTypeId::GHULAMS);
+
+    // For Phase 2, we're just loading the data but keeping the hardcoded registry
+    // Phase 3+ will actually use the loaded modifier data
+    log::debug!(
+        "Estate registry populated with {} estates",
+        registry.estate_count()
+    );
+
+    // Suppress unused warning - this mapping will be used in Phase 3
+    let _ = estate_name_to_id;
+
+    registry
+}
+
 /// Parse terrain string to Terrain enum
 fn parse_terrain(terrain_str: &str) -> Option<Terrain> {
     match terrain_str {
@@ -458,6 +497,34 @@ pub fn load_initial_state(
     }
     log::info!("Loaded {} policies", policy_registry.len());
 
+    // 5d. Load Estates
+    log::info!("Loading estates...");
+    let raw_estates = eu4data::estates::load_estates(game_path)
+        .map_err(|e| anyhow::anyhow!("Failed to load estates: {}", e))?;
+    let raw_privileges = eu4data::estates::load_privileges(game_path)
+        .map_err(|e| anyhow::anyhow!("Failed to load privileges: {}", e))?;
+
+    let estate_registry = build_estate_registry(raw_estates, raw_privileges);
+    log::info!(
+        "Loaded {} estates, {} privileges",
+        estate_registry.estate_count(),
+        estate_registry.privilege_count()
+    );
+
+    // Initialize estate state for each country based on government type
+    for (tag, country) in &mut countries {
+        country.estates = eu4sim_core::estates::CountryEstateState::new_for_country(
+            country.government_type,
+            country.religion.as_deref().unwrap_or("catholic"),
+            &estate_registry,
+        );
+        log::debug!(
+            "{}: {} estates available",
+            tag,
+            country.estates.available_estates.len()
+        );
+    }
+
     // 6. Load Diplomatic History (subjects, alliances, etc.)
     log::info!("Loading diplomatic history...");
     let diplomacy_entries = eu4data::diplomacy::load_diplomacy_history(game_path)
@@ -584,6 +651,10 @@ pub fn load_initial_state(
             idea_groups,
             // Policy system
             policies: policy_registry,
+            // Government type system
+            government_types: eu4sim_core::government::GovernmentRegistry::new(),
+            // Estate system
+            estates: estate_registry,
         },
         adjacency,
     ))

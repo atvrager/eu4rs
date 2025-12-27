@@ -200,9 +200,10 @@ pub fn step_world(
         // 7. Expenses → Deducts costs (uses fresh manpower pool)
         // 8. Mana → Generates monarch points
         // 9. Colonization → Progresses active colonies
-        // 10. Reformation → Spreads Protestant/Reformed religions
-        // 11. War scores → Recalculates based on current occupation
-        // 12. Auto-peace → Ends stalemate wars (10yr timeout)
+        // 10. Estates → Updates loyalty/influence, checks disasters
+        // 11. Reformation → Spreads Protestant/Reformed religions
+        // 12. War scores → Recalculates based on current occupation
+        // 13. Auto-peace → Ends stalemate wars (10yr timeout)
         //
         // Order matters: merchant arrivals → trade power → production → trade value → trade income.
         // Merchants must arrive first so they participate in power calculation.
@@ -226,6 +227,7 @@ pub fn step_world(
         crate::systems::run_mana_tick(&mut new_state);
         crate::systems::run_stats_tick(&mut new_state);
         crate::systems::run_colonization_tick(&mut new_state);
+        crate::systems::run_estate_tick(&mut new_state);
         crate::systems::tick_institution_spread(&mut new_state);
         crate::systems::run_reformation_tick(&mut new_state, adjacency);
 
@@ -1958,6 +1960,81 @@ fn execute_command(
                 mana_type,
                 country.ideas.national_ideas_progress
             );
+
+            Ok(())
+        }
+        Command::GrantPrivilege {
+            estate_id,
+            privilege_id,
+        } => {
+            let country =
+                state
+                    .countries
+                    .get_mut(country_tag)
+                    .ok_or(ActionError::CountryNotFound {
+                        tag: country_tag.to_string(),
+                    })?;
+
+            crate::systems::grant_privilege(country, *estate_id, *privilege_id, &state.estates)
+                .map_err(|e| ActionError::InvalidCommand {
+                    message: format!("Failed to grant privilege: {:?}", e),
+                })?;
+
+            Ok(())
+        }
+        Command::RevokePrivilege {
+            estate_id,
+            privilege_id,
+        } => {
+            let country =
+                state
+                    .countries
+                    .get_mut(country_tag)
+                    .ok_or(ActionError::CountryNotFound {
+                        tag: country_tag.to_string(),
+                    })?;
+
+            crate::systems::revoke_privilege(country, *estate_id, *privilege_id, &state.estates)
+                .map_err(|e| ActionError::InvalidCommand {
+                    message: format!("Failed to revoke privilege: {:?}", e),
+                })?;
+
+            Ok(())
+        }
+        Command::SeizeLand { percentage } => {
+            let country =
+                state
+                    .countries
+                    .get_mut(country_tag)
+                    .ok_or(ActionError::CountryNotFound {
+                        tag: country_tag.to_string(),
+                    })?;
+
+            crate::systems::seize_land(country, *percentage).map_err(|e| {
+                ActionError::InvalidCommand {
+                    message: format!("Failed to seize land: {:?}", e),
+                }
+            })?;
+
+            Ok(())
+        }
+        Command::SaleLand {
+            estate_id,
+            percentage,
+        } => {
+            let country =
+                state
+                    .countries
+                    .get_mut(country_tag)
+                    .ok_or(ActionError::CountryNotFound {
+                        tag: country_tag.to_string(),
+                    })?;
+
+            crate::systems::sale_land(country, *estate_id, *percentage).map_err(|e| {
+                ActionError::InvalidCommand {
+                    message: format!("Failed to sell land: {:?}", e),
+                }
+            })?;
 
             Ok(())
         }

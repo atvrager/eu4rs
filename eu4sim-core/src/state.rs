@@ -512,6 +512,14 @@ pub struct WorldState {
     /// Policy definitions (loaded from common/policies/, immutable).
     #[serde(skip)]
     pub policies: crate::systems::PolicyRegistry,
+
+    /// Government type definitions (hardcoded for Phase 0, immutable).
+    #[serde(skip)]
+    pub government_types: crate::government::GovernmentRegistry,
+
+    /// Estate definitions (hardcoded for Phase 1, loaded from files in Phase 2).
+    #[serde(skip)]
+    pub estates: crate::estates::EstateRegistry,
 }
 
 impl WorldState {
@@ -764,6 +772,12 @@ pub struct CountryState {
     pub embraced_institutions: std::collections::HashSet<InstitutionId>,
     /// State religion (e.g., "catholic", "protestant")
     pub religion: Option<String>,
+    /// Government type (Monarchy, Republic, Theocracy, Tribal, etc.)
+    #[serde(default)]
+    pub government_type: crate::government::GovernmentTypeId,
+    /// Government reforms unlocked by this country
+    #[serde(default)]
+    pub government_reforms: std::collections::HashSet<crate::government::ReformId>,
     /// Trade-related state (merchants, home node, embargoes).
     #[serde(default)]
     pub trade: CountryTradeState,
@@ -801,6 +815,9 @@ pub struct CountryState {
     /// Number of policy slots available (increases with completed idea groups).
     #[serde(default)]
     pub policy_slots: u8,
+    /// Estate state (loyalty, influence, privileges).
+    #[serde(default)]
+    pub estates: crate::estates::CountryEstateState,
 }
 
 /// Breakdown of monthly income by source.
@@ -832,6 +849,8 @@ impl Default for CountryState {
             mil_tech: 0,
             embraced_institutions: std::collections::HashSet::new(),
             religion: None,
+            government_type: crate::government::GovernmentTypeId::MONARCHY,
+            government_reforms: std::collections::HashSet::new(),
             trade: CountryTradeState::default(),
             income: IncomeBreakdown::default(),
             last_diplomatic_action: None,
@@ -842,6 +861,7 @@ impl Default for CountryState {
             ideas: crate::ideas::CountryIdeaState::default(),
             enabled_policies: Vec::new(),
             policy_slots: 0,
+            estates: crate::estates::CountryEstateState::default(),
         }
     }
 }

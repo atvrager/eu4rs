@@ -1,4 +1,5 @@
 use crate::ai::VisibleWorldState;
+use crate::estates::{EstateTypeId, PrivilegeId};
 use crate::ideas::IdeaGroupId;
 use crate::state::{ArmyId, FleetId, InstitutionId, PeaceTerms, ProvinceId, Tag, TechType, WarId};
 use crate::trade::{MerchantAction, TradeNodeId};
@@ -125,6 +126,35 @@ pub enum Command {
     /// Reduced by idea cost modifiers.
     UnlockIdea {
         group_id: IdeaGroupId,
+    },
+
+    // Estates
+    /// Grant a privilege to an estate.
+    /// Increases estate loyalty and influence, grants country modifiers.
+    /// May reduce crown land and max absolutism.
+    GrantPrivilege {
+        estate_id: EstateTypeId,
+        privilege_id: PrivilegeId,
+    },
+    /// Revoke a privilege from an estate.
+    /// Decreases estate loyalty, removes bonuses.
+    /// Subject to cooldown timer.
+    RevokePrivilege {
+        estate_id: EstateTypeId,
+        privilege_id: PrivilegeId,
+    },
+    /// Seize land from estates to increase crown land.
+    /// Costs loyalty with all estates.
+    /// Increases crown land percentage.
+    SeizeLand {
+        percentage: u8,
+    },
+    /// Sell crown land to an estate.
+    /// Increases loyalty and influence with the estate.
+    /// Decreases crown land percentage.
+    SaleLand {
+        estate_id: EstateTypeId,
+        percentage: u8,
     },
 
     // Trade

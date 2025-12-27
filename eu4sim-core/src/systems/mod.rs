@@ -7,6 +7,7 @@ pub mod colonization;
 pub mod combat;
 pub mod coring;
 pub mod development;
+pub mod estates;
 pub mod expenses;
 pub mod ideas;
 pub mod institutions;
@@ -40,6 +41,10 @@ pub use coring::{
     calculate_coring_cost, effective_autonomy, recalculate_overextension, start_coring, tick_coring,
 };
 pub use development::develop_province;
+pub use estates::{
+    grant_privilege, revoke_privilege, run_estate_tick, sale_land, seize_land, CrownLandError,
+    PrivilegeError,
+};
 pub use expenses::run_expenses_tick;
 pub use ideas::{
     apply_modifier, print_modifier_report, recalculate_idea_modifiers, scan_all_modifiers,
