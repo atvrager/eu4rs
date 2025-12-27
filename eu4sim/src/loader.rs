@@ -51,6 +51,37 @@ fn convert_raw_idea_group(raw: eu4data::ideas::RawIdeaGroup) -> RawIdeaGroup {
     }
 }
 
+/// Convert from eu4data's RawPolicy to eu4sim-core's PolicyDef.
+fn convert_raw_policy(
+    raw: eu4data::policies::RawPolicy,
+    id: eu4sim_core::systems::PolicyId,
+) -> eu4sim_core::systems::PolicyDef {
+    use eu4sim_core::ideas::ModifierEntry;
+    use eu4sim_core::systems::{PolicyCategory, PolicyDef};
+
+    let category = match raw.category {
+        eu4data::policies::RawPolicyCategory::Adm => PolicyCategory::Administrative,
+        eu4data::policies::RawPolicyCategory::Dip => PolicyCategory::Diplomatic,
+        eu4data::policies::RawPolicyCategory::Mil => PolicyCategory::Military,
+    };
+
+    PolicyDef {
+        id,
+        name: raw.name,
+        category,
+        idea_group_1: raw.idea_group_1,
+        idea_group_2: raw.idea_group_2,
+        modifiers: raw
+            .modifiers
+            .into_iter()
+            .map(|m| ModifierEntry {
+                key: m.key,
+                value: Fixed::from_f32(m.value),
+            })
+            .collect(),
+    }
+}
+
 /// Convert from eu4data's RawSubjectType to eu4sim-core's RawSubjectType.
 fn convert_raw_subject_type(raw: eu4data::subject_types::RawSubjectType) -> RawSubjectType {
     RawSubjectType {
@@ -415,6 +446,18 @@ pub fn load_initial_state(
         countries_with_national
     );
 
+    // 5c. Load Policies
+    log::info!("Loading policies...");
+    let raw_policies = eu4data::policies::load_policies(game_path)
+        .map_err(|e| anyhow::anyhow!("Failed to load policies: {}", e))?;
+    let mut policy_registry = eu4sim_core::systems::PolicyRegistry::new();
+    for (policy_id, raw_policy) in raw_policies.into_iter().enumerate() {
+        let id = eu4sim_core::systems::PolicyId(policy_id as u16);
+        let policy_def = convert_raw_policy(raw_policy.1, id);
+        policy_registry.register(policy_def);
+    }
+    log::info!("Loaded {} policies", policy_registry.len());
+
     // 6. Load Diplomatic History (subjects, alliances, etc.)
     log::info!("Loading diplomatic history...");
     let diplomacy_entries = eu4data::diplomacy::load_diplomacy_history(game_path)
@@ -482,13 +525,12 @@ pub fn load_initial_state(
 
     // 7b. Calculate policy slots and apply policy modifiers
     log::info!("Calculating policy slots and applying policy modifiers...");
-    let policy_registry = eu4sim_core::systems::PolicyRegistry::new();
 
     for (tag, country) in &mut countries {
         // Calculate available policy slots based on completed idea groups
         country.policy_slots = eu4sim_core::systems::calculate_policy_slots(&country.ideas);
 
-        // Apply policy modifiers (currently empty, will be populated when loading policies)
+        // Apply policy modifiers from enabled policies
         eu4sim_core::systems::apply_policy_modifiers(
             tag,
             &country.enabled_policies,
