@@ -2,8 +2,8 @@ use crate::fixed::Fixed;
 use crate::input::{Command, DevType, PlayerInputs};
 use crate::metrics::SimMetrics;
 use crate::state::{
-    ArmyId, GeneralId, MovementState, PeaceTerms, PendingPeace, ProvinceId, Regiment, TechType,
-    WorldState,
+    ArmyId, DiplomacyState, GeneralId, MovementState, PeaceTerms, PendingPeace, ProvinceId,
+    Regiment, RelationType, TechType, WorldState,
 };
 use std::time::Instant;
 use thiserror::Error;
@@ -1104,6 +1104,54 @@ pub fn available_commands(
             if node.merchants.iter().any(|m| m.owner == country_tag) {
                 available.push(Command::RecallMerchant { node: node_id });
             }
+        }
+    }
+
+    // 6. Diplomacy - Rivals shape our purpose and define our struggles. ✧
+    let can_offer_diplomatic = country.last_diplomatic_action != Some(state.date);
+
+    if can_offer_diplomatic {
+        // Only consider neighbors for rivalries (same optimization as war declarations)
+        if let Some(graph) = adjacency {
+            let mut potential_rivals = std::collections::HashSet::new();
+
+            // Find neighbors of all owned provinces
+            for (prov_id, prov) in &state.provinces {
+                if prov.owner.as_deref() == Some(country_tag) {
+                    for neighbor_id in graph.neighbors(*prov_id) {
+                        if let Some(neighbor) = state.provinces.get(&neighbor_id) {
+                            if let Some(owner) = &neighbor.owner {
+                                if owner != country_tag {
+                                    potential_rivals.insert(owner.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // SetRival - only if under the limit of 3
+            let current_rival_count = country.rivals.len();
+            if current_rival_count < 3 {
+                for target in potential_rivals {
+                    let key = DiplomacyState::sorted_pair(country_tag, &target);
+
+                    // Can rival if: not at war, not allied, not already rivals
+                    if !state.diplomacy.are_at_war(country_tag, &target)
+                        && state.diplomacy.relations.get(&key) != Some(&RelationType::Alliance)
+                        && !country.rivals.contains(&target)
+                    {
+                        available.push(Command::SetRival { target });
+                    }
+                }
+            }
+        }
+
+        // RemoveRival - offer to remove each current rival
+        for rival in &country.rivals {
+            available.push(Command::RemoveRival {
+                target: rival.clone(),
+            });
         }
     }
 
@@ -2436,12 +2484,118 @@ fn execute_command(
             log::warn!("CancelMilitaryAccess not implemented yet");
             Ok(())
         }
-        Command::SetRival { .. } => {
-            log::warn!("SetRival not implemented yet");
+        Command::SetRival { target } => {
+            // One diplomatic action per day - check if already acted today
+            if let Some(country) = state.countries.get(country_tag) {
+                if country.last_diplomatic_action == Some(state.date) {
+                    return Err(ActionError::DiplomaticActionCooldown);
+                }
+            }
+
+            // Validate actor exists
+            if !state.countries.contains_key(country_tag) {
+                return Err(ActionError::CountryNotFound {
+                    tag: country_tag.to_string(),
+                });
+            }
+
+            // Validate target exists
+            if !state.countries.contains_key(target) {
+                return Err(ActionError::CountryNotFound {
+                    tag: target.clone(),
+                });
+            }
+
+            // Cannot rival self
+            if country_tag == target {
+                return Err(ActionError::InvalidAction {
+                    reason: "Cannot rival yourself".to_string(),
+                });
+            }
+
+            // Check max 3 rivals limit
+            let current_rivals = state
+                .countries
+                .get(country_tag)
+                .map(|c| c.rivals.len())
+                .unwrap_or(0);
+            if current_rivals >= 3 {
+                return Err(ActionError::InvalidAction {
+                    reason: "Already have 3 rivals (maximum)".to_string(),
+                });
+            }
+
+            // Cannot rival an ally
+            let key = DiplomacyState::sorted_pair(country_tag, target);
+            if state.diplomacy.relations.get(&key) == Some(&RelationType::Alliance) {
+                return Err(ActionError::InvalidAction {
+                    reason: "Cannot rival an ally".to_string(),
+                });
+            }
+
+            // Check if already rivals (silently succeed)
+            if state
+                .countries
+                .get(country_tag)
+                .is_some_and(|c| c.rivals.contains(target))
+            {
+                return Ok(());
+            }
+
+            // Mutate state
+            if let Some(country) = state.countries.get_mut(country_tag) {
+                country.rivals.insert(target.clone());
+                country.last_diplomatic_action = Some(state.date);
+            }
+
+            log::info!("{} set {} as rival", country_tag, target);
             Ok(())
         }
-        Command::RemoveRival { .. } => {
-            log::warn!("RemoveRival not implemented yet");
+        Command::RemoveRival { target } => {
+            // One diplomatic action per day - check if already acted today
+            if let Some(country) = state.countries.get(country_tag) {
+                if country.last_diplomatic_action == Some(state.date) {
+                    return Err(ActionError::DiplomaticActionCooldown);
+                }
+            }
+
+            // Validate actor exists
+            if !state.countries.contains_key(country_tag) {
+                return Err(ActionError::CountryNotFound {
+                    tag: country_tag.to_string(),
+                });
+            }
+
+            // Validate target exists
+            if !state.countries.contains_key(target) {
+                return Err(ActionError::CountryNotFound {
+                    tag: target.clone(),
+                });
+            }
+
+            // Cannot de-rival self (though you can't rival yourself anyway)
+            if country_tag == target {
+                return Err(ActionError::InvalidAction {
+                    reason: "Cannot remove rivalry with yourself".to_string(),
+                });
+            }
+
+            // Check if actually rivals (silently succeed if not)
+            if !state
+                .countries
+                .get(country_tag)
+                .is_some_and(|c| c.rivals.contains(target))
+            {
+                return Ok(());
+            }
+
+            // Mutate state
+            if let Some(country) = state.countries.get_mut(country_tag) {
+                country.rivals.remove(target);
+                country.last_diplomatic_action = Some(state.date);
+            }
+
+            log::info!("{} removed {} as rival", country_tag, target);
             Ok(())
         }
         Command::AcceptAlliance { .. } => {
@@ -5035,6 +5189,202 @@ mod tests {
         assert!(
             war.defenders.contains(&"JAP".to_string()),
             "JAP should be defender"
+        );
+    }
+
+    #[test]
+    fn test_set_rival_success() {
+        let state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        let inputs = vec![PlayerInputs {
+            country: "SWE".to_string(),
+            commands: vec![Command::SetRival {
+                target: "DEN".to_string(),
+            }],
+            available_commands: vec![],
+            visible_state: None,
+        }];
+
+        let new_state = step_world(
+            &state,
+            &inputs,
+            None,
+            &crate::config::SimConfig::default(),
+            None,
+        );
+
+        // SWE should have DEN as rival
+        assert!(new_state
+            .countries
+            .get("SWE")
+            .unwrap()
+            .rivals
+            .contains("DEN"));
+
+        // Diplomatic cooldown should be set
+        assert_eq!(
+            new_state.countries.get("SWE").unwrap().last_diplomatic_action,
+            Some(new_state.date)
+        );
+    }
+
+    #[test]
+    fn test_set_rival_max_limit() {
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .with_country("NOR")
+            .with_country("MUS")
+            .with_country("ENG")
+            .build();
+
+        // Manually set 3 rivals
+        state
+            .countries
+            .get_mut("SWE")
+            .unwrap()
+            .rivals
+            .insert("DEN".to_string());
+        state
+            .countries
+            .get_mut("SWE")
+            .unwrap()
+            .rivals
+            .insert("NOR".to_string());
+        state
+            .countries
+            .get_mut("SWE")
+            .unwrap()
+            .rivals
+            .insert("MUS".to_string());
+
+        // Try to set a 4th rival
+        let result = execute_command(
+            &mut state,
+            "SWE",
+            &Command::SetRival {
+                target: "ENG".to_string(),
+            },
+            None,
+        );
+
+        // Should fail with max limit error
+        assert!(matches!(result, Err(ActionError::InvalidAction { .. })));
+
+        // ENG should NOT be added as rival
+        assert!(!state.countries.get("SWE").unwrap().rivals.contains("ENG"));
+    }
+
+    #[test]
+    fn test_set_rival_cannot_rival_ally() {
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        // Create alliance between SWE and DEN
+        let key = DiplomacyState::sorted_pair("SWE", "DEN");
+        state
+            .diplomacy
+            .relations
+            .insert(key, RelationType::Alliance);
+
+        // Try to rival ally
+        let result = execute_command(
+            &mut state,
+            "SWE",
+            &Command::SetRival {
+                target: "DEN".to_string(),
+            },
+            None,
+        );
+
+        // Should fail
+        assert!(matches!(result, Err(ActionError::InvalidAction { .. })));
+
+        // DEN should NOT be added as rival
+        assert!(!state.countries.get("SWE").unwrap().rivals.contains("DEN"));
+    }
+
+    #[test]
+    fn test_set_rival_cooldown() {
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .with_country("NOR")
+            .build();
+
+        // First rival command succeeds
+        let result1 = execute_command(
+            &mut state,
+            "SWE",
+            &Command::SetRival {
+                target: "DEN".to_string(),
+            },
+            None,
+        );
+        assert!(result1.is_ok());
+
+        // Second rival command on same day fails
+        let result2 = execute_command(
+            &mut state,
+            "SWE",
+            &Command::SetRival {
+                target: "NOR".to_string(),
+            },
+            None,
+        );
+        assert!(matches!(
+            result2,
+            Err(ActionError::DiplomaticActionCooldown)
+        ));
+
+        // Only DEN should be rival, not NOR
+        assert!(state.countries.get("SWE").unwrap().rivals.contains("DEN"));
+        assert!(!state.countries.get("SWE").unwrap().rivals.contains("NOR"));
+    }
+
+    #[test]
+    fn test_remove_rival_success() {
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        // Manually set DEN as rival
+        state
+            .countries
+            .get_mut("SWE")
+            .unwrap()
+            .rivals
+            .insert("DEN".to_string());
+
+        let result = execute_command(
+            &mut state,
+            "SWE",
+            &Command::RemoveRival {
+                target: "DEN".to_string(),
+            },
+            None,
+        );
+
+        assert!(result.is_ok());
+
+        // DEN should be removed from rivals
+        assert!(!state.countries.get("SWE").unwrap().rivals.contains("DEN"));
+
+        // Diplomatic cooldown should be set
+        assert_eq!(
+            state.countries.get("SWE").unwrap().last_diplomatic_action,
+            Some(state.date)
         );
     }
 }

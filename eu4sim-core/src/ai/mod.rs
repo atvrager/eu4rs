@@ -214,7 +214,9 @@ pub fn categorize_command(cmd: &Command) -> CommandCategory {
         | Command::AcceptPeace { .. }
         | Command::RejectPeace { .. }
         | Command::JoinWar { .. }
-        | Command::CallAllyToWar { .. } => CommandCategory::Diplomatic,
+        | Command::CallAllyToWar { .. }
+        | Command::SetRival { .. }
+        | Command::RemoveRival { .. } => CommandCategory::Diplomatic,
 
         // Military: unlimited
         Command::Move { .. }
