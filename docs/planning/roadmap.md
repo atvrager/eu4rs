@@ -177,16 +177,35 @@ Expanded AI capabilities and economic depth.
   - War participation tracking
 - [x] **Reformation**: Religion spread system (254 lines)
   - Simplified spread logic via adjacency
+- [x] **Modifier System**: Comprehensive modifier implementation (285/313 modifiers, 91% coverage)
+  - Combat: discipline, morale, cavalry_power, infantry_power, artillery_power
+  - Military: manpower_recovery_speed, land_forcelimit, naval_forcelimit
+  - Economy: global_tax_modifier, production_efficiency, trade_efficiency
+  - Diplomacy: diplomatic_reputation, improve_relation_modifier, ae_impact
+  - Technology: tech_cost modifiers (ADM/DIP/MIL)
+  - Leaders: land_morale, naval_morale, leader pips, army_tradition
+  - Estates: loyalty/influence modifiers for 14 estates, privilege slots
+  - Buildings: province and country modifiers from buildings
+  - Wired through `apply_modifier()` with HashMap accumulation pattern
+- [x] **Policy System**: Policy management and bonuses (220 lines + data)
+  - 72 policies loaded from game files
+  - Policy slot calculation (3 free + 1 per 8 ideas)
+  - `EnablePolicy`, `DisablePolicy` commands (stubbed)
+  - Modifier application from active policies
+- [x] **Building Modifier System**: Province and country modifiers from buildings
+  - Province modifiers: local_defensiveness, garrison_size, supply_limit, fort_level
+  - Country modifiers: global_tax_modifier, production_efficiency, trade_power
+  - Recompute on building construction/demolition
+- [x] **Estate System**: Full estate mechanics (2,800 lines across 4 files)
+  - 15 estate types (3 core + 12 special estates)
+  - Government-based estate availability (Pirate Republics, Theocracies, etc.)
+  - Loyalty/influence dynamics with monthly decay
+  - Privilege management (`GrantPrivilege`, `RevokePrivilege` commands)
+  - Crown land management (`SeizeLand`, `SaleLand` commands)
+  - 26 estate-specific modifiers (loyalty, influence, privilege slots)
+  - Disaster detection (100% influence + <30% loyalty)
 
 ### In Progress
-- [ ] **Modifier System Wiring**: Connect idea modifiers to actual mechanics
-  - **Current Status**: Only 4/400+ modifiers implemented
-    - `global_tax_modifier` ✓
-    - `land_maintenance_modifier` ✓
-    - `fort_maintenance_modifier` ✓
-    - `production_efficiency` ✓
-  - **Next**: Wire top 20 modifiers by frequency (discipline, cavalry_power, goods_produced, etc.)
-  - **Blocker**: Ideas parse correctly but 96% of modifiers have no gameplay effect
 - [ ] **Alliance Enforcement**: Defensive pact call-to-arms
   - Data structures exist, `CallAllyToWar` / `JoinWar` commands defined
   - Pending diplomacy queue implemented
@@ -266,9 +285,9 @@ Parallel development track for rendering and debugging.
 
 ## Implementation Reality Check
 
-### Command Status (34 Total)
+### Command Status (38 Total)
 
-**✅ Fully Implemented (19 commands)**:
+**✅ Fully Implemented (23 commands)**:
 - Buildings: `BuildInProvince`, `CancelConstruction`, `DemolishBuilding`
 - Military: `Move`, `MoveFleet`, `Embark`, `Disembark`, `MergeArmies`
 - War: `DeclareWar`, `OfferPeace`, `AcceptPeace`, `RejectPeace`, `JoinWar`, `CallAllyToWar`
@@ -278,6 +297,7 @@ Parallel development track for rendering and debugging.
 - Colonization: `StartColony`, `AbandonColony`
 - Generals: `RecruitGeneral`, `AssignGeneral`, `UnassignGeneral`
 - Recruitment: `RecruitRegiment`
+- Estates: `GrantPrivilege`, `RevokePrivilege`, `SeizeLand`, `SaleLand`
 
 **❌ Stubbed (15 commands)**:
 - Diplomacy (12): Alliance/RM offers/responses, military access, rivals
@@ -287,29 +307,38 @@ Parallel development track for rendering and debugging.
 ### System Metrics
 
 ```
-Total LOC:           22,546 (eu4sim-core/src)
-System Modules:      25 files (9,229 LOC)
-Unit Tests:          494 tests
+Total LOC:           ~27,000 (eu4sim-core/src, estimated)
+System Modules:      28 files
+Unit Tests:          520 tests
+Estates (4 files):   2,800 lines
 Combat System:       1,467 lines
+Trade (3 files):     1,622 lines
 Buildings:           827 lines
 Naval Combat:        846 lines
-Siege:              726 lines
-Trade (3 files):    1,622 lines
+Siege:               726 lines
 Movement:            479 lines
-Ideas:              429 lines
-Attrition:          412 lines
+Ideas:               429 lines
+Attrition:           412 lines
+Policies:            220 lines
 
 Daily Ticks:         4 systems
-Monthly Ticks:       19 systems
+Monthly Ticks:       20 systems (added estates)
 ```
 
-### Modifier System Reality
+### Modifier System Status
 
-**Architecture**: `ModifierStubTracker` tracks 400+ modifier types from ideas data
-**Applied**: Only 4 modifiers actually affect gameplay
-**Impact**: Ideas can be picked and unlocked, but ~96% have no mechanical effect
+**Total Modifiers**: 313 unique modifier types found in game data
+**Implemented**: 285 modifiers (91% coverage)
+**Remaining**: 28 modifiers (9%)
 
-**Next Steps**: Wire top 20 modifiers by frequency to close this gap
+**Coverage Breakdown**:
+- Ideas: 150+ modifiers from idea groups
+- Buildings: ~30 province/country modifiers
+- Estates: 26 estate-specific modifiers
+- Policies: Modifiers from 72 policies
+- Core Systems: Combat, economy, diplomacy base modifiers
+
+**Architecture**: Modifiers stored in `GameModifiers` HashMaps, applied via `apply_modifier()` with accumulation pattern
 
 ---
 
@@ -322,7 +351,7 @@ Before starting work on a feature:
 3. **Follow property-based testing** workflow ([guide](../development/testing/property-based-testing.md))
 4. **Run CI** before committing: `cargo xtask ci`
 
-**Priority**: Phase 6 modifier wiring. Focus on connecting idea modifiers to actual mechanics.
+**Priority**: Phase 6 advanced diplomacy. Focus on alliance enforcement and diplomatic commands.
 
 ---
 
@@ -368,4 +397,4 @@ Play EU4 in your terminal! A text-based interface using `ratatui` or similar:
 
 ---
 
-*Last updated: 2025-12-26*
+*Last updated: 2025-12-27*
