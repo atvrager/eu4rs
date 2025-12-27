@@ -1107,13 +1107,22 @@ pub fn available_commands(
         }
     }
 
-    // 6. Diplomacy - Rivals shape our purpose and define our struggles. ✧
+    // 6. Diplomacy - Allies and rivals shape the fabric of power. ✧
     let can_offer_diplomatic = country.last_diplomatic_action != Some(state.date);
 
+    // Accept/Reject pending alliance offers (no cooldown)
+    for (offer_key, _date) in &state.diplomacy.pending_alliance_offers {
+        let (from, to) = offer_key;
+        if to == country_tag {
+            available.push(Command::AcceptAlliance { from: from.clone() });
+            available.push(Command::RejectAlliance { from: from.clone() });
+        }
+    }
+
     if can_offer_diplomatic {
-        // Only consider neighbors for rivalries (same optimization as war declarations)
+        // Only consider neighbors for alliances and rivalries (same optimization as war declarations)
         if let Some(graph) = adjacency {
-            let mut potential_rivals = std::collections::HashSet::new();
+            let mut potential_neighbors = std::collections::HashSet::new();
 
             // Find neighbors of all owned provinces
             for (prov_id, prov) in &state.provinces {
@@ -1122,7 +1131,7 @@ pub fn available_commands(
                         if let Some(neighbor) = state.provinces.get(&neighbor_id) {
                             if let Some(owner) = &neighbor.owner {
                                 if owner != country_tag {
-                                    potential_rivals.insert(owner.clone());
+                                    potential_neighbors.insert(owner.clone());
                                 }
                             }
                         }
@@ -1130,10 +1139,28 @@ pub fn available_commands(
                 }
             }
 
+            // OfferAlliance - for neighbors not at war, not already allied, no pending offer
+            for target in &potential_neighbors {
+                let key = DiplomacyState::sorted_pair(country_tag, target);
+                let offer_key = (country_tag.to_string(), target.clone());
+
+                if !state.diplomacy.are_at_war(country_tag, target)
+                    && state.diplomacy.relations.get(&key) != Some(&RelationType::Alliance)
+                    && !state
+                        .diplomacy
+                        .pending_alliance_offers
+                        .contains_key(&offer_key)
+                {
+                    available.push(Command::OfferAlliance {
+                        target: target.clone(),
+                    });
+                }
+            }
+
             // SetRival - only if under the limit of 3
             let current_rival_count = country.rivals.len();
             if current_rival_count < 3 {
-                for target in potential_rivals {
+                for target in potential_neighbors {
                     let key = DiplomacyState::sorted_pair(country_tag, &target);
 
                     // Can rival if: not at war, not allied, not already rivals
@@ -1152,6 +1179,18 @@ pub fn available_commands(
             available.push(Command::RemoveRival {
                 target: rival.clone(),
             });
+        }
+
+        // BreakAlliance - offer to break each current alliance
+        for (pair, rel_type) in &state.diplomacy.relations {
+            if *rel_type == RelationType::Alliance {
+                let (a, b) = pair;
+                if a == country_tag {
+                    available.push(Command::BreakAlliance { target: b.clone() });
+                } else if b == country_tag {
+                    available.push(Command::BreakAlliance { target: a.clone() });
+                }
+            }
         }
     }
 
@@ -2460,12 +2499,127 @@ fn execute_command(
             .map_err(|e| ActionError::CoringFailed { message: e })?;
             Ok(())
         }
-        Command::OfferAlliance { .. } => {
-            log::warn!("OfferAlliance not implemented yet");
+        Command::OfferAlliance { target } => {
+            // One diplomatic action per day - check if already acted today
+            if let Some(country) = state.countries.get(country_tag) {
+                if country.last_diplomatic_action == Some(state.date) {
+                    return Err(ActionError::DiplomaticActionCooldown);
+                }
+            }
+
+            // Validate both countries exist
+            if !state.countries.contains_key(country_tag) {
+                return Err(ActionError::CountryNotFound {
+                    tag: country_tag.to_string(),
+                });
+            }
+            if !state.countries.contains_key(target) {
+                return Err(ActionError::CountryNotFound {
+                    tag: target.clone(),
+                });
+            }
+
+            // Cannot ally self
+            if country_tag == target {
+                return Err(ActionError::InvalidAction {
+                    reason: "Cannot ally yourself".to_string(),
+                });
+            }
+
+            // Cannot ally if at war
+            if state.diplomacy.are_at_war(country_tag, target) {
+                return Err(ActionError::InvalidAction {
+                    reason: "Cannot ally during war".to_string(),
+                });
+            }
+
+            // Check if already allied
+            let key = DiplomacyState::sorted_pair(country_tag, target);
+            if state.diplomacy.relations.get(&key) == Some(&RelationType::Alliance) {
+                return Ok(()); // Silently succeed
+            }
+
+            // Check for mutual offers (auto-accept)
+            let reverse_key = (target.clone(), country_tag.to_string());
+            if state
+                .diplomacy
+                .pending_alliance_offers
+                .contains_key(&reverse_key)
+            {
+                // Both want alliance - auto-accept
+                state.diplomacy.pending_alliance_offers.remove(&reverse_key);
+                state
+                    .diplomacy
+                    .relations
+                    .insert(key.clone(), RelationType::Alliance);
+
+                // Alliance breaks rivalry (both directions)
+                if let Some(country) = state.countries.get_mut(country_tag) {
+                    country.rivals.remove(target);
+                    country.last_diplomatic_action = Some(state.date);
+                }
+                if let Some(target_country) = state.countries.get_mut(target) {
+                    target_country.rivals.remove(country_tag);
+                }
+
+                log::info!(
+                    "{} auto-accepted {}'s alliance offer (mutual)",
+                    country_tag,
+                    target
+                );
+                return Ok(());
+            }
+
+            // Create pending offer
+            let offer_key = (country_tag.to_string(), target.clone());
+            state
+                .diplomacy
+                .pending_alliance_offers
+                .insert(offer_key, state.date);
+
+            if let Some(country) = state.countries.get_mut(country_tag) {
+                country.last_diplomatic_action = Some(state.date);
+            }
+
+            log::info!("{} offered alliance to {}", country_tag, target);
             Ok(())
         }
-        Command::BreakAlliance { .. } => {
-            log::warn!("BreakAlliance not implemented yet");
+        Command::BreakAlliance { target } => {
+            // One diplomatic action per day - check if already acted today
+            if let Some(country) = state.countries.get(country_tag) {
+                if country.last_diplomatic_action == Some(state.date) {
+                    return Err(ActionError::DiplomaticActionCooldown);
+                }
+            }
+
+            // Validate both countries exist
+            if !state.countries.contains_key(country_tag) {
+                return Err(ActionError::CountryNotFound {
+                    tag: country_tag.to_string(),
+                });
+            }
+            if !state.countries.contains_key(target) {
+                return Err(ActionError::CountryNotFound {
+                    tag: target.clone(),
+                });
+            }
+
+            // Check if actually allied
+            let key = DiplomacyState::sorted_pair(country_tag, target);
+            if state.diplomacy.relations.get(&key) != Some(&RelationType::Alliance) {
+                return Ok(()); // Silently succeed if not allied
+            }
+
+            // Remove alliance
+            state.diplomacy.relations.remove(&key);
+
+            // Apply prestige penalty (-25 prestige per break)
+            if let Some(country) = state.countries.get_mut(country_tag) {
+                country.prestige.add(Fixed::from_int(-25));
+                country.last_diplomatic_action = Some(state.date);
+            }
+
+            log::info!("{} broke alliance with {} (-25 prestige)", country_tag, target);
             Ok(())
         }
         Command::OfferRoyalMarriage { .. } => {
@@ -2598,12 +2752,81 @@ fn execute_command(
             log::info!("{} removed {} as rival", country_tag, target);
             Ok(())
         }
-        Command::AcceptAlliance { .. } => {
-            log::warn!("AcceptAlliance not implemented yet");
+        Command::AcceptAlliance { from } => {
+            // NO cooldown for responses (can accept multiple in one day)
+
+            // Validate both countries exist
+            if !state.countries.contains_key(country_tag) {
+                return Err(ActionError::CountryNotFound {
+                    tag: country_tag.to_string(),
+                });
+            }
+            if !state.countries.contains_key(from) {
+                return Err(ActionError::CountryNotFound {
+                    tag: from.clone(),
+                });
+            }
+
+            // Validate offer exists
+            let offer_key = (from.clone(), country_tag.to_string());
+            if !state
+                .diplomacy
+                .pending_alliance_offers
+                .contains_key(&offer_key)
+            {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("No alliance offer from {}", from),
+                });
+            }
+
+            // Remove offer, create alliance
+            state.diplomacy.pending_alliance_offers.remove(&offer_key);
+            let key = DiplomacyState::sorted_pair(country_tag, from);
+            state
+                .diplomacy
+                .relations
+                .insert(key, RelationType::Alliance);
+
+            // Alliance breaks rivalry (both directions)
+            if let Some(country) = state.countries.get_mut(country_tag) {
+                country.rivals.remove(from);
+            }
+            if let Some(from_country) = state.countries.get_mut(from) {
+                from_country.rivals.remove(country_tag);
+            }
+
+            log::info!("{} accepted alliance offer from {}", country_tag, from);
             Ok(())
         }
-        Command::RejectAlliance { .. } => {
-            log::warn!("RejectAlliance not implemented yet");
+        Command::RejectAlliance { from } => {
+            // NO cooldown for responses (can reject multiple in one day)
+
+            // Validate both countries exist
+            if !state.countries.contains_key(country_tag) {
+                return Err(ActionError::CountryNotFound {
+                    tag: country_tag.to_string(),
+                });
+            }
+            if !state.countries.contains_key(from) {
+                return Err(ActionError::CountryNotFound {
+                    tag: from.clone(),
+                });
+            }
+
+            // Validate offer exists
+            let offer_key = (from.clone(), country_tag.to_string());
+            if !state
+                .diplomacy
+                .pending_alliance_offers
+                .contains_key(&offer_key)
+            {
+                return Ok(()); // Silently succeed if no offer
+            }
+
+            // Remove offer
+            state.diplomacy.pending_alliance_offers.remove(&offer_key);
+
+            log::info!("{} rejected alliance offer from {}", country_tag, from);
             Ok(())
         }
         Command::AcceptRoyalMarriage { .. } => {
@@ -5385,6 +5608,343 @@ mod tests {
         assert_eq!(
             state.countries.get("SWE").unwrap().last_diplomatic_action,
             Some(state.date)
+        );
+    }
+
+    #[test]
+    fn test_offer_alliance_success() {
+        let state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        let inputs = vec![PlayerInputs {
+            country: "SWE".to_string(),
+            commands: vec![Command::OfferAlliance {
+                target: "DEN".to_string(),
+            }],
+            available_commands: vec![],
+            visible_state: None,
+        }];
+
+        let new_state = step_world(
+            &state,
+            &inputs,
+            None,
+            &crate::config::SimConfig::default(),
+            None,
+        );
+
+        // Pending offer should exist
+        let offer_key = ("SWE".to_string(), "DEN".to_string());
+        assert!(new_state
+            .diplomacy
+            .pending_alliance_offers
+            .contains_key(&offer_key));
+
+        // Diplomatic cooldown should be set
+        assert_eq!(
+            new_state.countries.get("SWE").unwrap().last_diplomatic_action,
+            Some(new_state.date)
+        );
+    }
+
+    #[test]
+    fn test_accept_alliance_success() {
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        // Manually create pending offer from SWE to DEN
+        state
+            .diplomacy
+            .pending_alliance_offers
+            .insert(("SWE".to_string(), "DEN".to_string()), state.date);
+
+        // DEN accepts
+        let result = execute_command(
+            &mut state,
+            "DEN",
+            &Command::AcceptAlliance {
+                from: "SWE".to_string(),
+            },
+            None,
+        );
+
+        assert!(result.is_ok());
+
+        // Alliance should be created
+        let key = DiplomacyState::sorted_pair("SWE", "DEN");
+        assert_eq!(
+            state.diplomacy.relations.get(&key),
+            Some(&RelationType::Alliance)
+        );
+
+        // Pending offer should be removed
+        assert!(!state
+            .diplomacy
+            .pending_alliance_offers
+            .contains_key(&("SWE".to_string(), "DEN".to_string())));
+    }
+
+    #[test]
+    fn test_reject_alliance_success() {
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        // Manually create pending offer from SWE to DEN
+        state
+            .diplomacy
+            .pending_alliance_offers
+            .insert(("SWE".to_string(), "DEN".to_string()), state.date);
+
+        // DEN rejects
+        let result = execute_command(
+            &mut state,
+            "DEN",
+            &Command::RejectAlliance {
+                from: "SWE".to_string(),
+            },
+            None,
+        );
+
+        assert!(result.is_ok());
+
+        // Pending offer should be removed
+        assert!(!state
+            .diplomacy
+            .pending_alliance_offers
+            .contains_key(&("SWE".to_string(), "DEN".to_string())));
+
+        // No alliance should be created
+        let key = DiplomacyState::sorted_pair("SWE", "DEN");
+        assert!(state.diplomacy.relations.get(&key).is_none());
+    }
+
+    #[test]
+    fn test_alliance_mutual_offer_auto_accept() {
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        // DEN offers alliance to SWE
+        execute_command(
+            &mut state,
+            "DEN",
+            &Command::OfferAlliance {
+                target: "SWE".to_string(),
+            },
+            None,
+        )
+        .unwrap();
+
+        // SWE offers alliance to DEN (should auto-accept)
+        let result = execute_command(
+            &mut state,
+            "SWE",
+            &Command::OfferAlliance {
+                target: "DEN".to_string(),
+            },
+            None,
+        );
+
+        assert!(result.is_ok());
+
+        // Alliance should be created
+        let key = DiplomacyState::sorted_pair("SWE", "DEN");
+        assert_eq!(
+            state.diplomacy.relations.get(&key),
+            Some(&RelationType::Alliance)
+        );
+
+        // No pending offers should remain
+        assert!(!state
+            .diplomacy
+            .pending_alliance_offers
+            .contains_key(&("SWE".to_string(), "DEN".to_string())));
+        assert!(!state
+            .diplomacy
+            .pending_alliance_offers
+            .contains_key(&("DEN".to_string(), "SWE".to_string())));
+    }
+
+    #[test]
+    fn test_alliance_breaks_rivalry() {
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        // Set up mutual rivalry
+        state
+            .countries
+            .get_mut("SWE")
+            .unwrap()
+            .rivals
+            .insert("DEN".to_string());
+        state
+            .countries
+            .get_mut("DEN")
+            .unwrap()
+            .rivals
+            .insert("SWE".to_string());
+
+        // Create pending offer from SWE to DEN
+        state
+            .diplomacy
+            .pending_alliance_offers
+            .insert(("SWE".to_string(), "DEN".to_string()), state.date);
+
+        // DEN accepts
+        execute_command(
+            &mut state,
+            "DEN",
+            &Command::AcceptAlliance {
+                from: "SWE".to_string(),
+            },
+            None,
+        )
+        .unwrap();
+
+        // Rivalry should be broken (both directions)
+        assert!(!state.countries.get("SWE").unwrap().rivals.contains("DEN"));
+        assert!(!state.countries.get("DEN").unwrap().rivals.contains("SWE"));
+    }
+
+    #[test]
+    fn test_break_alliance_success() {
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .build();
+
+        // Create alliance
+        let key = DiplomacyState::sorted_pair("SWE", "DEN");
+        state
+            .diplomacy
+            .relations
+            .insert(key.clone(), RelationType::Alliance);
+
+        // Get initial prestige
+        let initial_prestige = state.countries.get("SWE").unwrap().prestige.get();
+
+        // SWE breaks alliance
+        let result = execute_command(
+            &mut state,
+            "SWE",
+            &Command::BreakAlliance {
+                target: "DEN".to_string(),
+            },
+            None,
+        );
+
+        assert!(result.is_ok());
+
+        // Alliance should be removed
+        assert!(state.diplomacy.relations.get(&key).is_none());
+
+        // Prestige should be penalized
+        let new_prestige = state.countries.get("SWE").unwrap().prestige.get();
+        assert_eq!(new_prestige, initial_prestige - Fixed::from_int(25));
+    }
+
+    #[test]
+    fn test_alliance_at_war_fails() {
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .with_country("NOR")
+            .build();
+
+        // NOR declares war on SWE
+        execute_command(
+            &mut state,
+            "NOR",
+            &Command::DeclareWar {
+                target: "SWE".to_string(),
+                cb: None,
+            },
+            None,
+        )
+        .unwrap();
+
+        // Try to offer alliance during war (SWE and DEN, while SWE is at war with NOR)
+        // This should fail with "at war" check, not with another country, but the principle is same
+        // Actually, let's test SWE trying to ally DEN while SWE and DEN are at war
+
+        // DEN declares war on SWE
+        state.date = state.date.add_days(1); // Move to next day
+        execute_command(
+            &mut state,
+            "DEN",
+            &Command::DeclareWar {
+                target: "SWE".to_string(),
+                cb: None,
+            },
+            None,
+        )
+        .unwrap();
+
+        // SWE tries to offer alliance to DEN (they are at war)
+        state.date = state.date.add_days(1); // Move to next day
+        let result = execute_command(
+            &mut state,
+            "SWE",
+            &Command::OfferAlliance {
+                target: "DEN".to_string(),
+            },
+            None,
+        );
+
+        // Should fail because they are at war with each other
+        assert!(matches!(result, Err(ActionError::InvalidAction { .. })));
+    }
+
+    #[test]
+    fn test_alliance_calls_defensive_allies() {
+        // This test verifies the existing integration - allies auto-join defensive wars
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("SWE")
+            .with_country("DEN")
+            .with_country("NOR")
+            .build();
+
+        // Create alliance between SWE and DEN
+        let key = DiplomacyState::sorted_pair("SWE", "DEN");
+        state
+            .diplomacy
+            .relations
+            .insert(key, RelationType::Alliance);
+
+        // NOR declares war on SWE (SWE is defender)
+        execute_command(
+            &mut state,
+            "NOR",
+            &Command::DeclareWar {
+                target: "SWE".to_string(),
+                cb: None,
+            },
+            None,
+        )
+        .unwrap();
+
+        // DEN should auto-join as defender (existing integration)
+        let war = state.diplomacy.wars.values().next().unwrap();
+        assert!(
+            war.defenders.contains(&"DEN".to_string()),
+            "DEN (ally) should auto-join defensive war"
         );
     }
 }
