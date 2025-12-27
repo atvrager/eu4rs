@@ -1077,6 +1077,167 @@ pub struct GameModifiers {
     /// Country-level nobles influence modifier.
     /// Applied as: additive modifier to nobles estate influence.
     pub country_nobles_influence_modifier: HashMap<Tag, Fixed>,
+
+    // === Quick Wins Batch 1: Policy & Monarch Power (9 modifiers) ===
+    /// Country-level free military policy slots.
+    /// Applied as: additive bonus to available MIL policy slots.
+    pub country_free_mil_policy: HashMap<Tag, Fixed>,
+
+    /// Country-level free administrative policy slots.
+    /// Applied as: additive bonus to available ADM policy slots.
+    pub country_free_adm_policy: HashMap<Tag, Fixed>,
+
+    /// Country-level free diplomatic policy slots.
+    /// Applied as: additive bonus to available DIP policy slots.
+    pub country_free_dip_policy: HashMap<Tag, Fixed>,
+
+    /// Country-level possible diplomatic policy slots modifier.
+    /// Applied as: additive bonus to max DIP policy slots.
+    pub country_possible_dip_policy_alt: HashMap<Tag, Fixed>,
+
+    /// Country-level free policy slots (any category).
+    /// Applied as: additive bonus to available policy slots.
+    pub country_free_policy: HashMap<Tag, Fixed>,
+
+    /// Country-level monarch diplomatic power bonus.
+    /// Applied as: additive bonus to ruler's DIP skill.
+    pub country_monarch_diplomatic_power: HashMap<Tag, Fixed>,
+
+    /// Country-level monarch administrative power bonus.
+    /// Applied as: additive bonus to ruler's ADM skill.
+    pub country_monarch_admin_power: HashMap<Tag, Fixed>,
+
+    /// Country-level country military power modifier.
+    /// Applied as: additive bonus to MIL power generation.
+    pub country_country_military_power: HashMap<Tag, Fixed>,
+
+    /// Country-level monarch power tribute modifier.
+    /// Applied as: (1 + modifier) multiplier to monarch power from tributaries.
+    pub country_monarch_power_tribute: HashMap<Tag, Fixed>,
+
+    // === Quick Wins Batch 2: Religion & Governance (9 modifiers) ===
+    /// Country-level missionary maintenance cost modifier.
+    /// Applied as: (1 + modifier) multiplier to missionary maintenance.
+    pub country_missionary_maintenance_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level enforce religion cost modifier.
+    /// Applied as: (1 + modifier) multiplier to enforce religion cost.
+    pub country_enforce_religion_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level tolerance of heretics capacity modifier.
+    /// Applied as: additive bonus to tolerance of heretics cap.
+    pub country_tolerance_of_heretics_capacity: HashMap<Tag, Fixed>,
+
+    /// Country-level overextension impact modifier.
+    /// Applied as: (1 + modifier) multiplier to overextension penalties.
+    pub country_overextension_impact_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level state governing cost modifier.
+    /// Applied as: (1 + modifier) multiplier to state governing cost.
+    pub country_state_governing_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level minimum autonomy in territories modifier.
+    /// Applied as: additive bonus to min autonomy floor in territories.
+    pub country_min_autonomy_in_territories: HashMap<Tag, Fixed>,
+
+    /// Country-level autonomy change time modifier.
+    /// Applied as: (1 + modifier) multiplier to time between autonomy changes.
+    pub country_autonomy_change_time: HashMap<Tag, Fixed>,
+
+    /// Country-level expand infrastructure cost modifier.
+    /// Applied as: (1 + modifier) multiplier to expand infrastructure cost.
+    pub country_expand_infrastructure_cost_modifier: HashMap<Tag, Fixed>,
+
+    // === Quick Wins Batch 3: Advisors & Diplomacy (7 modifiers) ===
+    /// Country-level ADM advisor cost modifier.
+    /// Applied as: (1 + modifier) multiplier to administrative advisor costs.
+    pub country_adm_advisor_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level DIP advisor cost modifier.
+    /// Applied as: (1 + modifier) multiplier to diplomatic advisor costs.
+    pub country_dip_advisor_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level same religion advisor cost modifier.
+    /// Applied as: (1 + modifier) multiplier to cost of hiring same religion advisors.
+    pub country_same_religion_advisor_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level reverse relation with same religion modifier.
+    /// Applied as: additive bonus to opinion from countries of same religion.
+    pub country_reverse_relation_with_same_religion: HashMap<Tag, Fixed>,
+
+    /// Country-level reduced liberty desire on other continent modifier.
+    /// Applied as: additive reduction to liberty desire for subjects on other continents.
+    pub country_reduced_liberty_desire_on_other_continent: HashMap<Tag, Fixed>,
+
+    /// Country-level rival change cost modifier.
+    /// Applied as: (1 + modifier) multiplier to cost of changing rivals.
+    pub country_rival_change_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level stability cost to declare war modifier.
+    /// Applied as: additive cost in stability to declare war.
+    pub country_stability_cost_to_declare_war: HashMap<Tag, Fixed>,
+
+    // === Quick Wins Batch 4: Naval & Military (10 modifiers) ===
+    /// Country-level ship power propagation modifier.
+    /// Applied as: (1 + modifier) multiplier to ship power propagation.
+    pub country_ship_power_propagation: HashMap<Tag, Fixed>,
+
+    /// Country-level vassal naval force limit bonus modifier.
+    /// Applied as: additive bonus to force limit from vassals' naval force.
+    pub country_vassal_naval_forcelimit_bonus: HashMap<Tag, Fixed>,
+
+    /// Country-level admiral cost modifier.
+    /// Applied as: (1 + modifier) multiplier to admiral recruitment cost.
+    pub country_admiral_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level flagship cost modifier.
+    /// Applied as: (1 + modifier) multiplier to flagship construction cost.
+    pub country_flagship_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level heavy ship cost modifier.
+    /// Applied as: (1 + modifier) multiplier to heavy ship construction cost.
+    pub country_heavy_ship_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level artillery fire modifier.
+    /// Applied as: additive bonus to artillery fire damage.
+    pub country_artillery_fire: HashMap<Tag, Fixed>,
+
+    /// Country-level artillery shock modifier.
+    /// Applied as: additive bonus to artillery shock damage.
+    pub country_artillery_shock: HashMap<Tag, Fixed>,
+
+    /// Country-level infantry shock modifier.
+    /// Applied as: additive bonus to infantry shock damage.
+    pub country_infantry_shock: HashMap<Tag, Fixed>,
+
+    /// Country-level global naval barrage cost modifier.
+    /// Applied as: (1 + modifier) multiplier to naval barrage cost.
+    pub country_global_naval_barrage_cost: HashMap<Tag, Fixed>,
+
+    /// Country-level landing penalty modifier.
+    /// Applied as: additive reduction to amphibious landing penalty.
+    pub country_landing_penalty: HashMap<Tag, Fixed>,
+
+    // === Quick Wins Batch 5: Miscellaneous (5 modifiers) ===
+    /// Country-level monthly gold inflation modifier.
+    /// Applied as: (1 + modifier) multiplier to monthly gold inflation.
+    pub country_monthly_gold_inflation_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level global prosperity growth modifier.
+    /// Applied as: (1 + modifier) multiplier to global prosperity growth rate.
+    pub country_global_prosperity_growth: HashMap<Tag, Fixed>,
+
+    /// Country-level spy action cost modifier.
+    /// Applied as: (1 + modifier) multiplier to spy action costs.
+    pub country_spy_action_cost_modifier: HashMap<Tag, Fixed>,
+
+    /// Country-level global allowed number of buildings modifier.
+    /// Applied as: additive bonus to max number of buildings allowed.
+    pub country_global_allowed_num_of_buildings: HashMap<Tag, Fixed>,
+
+    /// Country-level special unit cost modifier.
+    /// Applied as: (1 + modifier) multiplier to special unit costs.
+    pub country_special_unit_cost_modifier: HashMap<Tag, Fixed>,
 }
 
 impl GameModifiers {

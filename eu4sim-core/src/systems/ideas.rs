@@ -393,6 +393,50 @@ impl ModifierStubTracker {
                 | "vaisyas_loyalty_modifier"
                 | "max_hostile_attrition"
                 | "nobles_influence_modifier"
+            // Quick Wins Batch 1: Policy & Monarch Power
+                | "free_mil_policy"
+                | "free_adm_policy"
+                | "free_dip_policy"
+                | "possible_dip_policy"
+                | "free_policy"
+                | "monarch_diplomatic_power"
+                | "monarch_admin_power"
+                | "country_military_power"
+                | "monarch_power_tribute"
+            // Quick Wins Batch 2: Religion & Governance
+                | "missionary_maintenance_cost"
+                | "enforce_religion_cost"
+                | "tolerance_of_heretics_capacity"
+                | "overextension_impact_modifier"
+                | "state_governing_cost"
+                | "min_autonomy_in_territories"
+                | "autonomy_change_time"
+                | "expand_infrastructure_cost_modifier"
+            // Quick Wins Batch 3: Advisors & Diplomacy
+                | "adm_advisor_cost"
+                | "dip_advisor_cost"
+                | "same_religion_advisor_cost"
+                | "reverse_relation_with_same_religion"
+                | "reduced_liberty_desire_on_other_continent"
+                | "rival_change_cost"
+                | "stability_cost_to_declare_war"
+            // Quick Wins Batch 4: Naval & Military
+                | "ship_power_propagation"
+                | "vassal_naval_forcelimit_bonus"
+                | "admiral_cost"
+                | "flagship_cost"
+                | "heavy_ship_cost"
+                | "artillery_fire"
+                | "artillery_shock"
+                | "infantry_shock"
+                | "global_naval_barrage_cost"
+                | "landing_penalty"
+            // Quick Wins Batch 5: Miscellaneous
+                | "monthly_gold_inflation_modifier"
+                | "global_prosperity_growth"
+                | "spy_action_cost_modifier"
+                | "global_allowed_num_of_buildings"
+                | "special_unit_cost_modifier"
         )
     }
 }
@@ -3090,6 +3134,445 @@ pub fn apply_modifier(
                 .unwrap_or(Fixed::ZERO);
             modifiers
                 .country_nobles_influence_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Quick Wins Batch 1: Policy & Monarch Power ===
+        "free_mil_policy" => {
+            let current = modifiers
+                .country_free_mil_policy
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_free_mil_policy
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "free_adm_policy" => {
+            let current = modifiers
+                .country_free_adm_policy
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_free_adm_policy
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "free_dip_policy" => {
+            let current = modifiers
+                .country_free_dip_policy
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_free_dip_policy
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "possible_dip_policy" => {
+            let current = modifiers
+                .country_possible_dip_policy_alt
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_possible_dip_policy_alt
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "free_policy" => {
+            let current = modifiers
+                .country_free_policy
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_free_policy
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "monarch_diplomatic_power" => {
+            let current = modifiers
+                .country_monarch_diplomatic_power
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_monarch_diplomatic_power
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "monarch_admin_power" => {
+            let current = modifiers
+                .country_monarch_admin_power
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_monarch_admin_power
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "country_military_power" => {
+            let current = modifiers
+                .country_country_military_power
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_country_military_power
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "monarch_power_tribute" => {
+            let current = modifiers
+                .country_monarch_power_tribute
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_monarch_power_tribute
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Quick Wins Batch 2: Religion & Governance ===
+        "missionary_maintenance_cost" => {
+            let current = modifiers
+                .country_missionary_maintenance_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_missionary_maintenance_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "enforce_religion_cost" => {
+            let current = modifiers
+                .country_enforce_religion_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_enforce_religion_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "tolerance_of_heretics_capacity" => {
+            let current = modifiers
+                .country_tolerance_of_heretics_capacity
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_tolerance_of_heretics_capacity
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "overextension_impact_modifier" => {
+            let current = modifiers
+                .country_overextension_impact_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_overextension_impact_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "state_governing_cost" => {
+            let current = modifiers
+                .country_state_governing_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_state_governing_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "min_autonomy_in_territories" => {
+            let current = modifiers
+                .country_min_autonomy_in_territories
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_min_autonomy_in_territories
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "autonomy_change_time" => {
+            let current = modifiers
+                .country_autonomy_change_time
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_autonomy_change_time
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "expand_infrastructure_cost_modifier" => {
+            let current = modifiers
+                .country_expand_infrastructure_cost_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_expand_infrastructure_cost_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Quick Wins Batch 3: Advisors & Diplomacy ===
+        "adm_advisor_cost" => {
+            let current = modifiers
+                .country_adm_advisor_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_adm_advisor_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "dip_advisor_cost" => {
+            let current = modifiers
+                .country_dip_advisor_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_dip_advisor_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "same_religion_advisor_cost" => {
+            let current = modifiers
+                .country_same_religion_advisor_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_same_religion_advisor_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "reverse_relation_with_same_religion" => {
+            let current = modifiers
+                .country_reverse_relation_with_same_religion
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_reverse_relation_with_same_religion
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "reduced_liberty_desire_on_other_continent" => {
+            let current = modifiers
+                .country_reduced_liberty_desire_on_other_continent
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_reduced_liberty_desire_on_other_continent
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "rival_change_cost" => {
+            let current = modifiers
+                .country_rival_change_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_rival_change_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "stability_cost_to_declare_war" => {
+            let current = modifiers
+                .country_stability_cost_to_declare_war
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_stability_cost_to_declare_war
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Quick Wins Batch 4: Naval & Military ===
+        "ship_power_propagation" => {
+            let current = modifiers
+                .country_ship_power_propagation
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_ship_power_propagation
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "vassal_naval_forcelimit_bonus" => {
+            let current = modifiers
+                .country_vassal_naval_forcelimit_bonus
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_vassal_naval_forcelimit_bonus
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "admiral_cost" => {
+            let current = modifiers
+                .country_admiral_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_admiral_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "flagship_cost" => {
+            let current = modifiers
+                .country_flagship_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_flagship_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "heavy_ship_cost" => {
+            let current = modifiers
+                .country_heavy_ship_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_heavy_ship_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "artillery_fire" => {
+            let current = modifiers
+                .country_artillery_fire
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_artillery_fire
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "artillery_shock" => {
+            let current = modifiers
+                .country_artillery_shock
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_artillery_shock
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "infantry_shock" => {
+            let current = modifiers
+                .country_infantry_shock
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_infantry_shock
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "global_naval_barrage_cost" => {
+            let current = modifiers
+                .country_global_naval_barrage_cost
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_global_naval_barrage_cost
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "landing_penalty" => {
+            let current = modifiers
+                .country_landing_penalty
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_landing_penalty
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+
+        // === Quick Wins Batch 5: Miscellaneous ===
+        "monthly_gold_inflation_modifier" => {
+            let current = modifiers
+                .country_monthly_gold_inflation_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_monthly_gold_inflation_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "global_prosperity_growth" => {
+            let current = modifiers
+                .country_global_prosperity_growth
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_global_prosperity_growth
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "spy_action_cost_modifier" => {
+            let current = modifiers
+                .country_spy_action_cost_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_spy_action_cost_modifier
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "global_allowed_num_of_buildings" => {
+            let current = modifiers
+                .country_global_allowed_num_of_buildings
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_global_allowed_num_of_buildings
+                .insert(tag.to_string(), current + entry.value);
+            true
+        }
+        "special_unit_cost_modifier" => {
+            let current = modifiers
+                .country_special_unit_cost_modifier
+                .get(tag)
+                .copied()
+                .unwrap_or(Fixed::ZERO);
+            modifiers
+                .country_special_unit_cost_modifier
                 .insert(tag.to_string(), current + entry.value);
             true
         }
