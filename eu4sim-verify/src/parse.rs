@@ -885,6 +885,31 @@ fn parse_country_block(tag: &str, content: &str) -> crate::ExtractedCountry {
                 total: income_array.iter().sum(),
             });
 
+            // Log ALL non-zero income categories for MNG (to see tribute income)
+            if tag == "MNG" {
+                log::debug!("{} ALL income categories:", tag);
+                for (i, &val) in income_array.iter().enumerate() {
+                    if val.abs() > 0.01 {
+                        let category = match i {
+                            0 => "Taxation",
+                            1 => "Production",
+                            2 => "Trade",
+                            3 => "Gold",
+                            4 => "Tariffs",
+                            5 => "Vassals/Tribute",
+                            6 => "Harbor Fees",
+                            7 => "Subsidies",
+                            8 => "War Reparations",
+                            9 => "Interest",
+                            10 => "Gifts",
+                            11 => "Events",
+                            _ => "Other",
+                        };
+                        log::debug!("  [{}] {}: {:.2}", i, category, val);
+                    }
+                }
+            }
+
             log::debug!(
                 "{} ledger parsed: tax={:.2}, prod={:.2}, trade={:.2}, gold={:.2}, tariffs={:.2}, subsidies={:.2}, total={:.2}",
                 tag,
@@ -930,14 +955,32 @@ fn parse_country_block(tag: &str, content: &str) -> crate::ExtractedCountry {
                             0 => "Advisor",
                             1 => "Interest",
                             2 => "State maintenance",
-                            3 => "Subsidies",
+                            3 => "Subsidies (outgoing)",
                             4 => "War reparations",
-                            5 => "Army recruitment",
-                            6 => "Army maintenance",
-                            7 => "Fleet maintenance",
-                            8 => "Fort maintenance",
-                            27 => "Root out corruption",
-                            _ => "Other",
+                            5 => "Army maintenance",
+                            6 => "Fleet maintenance",
+                            7 => "Fort maintenance",
+                            8 => "Colonists",
+                            9 => "Missionaries",
+                            10 => "Raising armies",
+                            11 => "Building fleets",
+                            12 => "Building fortresses",
+                            13 => "Buildings",
+                            14 => "Repaid loans",
+                            15 => "Gifts",
+                            16 => "Advisors (purchase)",
+                            17 => "Events",
+                            18 => "Peace",
+                            19 => "Vassal/Tribute fee",
+                            20 => "Tariffs",
+                            21 => "Support loyalists",
+                            22 => "Condottieri",
+                            23 => "Root out corruption",
+                            24 => "Embrace institution",
+                            25 => "Knowledge sharing",
+                            26 => "Trade company investments",
+                            27 => "Other",
+                            _ => "Unknown",
                         };
                         log::debug!("  [{}] {}: {:.2}", i, category, val);
                     }
