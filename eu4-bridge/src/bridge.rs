@@ -146,6 +146,7 @@ impl ExtractedState {
             religion: None,
             trade: Default::default(),
             income: Default::default(),
+            fixed_expenses: Fixed::ZERO, // Can't extract from OCR yet
             last_diplomatic_action: None,
             peace_offer_cooldowns: Default::default(),
             pending_call_to_arms: Default::default(),

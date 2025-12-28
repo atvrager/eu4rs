@@ -304,8 +304,10 @@ fn parse_binary_gamestate(data: &[u8]) -> Result<ExtractedState> {
             dip_power: None,
             mil_power: None,
             monthly_income,
+            total_monthly_expenses: None, // Will be calculated from ledger array in text parse
             army_maintenance: Some(expense_ledger.army_maintenance as f64),
             navy_maintenance: Some(expense_ledger.fleet_maintenance as f64),
+            fort_maintenance: Some(expense_ledger.fort_maintenance as f64),
             advisors,
             ideas,
             owned_province_ids: owned,
@@ -602,8 +604,10 @@ fn parse_with_query(query: eu4save::query::Query) -> Result<ExtractedState> {
             dip_power: None,
             mil_power: None,
             monthly_income,
+            total_monthly_expenses: None, // Will be calculated from ledger array in text parse
             army_maintenance: Some(expense_ledger.army_maintenance as f64),
             navy_maintenance: Some(expense_ledger.fleet_maintenance as f64),
+            fort_maintenance: Some(expense_ledger.fort_maintenance as f64),
             advisors,
             ideas,
             owned_province_ids: owned,
@@ -773,6 +777,58 @@ fn extract_block(text: &str) -> Option<&str> {
     }
 }
 
+/// Parse ledger income/expense arrays from country block.
+///
+/// Returns (income_array, expense_array) where indices map to specific categories.
+///
+/// Income indices (19 total):
+/// 0: Taxation, 1: Production, 2: Trade, 3: Gold, 4: Tariffs, 5: Vassals,
+/// 6: Harbor Fees, 7: Subsidies, 8: War Reparations, 9: Interest, 10: Gifts,
+/// 11: Events, 12: Spoils of War, 13: Treasure Fleet, 14: Siphoning Income,
+/// 15: Condottieri, 16: Knowledge Sharing, 17: Blockading Foreign Ports, 18: Looting
+///
+/// Expense indices (38 total):
+/// 0: Advisor, 1: Interest, 2: State maintenance, 3: Subsidies, 4: War reparations,
+/// 5: Army recruitiment, 6: Army maintenance, 7: Fleet maintenance, 8: Fort maintenance,
+/// 9-37: Various other expenses
+fn parse_ledger_arrays(block: &str) -> Option<(Vec<f64>, Vec<f64>)> {
+    // Look for lastmonthincometable and lastmonthexpensetable
+    // These span multiple lines, so we need to match across newlines
+    let income_re = regex::Regex::new(r"(?s)lastmonthincometable=\{([^}]+)\}").ok()?;
+    let expense_re = regex::Regex::new(r"(?s)lastmonthexpensetable=\{([^}]+)\}").ok()?;
+
+    log::trace!("Looking for ledger data in block of length {}", block.len());
+    let income_cap = income_re.captures(block);
+    let expense_cap = expense_re.captures(block);
+
+    if income_cap.is_none() {
+        log::trace!("No income ledger found");
+        return None;
+    }
+    if expense_cap.is_none() {
+        log::trace!("No expense ledger found");
+        return None;
+    }
+
+    let income_cap = income_cap?;
+    let expense_cap = expense_cap?;
+
+    let income_str = income_cap.get(1)?.as_str();
+    let expense_str = expense_cap.get(1)?.as_str();
+
+    let income: Vec<f64> = income_str
+        .split_whitespace()
+        .filter_map(|s| s.parse::<f64>().ok())
+        .collect();
+
+    let expense: Vec<f64> = expense_str
+        .split_whitespace()
+        .filter_map(|s| s.parse::<f64>().ok())
+        .collect();
+
+    Some((income, expense))
+}
+
 /// Parse a country block to extract key values
 fn parse_country_block(tag: &str, content: &str) -> crate::ExtractedCountry {
     let mut country = crate::ExtractedCountry {
@@ -795,6 +851,74 @@ fn parse_country_block(tag: &str, content: &str) -> crate::ExtractedCountry {
 
     // Extract ideas
     country.ideas = extract_ideas(content, tag);
+
+    // Extract ledger data (income/expense arrays)
+    log::trace!("{}: Attempting to parse ledger arrays", tag);
+    if let Some((income_array, expense_array)) = parse_ledger_arrays(content) {
+        // Map array indices to MonthlyIncome fields
+        // Based on EU4's ledger format (19 income categories):
+        // 0: Taxation, 1: Production, 2: Trade, 3: Gold, 4: Tariffs,
+        // 5: Vassals, 6: Harbor Fees, 7: Subsidies, 8: War Reparations,
+        // 9: Interest, 10: Gifts, 11: Events, 12: Spoils of War,
+        // 13: Treasure Fleet, 14: Siphoning Income, 15: Condottieri,
+        // 16: Knowledge Sharing, 17: Blockading Foreign Ports, 18: Looting
+        if income_array.len() >= 7 {
+            country.monthly_income = Some(crate::MonthlyIncome {
+                tax: income_array[0],
+                production: income_array[1],
+                trade: income_array[2],
+                gold: income_array[3],
+                tariffs: income_array[4],
+                subsidies: income_array[7], // Subsidies is at index 7
+                total: income_array.iter().sum(),
+            });
+
+            log::debug!(
+                "{} ledger parsed: tax={:.2}, prod={:.2}, trade={:.2}, gold={:.2}, tariffs={:.2}, subsidies={:.2}, total={:.2}",
+                tag,
+                income_array[0],
+                income_array[1],
+                income_array[2],
+                income_array[3],
+                income_array[4],
+                income_array[7],
+                income_array.iter().sum::<f64>()
+            );
+        } else {
+            log::warn!(
+                "{} ledger income array too short: expected 19, got {}",
+                tag,
+                income_array.len()
+            );
+        }
+
+        // Extract expense data
+        // Expense array indices: 6 = Army maintenance, 7 = Fleet maintenance, 8 = Fort maintenance
+        if expense_array.len() >= 9 {
+            country.army_maintenance = Some(expense_array[6]);
+            country.navy_maintenance = Some(expense_array[7]);
+            country.fort_maintenance = Some(expense_array[8]);
+
+            // Calculate total expenses from array
+            let total_expenses: f64 = expense_array.iter().sum();
+            country.total_monthly_expenses = Some(total_expenses);
+
+            log::debug!(
+                "{} expenses from ledger: army={:.2}, fleet={:.2}, fort={:.2}, total={:.2}",
+                tag,
+                expense_array[6],
+                expense_array[7],
+                expense_array[8],
+                total_expenses
+            );
+        } else {
+            log::warn!(
+                "{} ledger expense array too short: expected 38, got {}",
+                tag,
+                expense_array.len()
+            );
+        }
+    }
 
     country
 }

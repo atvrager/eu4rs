@@ -26,7 +26,12 @@ pub fn run_advisor_cost_tick(state: &mut WorldState) {
         country.treasury -= total_cost;
         country.income.expenses += total_cost;
 
-        log::info!("{} advisor salaries: -{}", tag, total_cost);
+        log::debug!(
+            "{} advisor salaries: -{} ({} advisors)",
+            tag,
+            total_cost,
+            country.advisors.len()
+        );
     }
 }
 
@@ -37,17 +42,21 @@ mod tests {
 
     #[test]
     fn test_advisor_cost_single() {
-        let mut state = WorldState::default();
-        state.date = Date::new(1444, 11, 11);
+        let mut state = WorldState {
+            date: Date::new(1444, 11, 11),
+            ..Default::default()
+        };
 
-        let mut country = CountryState::default();
-        country.treasury = Fixed::from_int(100);
-        country.advisors = vec![Advisor {
-            name: "Test Advisor".to_string(),
-            skill: 3,
-            advisor_type: AdvisorType::Administrative,
-            monthly_cost: Fixed::from_int(5),
-        }];
+        let country = CountryState {
+            treasury: Fixed::from_int(100),
+            advisors: vec![Advisor {
+                name: "Test Advisor".to_string(),
+                skill: 3,
+                advisor_type: AdvisorType::Administrative,
+                monthly_cost: Fixed::from_int(5),
+            }],
+            ..Default::default()
+        };
         state.countries.insert("TEST".to_string(), country);
 
         run_advisor_cost_tick(&mut state);
@@ -66,31 +75,35 @@ mod tests {
 
     #[test]
     fn test_advisor_cost_multiple() {
-        let mut state = WorldState::default();
-        state.date = Date::new(1444, 11, 11);
+        let mut state = WorldState {
+            date: Date::new(1444, 11, 11),
+            ..Default::default()
+        };
 
-        let mut country = CountryState::default();
-        country.treasury = Fixed::from_int(100);
-        country.advisors = vec![
-            Advisor {
-                name: "Admin Advisor".to_string(),
-                skill: 5,
-                advisor_type: AdvisorType::Administrative,
-                monthly_cost: Fixed::from_int(20),
-            },
-            Advisor {
-                name: "Diplo Advisor".to_string(),
-                skill: 4,
-                advisor_type: AdvisorType::Diplomatic,
-                monthly_cost: Fixed::from_int(15),
-            },
-            Advisor {
-                name: "Military Advisor".to_string(),
-                skill: 3,
-                advisor_type: AdvisorType::Military,
-                monthly_cost: Fixed::from_int(10),
-            },
-        ];
+        let country = CountryState {
+            treasury: Fixed::from_int(100),
+            advisors: vec![
+                Advisor {
+                    name: "Admin Advisor".to_string(),
+                    skill: 5,
+                    advisor_type: AdvisorType::Administrative,
+                    monthly_cost: Fixed::from_int(20),
+                },
+                Advisor {
+                    name: "Diplo Advisor".to_string(),
+                    skill: 4,
+                    advisor_type: AdvisorType::Diplomatic,
+                    monthly_cost: Fixed::from_int(15),
+                },
+                Advisor {
+                    name: "Military Advisor".to_string(),
+                    skill: 3,
+                    advisor_type: AdvisorType::Military,
+                    monthly_cost: Fixed::from_int(10),
+                },
+            ],
+            ..Default::default()
+        };
         state.countries.insert("TEST".to_string(), country);
 
         run_advisor_cost_tick(&mut state);
@@ -110,12 +123,16 @@ mod tests {
 
     #[test]
     fn test_advisor_cost_no_advisors() {
-        let mut state = WorldState::default();
-        state.date = Date::new(1444, 11, 11);
+        let mut state = WorldState {
+            date: Date::new(1444, 11, 11),
+            ..Default::default()
+        };
 
-        let mut country = CountryState::default();
-        country.treasury = Fixed::from_int(100);
-        country.advisors = vec![];
+        let country = CountryState {
+            treasury: Fixed::from_int(100),
+            advisors: vec![],
+            ..Default::default()
+        };
         state.countries.insert("TEST".to_string(), country);
 
         run_advisor_cost_tick(&mut state);
@@ -135,17 +152,21 @@ mod tests {
     #[test]
     fn test_advisor_cost_negative_treasury() {
         // Advisors should still be paid even if treasury goes negative (debt)
-        let mut state = WorldState::default();
-        state.date = Date::new(1444, 11, 11);
+        let mut state = WorldState {
+            date: Date::new(1444, 11, 11),
+            ..Default::default()
+        };
 
-        let mut country = CountryState::default();
-        country.treasury = Fixed::from_int(5); // Not enough to pay
-        country.advisors = vec![Advisor {
-            name: "Expensive Advisor".to_string(),
-            skill: 5,
-            advisor_type: AdvisorType::Administrative,
-            monthly_cost: Fixed::from_int(20),
-        }];
+        let country = CountryState {
+            treasury: Fixed::from_int(5), // Not enough to pay
+            advisors: vec![Advisor {
+                name: "Expensive Advisor".to_string(),
+                skill: 5,
+                advisor_type: AdvisorType::Administrative,
+                monthly_cost: Fixed::from_int(20),
+            }],
+            ..Default::default()
+        };
         state.countries.insert("TEST".to_string(), country);
 
         run_advisor_cost_tick(&mut state);

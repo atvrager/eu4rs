@@ -1,6 +1,90 @@
 use crate::fixed::Fixed;
-use crate::state::WorldState;
+use crate::state::{Tag, WorldState};
 use eu4data::defines::economy as defines;
+use std::collections::HashMap;
+
+/// Calculate maintenance costs for a country's armies and fleets.
+///
+/// This is used during save file hydration to preserve maintenance costs
+/// even when armies/fleets are cleared for passive simulation.
+pub fn calculate_maintenance_costs(state: &WorldState) -> HashMap<Tag, Fixed> {
+    let mut costs: HashMap<Tag, Fixed> = HashMap::new();
+
+    // 1. Army Maintenance
+    for army in state.armies.values() {
+        let mut cost = Fixed::ZERO;
+        for reg in &army.regiments {
+            // Base cost per regiment
+            let base_cost = Fixed::from_f32(defines::BASE_ARMY_COST);
+
+            // Apply unit-type specific cost modifier
+            let type_mod = match reg.type_ {
+                crate::state::RegimentType::Infantry => state
+                    .modifiers
+                    .country_infantry_cost
+                    .get(&army.owner)
+                    .copied()
+                    .unwrap_or(Fixed::ZERO),
+                crate::state::RegimentType::Cavalry => state
+                    .modifiers
+                    .country_cavalry_cost
+                    .get(&army.owner)
+                    .copied()
+                    .unwrap_or(Fixed::ZERO),
+                crate::state::RegimentType::Artillery => Fixed::ZERO,
+            };
+
+            let modified_cost = base_cost.mul(Fixed::ONE + type_mod);
+            cost += modified_cost;
+        }
+
+        // Apply land maintenance modifier
+        let modifier = state
+            .modifiers
+            .land_maintenance_modifier
+            .get(&army.owner)
+            .copied()
+            .unwrap_or(Fixed::ZERO);
+        let factor = Fixed::ONE + modifier;
+        let final_cost = cost.mul(factor);
+
+        *costs.entry(army.owner.clone()).or_insert(Fixed::ZERO) += final_cost;
+    }
+
+    // 2. Fleet Maintenance
+    for fleet in state.fleets.values() {
+        let mut cost = Fixed::ZERO;
+        for ship in &fleet.ships {
+            // Base cost per ship
+            let base_cost = Fixed::from_f32(defines::BASE_NAVY_COST);
+
+            // Apply ship-type specific cost modifier
+            let type_mod = match ship.type_ {
+                crate::state::ShipType::HeavyShip => Fixed::ZERO,
+                crate::state::ShipType::LightShip => Fixed::ZERO,
+                crate::state::ShipType::Galley => Fixed::ZERO,
+                crate::state::ShipType::Transport => Fixed::ZERO,
+            };
+
+            let modified_cost = base_cost.mul(Fixed::ONE + type_mod);
+            cost += modified_cost;
+        }
+
+        // Apply naval maintenance modifier
+        let modifier = state
+            .modifiers
+            .country_naval_maintenance
+            .get(&fleet.owner)
+            .copied()
+            .unwrap_or(Fixed::ZERO);
+        let factor = Fixed::ONE + modifier;
+        let final_cost = cost.mul(factor);
+
+        *costs.entry(fleet.owner.clone()).or_insert(Fixed::ZERO) += final_cost;
+    }
+
+    costs
+}
 
 /// Runs monthly expense calculations.
 ///
@@ -74,15 +158,17 @@ pub fn run_expenses_tick(state: &mut WorldState) {
             // For now, use the same cost for all ship types
             let type_mod = match ship.type_ {
                 crate::state::ShipType::HeavyShip => Fixed::ZERO, // Could be 4x base
-                crate::state::ShipType::LightShip => Fixed::ZERO,  // 1x base
-                crate::state::ShipType::Galley => Fixed::ZERO,     // 0.75x base
-                crate::state::ShipType::Transport => Fixed::ZERO,  // 0.75x base
+                crate::state::ShipType::LightShip => Fixed::ZERO, // 1x base
+                crate::state::ShipType::Galley => Fixed::ZERO,    // 0.75x base
+                crate::state::ShipType::Transport => Fixed::ZERO, // 0.75x base
             };
 
             let modified_cost = base_cost.mul(Fixed::ONE + type_mod);
             cost += modified_cost;
         }
-        *fleet_costs.entry(fleet.owner.clone()).or_insert(Fixed::ZERO) += cost;
+        *fleet_costs
+            .entry(fleet.owner.clone())
+            .or_insert(Fixed::ZERO) += cost;
     }
 
     // Apply Fleet Costs (with naval maintenance modifier)
@@ -135,6 +221,23 @@ pub fn run_expenses_tick(state: &mut WorldState) {
 
                 country.treasury -= final_cost;
                 country.income.expenses += final_cost;
+            }
+        }
+    }
+
+    // 4. Apply fixed expenses (from passive simulation where armies/fleets were cleared)
+    let country_tags: Vec<String> = state.countries.keys().cloned().collect();
+    for tag in country_tags {
+        if let Some(country) = state.countries.get_mut(&tag) {
+            if country.fixed_expenses > Fixed::ZERO {
+                country.treasury -= country.fixed_expenses;
+                country.income.expenses += country.fixed_expenses;
+
+                log::trace!(
+                    "{} fixed expenses: {} ducats",
+                    tag,
+                    country.fixed_expenses.to_f32()
+                );
             }
         }
     }

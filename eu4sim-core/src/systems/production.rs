@@ -32,7 +32,7 @@ impl Default for EconomyConfig {
 ///
 /// # Formula
 /// ```text
-/// income = goods_produced × goods_price × (1 + efficiency) × (1 - autonomy)
+/// monthly_income = (goods_produced × goods_price × (1 + efficiency) × (1 - autonomy)) / 12
 /// where: goods_produced = base_production × 0.2
 /// ```
 pub fn run_production_tick(state: &mut WorldState, config: &EconomyConfig) {
@@ -104,14 +104,18 @@ pub fn run_production_tick(state: &mut WorldState, config: &EconomyConfig) {
         let autonomy = raw_autonomy.clamp(Fixed::ZERO, Fixed::ONE);
         let autonomy_factor = Fixed::ONE - autonomy;
 
-        // Final: goods × price × efficiency × autonomy (all Fixed multiplies)
-        let income = goods_produced
+        // Yearly production income: goods × price × efficiency × autonomy
+        let yearly_income = goods_produced
             .mul(price)
             .mul(efficiency_factor)
             .mul(autonomy_factor);
 
+        // Monthly income = Yearly / 12
+        let monthly_income =
+            yearly_income.div(Fixed::from_int(eu4data::defines::economy::MONTHS_PER_YEAR));
+
         // Ensure non-negative (production shouldn't reduce treasury)
-        let safe_income = income.max(Fixed::ZERO);
+        let safe_income = monthly_income.max(Fixed::ZERO);
 
         // Aggregate to owner
         *income_deltas.entry(owner.clone()).or_insert(Fixed::ZERO) += safe_income;
@@ -127,6 +131,21 @@ pub fn run_production_tick(state: &mut WorldState, config: &EconomyConfig) {
         if let Some(country) = state.countries.get_mut(&tag) {
             country.treasury += delta;
             country.income.production += delta;
+
+            // Debug logging for Korea
+            if tag == "KOR" {
+                let kor_provinces: Vec<_> = state
+                    .provinces
+                    .values()
+                    .filter(|p| p.owner.as_deref() == Some("KOR"))
+                    .collect();
+                log::debug!(
+                    "Production income for KOR: +{} ducats from {} provinces (avg {:.2}/province)",
+                    delta.to_f32(),
+                    kor_provinces.len(),
+                    delta.to_f32() / kor_provinces.len() as f32
+                );
+            }
         }
     }
 }
@@ -180,8 +199,9 @@ mod tests {
 
         run_production_tick(&mut state, &config);
 
-        // 5 × 0.2 × 2.5 × 1.0 × 1.0 = 2.5
-        let expected_income = Fixed::from_f32(2.5);
+        // Yearly: 5 × 0.2 × 2.5 × 1.0 × 1.0 = 2.5
+        // Monthly: 2.5 / 12 = ~0.2083
+        let expected_income = Fixed::from_f32(2.5 / 12.0);
         let expected_treasury = Fixed::from_int(100) + expected_income;
 
         assert_eq!(state.countries["SWE"].treasury, expected_treasury);
@@ -225,8 +245,9 @@ mod tests {
 
         run_production_tick(&mut state, &config);
 
-        // 5 × 0.2 × 2.5 × 1.5 × 1.0 = 3.75
-        let expected_income = Fixed::from_f32(3.75);
+        // Yearly: 5 × 0.2 × 2.5 × 1.5 × 1.0 = 3.75
+        // Monthly: 3.75 / 12 = 0.3125
+        let expected_income = Fixed::from_f32(3.75 / 12.0);
         let expected_treasury = Fixed::from_int(100) + expected_income;
 
         assert_eq!(state.countries["SWE"].treasury, expected_treasury);
@@ -245,8 +266,11 @@ mod tests {
 
         run_production_tick(&mut state, &config);
 
-        // 5 × 0.2 × 2.5 × 1.0 × 0.5 = 1.25
-        let expected_income = Fixed::from_f32(1.25);
+        // Yearly: 5 × 0.2 × 2.5 × 1.0 × 0.5 = 1.25
+        // Monthly: 1.25 / 12 = ~0.1042
+        // Use Fixed arithmetic for exact match
+        let yearly = Fixed::from_f32(1.25);
+        let expected_income = yearly.div(Fixed::from_int(12));
         let expected_treasury = Fixed::from_int(100) + expected_income;
 
         assert_eq!(state.countries["SWE"].treasury, expected_treasury);

@@ -2,6 +2,7 @@ pub mod coverage;
 pub mod diff;
 pub mod extract;
 pub mod hydrate;
+pub mod ledger_comparison;
 pub mod melt;
 pub mod parse;
 pub mod predict;
@@ -62,9 +63,11 @@ pub struct ExtractedCountry {
     // Income breakdown
     pub monthly_income: Option<MonthlyIncome>,
 
-    // Military
+    // Expense breakdown (from ledger)
+    pub total_monthly_expenses: Option<f64>,
     pub army_maintenance: Option<f64>,
     pub navy_maintenance: Option<f64>,
+    pub fort_maintenance: Option<f64>,
 
     // Advisors (type -> skill level)
     pub advisors: Vec<ExtractedAdvisor>,

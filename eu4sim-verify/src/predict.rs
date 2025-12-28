@@ -203,18 +203,40 @@ fn compare_country(
         log::info!("  TOTAL:      {:>8.2} ducats", income.total);
     }
 
-    if let (Some(army), Some(navy)) = (actual_country.army_maintenance, actual_country.navy_maintenance) {
+    if let (Some(army), Some(navy)) = (
+        actual_country.army_maintenance,
+        actual_country.navy_maintenance,
+    ) {
         log::info!("=== EU4 Ledger (Monthly Expenses) ===");
         log::info!("  Army:       {:>8.2} ducats", army);
         log::info!("  Navy:       {:>8.2} ducats", navy);
-        log::info!("  Advisors:   {:>8.2} ducats", actual_country.advisors.iter().map(|a| 5.0 * (a.skill as f64).powi(2)).sum::<f64>());
+        log::info!(
+            "  Advisors:   {:>8.2} ducats",
+            actual_country
+                .advisors
+                .iter()
+                .map(|a| 5.0 * (a.skill as f64).powi(2))
+                .sum::<f64>()
+        );
     }
 
     log::info!("=== Our Simulation (Monthly) ===");
-    log::info!("  Tax:        {:>8.2} ducats", pred_country.income.taxation.to_f32());
-    log::info!("  Production: {:>8.2} ducats", pred_country.income.production.to_f32());
-    log::info!("  Trade:      {:>8.2} ducats", pred_country.income.trade.to_f32());
-    log::info!("  Expenses:   {:>8.2} ducats", pred_country.income.expenses.to_f32());
+    log::info!(
+        "  Tax:        {:>8.2} ducats",
+        pred_country.income.taxation.to_f32()
+    );
+    log::info!(
+        "  Production: {:>8.2} ducats",
+        pred_country.income.production.to_f32()
+    );
+    log::info!(
+        "  Trade:      {:>8.2} ducats",
+        pred_country.income.trade.to_f32()
+    );
+    log::info!(
+        "  Expenses:   {:>8.2} ducats",
+        pred_country.income.expenses.to_f32()
+    );
 
     // Compare manpower (sim stores raw men, save stores thousands)
     if let Some(actual_mp) = actual_country.current_manpower {

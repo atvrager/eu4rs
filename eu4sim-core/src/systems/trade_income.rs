@@ -9,7 +9,7 @@
 //! - Merchant bonus: +10% collection efficiency
 //!
 //! # Formula
-//! `income = node_value × power_share × efficiency`
+//! `monthly_income = (node_value × power_share × efficiency) / 12`
 //!
 //! where:
 //! - `power_share = country_power / total_node_power`
@@ -142,10 +142,15 @@ fn calculate_trade_income(state: &WorldState) -> HashMap<Tag, Fixed> {
             .unwrap_or(Fixed::ZERO);
         let total_efficiency = merchant_efficiency.mul(Fixed::ONE + trade_eff_mod);
 
-        let final_income = base_income.mul(total_efficiency);
+        // Yearly trade income
+        let yearly_income = base_income.mul(total_efficiency);
+
+        // Monthly income = Yearly / 12
+        let monthly_income =
+            yearly_income.div(Fixed::from_int(eu4data::defines::economy::MONTHS_PER_YEAR));
 
         // Accumulate (country may collect from multiple nodes)
-        *income.entry(tag).or_insert(Fixed::ZERO) += final_income;
+        *income.entry(tag).or_insert(Fixed::ZERO) += monthly_income;
     }
 
     income
@@ -204,8 +209,10 @@ mod tests {
 
         run_trade_income_tick(&mut state);
 
-        // 10 value × 50% power share = 5 income
-        let expected_income = Fixed::from_int(5);
+        // Yearly: 10 value × 50% power share = 5 income
+        // Monthly: 5 / 12 = ~0.4167
+        let yearly = Fixed::from_int(5);
+        let expected_income = yearly.div(Fixed::from_int(12));
         assert_eq!(
             state.countries["SWE"].treasury,
             initial_treasury + expected_income
@@ -227,8 +234,10 @@ mod tests {
         let initial_treasury = state.countries["SWE"].treasury;
         run_trade_income_tick(&mut state);
 
-        // 10 × 50% × 1.1 (merchant bonus) = 5.5
-        let expected_income = Fixed::from_f32(5.5);
+        // Yearly: 10 × 50% × 1.1 (merchant bonus) = 5.5
+        // Monthly: 5.5 / 12 = ~0.4583
+        let yearly = Fixed::from_f32(5.5);
+        let expected_income = yearly.div(Fixed::from_int(12));
         assert_eq!(
             state.countries["SWE"].treasury,
             initial_treasury + expected_income
@@ -272,10 +281,12 @@ mod tests {
         let initial_treasury = state.countries["SWE"].treasury;
         run_trade_income_tick(&mut state);
 
-        // 10 × 50% × 1.1 = 5.5 (merchant bonus applies)
+        // Yearly: 10 × 50% × 1.1 = 5.5 (merchant bonus applies)
+        // Monthly: 5.5 / 12 = ~0.4583
         // Note: Power was already reduced by -50% in trade_power tick
         // Here we just test collection with the power we have
-        let expected_income = Fixed::from_f32(5.5);
+        let yearly = Fixed::from_f32(5.5);
+        let expected_income = yearly.div(Fixed::from_int(12));
         assert_eq!(
             state.countries["SWE"].treasury,
             initial_treasury + expected_income
@@ -331,10 +342,18 @@ mod tests {
 
         run_trade_income_tick(&mut state);
 
-        // SWE: 10 × 50/100 = 5
-        // DAN: 10 × 30/100 = 3
-        assert_eq!(state.countries["SWE"].treasury, Fixed::from_int(5));
-        assert_eq!(state.countries["DAN"].treasury, Fixed::from_int(3));
+        // Yearly: SWE: 10 × 50/100 = 5, DAN: 10 × 30/100 = 3
+        // Monthly: 5/12 = ~0.4167, 3/12 = 0.25
+        let swe_yearly = Fixed::from_int(5);
+        let dan_yearly = Fixed::from_int(3);
+        assert_eq!(
+            state.countries["SWE"].treasury,
+            swe_yearly.div(Fixed::from_int(12))
+        );
+        assert_eq!(
+            state.countries["DAN"].treasury,
+            dan_yearly.div(Fixed::from_int(12))
+        );
     }
 
     #[test]
@@ -400,12 +419,29 @@ mod tests {
 
         state.trade_topology.order.push(node_b);
 
+        let initial_treasury = state.countries["SWE"].treasury;
         run_trade_income_tick(&mut state);
 
-        // Node A (home): 10 × 50% = 5
-        // Node B (merchant): 20 × 25% × 1.1 = 5.5
-        // Total: 10.5
-        let expected_income = Fixed::from_f32(10.5);
-        assert_eq!(state.countries["SWE"].treasury, expected_income);
+        // Yearly:
+        //   Node A (home): 10 × 50% = 5
+        //   Node B (merchant): 20 × 25% × 1.1 = 5.5
+        //   Total: 10.5
+        // Monthly: 10.5 / 12 = ~0.875
+        let final_treasury = state.countries["SWE"].treasury;
+        let income = final_treasury - initial_treasury;
+
+        // Verify income is approximately 10.5/12 (allow for rounding)
+        let expected_approx = Fixed::from_f32(10.5 / 12.0);
+        let diff = if income > expected_approx {
+            income - expected_approx
+        } else {
+            expected_approx - income
+        };
+        assert!(
+            diff < Fixed::from_f32(0.01),
+            "Income {} not close to expected {}",
+            income.to_f32(),
+            expected_approx.to_f32()
+        );
     }
 }

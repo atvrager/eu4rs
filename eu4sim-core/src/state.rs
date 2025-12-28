@@ -784,6 +784,10 @@ pub struct CountryState {
     /// Income breakdown for last month (for display purposes).
     #[serde(default)]
     pub income: IncomeBreakdown,
+    /// Fixed monthly expenses from save file (army/fleet maintenance).
+    /// Used for passive simulation when armies/fleets are cleared.
+    #[serde(default)]
+    pub fixed_expenses: Fixed,
     /// Last date a diplomatic action was taken (for one-per-day limit).
     /// Diplomatic actions: war declarations, peace offers, alliances, etc.
     #[serde(default)]
@@ -875,6 +879,7 @@ impl Default for CountryState {
             prestige: new_prestige(),
             army_tradition: new_tradition(),
             adm_mana: Fixed::ZERO,
+            fixed_expenses: Fixed::ZERO,
             dip_mana: Fixed::ZERO,
             mil_mana: Fixed::ZERO,
             adm_tech: 0,

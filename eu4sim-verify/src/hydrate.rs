@@ -177,15 +177,43 @@ pub fn hydrate_from_save(
         subjects_updated
     );
 
-    // Clear armies for passive simulation to avoid combat/movement AI
-    // Keep fleets for economic simulation (maintenance costs)
+    // Use total monthly expenses from save file ledger, MINUS fort maintenance
+    // (We calculate fort maintenance from provinces, so exclude it to avoid double-counting)
+    for (tag, save_country) in &save.countries {
+        if let Some(country) = world.countries.get_mut(tag) {
+            let total_expenses = save_country.total_monthly_expenses.unwrap_or(0.0);
+            let fort_maint = save_country.fort_maintenance.unwrap_or(0.0);
+
+            // Fixed expenses = everything except fort maintenance
+            // Fort maintenance is calculated from province.fort_level in expense system
+            let fixed_expenses = total_expenses - fort_maint;
+
+            country.fixed_expenses = Fixed::from_f32(fixed_expenses as f32);
+
+            if tag == "KOR" {
+                log::info!(
+                    "{} expenses from save ledger: total={:.2}, fort={:.2}, fixed={:.2} ducats/month",
+                    tag,
+                    total_expenses,
+                    fort_maint,
+                    fixed_expenses
+                );
+            } else {
+                log::debug!(
+                    "{} expenses from save ledger: {:.2} ducats/month",
+                    tag,
+                    fixed_expenses
+                );
+            }
+        }
+    }
+
+    // Clear armies and fleets for passive simulation to avoid combat/movement AI
     let armies_cleared = world.armies.len();
-    let fleets_count = world.fleets.len();
+    let fleets_cleared = world.fleets.len();
 
     // Log fleet details for debugging
-    let korea_fleets: Vec<_> = world.fleets.values()
-        .filter(|f| f.owner == "KOR")
-        .collect();
+    let korea_fleets: Vec<_> = world.fleets.values().filter(|f| f.owner == "KOR").collect();
     log::info!(
         "Korea has {} fleets with {} total ships",
         korea_fleets.len(),
@@ -193,11 +221,11 @@ pub fn hydrate_from_save(
     );
 
     world.armies.clear();
-    // world.fleets.clear(); // DISABLED: Keep fleets for maintenance cost calculation
-    log::debug!(
-        "Cleared {} armies for passive simulation, keeping {} fleets for economics",
+    world.fleets.clear();
+    log::info!(
+        "Cleared {} armies and {} fleets for passive simulation (maintenance costs preserved)",
         armies_cleared,
-        fleets_count
+        fleets_cleared
     );
 
     Ok((world, adjacency))
