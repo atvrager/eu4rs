@@ -1172,7 +1172,11 @@ fn extract_country_modifiers(content: &str) -> Vec<String> {
     }
 
     if !modifiers.is_empty() {
-        log::debug!("Extracted {} country modifiers: {:?}", modifiers.len(), modifiers);
+        log::debug!(
+            "Extracted {} country modifiers: {:?}",
+            modifiers.len(),
+            modifiers
+        );
     }
 
     modifiers

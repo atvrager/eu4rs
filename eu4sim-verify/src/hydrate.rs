@@ -238,10 +238,7 @@ pub fn hydrate_from_save(
             }
         }
     }
-    log::info!(
-        "Applied {} country modifiers from save",
-        modifiers_applied
-    );
+    log::info!("Applied {} country modifiers from save", modifiers_applied);
 
     // Override subjects with save data
     // The base state already has subjects from history/diplomacy, but save file

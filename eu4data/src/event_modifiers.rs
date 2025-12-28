@@ -89,8 +89,9 @@ fn load_file(
                     ..Default::default()
                 };
 
-                // Parse modifier fields
-                if let Some(value_node) = node.children.first() {
+                // Parse modifier fields (value is in second child, first is the key)
+                #[allow(clippy::collapsible_if)]
+                if let Some(value_node) = node.children.get(1) {
                     if let EU4TxtAstItem::AssignmentList = value_node.entry {
                         for field_node in &value_node.children {
                             if let EU4TxtAstItem::Assignment = field_node.entry {
@@ -150,8 +151,20 @@ fn get_key_str(node: &EU4TxtParseNode) -> String {
         .unwrap_or_default()
 }
 
-/// Extract f32 value from an AST node
+/// Extract f32 value from an Assignment node (looks at the value child)
+#[allow(clippy::collapsible_if)]
 pub(crate) fn get_f32(node: &EU4TxtParseNode) -> Option<f32> {
+    // For Assignment nodes, the value is in the second child (first is the key)
+    if let EU4TxtAstItem::Assignment = &node.entry {
+        if let Some(value_node) = node.children.get(1) {
+            return get_f32_value(value_node);
+        }
+    }
+    get_f32_value(node)
+}
+
+/// Extract f32 from a value node directly
+fn get_f32_value(node: &EU4TxtParseNode) -> Option<f32> {
     match &node.entry {
         EU4TxtAstItem::IntValue(n) => Some(*n as f32),
         EU4TxtAstItem::FloatValue(f) => Some(*f),

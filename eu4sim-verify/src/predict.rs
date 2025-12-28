@@ -147,13 +147,18 @@ pub fn run_prediction(
         from_state.countries.get(country),
         to_state.countries.get(country),
     ) {
-        if let (Some(from_treasury), Some(to_treasury)) = (from_country.treasury, to_country.treasury) {
+        if let (Some(from_treasury), Some(to_treasury)) =
+            (from_country.treasury, to_country.treasury)
+        {
             let actual_delta = to_treasury - from_treasury;
-            log::info!(
-                "=== Actual Treasury Change (from saves) ===");
+            log::info!("=== Actual Treasury Change (from saves) ===");
             log::info!("  From ({})  : {:>8.2} ducats", from_date, from_treasury);
             log::info!("  To ({})    : {:>8.2} ducats", to_date, to_treasury);
-            log::info!("  Change      : {:>8.2} ducats over {} days", actual_delta, days);
+            log::info!(
+                "  Change      : {:>8.2} ducats over {} days",
+                actual_delta,
+                days
+            );
             log::info!("  Monthly rate: {:>8.2} ducats/month", actual_delta);
         }
 

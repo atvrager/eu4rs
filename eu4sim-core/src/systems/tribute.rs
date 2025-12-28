@@ -74,7 +74,7 @@ pub fn run_tribute_payments(state: &mut WorldState) {
                 let tribute = full_tribute.mul(proration);
 
                 if tribute > Fixed::ZERO {
-                    log::debug!(
+                    log::trace!(
                         "Tribute calc: {} monthly_income={:.2}, annual={:.2}, rate={}, proration={:.2}, tribute={:.2}",
                         subject_tag,
                         monthly_income.to_f32(),
@@ -83,11 +83,7 @@ pub fn run_tribute_payments(state: &mut WorldState) {
                         proration.to_f32(),
                         tribute.to_f32()
                     );
-                    transfers.push((
-                        subject_tag.clone(),
-                        relationship.overlord.clone(),
-                        tribute,
-                    ));
+                    transfers.push((subject_tag.clone(), relationship.overlord.clone(), tribute));
                 }
             }
         }
@@ -111,8 +107,8 @@ pub fn run_tribute_payments(state: &mut WorldState) {
                 country.treasury -= actual_payment;
                 // Note: Don't add to income.expenses - that's for monthly expenses
                 // Tribute is a yearly lump sum tracked separately in treasury
-                log::info!(
-                    "Tribute: {} pays {} ducats to {} (income-based)",
+                log::debug!(
+                    "Tribute: {} pays {:.2} ducats to {}",
                     subject,
                     actual_payment.to_f32(),
                     overlord
@@ -123,8 +119,8 @@ pub fn run_tribute_payments(state: &mut WorldState) {
             if let Some(country) = state.countries.get_mut(&overlord) {
                 country.treasury += actual_payment;
                 // Could add to income.vassals if we had that field
-                log::debug!(
-                    "Tribute: {} receives {} ducats from {}",
+                log::trace!(
+                    "Tribute: {} receives {:.2} ducats from {}",
                     overlord,
                     actual_payment.to_f32(),
                     subject

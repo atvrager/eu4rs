@@ -37,3 +37,11 @@ debug/
 # Derived token files
 assets/tokens/
 *.tokens.txt
+
+# EU4 save files (verification test saves, autosaves, etc.)
+# Be explicit: these can bloat the repo significantly (multi-MB each)
+*.eu4
+!savegame.eu4
+
+# Agent scratchpad
+.antigravity/

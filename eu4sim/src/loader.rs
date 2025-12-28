@@ -499,8 +499,9 @@ pub fn load_initial_state(
 
     // 5c+. Load Event Modifiers
     log::info!("Loading event modifiers...");
-    let event_modifiers = eu4data::event_modifiers::EventModifiersRegistry::load_from_game(game_path)
-        .map_err(|e| anyhow::anyhow!("Failed to load event modifiers: {}", e))?;
+    let event_modifiers =
+        eu4data::event_modifiers::EventModifiersRegistry::load_from_game(game_path)
+            .map_err(|e| anyhow::anyhow!("Failed to load event modifiers: {}", e))?;
     log::info!("Loaded {} event modifiers", event_modifiers.modifiers.len());
 
     // 5d. Load Estates
