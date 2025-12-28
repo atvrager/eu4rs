@@ -83,6 +83,14 @@ pub fn hydrate_from_save(
     let mut countries_updated = 0;
     for (tag, save_country) in &save.countries {
         if let Some(country) = world.countries.get_mut(tag) {
+            // Debug: Log BEFORE override
+            if tag == "KOR" {
+                log::debug!(
+                    "{} treasury BEFORE override: {} ducats",
+                    tag,
+                    country.treasury.to_f32()
+                );
+            }
             // Update manpower (convert from thousands to raw men)
             if let Some(mp) = save_country.current_manpower {
                 country.manpower = Fixed::from_f32((mp * 1000.0) as f32);
@@ -91,7 +99,35 @@ pub fn hydrate_from_save(
             // Update treasury (ducats - no conversion needed)
             if let Some(treasury) = save_country.treasury {
                 country.treasury = Fixed::from_f32(treasury as f32);
+                log::debug!("{} treasury from save: {} ducats", tag, treasury);
             }
+
+            // Extract advisors from save
+            country.advisors = save_country
+                .advisors
+                .iter()
+                .filter(|adv| adv.is_hired) // Only hired advisors cost money
+                .map(|adv| {
+                    // Map advisor type string to enum category
+                    // EU4 has many advisor types, categorize them into ADM/DIP/MIL
+                    let advisor_type = categorize_advisor_type(&adv.advisor_type);
+
+                    // Calculate monthly cost based on skill level
+                    // EU4 formula is complex, but approximation: base_cost × skill²
+                    // Base cost varies by nation size and modifiers, but ~2-5 ducats is typical
+                    // For skill 1: ~5 ducats/month, skill 2: ~20, skill 3: ~45, etc.
+                    let base_cost = 5.0;
+                    let skill_multiplier = (adv.skill as f32).powi(2);
+                    let monthly_cost = Fixed::from_f32(base_cost * skill_multiplier);
+
+                    eu4sim_core::state::Advisor {
+                        name: format!("{} (skill {})", adv.advisor_type, adv.skill),
+                        skill: adv.skill,
+                        advisor_type,
+                        monthly_cost,
+                    }
+                })
+                .collect();
 
             countries_updated += 1;
         } else {
@@ -168,6 +204,42 @@ fn parse_date(date_str: &str) -> Result<Date> {
     let day: u8 = parts[2].parse()?;
 
     Ok(Date::new(year, month, day))
+}
+
+/// Categorize EU4 advisor type string into ADM/DIP/MIL category.
+///
+/// EU4 has many specific advisor types (philosopher, treasurer, etc.).
+/// This maps them to the three main categories for the simulation.
+fn categorize_advisor_type(advisor_type_str: &str) -> eu4sim_core::state::AdvisorType {
+    use eu4sim_core::state::AdvisorType;
+
+    match advisor_type_str {
+        // Administrative advisors
+        "philosopher" | "natural_scientist" | "artist" | "treasurer" | "theologian"
+        | "master_of_mint" | "inquisitor" => AdvisorType::Administrative,
+
+        // Diplomatic advisors
+        "statesman" | "naval_reformer" | "trader" | "spymaster" | "colonial_governor"
+        | "diplomat" => AdvisorType::Diplomatic,
+
+        // Military advisors
+        "army_reformer"
+        | "army_organiser"
+        | "commandant"
+        | "quartermaster"
+        | "recruitmaster"
+        | "fortification_expert"
+        | "grand_captain" => AdvisorType::Military,
+
+        // Default to administrative if unknown
+        _ => {
+            log::warn!(
+                "Unknown advisor type '{}', defaulting to Administrative",
+                advisor_type_str
+            );
+            AdvisorType::Administrative
+        }
+    }
 }
 
 #[cfg(test)]

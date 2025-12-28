@@ -64,6 +64,14 @@ pub fn run_taxation_tick(state: &mut WorldState) {
         if let Some(country) = state.countries.get_mut(&tag) {
             country.treasury += delta;
             country.income.taxation += delta;
+
+            if tag == "KOR" {
+                log::debug!(
+                    "Taxation: KOR +{:.2} ducats (treasury now: {:.2})",
+                    delta.to_f32(),
+                    country.treasury.to_f32()
+                );
+            }
         }
     }
 }

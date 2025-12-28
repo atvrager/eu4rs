@@ -158,6 +158,7 @@ impl ExtractedState {
             government_reforms: Default::default(), // Can't extract from OCR yet
             estates: Default::default(), // Can't extract from OCR yet
             rivals: Default::default(), // Can't extract from OCR yet
+            advisors: Default::default(), // Can't extract from OCR yet
         };
 
         VisibleWorldState {

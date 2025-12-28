@@ -64,24 +64,77 @@ pub fn run_prediction(
     let from_date_parsed = parse_date(&from_date)?;
     let to_date_parsed = parse_date(&to_date)?;
     let days = days_between(&from_date_parsed, &to_date_parsed);
-    log::info!("Simulating {} days: {} -> {}", days, from_date, to_date);
+    log::info!(
+        "Simulating {} days: {} -> {} (from_epoch: {}, to_epoch: {})",
+        days,
+        from_date,
+        to_date,
+        from_date_parsed.days_from_epoch(),
+        to_date_parsed.days_from_epoch()
+    );
 
     // 3. Hydrate from source save
     let (mut world, adjacency) = hydrate_from_save(game_path, &from_state)?;
     log::info!("Hydrated WorldState at {}", from_date);
+
+    // Debug: Log starting treasury
+    if let Some(c) = world.countries.get(country) {
+        log::debug!(
+            "{} starting treasury: {} ducats",
+            country,
+            c.treasury.to_f32()
+        );
+    }
 
     // 4. Run simulation for N days (passive - no inputs)
     let config = SimConfig {
         checksum_frequency: 0, // Disable checksums for speed
     };
 
-    for day in 0..days {
+    // IMPORTANT: EU4 saves are created BEFORE the daily tick for that date.
+    // When comparing to a save dated "Jan 1", we should simulate UP TO but not INCLUDING Jan 1.
+    // This means we simulate (days - 1) iterations, stopping at Dec 31.
+    //
+    // However, this needs verification with actual EU4 save behavior.
+    // For now, simulate all days and see if stopping 1 day early fixes the delta.
+    let iterations = if days > 0 { days - 1 } else { 0 }; // Stop before target date to avoid extra monthly tick
+
+    for day in 0..iterations {
+        let prev_date = world.date;
+        let prev_treasury = if let Some(c) = world.countries.get(country) {
+            c.treasury.to_f32()
+        } else {
+            0.0
+        };
+
         world = step_world(&world, &[], Some(&adjacency), &config, None);
-        if day % 30 == 0 {
-            log::debug!("Simulated to day {}/{}", day, days);
+
+        let new_treasury = if let Some(c) = world.countries.get(country) {
+            c.treasury.to_f32()
+        } else {
+            0.0
+        };
+
+        if day == 0 || day == iterations - 1 || prev_date.day == 1 || world.date.day == 1 {
+            log::debug!(
+                "Step {}/{}: {} -> {} (day {} -> {}) Treasury: {:.2} -> {:.2} ({:+.2})",
+                day,
+                iterations - 1,
+                prev_date,
+                world.date,
+                prev_date.day,
+                world.date.day,
+                prev_treasury,
+                new_treasury,
+                new_treasury - prev_treasury
+            );
         }
     }
-    log::info!("Simulation complete: {}", world.date);
+    log::info!(
+        "Simulation complete: {} (ran {} iterations)",
+        world.date,
+        days
+    );
 
     // 5. Compare predicted state to actual
     let results = compare_country(&world, &to_state, country);
@@ -142,6 +195,17 @@ fn compare_country(
     // Compare treasury
     if let Some(actual_treasury) = actual_country.treasury {
         let pred_treasury = pred_country.treasury.to_f32() as f64;
+
+        // Debug: Show income breakdown
+        log::debug!(
+            "{} income breakdown - Tax: {}, Prod: {}, Trade: {}, Expenses: {}",
+            tag,
+            pred_country.income.taxation,
+            pred_country.income.production,
+            pred_country.income.trade,
+            pred_country.income.expenses
+        );
+
         results.push(compare_metric("Treasury", pred_treasury, actual_treasury));
     }
 

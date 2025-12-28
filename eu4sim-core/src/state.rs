@@ -823,6 +823,34 @@ pub struct CountryState {
     /// Unilateral relationship: you can rival someone who doesn't rival you back.
     #[serde(default)]
     pub rivals: std::collections::HashSet<Tag>,
+    /// Advisors employed by this country.
+    /// Each advisor provides monthly monarch points but costs ducats per month.
+    #[serde(default)]
+    pub advisors: Vec<Advisor>,
+}
+
+/// An advisor employed by a country.
+///
+/// Advisors provide monthly monarch points but cost ducats each month.
+/// Cost scales with skill level (typically quadratically).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Advisor {
+    /// Advisor name (for debugging/UI)
+    pub name: String,
+    /// Skill level (1-5). Higher skill = more expensive but better bonuses.
+    pub skill: u8,
+    /// Type of advisor (affects which monarch point category they boost)
+    pub advisor_type: AdvisorType,
+    /// Monthly salary cost in ducats
+    pub monthly_cost: Fixed,
+}
+
+/// Category of advisor, determining their bonuses and costs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AdvisorType {
+    Administrative,
+    Diplomatic,
+    Military,
 }
 
 /// Breakdown of monthly income by source.
@@ -868,6 +896,7 @@ impl Default for CountryState {
             policy_slots: 0,
             estates: crate::estates::CountryEstateState::default(),
             rivals: std::collections::HashSet::new(),
+            advisors: Vec::new(),
         }
     }
 }

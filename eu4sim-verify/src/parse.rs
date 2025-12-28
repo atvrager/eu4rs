@@ -250,9 +250,9 @@ fn parse_binary_gamestate(data: &[u8]) -> Result<ExtractedState> {
         let tag_str = tag.to_string();
         let owned = owned_provinces_map.remove(&tag_str).unwrap_or_default();
 
-        // Extract advisor info - simplified extraction from binary format
-        // Binary saves store advisors differently, so we use available data
-        let advisors: Vec<crate::ExtractedAdvisor> = Vec::new(); // TODO: Extract from binary
+        // Extract advisor info from expense ledger
+        // Binary saves don't expose individual advisors, but we can get total monthly cost
+        let advisors = extract_advisors_from_ledger(&query, country);
 
         // Note: eu4save doesn't expose mana points directly, only in ledger data
         // For binary saves, we skip mana extraction
@@ -330,6 +330,54 @@ fn extract_ideas_from_binary(country: &eu4save::models::Country) -> crate::Extra
     }
 
     ideas
+}
+
+/// Extract advisor information from expense ledger
+///
+/// Binary saves don't expose individual advisors through eu4save, but we can get
+/// the total monthly advisor maintenance cost from the expense ledger. We create
+/// stub advisors to represent this expense for simulation purposes.
+fn extract_advisors_from_ledger(
+    query: &eu4save::query::Query,
+    country: &eu4save::models::Country,
+) -> Vec<crate::ExtractedAdvisor> {
+    let expense = query.country_expense_breakdown(country);
+    let monthly_cost = expense.advisor_maintenance;
+
+    log::trace!(
+        "Advisor maintenance from ledger: {:.2} ducats/month",
+        monthly_cost
+    );
+
+    if monthly_cost <= 0.0 {
+        return Vec::new();
+    }
+
+    // Create stub advisors to match the total monthly cost
+    // EU4 advisor cost formula: base_cost × skill²
+    // We'll assume skill-1 advisors (simplest case) with base_cost = 5.0
+    // So each advisor costs 5.0 × 1² = 5.0 ducats/month
+    //
+    // This is a simplification since we don't know actual advisor skills,
+    // but it preserves the correct total expense for treasury calculation.
+    let base_cost_per_advisor = 5.0;
+    let num_advisors = (monthly_cost / base_cost_per_advisor).round() as usize;
+
+    log::debug!(
+        "Creating {} stub advisors for {:.2} ducats/month maintenance",
+        num_advisors,
+        monthly_cost
+    );
+
+    // Create the advisors - distribute types evenly across ADM/DIP/MIL
+    let advisor_types = ["philosopher", "statesman", "army_reformer"];
+    (0..num_advisors)
+        .map(|i| crate::ExtractedAdvisor {
+            advisor_type: advisor_types[i % 3].to_string(),
+            skill: 1, // Assume skill 1 since base_cost × 1² = 5.0
+            is_hired: true,
+        })
+        .collect()
 }
 
 /// Find tokens file in standard locations

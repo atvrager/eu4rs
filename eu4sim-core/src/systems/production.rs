@@ -117,10 +117,16 @@ pub fn run_production_tick(state: &mut WorldState, config: &EconomyConfig) {
         *income_deltas.entry(owner.clone()).or_insert(Fixed::ZERO) += safe_income;
     }
 
-    // Apply to country treasuries
+    // Apply production income to country treasuries
+    // Note: In EU4, you get BOTH production income AND trade value from goods.
+    // This is intentional "double dipping" - production is valuable because:
+    // 1. You get direct production income (here)
+    // 2. The goods also add value to trade nodes (trade_value system)
+    // 3. You can collect trade income from those nodes (trade_income system)
     for (tag, delta) in income_deltas {
         if let Some(country) = state.countries.get_mut(&tag) {
             country.treasury += delta;
+            country.income.production += delta;
         }
     }
 }

@@ -1,5 +1,6 @@
 //! Simulation systems.
 
+pub mod advisors;
 pub mod attrition;
 pub mod buildings;
 pub mod coalitions;
@@ -27,6 +28,7 @@ pub mod trade_power;
 pub mod trade_value;
 pub mod war_score;
 
+pub use advisors::run_advisor_cost_tick;
 pub use attrition::run_attrition_tick;
 pub use buildings::{
     available_buildings, can_build, cancel_construction_conquest, cancel_construction_manual,

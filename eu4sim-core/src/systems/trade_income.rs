@@ -46,7 +46,16 @@ pub fn run_trade_income_tick(state: &mut WorldState) {
         if let Some(country) = state.countries.get_mut(&tag) {
             country.treasury += amount;
             country.income.trade += amount;
-            log::trace!("{} collected {} trade income", tag, amount.to_f32());
+
+            if tag == "KOR" {
+                log::debug!(
+                    "Trade Income: KOR +{:.2} ducats (treasury now: {:.2})",
+                    amount.to_f32(),
+                    country.treasury.to_f32()
+                );
+            } else {
+                log::trace!("{} collected {} trade income", tag, amount.to_f32());
+            }
         }
     }
 }

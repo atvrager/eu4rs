@@ -179,6 +179,15 @@ pub fn step_world(
 
     // Economic systems run monthly (on 1st of each month)
     if new_state.date.day == 1 {
+        // Debug: Log treasury at start of monthly tick
+        if let Some(country) = new_state.countries.get("KOR") {
+            log::debug!(
+                "Monthly tick starting for {} - KOR treasury: {:.2}",
+                new_state.date,
+                country.treasury.to_f32()
+            );
+        }
+
         let econ_start = Instant::now();
         let economy_config = crate::systems::EconomyConfig::default();
 
@@ -224,6 +233,7 @@ pub fn step_world(
         crate::systems::run_attrition_tick(&mut new_state);
         cleanup_empty_armies(&mut new_state); // Attrition can destroy armies
         crate::systems::run_expenses_tick(&mut new_state);
+        crate::systems::run_advisor_cost_tick(&mut new_state);
         crate::systems::run_mana_tick(&mut new_state);
         crate::systems::run_stats_tick(&mut new_state);
         crate::systems::run_colonization_tick(&mut new_state);
