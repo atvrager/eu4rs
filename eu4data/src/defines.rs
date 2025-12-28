@@ -149,6 +149,17 @@ pub mod economy {
     /// Base army maintenance cost per regiment per month (ducats)
     pub const BASE_ARMY_COST: f32 = 0.2;
 
+    /// Base naval maintenance cost per ship per month (ducats)
+    ///
+    /// Note: In EU4, costs vary by ship type:
+    /// - Heavy ships: ~1.0 ducat/month
+    /// - Light ships: ~0.2 ducat/month
+    /// - Galleys: ~0.15 ducat/month
+    /// - Transports: ~0.15 ducat/month
+    ///
+    /// Using 0.2 as a simplified base (same as army)
+    pub const BASE_NAVY_COST: f32 = 0.2;
+
     /// Base fort maintenance cost per month (ducats)
     pub const BASE_FORT_COST: f32 = 1.0;
 

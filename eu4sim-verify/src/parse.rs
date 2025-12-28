@@ -260,6 +260,41 @@ fn parse_binary_gamestate(data: &[u8]) -> Result<ExtractedState> {
         // Extract ideas from active_idea_groups
         let ideas = extract_ideas_from_binary(country);
 
+        // Extract income and expense breakdown from ledger
+        let income_ledger = query.country_income_breakdown(country);
+        let expense_ledger = query.country_expense_breakdown(country);
+
+        let total_income = income_ledger.taxation
+            + income_ledger.production
+            + income_ledger.trade
+            + income_ledger.gold
+            + income_ledger.tariffs
+            + income_ledger.subsidies
+            + income_ledger.vassals
+            + income_ledger.harbor_fees
+            + income_ledger.war_reparations
+            + income_ledger.interest
+            + income_ledger.gifts
+            + income_ledger.events
+            + income_ledger.spoils_of_war
+            + income_ledger.treasure_fleet
+            + income_ledger.siphoning_income
+            + income_ledger.condottieri
+            + income_ledger.knowledge_sharing
+            + income_ledger.blockading_foreign_ports
+            + income_ledger.looting_foreign_cities
+            + income_ledger.other;
+
+        let monthly_income = Some(crate::MonthlyIncome {
+            tax: income_ledger.taxation as f64,
+            production: income_ledger.production as f64,
+            trade: income_ledger.trade as f64,
+            gold: income_ledger.gold as f64,
+            tariffs: income_ledger.tariffs as f64,
+            subsidies: income_ledger.subsidies as f64,
+            total: total_income as f64,
+        });
+
         let extracted = crate::ExtractedCountry {
             tag: tag_str.clone(),
             max_manpower: Some(country.max_manpower.into()),
@@ -268,9 +303,9 @@ fn parse_binary_gamestate(data: &[u8]) -> Result<ExtractedState> {
             adm_power: None, // Not directly available in eu4save Country struct
             dip_power: None,
             mil_power: None,
-            monthly_income: None, // TODO: Extract from ledger
-            army_maintenance: None,
-            navy_maintenance: None,
+            monthly_income,
+            army_maintenance: Some(expense_ledger.army_maintenance as f64),
+            navy_maintenance: Some(expense_ledger.fleet_maintenance as f64),
             advisors,
             ideas,
             owned_province_ids: owned,
@@ -410,15 +445,194 @@ fn find_tokens_file() -> Option<std::path::PathBuf> {
 }
 
 fn parse_text_gamestate(data: &[u8]) -> Result<ExtractedState> {
-    // Strip header if present
-    let content = if data.starts_with(b"EU4txt") {
-        &data[6..]
-    } else {
-        data
+    // Try to use eu4save Query API for ledger data extraction
+    // This works for both binary and text (melted) formats
+    use eu4save::{EnvTokens, Eu4File};
+
+    match Eu4File::from_slice(data) {
+        Ok(file) => {
+            log::debug!("Successfully parsed text save with eu4save, attempting deserialization");
+            // Deserialize the file to get Eu4Save
+            // For text saves, token resolution is not needed but we still pass EnvTokens
+            match file.deserializer().build_save(&EnvTokens) {
+                Ok(save) => {
+                    log::debug!("Deserialized successfully, using Query API for ledger data");
+                    let query = eu4save::query::Query::from_save(save);
+                    parse_with_query(query)
+                }
+                Err(e) => {
+                    log::warn!(
+                        "Failed to deserialize text save: {}, falling back to regex parsing",
+                        e
+                    );
+                    // Fall back to regex-based text parsing
+                    let content = if data.starts_with(b"EU4txt") {
+                        &data[6..]
+                    } else {
+                        data
+                    };
+                    let text = String::from_utf8_lossy(content);
+                    parse_text_content(&text)
+                }
+            }
+        }
+        Err(e) => {
+            log::warn!("Failed to parse text save with eu4save Query API: {}, falling back to regex parsing (no ledger data)", e);
+            // Fall back to regex-based text parsing (no ledger data)
+            let content = if data.starts_with(b"EU4txt") {
+                &data[6..]
+            } else {
+                data
+            };
+            let text = String::from_utf8_lossy(content);
+            parse_text_content(&text)
+        }
+    }
+}
+
+/// Parse save using eu4save Query API (works for binary and melted text)
+fn parse_with_query(query: eu4save::query::Query) -> Result<ExtractedState> {
+    use eu4save::PdsDate;
+    use std::collections::HashMap;
+
+    // Extract meta from save
+    let meta_date = query.save().meta.date.iso_8601().to_string();
+    let meta_player = Some(query.save().meta.player.to_string());
+    let meta_version = format!(
+        "{}.{}.{}.{}",
+        query.save().meta.savegame_version.first,
+        query.save().meta.savegame_version.second,
+        query.save().meta.savegame_version.third,
+        query.save().meta.savegame_version.fourth
+    );
+
+    let save_meta = SaveMeta {
+        date: meta_date,
+        player: meta_player,
+        ironman: query.save().meta.is_ironman,
+        save_version: Some(meta_version),
     };
 
-    let text = String::from_utf8_lossy(content);
-    parse_text_content(&text)
+    let mut countries = HashMap::new();
+    let mut provinces = HashMap::new();
+
+    // Build owned provinces map from province owners
+    let mut owned_provinces_map: HashMap<String, Vec<u32>> = HashMap::new();
+    for (&id, province) in query.save().game.provinces.iter() {
+        let id_u32 = id.as_u16() as u32;
+        let owner_str = province.owner.as_ref().map(|t| t.to_string());
+
+        if let Some(owner) = &owner_str {
+            owned_provinces_map
+                .entry(owner.clone())
+                .or_default()
+                .push(id_u32);
+        }
+
+        let buildings: Vec<String> = province
+            .buildings
+            .iter()
+            .filter_map(|(name, &present)| if present { Some(name.clone()) } else { None })
+            .collect();
+
+        let extracted = crate::ExtractedProvince {
+            id: id_u32,
+            name: Some(province.name.clone()),
+            owner: owner_str,
+            base_tax: Some(province.base_tax.into()),
+            base_production: Some(province.base_production.into()),
+            base_manpower: Some(province.base_manpower.into()),
+            institutions: HashMap::new(),
+            local_autonomy: Some(province.local_autonomy.into()),
+            buildings,
+        };
+
+        provinces.insert(id_u32, extracted);
+    }
+
+    // Extract country data with ledger information
+    for (tag, country) in query.save().game.countries.iter() {
+        let tag_str = tag.to_string();
+        let owned = owned_provinces_map.remove(&tag_str).unwrap_or_default();
+
+        let advisors = extract_advisors_from_ledger(&query, country);
+        let ideas = extract_ideas_from_binary(country);
+
+        // Extract ledger data
+        let income_ledger = query.country_income_breakdown(country);
+        let expense_ledger = query.country_expense_breakdown(country);
+
+        let total_income = income_ledger.taxation
+            + income_ledger.production
+            + income_ledger.trade
+            + income_ledger.gold
+            + income_ledger.tariffs
+            + income_ledger.subsidies
+            + income_ledger.vassals
+            + income_ledger.harbor_fees
+            + income_ledger.war_reparations
+            + income_ledger.interest
+            + income_ledger.gifts
+            + income_ledger.events
+            + income_ledger.spoils_of_war
+            + income_ledger.treasure_fleet
+            + income_ledger.siphoning_income
+            + income_ledger.condottieri
+            + income_ledger.knowledge_sharing
+            + income_ledger.blockading_foreign_ports
+            + income_ledger.looting_foreign_cities
+            + income_ledger.other;
+
+        let monthly_income = Some(crate::MonthlyIncome {
+            tax: income_ledger.taxation as f64,
+            production: income_ledger.production as f64,
+            trade: income_ledger.trade as f64,
+            gold: income_ledger.gold as f64,
+            tariffs: income_ledger.tariffs as f64,
+            subsidies: income_ledger.subsidies as f64,
+            total: total_income as f64,
+        });
+
+        let extracted = crate::ExtractedCountry {
+            tag: tag_str.clone(),
+            max_manpower: Some(country.max_manpower.into()),
+            current_manpower: Some(country.manpower.into()),
+            treasury: Some(country.treasury.into()),
+            adm_power: None,
+            dip_power: None,
+            mil_power: None,
+            monthly_income,
+            army_maintenance: Some(expense_ledger.army_maintenance as f64),
+            navy_maintenance: Some(expense_ledger.fleet_maintenance as f64),
+            advisors,
+            ideas,
+            owned_province_ids: owned,
+        };
+
+        countries.insert(tag_str, extracted);
+    }
+
+    // Extract subjects
+    let mut subjects = HashMap::new();
+    for dep in &query.save().game.diplomacy.dependencies {
+        let subject_tag = dep.second.to_string();
+        subjects.insert(
+            subject_tag.clone(),
+            crate::ExtractedSubject {
+                overlord: dep.first.to_string(),
+                subject: subject_tag,
+                subject_type: dep.subject_type.clone(),
+                start_date: dep.start_date.as_ref().map(|d| d.iso_8601().to_string()),
+            },
+        );
+    }
+
+    Ok(ExtractedState {
+        meta: save_meta,
+        countries,
+        provinces,
+        subjects,
+    })
 }
 
 /// Parse text content (shared between text saves and melted binary)

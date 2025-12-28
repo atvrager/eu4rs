@@ -177,16 +177,27 @@ pub fn hydrate_from_save(
         subjects_updated
     );
 
-    // Clear armies/fleets for passive simulation
-    // (Korea at game start has no active wars, so this is fine)
+    // Clear armies for passive simulation to avoid combat/movement AI
+    // Keep fleets for economic simulation (maintenance costs)
     let armies_cleared = world.armies.len();
-    let fleets_cleared = world.fleets.len();
+    let fleets_count = world.fleets.len();
+
+    // Log fleet details for debugging
+    let korea_fleets: Vec<_> = world.fleets.values()
+        .filter(|f| f.owner == "KOR")
+        .collect();
+    log::info!(
+        "Korea has {} fleets with {} total ships",
+        korea_fleets.len(),
+        korea_fleets.iter().map(|f| f.ships.len()).sum::<usize>()
+    );
+
     world.armies.clear();
-    world.fleets.clear();
+    // world.fleets.clear(); // DISABLED: Keep fleets for maintenance cost calculation
     log::debug!(
-        "Cleared {} armies, {} fleets for passive simulation",
+        "Cleared {} armies for passive simulation, keeping {} fleets for economics",
         armies_cleared,
-        fleets_cleared
+        fleets_count
     );
 
     Ok((world, adjacency))

@@ -7,6 +7,7 @@
 //! 4. Comparing predicted state to save at time T+N
 
 use crate::hydrate::hydrate_from_save;
+use crate::ledger_comparison::print_ledger_comparison;
 use crate::parse::load_save;
 use crate::ExtractedState;
 use anyhow::Result;
@@ -51,6 +52,9 @@ pub fn run_prediction(
     to_save: &Path,
     country: &str,
 ) -> Result<PredictionSummary> {
+    // 0. Print ledger comparison for debugging
+    print_ledger_comparison(from_save, to_save, country)?;
+
     // 1. Load and parse both saves
     log::info!("Loading source save: {:?}", from_save);
     let from_state = load_save(from_save)?;
@@ -91,13 +95,14 @@ pub fn run_prediction(
         checksum_frequency: 0, // Disable checksums for speed
     };
 
-    // IMPORTANT: EU4 saves are created BEFORE the daily tick for that date.
-    // When comparing to a save dated "Jan 1", we should simulate UP TO but not INCLUDING Jan 1.
-    // This means we simulate (days - 1) iterations, stopping at Dec 31.
+    // IMPORTANT: EU4 saves capture state AFTER monthly ticks have run.
+    // A save dated "1445.1.1" has the January monthly tick already applied.
+    // To match this, we need to simulate FROM 12.1 TO 1.1 (inclusive),
+    // which means running the monthly tick on 1.1.
     //
-    // However, this needs verification with actual EU4 save behavior.
-    // For now, simulate all days and see if stopping 1 day early fixes the delta.
-    let iterations = if days > 0 { days - 1 } else { 0 }; // Stop before target date to avoid extra monthly tick
+    // Since step_world() advances the date first, then checks for monthly tick,
+    // we need exactly `days` iterations to reach the target date and trigger its monthly tick.
+    let iterations = days; // Run full days to reach target date and trigger monthly tick
 
     for day in 0..iterations {
         let prev_date = world.date;
@@ -133,7 +138,7 @@ pub fn run_prediction(
     log::info!(
         "Simulation complete: {} (ran {} iterations)",
         world.date,
-        days
+        iterations
     );
 
     // 5. Compare predicted state to actual
@@ -185,6 +190,31 @@ fn compare_country(
             }];
         }
     };
+
+    // Log income/expense comparison from EU4 ledger
+    if let Some(ref income) = actual_country.monthly_income {
+        log::info!("=== EU4 Ledger (Monthly Income) ===");
+        log::info!("  Tax:        {:>8.2} ducats", income.tax);
+        log::info!("  Production: {:>8.2} ducats", income.production);
+        log::info!("  Trade:      {:>8.2} ducats", income.trade);
+        log::info!("  Gold:       {:>8.2} ducats", income.gold);
+        log::info!("  Tariffs:    {:>8.2} ducats", income.tariffs);
+        log::info!("  Subsidies:  {:>8.2} ducats", income.subsidies);
+        log::info!("  TOTAL:      {:>8.2} ducats", income.total);
+    }
+
+    if let (Some(army), Some(navy)) = (actual_country.army_maintenance, actual_country.navy_maintenance) {
+        log::info!("=== EU4 Ledger (Monthly Expenses) ===");
+        log::info!("  Army:       {:>8.2} ducats", army);
+        log::info!("  Navy:       {:>8.2} ducats", navy);
+        log::info!("  Advisors:   {:>8.2} ducats", actual_country.advisors.iter().map(|a| 5.0 * (a.skill as f64).powi(2)).sum::<f64>());
+    }
+
+    log::info!("=== Our Simulation (Monthly) ===");
+    log::info!("  Tax:        {:>8.2} ducats", pred_country.income.taxation.to_f32());
+    log::info!("  Production: {:>8.2} ducats", pred_country.income.production.to_f32());
+    log::info!("  Trade:      {:>8.2} ducats", pred_country.income.trade.to_f32());
+    log::info!("  Expenses:   {:>8.2} ducats", pred_country.income.expenses.to_f32());
 
     // Compare manpower (sim stores raw men, save stores thousands)
     if let Some(actual_mp) = actual_country.current_manpower {
