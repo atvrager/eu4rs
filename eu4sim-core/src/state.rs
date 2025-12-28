@@ -684,6 +684,40 @@ pub enum TechType {
     Mil,
 }
 
+/// Type of tribute a tributary state pays to its overlord.
+///
+/// Tributaries pay one type of tribute annually (on January 1st).
+/// The overlord can request to change the type once per year.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+pub enum TributeType {
+    /// 12.5% of annual income (default)
+    #[default]
+    Gold = 1,
+    /// 3% of development as administrative power (max 12)
+    Adm = 2,
+    /// 3% of development as diplomatic power (max 12)
+    Dip = 3,
+    /// 3% of development as military power (max 12)
+    Mil = 4,
+    /// 25% of annual manpower
+    Manpower = 5,
+}
+
+impl TributeType {
+    /// Convert from save file i32 value to TributeType.
+    /// Returns None for unknown values.
+    pub fn from_i32(value: i32) -> Option<Self> {
+        match value {
+            1 => Some(Self::Gold),
+            2 => Some(Self::Adm),
+            3 => Some(Self::Dip),
+            4 => Some(Self::Mil),
+            5 => Some(Self::Manpower),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProvinceState {
     pub owner: Option<Tag>,
@@ -814,6 +848,10 @@ pub struct CountryState {
     /// High AE (>50) can trigger coalition formation.
     #[serde(default)]
     pub aggressive_expansion: HashMap<Tag, Fixed>,
+    /// Type of tribute this country pays (if a tributary).
+    /// Only meaningful for countries that are tributaries.
+    #[serde(default)]
+    pub tribute_type: Option<TributeType>,
     /// Idea state: which groups and ideas this country has.
     #[serde(default)]
     pub ideas: crate::ideas::CountryIdeaState,
@@ -900,6 +938,7 @@ impl Default for CountryState {
             pending_call_to_arms: std::collections::HashMap::new(),
             overextension: Fixed::ZERO,
             aggressive_expansion: HashMap::new(),
+            tribute_type: None,
             ideas: crate::ideas::CountryIdeaState::default(),
             enabled_policies: Vec::new(),
             policy_slots: 0,

@@ -60,6 +60,9 @@ pub struct ExtractedCountry {
     pub dip_power: Option<f64>,
     pub mil_power: Option<f64>,
 
+    // Tribute type (for tributary states)
+    pub tribute_type: Option<i32>,
+
     // Income breakdown
     pub monthly_income: Option<MonthlyIncome>,
 

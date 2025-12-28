@@ -179,7 +179,10 @@ mod tests {
 
     #[test]
     fn test_load_event_modifiers() {
-        let game_path = crate::path::detect_game_path().expect("Game path not found");
+        let Some(game_path) = crate::path::detect_game_path() else {
+            eprintln!("Skipping test: EU4 not found");
+            return;
+        };
         let registry = EventModifiersRegistry::load_from_game(&game_path).expect("Failed to load");
 
         assert!(registry.modifiers.len() > 100, "Should load many modifiers");

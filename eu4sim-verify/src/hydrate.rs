@@ -115,6 +115,14 @@ pub fn hydrate_from_save(
                 log::debug!("{} treasury from save: {} ducats", tag, treasury);
             }
 
+            // Update tribute type (for tributary states)
+            if let Some(tribute_type_val) = save_country.tribute_type {
+                country.tribute_type = eu4sim_core::state::TributeType::from_i32(tribute_type_val);
+                if let Some(ref tt) = country.tribute_type {
+                    log::debug!("{} tribute_type from save: {:?}", tag, tt);
+                }
+            }
+
             // Extract advisors from save
             country.advisors = save_country
                 .advisors

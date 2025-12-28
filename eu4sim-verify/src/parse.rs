@@ -303,6 +303,7 @@ fn parse_binary_gamestate(data: &[u8]) -> Result<ExtractedState> {
             adm_power: None, // Not directly available in eu4save Country struct
             dip_power: None,
             mil_power: None,
+            tribute_type: country.tribute_type,
             monthly_income,
             total_monthly_expenses: None, // Will be calculated from ledger array in text parse
             army_maintenance: Some(expense_ledger.army_maintenance as f64),
@@ -606,6 +607,7 @@ fn parse_with_query(query: eu4save::query::Query) -> Result<ExtractedState> {
             adm_power: None,
             dip_power: None,
             mil_power: None,
+            tribute_type: country.tribute_type,
             monthly_income,
             total_monthly_expenses: None, // Will be calculated from ledger array in text parse
             army_maintenance: Some(expense_ledger.army_maintenance as f64),
@@ -851,6 +853,9 @@ fn parse_country_block(tag: &str, content: &str) -> crate::ExtractedCountry {
     country.adm_power = extract_float_value(content, "adm_power=");
     country.dip_power = extract_float_value(content, "dip_power=");
     country.mil_power = extract_float_value(content, "mil_power=");
+
+    // Extract tribute type (for tributary states)
+    country.tribute_type = extract_int_value(content, "tribute_type=");
 
     // Extract advisors
     country.advisors = extract_advisors(content, tag);
@@ -1187,6 +1192,21 @@ fn extract_float_value(text: &str, pattern: &str) -> Option<f64> {
     // Find the pattern (must be at line start or after whitespace)
     let re =
         regex::Regex::new(&format!(r"(?:^|\s){}(-?\d+\.?\d*)", regex::escape(pattern))).ok()?;
+    re.captures(text)
+        .and_then(|c| c.get(1))
+        .and_then(|m| m.as_str().parse().ok())
+}
+
+/// Extract an integer value following a pattern like "field=123"
+/// Excludes date-like values (e.g., "1445.6.1") by requiring the number
+/// to be followed by whitespace or newline, not a period.
+fn extract_int_value(text: &str, pattern: &str) -> Option<i32> {
+    // Match integer NOT followed by a period (to avoid matching dates like 1445.6.1)
+    let re = regex::Regex::new(&format!(
+        r"(?:^|\s){}(-?\d+)(?:\s|$)",
+        regex::escape(pattern)
+    ))
+    .ok()?;
     re.captures(text)
         .and_then(|c| c.get(1))
         .and_then(|m| m.as_str().parse().ok())

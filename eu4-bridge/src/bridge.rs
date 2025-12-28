@@ -152,6 +152,7 @@ impl ExtractedState {
             pending_call_to_arms: Default::default(),
             overextension: Fixed::ZERO, // Can't extract from OCR yet
             aggressive_expansion: Default::default(), // Can't extract from OCR yet
+            tribute_type: None,         // OCR doesn't extract tribute type
             ideas: Default::default(),  // Can't extract from OCR yet
             enabled_policies: Default::default(), // Can't extract from OCR yet
             policy_slots: 0,            // Can't extract from OCR yet
