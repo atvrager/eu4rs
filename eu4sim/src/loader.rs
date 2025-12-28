@@ -497,6 +497,12 @@ pub fn load_initial_state(
     }
     log::info!("Loaded {} policies", policy_registry.len());
 
+    // 5c+. Load Event Modifiers
+    log::info!("Loading event modifiers...");
+    let event_modifiers = eu4data::event_modifiers::EventModifiersRegistry::load_from_game(game_path)
+        .map_err(|e| anyhow::anyhow!("Failed to load event modifiers: {}", e))?;
+    log::info!("Loaded {} event modifiers", event_modifiers.modifiers.len());
+
     // 5d. Load Estates
     log::info!("Loading estates...");
     let raw_estates = eu4data::estates::load_estates(game_path)
@@ -651,6 +657,8 @@ pub fn load_initial_state(
             idea_groups,
             // Policy system
             policies: policy_registry,
+            // Event modifier system
+            event_modifiers,
             // Government type system
             government_types: eu4sim_core::government::GovernmentRegistry::new(),
             // Estate system

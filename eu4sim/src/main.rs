@@ -218,6 +218,8 @@ fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGra
         idea_groups: Default::default(),
         // Policy system
         policies: Default::default(),
+        // Event modifier system
+        event_modifiers: Default::default(),
         // Government type system
         government_types: Default::default(),
         // Estate system

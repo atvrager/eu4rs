@@ -52,6 +52,8 @@ impl WorldStateBuilder {
                 idea_groups: Default::default(),
                 // Policy system
                 policies: Default::default(),
+                // Event modifier system
+                event_modifiers: Default::default(),
                 // Government type system
                 government_types: Default::default(),
                 // Estate system

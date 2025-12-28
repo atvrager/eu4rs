@@ -68,12 +68,17 @@ pub struct ExtractedCountry {
     pub army_maintenance: Option<f64>,
     pub navy_maintenance: Option<f64>,
     pub fort_maintenance: Option<f64>,
+    pub state_maintenance: Option<f64>,
+    pub root_out_corruption: Option<f64>,
 
     // Advisors (type -> skill level)
     pub advisors: Vec<ExtractedAdvisor>,
 
     // Ideas
     pub ideas: ExtractedIdeas,
+
+    // Active country modifiers (event modifiers, government bonuses, etc.)
+    pub active_modifiers: Vec<String>,
 
     // For recalculation
     pub owned_province_ids: Vec<u32>,

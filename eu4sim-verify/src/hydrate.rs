@@ -150,6 +150,99 @@ pub fn hydrate_from_save(
     }
     log::info!("Updated {} countries from save", countries_updated);
 
+    // Apply country modifiers from save
+    log::info!("Applying country modifiers from save");
+    let mut modifiers_applied = 0;
+    for (tag, save_country) in &save.countries {
+        for modifier_name in &save_country.active_modifiers {
+            if let Some(modifier_def) = world.event_modifiers.get(modifier_name) {
+                // Apply tax modifier
+                if let Some(tax_mod) = modifier_def.global_tax_modifier {
+                    let current = world
+                        .modifiers
+                        .country_tax_modifier
+                        .get(tag)
+                        .copied()
+                        .unwrap_or(Fixed::ZERO);
+                    world
+                        .modifiers
+                        .country_tax_modifier
+                        .insert(tag.clone(), current + Fixed::from_f32(tax_mod));
+                    log::debug!(
+                        "Applied tax modifier {} to {}: +{:.3}",
+                        modifier_name,
+                        tag,
+                        tax_mod
+                    );
+                }
+
+                // Apply production efficiency modifier
+                if let Some(prod_eff) = modifier_def.production_efficiency {
+                    // TODO: Add country_production_efficiency to GameModifiers
+                    // For now, log and skip
+                    log::debug!(
+                        "Skipping production_efficiency modifier {} for {}: +{:.3} (not implemented)",
+                        modifier_name,
+                        tag,
+                        prod_eff
+                    );
+                }
+
+                // Apply trade efficiency modifier
+                if let Some(trade_eff) = modifier_def.trade_efficiency {
+                    let current = world
+                        .modifiers
+                        .country_trade_efficiency
+                        .get(tag)
+                        .copied()
+                        .unwrap_or(Fixed::ZERO);
+                    world
+                        .modifiers
+                        .country_trade_efficiency
+                        .insert(tag.clone(), current + Fixed::from_f32(trade_eff));
+                    log::debug!(
+                        "Applied trade_efficiency modifier {} to {}: +{:.3}",
+                        modifier_name,
+                        tag,
+                        trade_eff
+                    );
+                }
+
+                // Apply goods produced modifier
+                if let Some(goods_mod) = modifier_def.global_trade_goods_size_modifier {
+                    let current = world
+                        .modifiers
+                        .country_goods_produced
+                        .get(tag)
+                        .copied()
+                        .unwrap_or(Fixed::ZERO);
+                    world
+                        .modifiers
+                        .country_goods_produced
+                        .insert(tag.clone(), current + Fixed::from_f32(goods_mod));
+                    log::debug!(
+                        "Applied goods_produced modifier {} to {}: +{:.3}",
+                        modifier_name,
+                        tag,
+                        goods_mod
+                    );
+                }
+
+                modifiers_applied += 1;
+            } else {
+                log::debug!(
+                    "Event modifier definition not found for '{}' (country: {})",
+                    modifier_name,
+                    tag
+                );
+            }
+        }
+    }
+    log::info!(
+        "Applied {} country modifiers from save",
+        modifiers_applied
+    );
+
     // Override subjects with save data
     // The base state already has subjects from history/diplomacy, but save file
     // may have different relationships (new vassals, released subjects, etc.)
@@ -190,26 +283,41 @@ pub fn hydrate_from_save(
         subjects_updated
     );
 
-    // Use total monthly expenses from save file ledger, MINUS fort maintenance
-    // (We calculate fort maintenance from provinces, so exclude it to avoid double-counting)
+    // Use total expenses MINUS fort maintenance as fixed expenses
+    // Fort maintenance is calculated from provinces, but everything else
+    // (army, navy, state maintenance, etc.) comes from the save ledger
     for (tag, save_country) in &save.countries {
         if let Some(country) = world.countries.get_mut(tag) {
             let total_expenses = save_country.total_monthly_expenses.unwrap_or(0.0);
             let fort_maint = save_country.fort_maintenance.unwrap_or(0.0);
 
-            // Fixed expenses = everything except fort maintenance
+            // Fixed expenses = total - fort_maintenance
             // Fort maintenance is calculated from province.fort_level in expense system
+            // Everything else (army, navy, state maintenance, advisors, corruption, etc.)
+            // is baked into the ledger total and applied as fixed expense
             let fixed_expenses = total_expenses - fort_maint;
 
             country.fixed_expenses = Fixed::from_f32(fixed_expenses as f32);
 
             if tag == "KOR" {
+                let state_maint = save_country.state_maintenance.unwrap_or(0.0);
+                let army_maint = save_country.army_maintenance.unwrap_or(0.0);
+                let navy_maint = save_country.navy_maintenance.unwrap_or(0.0);
+                let corruption = save_country.root_out_corruption.unwrap_or(0.0);
+
                 log::info!(
                     "{} expenses from save ledger: total={:.2}, fort={:.2}, fixed={:.2} ducats/month",
                     tag,
                     total_expenses,
                     fort_maint,
                     fixed_expenses
+                );
+                log::info!(
+                    "  Fixed expenses breakdown: state={:.2}, army={:.2}, navy={:.2}, corruption={:.2}",
+                    state_maint,
+                    army_maint,
+                    navy_maint,
+                    corruption
                 );
             } else {
                 log::debug!(

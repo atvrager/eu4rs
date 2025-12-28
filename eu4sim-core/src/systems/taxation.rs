@@ -76,7 +76,14 @@ pub fn run_taxation_tick(state: &mut WorldState) {
         }
     }
 
-    // 2. Apply to Treasury and record for display
+    // 2. Add base income for all countries with provinces
+    // Every country gets 1 ducat/month just for existing
+    let base_monthly_income = Fixed::ONE;
+    for tag in province_count.keys() {
+        *income_deltas.entry(tag.clone()).or_insert(Fixed::ZERO) += base_monthly_income;
+    }
+
+    // 3. Apply to Treasury and record for display
     for (tag, delta) in income_deltas {
         if let Some(country) = state.countries.get_mut(&tag) {
             country.treasury += delta;
@@ -108,7 +115,9 @@ mod tests {
     #[test]
     fn test_taxation_basic() {
         // Setup: 1 province, base tax 12.0
-        // Expected Monthly: 1.0
+        // Provincial Monthly: 12.0 / 12 = 1.0
+        // Base Income: 1.0 (all countries get 1 ducat/month)
+        // Expected Total: 2.0
         let mut cores = std::collections::HashSet::new();
         cores.insert("SWE".to_string());
         let province = ProvinceState {
@@ -129,14 +138,16 @@ mod tests {
         run_taxation_tick(&mut state);
 
         let swe = state.countries.get("SWE").unwrap();
-        assert_eq!(swe.treasury, Fixed::from_f32(1.0));
+        assert_eq!(swe.treasury, Fixed::from_f32(2.0)); // 1.0 provincial + 1.0 base
     }
 
     #[test]
     fn test_taxation_modifiers() {
         // Setup: Base 12, +50% National, -50% Autonomy
         // Yearly: 12 * 1.5 * 0.5 = 9.0
-        // Monthly: 0.75
+        // Provincial Monthly: 0.75
+        // Base Income: 1.0 (all countries get 1 ducat/month)
+        // Total: 1.75
         let mut cores = std::collections::HashSet::new();
         cores.insert("SWE".to_string());
         let province = ProvinceState {
@@ -167,7 +178,7 @@ mod tests {
         run_taxation_tick(&mut state);
 
         let swe = state.countries.get("SWE").unwrap();
-        assert_eq!(swe.treasury, Fixed::from_f32(0.75));
+        assert_eq!(swe.treasury, Fixed::from_f32(1.75)); // 0.75 provincial + 1.0 base
     }
 
     proptest! {

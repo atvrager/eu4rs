@@ -513,6 +513,10 @@ pub struct WorldState {
     #[serde(skip)]
     pub policies: crate::systems::PolicyRegistry,
 
+    /// Event modifier definitions (loaded from common/event_modifiers/, immutable).
+    #[serde(skip)]
+    pub event_modifiers: eu4data::event_modifiers::EventModifiersRegistry,
+
     /// Government type definitions (hardcoded for Phase 0, immutable).
     #[serde(skip)]
     pub government_types: crate::government::GovernmentRegistry,

@@ -142,6 +142,38 @@ pub fn run_prediction(
     );
 
     // 5. Compare predicted state to actual
+    // Also log the actual treasury delta from saves
+    if let (Some(from_country), Some(to_country)) = (
+        from_state.countries.get(country),
+        to_state.countries.get(country),
+    ) {
+        if let (Some(from_treasury), Some(to_treasury)) = (from_country.treasury, to_country.treasury) {
+            let actual_delta = to_treasury - from_treasury;
+            log::info!(
+                "=== Actual Treasury Change (from saves) ===");
+            log::info!("  From ({})  : {:>8.2} ducats", from_date, from_treasury);
+            log::info!("  To ({})    : {:>8.2} ducats", to_date, to_treasury);
+            log::info!("  Change      : {:>8.2} ducats over {} days", actual_delta, days);
+            log::info!("  Monthly rate: {:>8.2} ducats/month", actual_delta);
+        }
+
+        // Log BOTH ledgers to see the difference
+        if let Some(ref from_income) = from_country.monthly_income {
+            log::info!("=== FROM Save Ledger (Dec) - What WILL happen in Dec ===");
+            log::info!("  Tax:        {:>8.2} ducats", from_income.tax);
+            log::info!("  Production: {:>8.2} ducats", from_income.production);
+            log::info!("  Trade:      {:>8.2} ducats", from_income.trade);
+            log::info!("  Total:      {:>8.2} ducats", from_income.total);
+        }
+        if let Some(ref to_income) = to_country.monthly_income {
+            log::info!("=== TO Save Ledger (Jan) - What WILL happen in Jan ===");
+            log::info!("  Tax:        {:>8.2} ducats", to_income.tax);
+            log::info!("  Production: {:>8.2} ducats", to_income.production);
+            log::info!("  Trade:      {:>8.2} ducats", to_income.trade);
+            log::info!("  Total:      {:>8.2} ducats", to_income.total);
+        }
+    }
+
     let results = compare_country(&world, &to_state, country);
 
     Ok(PredictionSummary {
@@ -203,21 +235,28 @@ fn compare_country(
         log::info!("  TOTAL:      {:>8.2} ducats", income.total);
     }
 
-    if let (Some(army), Some(navy)) = (
+    if let (Some(army), Some(navy), Some(fort)) = (
         actual_country.army_maintenance,
         actual_country.navy_maintenance,
+        actual_country.fort_maintenance,
     ) {
+        let state_maint = actual_country.state_maintenance.unwrap_or(0.0);
+        let corruption = actual_country.root_out_corruption.unwrap_or(0.0);
+        let advisors: f64 = actual_country
+            .advisors
+            .iter()
+            .map(|a| 5.0 * (a.skill as f64).powi(2))
+            .sum();
+        let total = army + navy + fort + state_maint + corruption + advisors;
+
         log::info!("=== EU4 Ledger (Monthly Expenses) ===");
+        log::info!("  State:      {:>8.2} ducats", state_maint);
         log::info!("  Army:       {:>8.2} ducats", army);
         log::info!("  Navy:       {:>8.2} ducats", navy);
-        log::info!(
-            "  Advisors:   {:>8.2} ducats",
-            actual_country
-                .advisors
-                .iter()
-                .map(|a| 5.0 * (a.skill as f64).powi(2))
-                .sum::<f64>()
-        );
+        log::info!("  Fort:       {:>8.2} ducats", fort);
+        log::info!("  Corruption: {:>8.2} ducats", corruption);
+        log::info!("  Advisors:   {:>8.2} ducats", advisors);
+        log::info!("  TOTAL:      {:>8.2} ducats", total);
     }
 
     log::info!("=== Our Simulation (Monthly) ===");

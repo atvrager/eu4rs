@@ -43,6 +43,7 @@ pub mod defines;
 pub mod diplomacy;
 pub mod discovery;
 pub mod estates;
+pub mod event_modifiers;
 pub mod generated;
 pub mod history;
 pub mod ideas;

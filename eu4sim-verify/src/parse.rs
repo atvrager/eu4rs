@@ -308,8 +308,11 @@ fn parse_binary_gamestate(data: &[u8]) -> Result<ExtractedState> {
             army_maintenance: Some(expense_ledger.army_maintenance as f64),
             navy_maintenance: Some(expense_ledger.fleet_maintenance as f64),
             fort_maintenance: Some(expense_ledger.fort_maintenance as f64),
+            state_maintenance: None, // TODO: Extract when ledger has detailed breakdown
+            root_out_corruption: None, // TODO: Extract when ledger has detailed breakdown
             advisors,
             ideas,
+            active_modifiers: vec![], // TODO: Extract from eu4save when deserialization works
             owned_province_ids: owned,
         };
 
@@ -608,8 +611,11 @@ fn parse_with_query(query: eu4save::query::Query) -> Result<ExtractedState> {
             army_maintenance: Some(expense_ledger.army_maintenance as f64),
             navy_maintenance: Some(expense_ledger.fleet_maintenance as f64),
             fort_maintenance: Some(expense_ledger.fort_maintenance as f64),
+            state_maintenance: None, // TODO: Extract when ledger has detailed breakdown
+            root_out_corruption: None, // TODO: Extract when ledger has detailed breakdown
             advisors,
             ideas,
+            active_modifiers: vec![], // TODO: Extract from eu4save when deserialization works
             owned_province_ids: owned,
         };
 
@@ -852,6 +858,12 @@ fn parse_country_block(tag: &str, content: &str) -> crate::ExtractedCountry {
     // Extract ideas
     country.ideas = extract_ideas(content, tag);
 
+    // Extract active modifiers
+    country.active_modifiers = extract_country_modifiers(content);
+    if tag == "KOR" {
+        log::info!("KOR modifiers extracted: {:?}", country.active_modifiers);
+    }
+
     // Extract ledger data (income/expense arrays)
     log::trace!("{}: Attempting to parse ledger arrays", tag);
     if let Some((income_array, expense_array)) = parse_ledger_arrays(content) {
@@ -893,22 +905,53 @@ fn parse_country_block(tag: &str, content: &str) -> crate::ExtractedCountry {
         }
 
         // Extract expense data
-        // Expense array indices: 6 = Army maintenance, 7 = Fleet maintenance, 8 = Fort maintenance
+        // Expense array indices: 2 = State maintenance, 6 = Army maintenance, 7 = Fleet maintenance, 8 = Fort maintenance, 27 = Root out corruption
         if expense_array.len() >= 9 {
+            country.state_maintenance = Some(expense_array[2]);
             country.army_maintenance = Some(expense_array[6]);
             country.navy_maintenance = Some(expense_array[7]);
             country.fort_maintenance = Some(expense_array[8]);
+
+            // Extract corruption if array is long enough (index 27)
+            if expense_array.len() > 27 {
+                country.root_out_corruption = Some(expense_array[27]);
+            }
 
             // Calculate total expenses from array
             let total_expenses: f64 = expense_array.iter().sum();
             country.total_monthly_expenses = Some(total_expenses);
 
+            // Log ALL non-zero expenses for debugging (especially for KOR)
+            if tag == "KOR" {
+                log::debug!("{} ALL expense categories:", tag);
+                for (i, &val) in expense_array.iter().enumerate() {
+                    if val.abs() > 0.01 {
+                        let category = match i {
+                            0 => "Advisor",
+                            1 => "Interest",
+                            2 => "State maintenance",
+                            3 => "Subsidies",
+                            4 => "War reparations",
+                            5 => "Army recruitment",
+                            6 => "Army maintenance",
+                            7 => "Fleet maintenance",
+                            8 => "Fort maintenance",
+                            27 => "Root out corruption",
+                            _ => "Other",
+                        };
+                        log::debug!("  [{}] {}: {:.2}", i, category, val);
+                    }
+                }
+            }
+
             log::debug!(
-                "{} expenses from ledger: army={:.2}, fleet={:.2}, fort={:.2}, total={:.2}",
+                "{} expenses from ledger: state={:.2}, army={:.2}, fleet={:.2}, fort={:.2}, corruption={:.2}, total={:.2}",
                 tag,
+                expense_array[2],
                 expense_array[6],
                 expense_array[7],
                 expense_array[8],
+                expense_array.get(27).copied().unwrap_or(0.0),
                 total_expenses
             );
         } else {
@@ -1060,6 +1103,36 @@ fn extract_ideas(content: &str, tag: &str) -> crate::ExtractedIdeas {
     }
 
     ideas
+}
+
+/// Extract active country modifiers from save file content
+///
+/// Modifiers are stored in blocks like:
+/// ```
+/// modifier={
+///     modifier="tripitaka_koreana"
+///     date=-1.1.1
+///     permanent=yes
+/// }
+/// ```
+fn extract_country_modifiers(content: &str) -> Vec<String> {
+    let mut modifiers = Vec::new();
+
+    // Regex to match modifier blocks and extract the modifier name
+    let re = regex::Regex::new(r#"modifier=\{\s+modifier="([^"]+)""#).ok();
+    if let Some(re) = re {
+        for cap in re.captures_iter(content) {
+            if let Some(modifier_name) = cap.get(1) {
+                modifiers.push(modifier_name.as_str().to_string());
+            }
+        }
+    }
+
+    if !modifiers.is_empty() {
+        log::debug!("Extracted {} country modifiers: {:?}", modifiers.len(), modifiers);
+    }
+
+    modifiers
 }
 
 /// Extract a float value following a pattern like "field=123.456"
