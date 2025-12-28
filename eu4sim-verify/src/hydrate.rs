@@ -76,6 +76,19 @@ pub fn hydrate_from_save(
     }
     log::info!("Updated {} provinces from save", provinces_updated);
 
+    // Recompute province modifiers from buildings
+    // This must happen after loading buildings from the save file
+    log::info!("Recomputing province modifiers from buildings");
+    for (&province_id, province) in world.provinces.iter() {
+        let province_clone = province.clone();
+        eu4sim_core::systems::buildings::recompute_province_modifiers(
+            province_id,
+            &province_clone,
+            &world.building_defs,
+            &mut world.modifiers,
+        );
+    }
+
     // Override countries with save data
     // NOTE: Save file stores manpower in thousands (9.96 = 9,960 men)
     //       Sim stores manpower as raw men (9960 = 9,960 men)

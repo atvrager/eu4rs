@@ -10,6 +10,9 @@ pub fn run_taxation_tick(state: &mut WorldState) {
     let mut income_deltas: HashMap<Tag, Fixed> = HashMap::new();
 
     // 1. Calculate Province Income
+    let mut province_count: HashMap<Tag, usize> = HashMap::new();
+    let mut total_base_tax: HashMap<Tag, Fixed> = HashMap::new();
+
     for (&province_id, province) in state.provinces.iter() {
         if let Some(owner) = &province.owner {
             // Modifiers
@@ -56,6 +59,20 @@ pub fn run_taxation_tick(state: &mut WorldState) {
             let safe_income = monthly_income.max(Fixed::ZERO);
 
             *income_deltas.entry(owner.clone()).or_insert(Fixed::ZERO) += safe_income;
+            *province_count.entry(owner.clone()).or_insert(0) += 1;
+            *total_base_tax.entry(owner.clone()).or_insert(Fixed::ZERO) += province.base_tax;
+
+            // Detailed logging for Korea
+            if owner == "KOR" && safe_income > Fixed::ZERO {
+                log::trace!(
+                    "Province {}: base_tax={:.1}, efficiency={:.2}, autonomy={:.2}, monthly={:.3}",
+                    province_id,
+                    province.base_tax.to_f32(),
+                    efficiency.to_f32(),
+                    autonomy.to_f32(),
+                    safe_income.to_f32()
+                );
+            }
         }
     }
 
@@ -66,9 +83,14 @@ pub fn run_taxation_tick(state: &mut WorldState) {
             country.income.taxation += delta;
 
             if tag == "KOR" {
+                let prov_count = province_count.get(&tag).copied().unwrap_or(0);
+                let base_tax_total = total_base_tax.get(&tag).copied().unwrap_or(Fixed::ZERO);
                 log::debug!(
-                    "Taxation: KOR +{:.2} ducats (treasury now: {:.2})",
+                    "Taxation: KOR +{:.2} ducats from {} provinces (total base_tax={:.1}, avg monthly={:.3}/province, treasury now: {:.2})",
                     delta.to_f32(),
+                    prov_count,
+                    base_tax_total.to_f32(),
+                    (delta.to_f32() / prov_count as f32),
                     country.treasury.to_f32()
                 );
             }
