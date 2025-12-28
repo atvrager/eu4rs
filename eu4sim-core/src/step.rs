@@ -256,6 +256,12 @@ pub fn step_world(
         // Coalition formation and AE decay
         crate::systems::run_coalition_tick(&mut new_state);
 
+        // Yearly systems - run on January 1st
+        if new_state.date.month == 1 {
+            // Tributary payments happen at the start of each year
+            crate::systems::run_tribute_payments(&mut new_state);
+        }
+
         // Auto-end wars after 10 years (stalemate prevention)
         auto_end_stale_wars(&mut new_state);
 
