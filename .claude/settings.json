@@ -19,6 +19,10 @@
       "Bash(git show:*)",
       "Bash(cat:*)",
       "Bash(uv run:*)",
+      "Bash(awk:*)",
+      "Bash(head:*)",
+      "Bash(sed:*)",
+      "Bash(grep:*)",
       "Skill(calibrate)",
       "Skill(calibrate:*)"
     ]

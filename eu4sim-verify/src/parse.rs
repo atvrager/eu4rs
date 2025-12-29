@@ -849,10 +849,13 @@ fn parse_country_block(tag: &str, content: &str) -> crate::ExtractedCountry {
     country.current_manpower = extract_float_value(content, "manpower=");
     country.max_manpower = extract_float_value(content, "max_manpower=");
 
-    // Extract monarch power points
-    country.adm_power = extract_float_value(content, "adm_power=");
-    country.dip_power = extract_float_value(content, "dip_power=");
-    country.mil_power = extract_float_value(content, "mil_power=");
+    // Extract monarch power points from powers={ADM DIP MIL} array
+    // This is stored as an array of 3 integers: powers={\n\t\tADM DIP MIL\n\t}
+    if let Some((adm, dip, mil)) = extract_powers_array(content) {
+        country.adm_power = Some(adm);
+        country.dip_power = Some(dip);
+        country.mil_power = Some(mil);
+    }
 
     // Extract tribute type (for tributary states)
     country.tribute_type = extract_int_value(content, "tribute_type=");
@@ -1210,6 +1213,27 @@ fn extract_int_value(text: &str, pattern: &str) -> Option<i32> {
     re.captures(text)
         .and_then(|c| c.get(1))
         .and_then(|m| m.as_str().parse().ok())
+}
+
+/// Extract monarch power from "powers={ ADM DIP MIL }" array format.
+/// Returns (ADM, DIP, MIL) as f64 values.
+fn extract_powers_array(text: &str) -> Option<(f64, f64, f64)> {
+    // Find the LAST powers={ block (there can be multiple, we want the country-level one)
+    // Format: "powers={\n\t\t58 155 127 \n\t\t}"
+    let re = regex::Regex::new(r"(?s)powers=\{\s*(\d+)\s+(\d+)\s+(\d+)\s*\}").ok()?;
+
+    // Find all matches and take the last one
+    let mut last_match = None;
+    for cap in re.captures_iter(text) {
+        last_match = Some(cap);
+    }
+
+    let cap = last_match?;
+    let adm: f64 = cap.get(1)?.as_str().parse().ok()?;
+    let dip: f64 = cap.get(2)?.as_str().parse().ok()?;
+    let mil: f64 = cap.get(3)?.as_str().parse().ok()?;
+
+    Some((adm, dip, mil))
 }
 
 fn extract_provinces(text: &str, state: &mut ExtractedState) -> Result<()> {

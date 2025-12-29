@@ -123,6 +123,17 @@ pub fn hydrate_from_save(
                 }
             }
 
+            // Update monarch power from save
+            if let Some(adm) = save_country.adm_power {
+                country.adm_mana = Fixed::from_f32(adm as f32);
+            }
+            if let Some(dip) = save_country.dip_power {
+                country.dip_mana = Fixed::from_f32(dip as f32);
+            }
+            if let Some(mil) = save_country.mil_power {
+                country.mil_mana = Fixed::from_f32(mil as f32);
+            }
+
             // Extract advisors from save
             country.advisors = save_country
                 .advisors

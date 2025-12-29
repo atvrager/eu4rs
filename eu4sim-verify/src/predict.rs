@@ -305,8 +305,19 @@ fn compare_country(
         results.push(compare_metric("Treasury", pred_treasury, actual_treasury));
     }
 
-    // Compare prestige (if we have it in save)
-    // TODO: Add more metrics as we parse them from save
+    // Compare monarch power
+    if let Some(actual_adm) = actual_country.adm_power {
+        let pred_adm = pred_country.adm_mana.to_f32() as f64;
+        results.push(compare_metric("ADM Power", pred_adm, actual_adm));
+    }
+    if let Some(actual_dip) = actual_country.dip_power {
+        let pred_dip = pred_country.dip_mana.to_f32() as f64;
+        results.push(compare_metric("DIP Power", pred_dip, actual_dip));
+    }
+    if let Some(actual_mil) = actual_country.mil_power {
+        let pred_mil = pred_country.mil_mana.to_f32() as f64;
+        results.push(compare_metric("MIL Power", pred_mil, actual_mil));
+    }
 
     results
 }
