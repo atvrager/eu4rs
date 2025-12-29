@@ -283,9 +283,11 @@ fn compare_country(
     );
 
     // Compare manpower (sim stores raw men, save stores thousands)
+    // Display as raw men for clarity
     if let Some(actual_mp) = actual_country.current_manpower {
-        let pred_mp = (pred_country.manpower.to_f32() / 1000.0) as f64;
-        results.push(compare_metric("Manpower", pred_mp, actual_mp));
+        let pred_mp = pred_country.manpower.to_f32() as f64;
+        let actual_mp_raw = actual_mp * 1000.0;
+        results.push(compare_metric("Manpower", pred_mp, actual_mp_raw));
     }
 
     // Compare treasury
