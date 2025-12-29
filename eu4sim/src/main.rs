@@ -121,6 +121,7 @@ fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGra
                 buildings: Default::default(),
                 building_construction: None,
                 has_port: false,
+                is_in_hre: false,
             },
         );
     }

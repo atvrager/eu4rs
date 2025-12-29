@@ -154,6 +154,12 @@ pub fn hydrate_from_save(
                 );
             }
 
+            // Update ruler dynasty from save (needed for HRE elections)
+            if let Some(ref dynasty) = save_country.ruler_dynasty {
+                country.ruler_dynasty = Some(dynasty.clone());
+                log::trace!("{} ruler dynasty from save: {}", tag, dynasty);
+            }
+
             // Extract advisors from save
             country.advisors = save_country
                 .advisors

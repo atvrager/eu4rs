@@ -10,6 +10,7 @@ pub mod coring;
 pub mod development;
 pub mod estates;
 pub mod expenses;
+pub mod hre;
 pub mod ideas;
 pub mod institutions;
 pub mod mana;
@@ -49,6 +50,7 @@ pub use estates::{
     PrivilegeError,
 };
 pub use expenses::run_expenses_tick;
+pub use hre::run_hre_tick;
 pub use ideas::{
     apply_modifier, print_modifier_report, recalculate_idea_modifiers, scan_all_modifiers,
     IdeaModifierStats, ModifierStubTracker,

@@ -64,6 +64,8 @@ pub struct ExtractedCountry {
     pub ruler_adm: Option<u16>,
     pub ruler_dip: Option<u16>,
     pub ruler_mil: Option<u16>,
+    /// Ruler's dynasty (for HRE re-election bonus and PU mechanics)
+    pub ruler_dynasty: Option<String>,
 
     // Tribute type (for tributary states)
     pub tribute_type: Option<i32>,

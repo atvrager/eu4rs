@@ -758,6 +758,7 @@ mod tests {
             is_mothballed: false,
             is_sea: false,
             is_wasteland: false,
+            is_in_hre: false,
             terrain: Some(Terrain::Plains),
             institution_presence: HashMap::default(),
             trade: Default::default(),

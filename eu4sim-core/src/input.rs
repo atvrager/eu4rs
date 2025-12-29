@@ -1,7 +1,9 @@
 use crate::ai::VisibleWorldState;
 use crate::estates::{EstateTypeId, PrivilegeId};
 use crate::ideas::IdeaGroupId;
-use crate::state::{ArmyId, FleetId, InstitutionId, PeaceTerms, ProvinceId, Tag, TechType, WarId};
+use crate::state::{
+    ArmyId, FleetId, InstitutionId, PeaceTerms, ProvinceId, ReformId, Tag, TechType, WarId,
+};
 use crate::trade::{MerchantAction, TradeNodeId};
 use serde::{Deserialize, Serialize};
 
@@ -274,6 +276,52 @@ pub enum Command {
     },
     ConvertCountryReligion {
         religion: String,
+    },
+
+    // Holy Roman Empire
+    /// Add a province to the HRE. Requires emperor approval.
+    /// Province must border existing HRE territory and not be capital of non-HRE nation.
+    AddProvinceToHRE {
+        province: ProvinceId,
+    },
+    /// Remove a province from the HRE. Angers the emperor.
+    RemoveProvinceFromHRE {
+        province: ProvinceId,
+    },
+    /// Join the HRE (adds capital to HRE territory).
+    /// Requires emperor approval and capital bordering HRE.
+    JoinHRE,
+    /// Leave the HRE (removes capital from HRE).
+    /// Cannot be done if emperor.
+    LeaveHRE,
+    /// Grant elector status to an HRE member (emperor only).
+    /// Max 7 electors.
+    GrantElectorate {
+        target: Tag,
+    },
+    /// Remove elector status from an HRE member (emperor only).
+    /// Typically done for heretic electors.
+    RemoveElectorate {
+        target: Tag,
+    },
+    /// Grant Free Imperial City status (emperor only).
+    /// Target must be OPM and HRE member. Max 12 free cities.
+    GrantFreeCity {
+        target: Tag,
+    },
+    /// Revoke Free Imperial City status (emperor only).
+    RevokeFreeCity {
+        target: Tag,
+    },
+    /// Pass an imperial reform (emperor only).
+    /// Costs 50 IA and requires majority support from electors.
+    PassImperialReform {
+        reform: ReformId,
+    },
+    /// Issue an imperial ban against a nation (emperor only).
+    /// Unlocks Imperial Ban CB to reclaim HRE territory.
+    ImperialBan {
+        target: Tag,
     },
 
     // Control

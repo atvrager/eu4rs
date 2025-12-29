@@ -141,6 +141,9 @@ impl ExtractedState {
             ruler_adm: 3, // Default - can't extract from OCR yet
             ruler_dip: 3,
             ruler_mil: 3,
+            ruler_dynasty: None,              // Can't extract from OCR yet
+            ruler_gender: Default::default(), // Can't extract from OCR yet
+            ruler_instated: None,             // Can't extract from OCR yet
             // 1444 starting tech - can't extract from OCR yet
             adm_tech: 3,
             dip_tech: 3,

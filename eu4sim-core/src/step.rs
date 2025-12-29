@@ -108,6 +108,8 @@ pub enum ActionError {
     AllIdeasUnlocked { group_id: crate::ideas::IdeaGroupId },
     #[error("Insufficient tech for idea: need {required}, have {current}")]
     InsufficientTechForIdea { required: u8, current: u8 },
+    #[error("Ewiger Landfriede prohibits wars between HRE members")]
+    EwigerLandfriedeActive,
 }
 
 /// Advance the world by one tick.
@@ -240,6 +242,7 @@ pub fn step_world(
         crate::systems::run_estate_tick(&mut new_state);
         crate::systems::tick_institution_spread(&mut new_state);
         crate::systems::run_reformation_tick(&mut new_state, adjacency);
+        crate::systems::run_hre_tick(&mut new_state);
 
         // Coring - Progress active coring and complete after 36 months. 🛡️
         crate::systems::tick_coring(&mut new_state);
@@ -954,6 +957,13 @@ pub fn available_commands(
                 }
             }
 
+            // Check Ewiger Landfriede: if active, we cannot attack other HRE members
+            let ewiger_landfriede_blocks = state.global.hre.has_ewiger_landfriede()
+                && state
+                    .global
+                    .hre
+                    .is_member(&country_tag.to_string(), &state.provinces);
+
             for target_tag in potential_targets {
                 if !state.diplomacy.are_at_war(country_tag, &target_tag)
                     && !state
@@ -965,7 +975,12 @@ pub fn available_commands(
                         &state.subject_types,
                     )
                 {
-                    // DeclareWar - The ultimate test of an empire's foundation. 🛡️
+                    // Skip HRE members if Ewiger Landfriede is active and we're in HRE
+                    if ewiger_landfriede_blocks
+                        && state.global.hre.is_member(&target_tag, &state.provinces)
+                    {
+                        continue;
+                    }
                     available.push(Command::DeclareWar {
                         target: target_tag,
                         cb: None,
@@ -1708,6 +1723,23 @@ fn execute_command(
                     attacker: country_tag.to_string(),
                     target: target.clone(),
                 });
+            }
+
+            // Ewiger Landfriede: cannot attack other HRE members
+            if state.global.hre.has_ewiger_landfriede() {
+                let attacker_in_hre = state
+                    .global
+                    .hre
+                    .is_member(&country_tag.to_string(), &state.provinces);
+                let target_in_hre = state.global.hre.is_member(target, &state.provinces);
+                if attacker_in_hre && target_in_hre {
+                    log::info!(
+                        "{} cannot attack {} due to Ewiger Landfriede",
+                        country_tag,
+                        target
+                    );
+                    return Err(ActionError::EwigerLandfriedeActive);
+                }
             }
 
             // Apply Royal Marriage penalty
@@ -3550,6 +3582,324 @@ fn execute_command(
             Ok(())
         }
 
+        // Holy Roman Empire commands
+        Command::AddProvinceToHRE { province } => {
+            // Only emperor can add provinces to HRE
+            if state.global.hre.emperor.as_deref() != Some(country_tag) {
+                return Err(ActionError::InvalidAction {
+                    reason: "Only the emperor can add provinces to the HRE".to_string(),
+                });
+            }
+            let Some(prov) = state.provinces.get_mut(province) else {
+                return Err(ActionError::InvalidProvinceId);
+            };
+            if prov.is_in_hre {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("Province {} is already in the HRE", province),
+                });
+            }
+            prov.is_in_hre = true;
+            log::info!(
+                "Province {} added to HRE by emperor {}",
+                province,
+                country_tag
+            );
+            Ok(())
+        }
+        Command::RemoveProvinceFromHRE { province } => {
+            // Emperor can remove provinces, or owner can remove their own
+            let Some(prov) = state.provinces.get_mut(province) else {
+                return Err(ActionError::InvalidProvinceId);
+            };
+            let is_emperor = state.global.hre.emperor.as_deref() == Some(country_tag);
+            let is_owner = prov.owner.as_deref() == Some(country_tag);
+            if !is_emperor && !is_owner {
+                return Err(ActionError::InvalidAction {
+                    reason: "Only emperor or province owner can remove province from HRE"
+                        .to_string(),
+                });
+            }
+            if !prov.is_in_hre {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("Province {} is not in the HRE", province),
+                });
+            }
+            prov.is_in_hre = false;
+            log::info!("Province {} removed from HRE by {}", province, country_tag);
+            Ok(())
+        }
+        Command::JoinHRE => {
+            // Find country's capital
+            let capital = state
+                .provinces
+                .iter()
+                .find(|(_, p)| p.owner.as_deref() == Some(country_tag) && p.is_capital)
+                .map(|(id, _)| *id);
+            let Some(capital_id) = capital else {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("{} has no capital province", country_tag),
+                });
+            };
+            // Check not already member
+            if state
+                .global
+                .hre
+                .is_member(&country_tag.to_string(), &state.provinces)
+            {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("{} is already an HRE member", country_tag),
+                });
+            }
+            // Add capital to HRE
+            if let Some(prov) = state.provinces.get_mut(&capital_id) {
+                prov.is_in_hre = true;
+            }
+            log::info!("{} joins the Holy Roman Empire", country_tag);
+            Ok(())
+        }
+        Command::LeaveHRE => {
+            // Check is member
+            if !state
+                .global
+                .hre
+                .is_member(&country_tag.to_string(), &state.provinces)
+            {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("{} is not an HRE member", country_tag),
+                });
+            }
+            // Find capital and remove from HRE
+            let capital = state
+                .provinces
+                .iter()
+                .find(|(_, p)| p.owner.as_deref() == Some(country_tag) && p.is_capital)
+                .map(|(id, _)| *id);
+            if let Some(capital_id) = capital {
+                if let Some(prov) = state.provinces.get_mut(&capital_id) {
+                    prov.is_in_hre = false;
+                }
+            }
+            // Remove from electors if was elector
+            state.global.hre.electors.retain(|e| e != country_tag);
+            // Remove from free cities if was one
+            state.global.hre.free_cities.remove(country_tag);
+            log::info!("{} leaves the Holy Roman Empire", country_tag);
+            Ok(())
+        }
+        Command::GrantElectorate { target } => {
+            // Only emperor can grant electorates
+            if state.global.hre.emperor.as_deref() != Some(country_tag) {
+                return Err(ActionError::InvalidAction {
+                    reason: "Only the emperor can grant electorates".to_string(),
+                });
+            }
+            // Check max electors
+            if state.global.hre.electors.len() >= crate::systems::hre::defines::MAX_ELECTORS {
+                return Err(ActionError::InvalidAction {
+                    reason: format!(
+                        "Maximum number of electors ({}) reached",
+                        crate::systems::hre::defines::MAX_ELECTORS
+                    ),
+                });
+            }
+            // Target must be HRE member
+            if !state.global.hre.is_member(target, &state.provinces) {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("{} is not an HRE member", target),
+                });
+            }
+            // Can't be free city
+            if state.global.hre.is_free_city(target) {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("{} is a Free City and cannot be an elector", target),
+                });
+            }
+            // Check not already elector
+            if state.global.hre.is_elector(target) {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("{} is already an elector", target),
+                });
+            }
+            state.global.hre.electors.push(target.clone());
+            log::info!("{} grants electorate to {}", country_tag, target);
+            Ok(())
+        }
+        Command::RemoveElectorate { target } => {
+            // Only emperor can remove electorates
+            if state.global.hre.emperor.as_deref() != Some(country_tag) {
+                return Err(ActionError::InvalidAction {
+                    reason: "Only the emperor can remove electorates".to_string(),
+                });
+            }
+            if !state.global.hre.is_elector(target) {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("{} is not an elector", target),
+                });
+            }
+            state.global.hre.electors.retain(|e| e != target);
+            log::info!("{} removes electorate from {}", country_tag, target);
+            Ok(())
+        }
+        Command::GrantFreeCity { target } => {
+            // Only emperor can grant free city status
+            if state.global.hre.emperor.as_deref() != Some(country_tag) {
+                return Err(ActionError::InvalidAction {
+                    reason: "Only the emperor can grant Free City status".to_string(),
+                });
+            }
+            // Check max free cities
+            if state.global.hre.free_cities.len() >= crate::systems::hre::defines::MAX_FREE_CITIES {
+                return Err(ActionError::InvalidAction {
+                    reason: format!(
+                        "Maximum number of Free Cities ({}) reached",
+                        crate::systems::hre::defines::MAX_FREE_CITIES
+                    ),
+                });
+            }
+            // Target must be HRE member
+            if !state.global.hre.is_member(target, &state.provinces) {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("{} is not an HRE member", target),
+                });
+            }
+            // Must be OPM (one province minor)
+            let province_count = state
+                .provinces
+                .values()
+                .filter(|p| p.owner.as_deref() == Some(target))
+                .count();
+            if province_count != 1 {
+                return Err(ActionError::InvalidAction {
+                    reason: format!(
+                        "{} has {} provinces, must be OPM to be Free City",
+                        target, province_count
+                    ),
+                });
+            }
+            // Can't be an elector
+            if state.global.hre.is_elector(target) {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("{} is an elector and cannot be a Free City", target),
+                });
+            }
+            // Check not already free city
+            if state.global.hre.is_free_city(target) {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("{} is already a Free City", target),
+                });
+            }
+            state.global.hre.free_cities.insert(target.clone());
+            log::info!("{} grants Free City status to {}", country_tag, target);
+            Ok(())
+        }
+        Command::RevokeFreeCity { target } => {
+            // Only emperor can revoke free city status
+            if state.global.hre.emperor.as_deref() != Some(country_tag) {
+                return Err(ActionError::InvalidAction {
+                    reason: "Only the emperor can revoke Free City status".to_string(),
+                });
+            }
+            if !state.global.hre.is_free_city(target) {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("{} is not a Free City", target),
+                });
+            }
+            state.global.hre.free_cities.remove(target);
+            log::info!("{} revokes Free City status from {}", country_tag, target);
+            Ok(())
+        }
+        Command::PassImperialReform { reform } => {
+            // Only emperor can pass reforms
+            if state.global.hre.emperor.as_deref() != Some(country_tag) {
+                return Err(ActionError::InvalidAction {
+                    reason: "Only the emperor can pass imperial reforms".to_string(),
+                });
+            }
+            // Check sufficient IA (50 required)
+            let ia_cost = crate::systems::hre::defines::REFORM_IA_COST;
+            if state.global.hre.imperial_authority < ia_cost {
+                return Err(ActionError::InvalidAction {
+                    reason: format!(
+                        "Insufficient Imperial Authority: have {:.1}, need {}",
+                        state.global.hre.imperial_authority.to_f32(),
+                        ia_cost.to_f32()
+                    ),
+                });
+            }
+            // Check reform not already passed
+            if state.global.hre.reforms_passed.contains(reform) {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("Reform {:?} already passed", reform),
+                });
+            }
+            // TODO: Check elector majority approval (when reform registry exists)
+            // Deduct IA and add reform
+            state.global.hre.imperial_authority -= ia_cost;
+            state.global.hre.reforms_passed.push(*reform);
+            log::info!(
+                "Emperor {} passes reform {:?} (IA: {:.1} -> {:.1})",
+                country_tag,
+                reform,
+                (state.global.hre.imperial_authority + ia_cost).to_f32(),
+                state.global.hre.imperial_authority.to_f32()
+            );
+
+            // Special handling: Revoke Privilegia vassalizes all HRE members
+            if *reform == crate::systems::hre::reforms::REVOKE_PRIVILEGIA {
+                let emperor = country_tag.to_string();
+                let members = state.global.hre.get_members(&state.provinces);
+                let vassal_id = state.subject_types.vassal_id;
+                let date = state.date;
+
+                for member in members {
+                    // Skip the emperor itself
+                    if member == emperor {
+                        continue;
+                    }
+                    // Skip if already someone's subject
+                    if state.diplomacy.subjects.contains_key(&member) {
+                        continue;
+                    }
+                    // Vassalize the member
+                    if let Err(e) = state
+                        .diplomacy
+                        .add_subject(&emperor, &member, vassal_id, date)
+                    {
+                        log::warn!(
+                            "Failed to vassalize {} under Revoke Privilegia: {}",
+                            member,
+                            e
+                        );
+                    } else {
+                        log::info!(
+                            "{} becomes vassal of {} via Revoke Privilegia",
+                            member,
+                            emperor
+                        );
+                    }
+                }
+            }
+
+            Ok(())
+        }
+        Command::ImperialBan { target } => {
+            // Only emperor can issue bans
+            if state.global.hre.emperor.as_deref() != Some(country_tag) {
+                return Err(ActionError::InvalidAction {
+                    reason: "Only the emperor can issue imperial bans".to_string(),
+                });
+            }
+            // Target must be HRE member
+            if !state.global.hre.is_member(target, &state.provinces) {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("{} is not an HRE member, cannot be banned", target),
+                });
+            }
+            // TODO: Unlock Imperial Ban CB against target
+            log::info!("Emperor {} issues imperial ban on {}", country_tag, target);
+            Ok(())
+        }
+
         Command::Pass => Ok(()), // Explicit no-op
 
         Command::Quit => Ok(()), // Handled by outer loop usually, but harmless here
@@ -3790,7 +4140,7 @@ fn create_war_truces(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::Date;
+    use crate::state::{Date, ProvinceState};
     use crate::testing::WorldStateBuilder;
 
     #[test]
@@ -6966,5 +7316,576 @@ mod tests {
             state.diplomacy.relations.get(&key_den_nor),
             Some(&RelationType::Alliance)
         );
+    }
+
+    // ========================================================================
+    // HRE Command Tests
+    // ========================================================================
+
+    fn setup_hre_command_test() -> WorldState {
+        use crate::state::{Gender, ProvinceState};
+
+        let mut state = WorldStateBuilder::new()
+            .date(1444, 12, 11)
+            .with_country("HAB") // Emperor
+            .with_country("BOH") // Member
+            .with_country("ULM") // OPM for free city test
+            .with_country("FRA") // Non-member
+            .build();
+
+        // HAB is emperor
+        state.global.hre.emperor = Some("HAB".to_string());
+        state.global.hre.official_religion = "catholic".to_string();
+
+        // HAB capital in HRE
+        state.provinces.insert(
+            134, // Vienna
+            ProvinceState {
+                owner: Some("HAB".to_string()),
+                is_capital: true,
+                is_in_hre: true,
+                ..Default::default()
+            },
+        );
+
+        // BOH capital in HRE
+        state.provinces.insert(
+            266, // Prague
+            ProvinceState {
+                owner: Some("BOH".to_string()),
+                is_capital: true,
+                is_in_hre: true,
+                ..Default::default()
+            },
+        );
+
+        // ULM capital in HRE (OPM)
+        state.provinces.insert(
+            1872, // Ulm
+            ProvinceState {
+                owner: Some("ULM".to_string()),
+                is_capital: true,
+                is_in_hre: true,
+                ..Default::default()
+            },
+        );
+
+        // FRA capital NOT in HRE
+        state.provinces.insert(
+            183, // Paris
+            ProvinceState {
+                owner: Some("FRA".to_string()),
+                is_capital: true,
+                is_in_hre: false,
+                ..Default::default()
+            },
+        );
+
+        // Set religions
+        state.countries.get_mut("HAB").unwrap().religion = Some("catholic".to_string());
+        state.countries.get_mut("BOH").unwrap().religion = Some("catholic".to_string());
+        state.countries.get_mut("ULM").unwrap().religion = Some("catholic".to_string());
+        state.countries.get_mut("FRA").unwrap().religion = Some("catholic".to_string());
+
+        // Set male rulers
+        state.countries.get_mut("HAB").unwrap().ruler_gender = Gender::Male;
+        state.countries.get_mut("BOH").unwrap().ruler_gender = Gender::Male;
+
+        state
+    }
+
+    #[test]
+    fn test_add_province_to_hre_as_emperor() {
+        let mut state = setup_hre_command_test();
+
+        // Add a new province for HAB outside HRE
+        state.provinces.insert(
+            135,
+            ProvinceState {
+                owner: Some("HAB".to_string()),
+                is_capital: false,
+                is_in_hre: false,
+                ..Default::default()
+            },
+        );
+
+        let result = execute_command(
+            &mut state,
+            "HAB",
+            &Command::AddProvinceToHRE { province: 135 },
+            None,
+        );
+
+        assert!(result.is_ok());
+        assert!(state.provinces.get(&135).unwrap().is_in_hre);
+    }
+
+    #[test]
+    fn test_add_province_to_hre_non_emperor_fails() {
+        let mut state = setup_hre_command_test();
+
+        state.provinces.insert(
+            267,
+            ProvinceState {
+                owner: Some("BOH".to_string()),
+                is_capital: false,
+                is_in_hre: false,
+                ..Default::default()
+            },
+        );
+
+        let result = execute_command(
+            &mut state,
+            "BOH", // Not emperor
+            &Command::AddProvinceToHRE { province: 267 },
+            None,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_remove_province_from_hre_as_owner() {
+        let mut state = setup_hre_command_test();
+
+        // BOH removes its own province
+        state.provinces.insert(
+            267,
+            ProvinceState {
+                owner: Some("BOH".to_string()),
+                is_capital: false,
+                is_in_hre: true,
+                ..Default::default()
+            },
+        );
+
+        let result = execute_command(
+            &mut state,
+            "BOH",
+            &Command::RemoveProvinceFromHRE { province: 267 },
+            None,
+        );
+
+        assert!(result.is_ok());
+        assert!(!state.provinces.get(&267).unwrap().is_in_hre);
+    }
+
+    #[test]
+    fn test_join_hre() {
+        let mut state = setup_hre_command_test();
+
+        // FRA is not in HRE, joins
+        let result = execute_command(&mut state, "FRA", &Command::JoinHRE, None);
+
+        assert!(result.is_ok());
+        // FRA's capital should now be in HRE
+        assert!(state.provinces.get(&183).unwrap().is_in_hre);
+        assert!(state
+            .global
+            .hre
+            .is_member(&"FRA".to_string(), &state.provinces));
+    }
+
+    #[test]
+    fn test_leave_hre() {
+        let mut state = setup_hre_command_test();
+
+        // BOH is in HRE, leaves
+        let result = execute_command(&mut state, "BOH", &Command::LeaveHRE, None);
+
+        assert!(result.is_ok());
+        // BOH's capital should no longer be in HRE
+        assert!(!state.provinces.get(&266).unwrap().is_in_hre);
+        assert!(!state
+            .global
+            .hre
+            .is_member(&"BOH".to_string(), &state.provinces));
+    }
+
+    #[test]
+    fn test_leave_hre_removes_elector_status() {
+        let mut state = setup_hre_command_test();
+
+        // Make BOH an elector
+        state.global.hre.electors.push("BOH".to_string());
+        assert!(state.global.hre.is_elector(&"BOH".to_string()));
+
+        // BOH leaves HRE
+        execute_command(&mut state, "BOH", &Command::LeaveHRE, None).unwrap();
+
+        // BOH should no longer be elector
+        assert!(!state.global.hre.is_elector(&"BOH".to_string()));
+    }
+
+    #[test]
+    fn test_grant_electorate() {
+        let mut state = setup_hre_command_test();
+
+        let result = execute_command(
+            &mut state,
+            "HAB",
+            &Command::GrantElectorate {
+                target: "BOH".to_string(),
+            },
+            None,
+        );
+
+        assert!(result.is_ok());
+        assert!(state.global.hre.is_elector(&"BOH".to_string()));
+    }
+
+    #[test]
+    fn test_grant_electorate_non_member_fails() {
+        let mut state = setup_hre_command_test();
+
+        let result = execute_command(
+            &mut state,
+            "HAB",
+            &Command::GrantElectorate {
+                target: "FRA".to_string(), // Not in HRE
+            },
+            None,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_grant_electorate_max_limit() {
+        let mut state = setup_hre_command_test();
+
+        // Fill up electors (max 7)
+        for i in 0..7 {
+            state.global.hre.electors.push(format!("ELECTOR{}", i));
+        }
+
+        let result = execute_command(
+            &mut state,
+            "HAB",
+            &Command::GrantElectorate {
+                target: "BOH".to_string(),
+            },
+            None,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_remove_electorate() {
+        let mut state = setup_hre_command_test();
+
+        state.global.hre.electors.push("BOH".to_string());
+
+        let result = execute_command(
+            &mut state,
+            "HAB",
+            &Command::RemoveElectorate {
+                target: "BOH".to_string(),
+            },
+            None,
+        );
+
+        assert!(result.is_ok());
+        assert!(!state.global.hre.is_elector(&"BOH".to_string()));
+    }
+
+    #[test]
+    fn test_grant_free_city() {
+        let mut state = setup_hre_command_test();
+
+        let result = execute_command(
+            &mut state,
+            "HAB",
+            &Command::GrantFreeCity {
+                target: "ULM".to_string(),
+            },
+            None,
+        );
+
+        assert!(result.is_ok());
+        assert!(state.global.hre.is_free_city(&"ULM".to_string()));
+    }
+
+    #[test]
+    fn test_grant_free_city_non_opm_fails() {
+        let mut state = setup_hre_command_test();
+
+        // Give BOH a second province
+        state.provinces.insert(
+            267,
+            ProvinceState {
+                owner: Some("BOH".to_string()),
+                is_capital: false,
+                is_in_hre: true,
+                ..Default::default()
+            },
+        );
+
+        let result = execute_command(
+            &mut state,
+            "HAB",
+            &Command::GrantFreeCity {
+                target: "BOH".to_string(),
+            },
+            None,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_grant_free_city_elector_fails() {
+        let mut state = setup_hre_command_test();
+
+        state.global.hre.electors.push("ULM".to_string());
+
+        let result = execute_command(
+            &mut state,
+            "HAB",
+            &Command::GrantFreeCity {
+                target: "ULM".to_string(),
+            },
+            None,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_revoke_free_city() {
+        let mut state = setup_hre_command_test();
+
+        state.global.hre.free_cities.insert("ULM".to_string());
+
+        let result = execute_command(
+            &mut state,
+            "HAB",
+            &Command::RevokeFreeCity {
+                target: "ULM".to_string(),
+            },
+            None,
+        );
+
+        assert!(result.is_ok());
+        assert!(!state.global.hre.is_free_city(&"ULM".to_string()));
+    }
+
+    #[test]
+    fn test_pass_imperial_reform() {
+        let mut state = setup_hre_command_test();
+
+        state.global.hre.imperial_authority = Fixed::from_int(60);
+
+        let result = execute_command(
+            &mut state,
+            "HAB",
+            &Command::PassImperialReform {
+                reform: crate::systems::hre::reforms::REICHSREFORM,
+            },
+            None,
+        );
+
+        assert!(result.is_ok());
+        assert!(state
+            .global
+            .hre
+            .reforms_passed
+            .contains(&crate::systems::hre::reforms::REICHSREFORM));
+        // IA should be reduced by 50
+        assert_eq!(state.global.hre.imperial_authority, Fixed::from_int(10));
+    }
+
+    #[test]
+    fn test_pass_reform_insufficient_ia_fails() {
+        let mut state = setup_hre_command_test();
+
+        state.global.hre.imperial_authority = Fixed::from_int(30); // Less than 50
+
+        let result = execute_command(
+            &mut state,
+            "HAB",
+            &Command::PassImperialReform {
+                reform: crate::systems::hre::reforms::REICHSREFORM,
+            },
+            None,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_imperial_ban() {
+        let mut state = setup_hre_command_test();
+
+        let result = execute_command(
+            &mut state,
+            "HAB",
+            &Command::ImperialBan {
+                target: "BOH".to_string(),
+            },
+            None,
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_imperial_ban_non_member_fails() {
+        let mut state = setup_hre_command_test();
+
+        let result = execute_command(
+            &mut state,
+            "HAB",
+            &Command::ImperialBan {
+                target: "FRA".to_string(), // Not in HRE
+            },
+            None,
+        );
+
+        assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // Ewiger Landfriede Tests
+    // ========================================================================
+
+    #[test]
+    fn test_ewiger_landfriede_blocks_hre_internal_war() {
+        let mut state = setup_hre_command_test();
+
+        // Pass Ewiger Landfriede
+        state
+            .global
+            .hre
+            .reforms_passed
+            .push(crate::systems::hre::reforms::EWIGER_LANDFRIEDE);
+
+        // HAB tries to declare war on BOH (both in HRE)
+        let result = execute_command(
+            &mut state,
+            "HAB",
+            &Command::DeclareWar {
+                target: "BOH".to_string(),
+                cb: None,
+            },
+            None,
+        );
+
+        assert!(result.is_err());
+        match result {
+            Err(ActionError::EwigerLandfriedeActive) => (),
+            _ => panic!("Expected EwigerLandfriedeActive error"),
+        }
+    }
+
+    #[test]
+    fn test_ewiger_landfriede_allows_external_war() {
+        let mut state = setup_hre_command_test();
+
+        // Pass Ewiger Landfriede
+        state
+            .global
+            .hre
+            .reforms_passed
+            .push(crate::systems::hre::reforms::EWIGER_LANDFRIEDE);
+
+        // HAB declares war on FRA (FRA is not in HRE)
+        let result = execute_command(
+            &mut state,
+            "HAB",
+            &Command::DeclareWar {
+                target: "FRA".to_string(),
+                cb: None,
+            },
+            None,
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_ewiger_landfriede_allows_non_member_to_attack_hre() {
+        let mut state = setup_hre_command_test();
+
+        // Pass Ewiger Landfriede
+        state
+            .global
+            .hre
+            .reforms_passed
+            .push(crate::systems::hre::reforms::EWIGER_LANDFRIEDE);
+
+        // FRA (not in HRE) declares war on BOH (in HRE)
+        let result = execute_command(
+            &mut state,
+            "FRA",
+            &Command::DeclareWar {
+                target: "BOH".to_string(),
+                cb: None,
+            },
+            None,
+        );
+
+        assert!(result.is_ok());
+    }
+
+    // ========================================================================
+    // Revoke Privilegia Tests
+    // ========================================================================
+
+    #[test]
+    fn test_revoke_privilegia_vassalizes_members() {
+        let mut state = setup_hre_command_test();
+
+        state.global.hre.imperial_authority = Fixed::from_int(60);
+
+        // Pass Revoke Privilegia
+        let result = execute_command(
+            &mut state,
+            "HAB",
+            &Command::PassImperialReform {
+                reform: crate::systems::hre::reforms::REVOKE_PRIVILEGIA,
+            },
+            None,
+        );
+
+        assert!(result.is_ok());
+
+        // BOH should now be a vassal of HAB
+        assert!(state.diplomacy.is_overlord_of("HAB", "BOH"));
+        // ULM should also be a vassal
+        assert!(state.diplomacy.is_overlord_of("HAB", "ULM"));
+        // HAB should not be its own vassal
+        assert!(!state.diplomacy.subjects.contains_key("HAB"));
+    }
+
+    #[test]
+    fn test_revoke_privilegia_skips_existing_subjects() {
+        let mut state = setup_hre_command_test();
+
+        state.global.hre.imperial_authority = Fixed::from_int(60);
+
+        // Make BOH already a subject of someone else
+        state
+            .diplomacy
+            .add_subject("FRA", "BOH", state.subject_types.vassal_id, state.date)
+            .unwrap();
+
+        // Pass Revoke Privilegia
+        execute_command(
+            &mut state,
+            "HAB",
+            &Command::PassImperialReform {
+                reform: crate::systems::hre::reforms::REVOKE_PRIVILEGIA,
+            },
+            None,
+        )
+        .unwrap();
+
+        // BOH should still be FRA's vassal, not HAB's
+        assert!(state.diplomacy.is_overlord_of("FRA", "BOH"));
+        assert!(!state.diplomacy.is_overlord_of("HAB", "BOH"));
+        // ULM should be HAB's vassal
+        assert!(state.diplomacy.is_overlord_of("HAB", "ULM"));
     }
 }

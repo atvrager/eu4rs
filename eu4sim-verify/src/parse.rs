@@ -296,7 +296,7 @@ fn parse_binary_gamestate(data: &[u8]) -> Result<ExtractedState> {
         });
 
         // Extract ruler stats from history
-        let (ruler_adm, ruler_dip, ruler_mil) = extract_ruler_stats(country);
+        let monarch = extract_ruler_stats(country);
 
         let extracted = crate::ExtractedCountry {
             tag: tag_str.clone(),
@@ -306,9 +306,10 @@ fn parse_binary_gamestate(data: &[u8]) -> Result<ExtractedState> {
             adm_power: None, // Not directly available in eu4save Country struct
             dip_power: None,
             mil_power: None,
-            ruler_adm,
-            ruler_dip,
-            ruler_mil,
+            ruler_adm: monarch.adm,
+            ruler_dip: monarch.dip,
+            ruler_mil: monarch.mil,
+            ruler_dynasty: monarch.dynasty,
             tribute_type: country.tribute_type,
             monthly_income,
             total_monthly_expenses: None, // Will be calculated from ledger array in text parse
@@ -427,13 +428,20 @@ fn extract_advisors_from_ledger(
         .collect()
 }
 
-/// Extract the current ruler's ADM/DIP/MIL stats from country history.
+/// Extracted monarch information from save file.
+#[derive(Debug, Default)]
+pub struct ExtractedMonarch {
+    pub adm: Option<u16>,
+    pub dip: Option<u16>,
+    pub mil: Option<u16>,
+    pub dynasty: Option<String>,
+}
+
+/// Extract the current ruler's stats and dynasty from country history.
 ///
 /// Iterates through history events to find the most recent monarch,
-/// then returns their stats (0-6 for each). Returns None if no monarch found.
-fn extract_ruler_stats(
-    country: &eu4save::models::Country,
-) -> (Option<u16>, Option<u16>, Option<u16>) {
+/// then returns their stats (0-6 for each) and dynasty. Returns defaults if no monarch found.
+fn extract_ruler_stats(country: &eu4save::models::Country) -> ExtractedMonarch {
     // Find the most recent monarch in history
     // History events are in chronological order, so we iterate and take the last monarch
     let mut last_monarch: Option<&eu4save::models::Monarch> = None;
@@ -467,10 +475,17 @@ fn extract_ruler_stats(
             monarch.dip,
             monarch.mil
         );
-        (Some(monarch.adm), Some(monarch.dip), Some(monarch.mil))
+        // Note: eu4save::models::Monarch doesn't expose dynasty field directly
+        // Dynasty extraction requires text parsing or a dynasties lookup table
+        ExtractedMonarch {
+            adm: Some(monarch.adm),
+            dip: Some(monarch.dip),
+            mil: Some(monarch.mil),
+            dynasty: None,
+        }
     } else {
         log::trace!("No monarch found in history events");
-        (None, None, None)
+        ExtractedMonarch::default()
     }
 }
 
@@ -653,7 +668,7 @@ fn parse_with_query(query: eu4save::query::Query) -> Result<ExtractedState> {
         });
 
         // Extract ruler stats from history
-        let (ruler_adm, ruler_dip, ruler_mil) = extract_ruler_stats(country);
+        let monarch = extract_ruler_stats(country);
 
         let extracted = crate::ExtractedCountry {
             tag: tag_str.clone(),
@@ -663,9 +678,10 @@ fn parse_with_query(query: eu4save::query::Query) -> Result<ExtractedState> {
             adm_power: None,
             dip_power: None,
             mil_power: None,
-            ruler_adm,
-            ruler_dip,
-            ruler_mil,
+            ruler_adm: monarch.adm,
+            ruler_dip: monarch.dip,
+            ruler_mil: monarch.mil,
+            ruler_dynasty: monarch.dynasty,
             tribute_type: country.tribute_type,
             monthly_income,
             total_monthly_expenses: None, // Will be calculated from ledger array in text parse

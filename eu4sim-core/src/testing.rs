@@ -113,6 +113,7 @@ impl WorldStateBuilder {
                 buildings: BuildingSet::default(),
                 building_construction: None,
                 has_port: false,
+                is_in_hre: false,
             },
         );
         self
@@ -121,6 +122,14 @@ impl WorldStateBuilder {
     pub fn with_terrain(mut self, id: ProvinceId, terrain: Terrain) -> Self {
         if let Some(p) = self.state.provinces.get_mut(&id) {
             p.terrain = Some(terrain);
+        }
+        self
+    }
+
+    /// Mark a province as part of the Holy Roman Empire.
+    pub fn with_hre_province(mut self, id: ProvinceId) -> Self {
+        if let Some(p) = self.state.provinces.get_mut(&id) {
+            p.is_in_hre = true;
         }
         self
     }
@@ -161,6 +170,7 @@ impl WorldStateBuilder {
                 buildings: BuildingSet::default(),
                 building_construction: None,
                 has_port: false,
+                is_in_hre: false,
             },
         );
         self

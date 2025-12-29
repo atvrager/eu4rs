@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::hash::{Hash, Hasher};
 
-pub use im::HashMap;
+pub use im::{HashMap, HashSet};
 
 /// A specific date in history.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -718,6 +718,16 @@ impl TributeType {
     }
 }
 
+/// Ruler gender (for HRE emperor eligibility and succession mechanics).
+///
+/// By default, HRE emperors must be male unless specific reforms allow female rulers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+pub enum Gender {
+    #[default]
+    Male,
+    Female,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProvinceState {
     pub owner: Option<Tag>,
@@ -767,6 +777,10 @@ pub struct ProvinceState {
     /// Whether this province has a port (required for naval buildings).
     #[serde(default)]
     pub has_port: bool,
+    /// Whether this province is part of the Holy Roman Empire.
+    /// A country is an HRE member IFF its capital province has is_in_hre = true.
+    #[serde(default)]
+    pub is_in_hre: bool,
 }
 
 /// Progress towards establishing a core on a province.
@@ -809,6 +823,15 @@ pub struct CountryState {
     /// Ruler's military stat (0-6). Determines monthly MIL generation.
     #[serde(default = "default_ruler_stat")]
     pub ruler_mil: u8,
+    /// Ruler's dynasty name (for HRE re-election bonus and PU mechanics).
+    #[serde(default)]
+    pub ruler_dynasty: Option<String>,
+    /// Ruler's gender (for HRE eligibility - emperor must be male by default).
+    #[serde(default)]
+    pub ruler_gender: Gender,
+    /// Date when the current ruler was instated (for age/death calculations).
+    #[serde(default)]
+    pub ruler_instated: Option<Date>,
     /// Administrative technology level
     pub adm_tech: u8,
     /// Diplomatic technology level
@@ -941,6 +964,9 @@ impl Default for CountryState {
             ruler_adm: default_ruler_stat(),
             ruler_dip: default_ruler_stat(),
             ruler_mil: default_ruler_stat(),
+            ruler_dynasty: None,
+            ruler_gender: Gender::Male,
+            ruler_instated: None,
             adm_tech: 0,
             dip_tech: 0,
             mil_tech: 0,
@@ -1276,6 +1302,101 @@ impl DiplomacyState {
     }
 }
 
+// ============================================================================
+// Holy Roman Empire
+// ============================================================================
+
+/// Unique identifier for an imperial reform.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ReformId(pub u16);
+
+impl ReformId {
+    pub fn new(id: u16) -> Self {
+        Self(id)
+    }
+}
+
+/// State of the Holy Roman Empire.
+///
+/// The HRE is a political institution where member states elect an Emperor
+/// and can pass reforms to strengthen imperial authority.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HREState {
+    /// Current emperor (None if HRE is dismantled or no eligible candidates)
+    pub emperor: Option<Tag>,
+    /// Elector princes (up to 7). Electors vote for emperor succession.
+    pub electors: Vec<Tag>,
+    /// Free Imperial Cities. Give +0.005 IA/month each. Max 12.
+    pub free_cities: HashSet<Tag>,
+    /// Imperial Authority (0-100). Spent to pass reforms.
+    pub imperial_authority: Fixed,
+    /// Imperial reforms that have been passed
+    pub reforms_passed: Vec<ReformId>,
+    /// Official religion of the empire ("catholic" at start)
+    pub official_religion: String,
+    /// Whether the HRE has been dismantled
+    pub dismantled: bool,
+}
+
+impl Default for HREState {
+    fn default() -> Self {
+        Self {
+            emperor: None,
+            electors: Vec::new(),
+            free_cities: HashSet::new(),
+            imperial_authority: Fixed::ZERO,
+            reforms_passed: Vec::new(),
+            official_religion: "catholic".to_string(),
+            dismantled: false,
+        }
+    }
+}
+
+impl HREState {
+    /// Check if a country is an HRE member.
+    ///
+    /// Membership is determined by whether the country's capital province
+    /// is in the HRE (has is_in_hre = true).
+    pub fn is_member(&self, tag: &Tag, provinces: &HashMap<ProvinceId, ProvinceState>) -> bool {
+        if self.dismantled {
+            return false;
+        }
+        // Find the country's capital and check if it's in the HRE
+        // A country is a member if their capital province has is_in_hre = true
+        provinces
+            .values()
+            .find(|p| p.owner.as_ref() == Some(tag) && p.is_capital)
+            .map(|p| p.is_in_hre)
+            .unwrap_or(false)
+    }
+
+    /// Get all HRE member countries by checking capital provinces.
+    pub fn get_members(&self, provinces: &HashMap<ProvinceId, ProvinceState>) -> HashSet<Tag> {
+        if self.dismantled {
+            return HashSet::new();
+        }
+        provinces
+            .values()
+            .filter(|p| p.is_capital && p.is_in_hre)
+            .filter_map(|p| p.owner.clone())
+            .collect()
+    }
+
+    /// Check if a country is an elector.
+    pub fn is_elector(&self, tag: &Tag) -> bool {
+        self.electors.contains(tag)
+    }
+
+    /// Check if a country is a Free Imperial City.
+    pub fn is_free_city(&self, tag: &Tag) -> bool {
+        self.free_cities.contains(tag)
+    }
+}
+
+// ============================================================================
+// Reformation
+// ============================================================================
+
 /// Tracks the global state of the Reformation.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ReformationState {
@@ -1292,6 +1413,7 @@ pub struct ReformationState {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct GlobalState {
     pub reformation: ReformationState,
+    pub hre: HREState,
 }
 
 /// Terrain movement cost multipliers (base cost = 10 days)
