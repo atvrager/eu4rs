@@ -114,6 +114,7 @@ impl WorldStateBuilder {
                 building_construction: None,
                 has_port: false,
                 is_in_hre: false,
+                devastation: Fixed::ZERO,
             },
         );
         self
@@ -171,6 +172,7 @@ impl WorldStateBuilder {
                 building_construction: None,
                 has_port: false,
                 is_in_hre: false,
+                devastation: Fixed::ZERO,
             },
         );
         self

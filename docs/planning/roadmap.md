@@ -4,8 +4,8 @@ This document tracks the implementation status of the eu4rs simulation engine an
 
 ## Overview
 
-**Current Focus**: Phase 6 - Modifier System & Advanced Diplomacy
-**Next Up**: Phase 7 - Advanced Economy
+**Current Focus**: Phase 7 - Advanced Economy
+**Recently Completed**: Phase 9 - Celestial Empire, Phase 8 - Holy Roman Empire
 
 ---
 
@@ -243,6 +243,46 @@ Trade expansion and economic complexity.
 
 ---
 
+## Phase 8: Holy Roman Empire ✅ **COMPLETE**
+
+*Implemented in v0.3.1*
+
+HRE mechanics including emperor election and imperial reforms.
+
+- [x] **HRE State**: Emperor, electors, imperial authority, reform tracking
+- [x] **Emperor Election**: 7 electors vote on emperor death
+- [x] **Imperial Authority**: Monthly gain from peace, elector relations
+- [x] **Imperial Reforms**: 8 sequential reforms with IA costs
+- [x] **Free Cities**: Special OPM status with bonuses
+- [x] **Imperial Ban**: Emperor can declare war on non-members holding HRE land
+- [x] **Ewiger Landfriede**: Reform preventing internal HRE wars
+- [x] **Revoke Privilegia**: Capstone reform vassalizing all members
+
+**Key Files**: [hre.rs](../../eu4sim-core/src/systems/hre.rs), [docs](hre-implementation.md)
+
+---
+
+## Phase 9: Celestial Empire ✅ **COMPLETE**
+
+*Implemented in v0.3.2*
+
+Emperor of China mechanics with mandate and meritocracy.
+
+- [x] **Mandate System**: 0-100 yearly value from stability, tributaries, devastation, loans
+- [x] **Meritocracy**: -100 to 100 government stat affecting advisor costs, corruption
+- [x] **Celestial Reforms**: 21 non-sequential reforms with prerequisites
+  - Prerequisite chains (silver standard requires single whip law)
+  - Mutually exclusive factions (bureaucratic vs military)
+  - Capstone reform (vassalize tributaries) requires 8 reforms
+- [x] **Commands**: TakeMandate, PassCelestialReform, IssueCelestialDecree
+- [x] **Tributary Integration**: ForceTributary, RequestTributary, RevokeTributary
+- [x] **StrengthenGovernment**: 100 MIL for +10 meritocracy
+- [x] **Save Hydration**: Extract and hydrate celestial state from saves
+
+**Key Files**: [celestial.rs](../../eu4sim-core/src/systems/celestial.rs), [docs](celestial-implementation.md)
+
+---
+
 ## Visualization & Tools
 
 Parallel development track for rendering and debugging.
@@ -404,4 +444,4 @@ Play EU4 in your terminal! A text-based interface using `ratatui` or similar:
 
 ---
 
-*Last updated: 2025-12-27*
+*Last updated: 2025-12-29*

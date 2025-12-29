@@ -391,7 +391,69 @@ pub fn hydrate_from_save(
         fleets_cleared
     );
 
+    // Hydrate celestial empire state from save
+    if let Some(ref ce) = save.celestial_empire {
+        if let Some(ref emperor_tag) = ce.emperor {
+            world.global.celestial_empire.emperor = Some(emperor_tag.clone());
+            world.global.celestial_empire.dismantled = ce.dismantled;
+
+            if let Some(mandate) = ce.mandate {
+                world.global.celestial_empire.mandate = Fixed::from_f32(mandate as f32);
+            }
+
+            // Map reform names to IDs
+            for reform_name in &ce.reforms_passed {
+                if let Some(reform_id) = map_celestial_reform_name_to_id(reform_name) {
+                    world
+                        .global
+                        .celestial_empire
+                        .reforms_passed
+                        .insert(reform_id);
+                } else {
+                    log::trace!("Unknown celestial reform: {}", reform_name);
+                }
+            }
+
+            log::info!(
+                "Hydrated celestial empire: emperor={}, mandate={:.2}, reforms={}",
+                emperor_tag,
+                world.global.celestial_empire.mandate.to_f32(),
+                world.global.celestial_empire.reforms_passed.len()
+            );
+        }
+    }
+
     Ok((world, adjacency))
+}
+
+/// Map celestial reform name string to CelestialReformId
+fn map_celestial_reform_name_to_id(name: &str) -> Option<eu4sim_core::state::CelestialReformId> {
+    use eu4sim_core::systems::celestial::reforms;
+
+    match name {
+        "seaban_decision" => Some(reforms::SEABAN),
+        "establish_gaituguiliu_decision" => Some(reforms::GAITUGUILIU),
+        "reform_land_tax_decision" => Some(reforms::REFORM_LAND_TAX),
+        "military_governors_decision" => Some(reforms::MILITARY_GOVERNORS),
+        "centralizing_top_government_decision" => Some(reforms::CENTRALIZING_GOVERNMENT),
+        "vassalize_tributaries_decision" => Some(reforms::VASSALIZE_TRIBUTARIES),
+        "codify_single_whip_law_decision" => Some(reforms::CODIFY_SINGLE_WHIP_LAW),
+        "establish_silver_standard_decision" => Some(reforms::ESTABLISH_SILVER_STANDARD),
+        "kanhe_certificate_decision" => Some(reforms::KANHE_CERTIFICATE),
+        "new_keju_formats_decision" => Some(reforms::NEW_KEJU_FORMATS),
+        "inclusive_monarchy_decision" => Some(reforms::INCLUSIVE_MONARCHY),
+        "promote_bureaucratic_faction_decision" => Some(reforms::PROMOTE_BUREAUCRATIC),
+        "promote_military_faction_decision" => Some(reforms::PROMOTE_MILITARY),
+        "unifed_trade_market_decision" => Some(reforms::UNIFIED_TRADE_MARKET),
+        "reform_military_branch_decision" => Some(reforms::REFORM_MILITARY_BRANCH),
+        "modernize_banners_decision" => Some(reforms::MODERNIZE_BANNERS),
+        "study_foreign_ships_decision" => Some(reforms::STUDY_FOREIGN_SHIPS),
+        "tributary_embassies_decision" => Some(reforms::TRIBUTARY_EMBASSIES),
+        "new_world_discovery_decision" => Some(reforms::NEW_WORLD_DISCOVERY),
+        "reign_in_estates_decision" => Some(reforms::REIGN_IN_ESTATES),
+        "reform_civil_registration_decision" => Some(reforms::REFORM_CIVIL_REGISTRATION),
+        _ => None,
+    }
 }
 
 /// Parse date string "YYYY.MM.DD" into Date

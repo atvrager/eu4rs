@@ -1,4 +1,6 @@
-use crate::bounded::{new_prestige, new_stability, new_tradition, BoundedFixed, BoundedInt};
+use crate::bounded::{
+    new_meritocracy, new_prestige, new_stability, new_tradition, BoundedFixed, BoundedInt,
+};
 use crate::fixed::Fixed;
 use crate::modifiers::{GameModifiers, TradegoodId};
 use crate::trade::{
@@ -781,6 +783,11 @@ pub struct ProvinceState {
     /// A country is an HRE member IFF its capital province has is_in_hre = true.
     #[serde(default)]
     pub is_in_hre: bool,
+    /// Devastation level (0-100%). Caused by sieges, looting, and razing.
+    /// Reduces tax/production/manpower, causes unrest. Decays over time.
+    /// Used in Celestial Empire mandate calculation.
+    #[serde(default)]
+    pub devastation: Fixed,
 }
 
 /// Progress towards establishing a core on a province.
@@ -905,6 +912,15 @@ pub struct CountryState {
     /// Each advisor provides monthly monarch points but costs ducats per month.
     #[serde(default)]
     pub advisors: Vec<Advisor>,
+    /// Meritocracy (-100 to 100). Used by the Celestial Emperor of China.
+    /// Affects advisor costs, spy detection, and corruption.
+    /// Only meaningful for the current Emperor of China; ignored for other countries.
+    #[serde(default = "new_meritocracy")]
+    pub meritocracy: BoundedFixed,
+    /// Number of active loans. Each loan is typically 5 years, 4% interest.
+    /// Used in Celestial Empire mandate calculation (-0.6 mandate per 5 loans).
+    #[serde(default)]
+    pub loans: u16,
 }
 
 /// An advisor employed by a country.
@@ -988,6 +1004,8 @@ impl Default for CountryState {
             estates: crate::estates::CountryEstateState::default(),
             rivals: std::collections::HashSet::new(),
             advisors: Vec::new(),
+            meritocracy: new_meritocracy(),
+            loans: 0,
         }
     }
 }
@@ -1316,6 +1334,16 @@ impl ReformId {
     }
 }
 
+/// Unique identifier for a Celestial Empire reform.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct CelestialReformId(pub u16);
+
+impl CelestialReformId {
+    pub fn new(id: u16) -> Self {
+        Self(id)
+    }
+}
+
 /// State of the Holy Roman Empire.
 ///
 /// The HRE is a political institution where member states elect an Emperor
@@ -1394,6 +1422,55 @@ impl HREState {
 }
 
 // ============================================================================
+// Celestial Empire (Emperor of China)
+// ============================================================================
+
+/// State of the Celestial Empire (Emperor of China).
+///
+/// The Celestial Empire is a unique political system where the Emperor of China
+/// maintains the Mandate of Heaven. Unlike HRE elections, the mandate can be
+/// taken by conquest. Reforms are non-sequential and provide bonuses.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CelestialEmpireState {
+    /// Current Emperor of China (None if no one holds the mandate)
+    pub emperor: Option<Tag>,
+    /// Mandate of Heaven (0-100). Affects modifiers and reform ability.
+    pub mandate: Fixed,
+    /// Celestial reforms that have been passed (non-sequential, uses HashSet)
+    pub reforms_passed: HashSet<CelestialReformId>,
+    /// Whether the Celestial Empire has been dismantled
+    pub dismantled: bool,
+}
+
+impl Default for CelestialEmpireState {
+    fn default() -> Self {
+        Self {
+            emperor: None,
+            mandate: Fixed::from_int(80), // New emperors start at 80 mandate
+            reforms_passed: HashSet::new(),
+            dismantled: false,
+        }
+    }
+}
+
+impl CelestialEmpireState {
+    /// Check if a country is the current Emperor of China.
+    pub fn is_emperor(&self, tag: &Tag) -> bool {
+        self.emperor.as_ref() == Some(tag)
+    }
+
+    /// Check if a specific reform has been passed.
+    pub fn has_reform(&self, reform: CelestialReformId) -> bool {
+        self.reforms_passed.contains(&reform)
+    }
+
+    /// Get the number of reforms passed.
+    pub fn reform_count(&self) -> usize {
+        self.reforms_passed.len()
+    }
+}
+
+// ============================================================================
 // Reformation
 // ============================================================================
 
@@ -1414,6 +1491,7 @@ pub struct ReformationState {
 pub struct GlobalState {
     pub reformation: ReformationState,
     pub hre: HREState,
+    pub celestial_empire: CelestialEmpireState,
 }
 
 /// Terrain movement cost multipliers (base cost = 10 days)

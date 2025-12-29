@@ -331,6 +331,21 @@ impl SubjectTypeRegistry {
     pub fn is_tributary(&self, id: SubjectTypeId) -> bool {
         self.get(id).is_some_and(|def| !def.joins_overlords_wars)
     }
+
+    /// Find the first tributary-type subject type ID.
+    ///
+    /// Returns None if no tributary types are registered.
+    /// Used when creating new tributary relationships.
+    pub fn find_tributary_type(&self) -> Option<SubjectTypeId> {
+        for (idx, def) in self.types.iter().enumerate() {
+            if !def.joins_overlords_wars {
+                return Some(SubjectTypeId(idx as u8));
+            }
+        }
+        // Fallback: look for a type named "tributary"
+        self.id_by_name("tributary_state")
+            .or_else(|| self.id_by_name("tributary"))
+    }
 }
 
 #[cfg(test)]

@@ -20,6 +20,21 @@ pub struct ExtractedState {
     pub provinces: HashMap<u32, ExtractedProvince>,
     /// Subject relationships: vassal tag -> relationship details
     pub subjects: HashMap<String, ExtractedSubject>,
+    /// Celestial Empire (Emperor of China) state
+    pub celestial_empire: Option<ExtractedCelestialEmpire>,
+}
+
+/// Celestial Empire (Emperor of China) state extracted from save
+#[derive(Debug, Clone, Default)]
+pub struct ExtractedCelestialEmpire {
+    /// Current Emperor of China tag (e.g., "MNG" for Ming)
+    pub emperor: Option<String>,
+    /// Current mandate value (0-100)
+    pub mandate: Option<f64>,
+    /// Whether the celestial empire has been dismantled
+    pub dismantled: bool,
+    /// Reforms that have been passed (reform IDs as strings)
+    pub reforms_passed: Vec<String>,
 }
 
 /// Subject relationship extracted from save

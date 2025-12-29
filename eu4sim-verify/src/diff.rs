@@ -570,6 +570,7 @@ mod tests {
             countries: HashMap::new(),
             provinces: HashMap::new(),
             subjects: HashMap::new(),
+            celestial_empire: None,
         }
     }
 

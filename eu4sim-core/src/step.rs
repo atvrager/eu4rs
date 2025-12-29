@@ -263,6 +263,10 @@ pub fn step_world(
         if new_state.date.month == 1 {
             // Tributary payments happen at the start of each year
             crate::systems::run_tribute_payments(&mut new_state);
+            // Celestial Empire mandate tick (yearly, unlike HRE's monthly)
+            crate::systems::run_celestial_tick(&mut new_state);
+            // Meritocracy tick (yearly, from advisors)
+            crate::systems::run_meritocracy_tick(&mut new_state);
         }
 
         // Auto-end wars after 10 years (stalemate prevention)
@@ -3903,6 +3907,338 @@ fn execute_command(
         Command::Pass => Ok(()), // Explicit no-op
 
         Command::Quit => Ok(()), // Handled by outer loop usually, but harmless here
+
+        // ===== CELESTIAL EMPIRE COMMANDS =====
+        Command::TakeMandate => {
+            // Transfer Mandate of Heaven to this country
+            // In practice this would be done via peace deal, but we support direct command
+            if state.global.celestial_empire.dismantled {
+                return Err(ActionError::InvalidAction {
+                    reason: "Celestial Empire has been dismantled".to_string(),
+                });
+            }
+
+            // Can't take mandate if already emperor
+            if state
+                .global
+                .celestial_empire
+                .is_emperor(&country_tag.to_string())
+            {
+                return Err(ActionError::InvalidAction {
+                    reason: "Already Emperor of China".to_string(),
+                });
+            }
+
+            let old_emperor = state.global.celestial_empire.emperor.clone();
+
+            // Transfer mandate
+            state.global.celestial_empire.emperor = Some(country_tag.to_string());
+            state.global.celestial_empire.mandate =
+                crate::systems::celestial::defines::DEFAULT_MANDATE;
+            state.global.celestial_empire.reforms_passed.clear();
+
+            // Reset meritocracy for new emperor
+            if let Some(country) = state.countries.get_mut(country_tag) {
+                country.meritocracy.set(Fixed::ZERO);
+            }
+
+            log::info!(
+                "{} takes the Mandate of Heaven from {:?}",
+                country_tag,
+                old_emperor
+            );
+            Ok(())
+        }
+        Command::PassCelestialReform { reform } => {
+            // Must be Emperor of China
+            if !state
+                .global
+                .celestial_empire
+                .is_emperor(&country_tag.to_string())
+            {
+                return Err(ActionError::InvalidAction {
+                    reason: "Only the Emperor of China can pass celestial reforms".to_string(),
+                });
+            }
+
+            // Check if already passed
+            if state.global.celestial_empire.has_reform(*reform) {
+                return Err(ActionError::InvalidAction {
+                    reason: "Reform already passed".to_string(),
+                });
+            }
+
+            // Check prerequisites
+            if !state.global.celestial_empire.can_pass_reform(*reform) {
+                return Err(ActionError::InvalidAction {
+                    reason: "Reform prerequisites not met".to_string(),
+                });
+            }
+
+            // Check mandate requirement (80+)
+            let min_mandate = crate::systems::celestial::defines::REFORM_MIN_MANDATE;
+            if state.global.celestial_empire.mandate < min_mandate {
+                return Err(ActionError::InvalidAction {
+                    reason: format!(
+                        "Need {} mandate to pass reform (have {:.1})",
+                        min_mandate.to_f32(),
+                        state.global.celestial_empire.mandate.to_f32()
+                    ),
+                });
+            }
+
+            // Check stability
+            let country = state
+                .countries
+                .get(country_tag)
+                .ok_or(ActionError::InvalidAction {
+                    reason: "Country not found".to_string(),
+                })?;
+            if country.stability.get() < crate::systems::celestial::defines::REFORM_STABILITY_COST {
+                return Err(ActionError::InvalidAction {
+                    reason: "Need at least 1 stability to pass reform".to_string(),
+                });
+            }
+
+            // Deduct costs
+            let mandate_cost = crate::systems::celestial::defines::REFORM_MANDATE_COST;
+            state.global.celestial_empire.mandate -= mandate_cost;
+            let country = state.countries.get_mut(country_tag).unwrap();
+            country.stability.set(
+                country.stability.get() - crate::systems::celestial::defines::REFORM_STABILITY_COST,
+            );
+
+            // Pass reform
+            state.global.celestial_empire.reforms_passed.insert(*reform);
+
+            log::info!(
+                "{} passes celestial reform {:?} (-70 mandate, -1 stability)",
+                country_tag,
+                reform
+            );
+            Ok(())
+        }
+        Command::IssueCelestialDecree { decree } => {
+            // Must be Emperor of China
+            if !state
+                .global
+                .celestial_empire
+                .is_emperor(&country_tag.to_string())
+            {
+                return Err(ActionError::InvalidAction {
+                    reason: "Only the Emperor of China can issue decrees".to_string(),
+                });
+            }
+
+            // Check meritocracy cost
+            let meritocracy_cost =
+                Fixed::from_int(crate::systems::celestial::defines::DECREE_MERITOCRACY_COST as i64);
+            let country = state
+                .countries
+                .get(country_tag)
+                .ok_or(ActionError::InvalidAction {
+                    reason: "Country not found".to_string(),
+                })?;
+            if country.meritocracy.get() < meritocracy_cost {
+                return Err(ActionError::InsufficientFunds {
+                    required: meritocracy_cost.to_f32(),
+                    available: country.meritocracy.get().to_f32(),
+                });
+            }
+
+            // Deduct meritocracy
+            let country = state.countries.get_mut(country_tag).unwrap();
+            let new_meritocracy = country.meritocracy.get() - meritocracy_cost;
+            country.meritocracy.set(new_meritocracy);
+
+            // TODO: Actually apply decree effects when decree system is implemented
+            log::info!(
+                "{} issues celestial decree '{}' (-20 meritocracy)",
+                country_tag,
+                decree
+            );
+            Ok(())
+        }
+        Command::ForceTributary { target } => {
+            // This would normally be done via peace deal
+            // For now, create the tributary relationship directly
+            if !state.countries.contains_key(target) {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("Target country {} not found", target),
+                });
+            }
+
+            // Can't make yourself a tributary
+            if country_tag == target {
+                return Err(ActionError::InvalidAction {
+                    reason: "Cannot make yourself a tributary".to_string(),
+                });
+            }
+
+            // Check if target is already a subject
+            if state.diplomacy.subjects.contains_key(target) {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("{} is already a subject", target),
+                });
+            }
+
+            // Create tributary relationship
+            // Find the tributary subject type ID
+            let tributary_type_id = state
+                .subject_types
+                .find_tributary_type()
+                .unwrap_or(crate::subjects::SubjectTypeId(1));
+
+            state.diplomacy.subjects.insert(
+                target.to_string(),
+                crate::state::SubjectRelationship {
+                    overlord: country_tag.to_string(),
+                    subject: target.to_string(),
+                    subject_type: tributary_type_id,
+                    start_date: state.date,
+                    liberty_desire: 0,
+                    integration_progress: 0,
+                    integrating: false,
+                },
+            );
+
+            log::info!("{} forces {} to become tributary", country_tag, target);
+            Ok(())
+        }
+        Command::RequestTributary { target } => {
+            // Diplomatic request - for now same as force but logged differently
+            // In full implementation, this would create a diplomatic offer
+            if !state.countries.contains_key(target) {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("Target country {} not found", target),
+                });
+            }
+
+            if country_tag == target {
+                return Err(ActionError::InvalidAction {
+                    reason: "Cannot request yourself as tributary".to_string(),
+                });
+            }
+
+            if state.diplomacy.subjects.contains_key(target) {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("{} is already a subject", target),
+                });
+            }
+
+            // For now, auto-accept (in full impl would be an offer)
+            let tributary_type_id = state
+                .subject_types
+                .find_tributary_type()
+                .unwrap_or(crate::subjects::SubjectTypeId(1));
+
+            state.diplomacy.subjects.insert(
+                target.to_string(),
+                crate::state::SubjectRelationship {
+                    overlord: country_tag.to_string(),
+                    subject: target.to_string(),
+                    subject_type: tributary_type_id,
+                    start_date: state.date,
+                    liberty_desire: 0,
+                    integration_progress: 0,
+                    integrating: false,
+                },
+            );
+
+            log::info!(
+                "{} requests {} as tributary (auto-accepted)",
+                country_tag,
+                target
+            );
+            Ok(())
+        }
+        Command::RevokeTributary { target } => {
+            // Release a tributary
+            if let Some(relationship) = state.diplomacy.subjects.get(target) {
+                if relationship.overlord != country_tag {
+                    return Err(ActionError::InvalidAction {
+                        reason: format!("{} is not your tributary", target),
+                    });
+                }
+            } else {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("{} is not a subject", target),
+                });
+            }
+
+            state.diplomacy.subjects.remove(target);
+            log::info!("{} releases tributary {}", country_tag, target);
+            Ok(())
+        }
+        Command::StrengthenGovernment => {
+            // Must be Emperor of China
+            if !state
+                .global
+                .celestial_empire
+                .is_emperor(&country_tag.to_string())
+            {
+                return Err(ActionError::InvalidAction {
+                    reason: "Only the Emperor of China can strengthen government".to_string(),
+                });
+            }
+
+            let mil_cost = crate::systems::celestial::defines::STRENGTHEN_GOVERNMENT_MIL_COST;
+            let meritocracy_gain =
+                crate::systems::celestial::defines::STRENGTHEN_GOVERNMENT_MERITOCRACY;
+
+            // Check MIL power
+            let country = state
+                .countries
+                .get(country_tag)
+                .ok_or(ActionError::InvalidAction {
+                    reason: "Country not found".to_string(),
+                })?;
+            if country.mil_mana < mil_cost {
+                return Err(ActionError::InsufficientFunds {
+                    required: mil_cost.to_f32(),
+                    available: country.mil_mana.to_f32(),
+                });
+            }
+
+            // Deduct MIL and add meritocracy
+            let country = state.countries.get_mut(country_tag).unwrap();
+            country.mil_mana -= mil_cost;
+            let new_meritocracy = (country.meritocracy.get() + meritocracy_gain)
+                .min(crate::systems::celestial::defines::MAX_MERITOCRACY);
+            country.meritocracy.set(new_meritocracy);
+
+            log::info!(
+                "{} strengthens government: -100 MIL, +10 meritocracy (now {:.1})",
+                country_tag,
+                new_meritocracy.to_f32()
+            );
+            Ok(())
+        }
+        Command::AbandonMandate => {
+            // Must be Emperor of China to abandon mandate
+            if !state
+                .global
+                .celestial_empire
+                .is_emperor(&country_tag.to_string())
+            {
+                return Err(ActionError::InvalidAction {
+                    reason: "Only the Emperor of China can abandon the mandate".to_string(),
+                });
+            }
+
+            // Clear emperor
+            state.global.celestial_empire.emperor = None;
+            state.global.celestial_empire.mandate = Fixed::ZERO;
+            state.global.celestial_empire.reforms_passed.clear();
+
+            // Reset meritocracy
+            if let Some(country) = state.countries.get_mut(country_tag) {
+                country.meritocracy.set(Fixed::ZERO);
+            }
+
+            log::info!("{} abandons the Mandate of Heaven", country_tag);
+            Ok(())
+        }
     }
 }
 

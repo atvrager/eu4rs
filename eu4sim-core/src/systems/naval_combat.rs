@@ -619,6 +619,7 @@ mod tests {
                 buildings: Default::default(),
                 building_construction: None,
                 has_port: false,
+                devastation: Fixed::ZERO,
             },
         );
 
@@ -757,6 +758,7 @@ mod tests {
                 buildings: Default::default(),
                 building_construction: None,
                 has_port: false,
+                devastation: Fixed::ZERO,
             },
         );
 
@@ -830,6 +832,7 @@ mod tests {
                 buildings: Default::default(),
                 building_construction: None,
                 has_port: false,
+                devastation: Fixed::ZERO,
             },
         );
 

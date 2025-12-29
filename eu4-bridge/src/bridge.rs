@@ -4,7 +4,7 @@
 
 use crate::extraction::ExtractedState;
 use eu4sim_core::ai::VisibleWorldState;
-use eu4sim_core::bounded::{BoundedInt, new_prestige, new_tradition};
+use eu4sim_core::bounded::{BoundedInt, new_meritocracy, new_prestige, new_tradition};
 use eu4sim_core::fixed::Fixed;
 use eu4sim_core::state::{CountryState, Date};
 
@@ -167,6 +167,8 @@ impl ExtractedState {
             estates: Default::default(), // Can't extract from OCR yet
             rivals: Default::default(), // Can't extract from OCR yet
             advisors: Default::default(), // Can't extract from OCR yet
+            meritocracy: new_meritocracy(), // Can't extract from OCR yet
+            loans: 0,                   // Can't extract from OCR yet
         };
 
         VisibleWorldState {

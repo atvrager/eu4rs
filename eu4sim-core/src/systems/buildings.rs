@@ -767,6 +767,7 @@ mod tests {
             buildings: BuildingSet::default(),
             building_construction: None,
             has_port: true,
+            devastation: Fixed::ZERO,
         }
     }
 

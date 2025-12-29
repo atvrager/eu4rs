@@ -3,6 +3,7 @@
 pub mod advisors;
 pub mod attrition;
 pub mod buildings;
+pub mod celestial;
 pub mod coalitions;
 pub mod colonization;
 pub mod combat;
@@ -37,6 +38,10 @@ pub use buildings::{
     demolish_building, max_building_slots, recompute_fort_level, recompute_province_modifiers,
     start_construction, tick_building_construction, transfer_construction_diplomatic,
     validate_manufactory_on_goods_change, BuildingError,
+};
+pub use celestial::{
+    calculate_advisor_cost_modifier, calculate_corruption_reduction, run_celestial_tick,
+    run_meritocracy_tick,
 };
 pub use coalitions::run_coalition_tick;
 pub use colonization::run_colonization_tick;

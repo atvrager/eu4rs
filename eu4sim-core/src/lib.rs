@@ -73,7 +73,9 @@ pub mod subjects;
 pub mod systems;
 pub mod testing;
 
-pub use bounded::{new_prestige, new_stability, new_tradition, BoundedFixed, BoundedInt};
+pub use bounded::{
+    new_meritocracy, new_prestige, new_stability, new_tradition, BoundedFixed, BoundedInt,
+};
 pub use buildings::{BuildingConstruction, BuildingDef, BuildingSet, BuildingSlotSource};
 pub use config::SimConfig;
 pub use estates::{

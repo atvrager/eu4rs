@@ -346,12 +346,29 @@ fn parse_binary_gamestate(data: &[u8]) -> Result<ExtractedState> {
         subjects.len()
     );
 
+    // Extract celestial empire data from query (if available)
+    let celestial_empire = extract_celestial_empire_from_query(&query);
+
     Ok(ExtractedState {
         meta,
         countries,
         provinces,
         subjects,
+        celestial_empire,
     })
+}
+
+/// Extract celestial empire data from eu4save query
+///
+/// Note: eu4save library doesn't expose celestial_empire data directly,
+/// so this function returns None. Celestial empire data is extracted
+/// via text parsing instead.
+fn extract_celestial_empire_from_query(
+    _query: &eu4save::query::Query,
+) -> Option<crate::ExtractedCelestialEmpire> {
+    // eu4save doesn't expose celestial_empire in GameState
+    // We'll rely on text parsing for this data
+    None
 }
 
 /// Extract ideas from binary save country data
@@ -714,11 +731,15 @@ fn parse_with_query(query: eu4save::query::Query) -> Result<ExtractedState> {
         );
     }
 
+    // Extract celestial empire data
+    let celestial_empire = extract_celestial_empire_from_query(&query);
+
     Ok(ExtractedState {
         meta: save_meta,
         countries,
         provinces,
         subjects,
+        celestial_empire,
     })
 }
 
@@ -737,6 +758,7 @@ fn parse_text_content(text: &str) -> Result<ExtractedState> {
         countries: HashMap::new(),
         provinces: HashMap::new(),
         subjects: HashMap::new(),
+        celestial_empire: None,
     };
 
     // Extract country data
@@ -747,6 +769,9 @@ fn parse_text_content(text: &str) -> Result<ExtractedState> {
 
     // Extract subject relationships from diplomacy section
     extract_subjects(text, &mut state)?;
+
+    // Extract celestial empire from text
+    state.celestial_empire = extract_celestial_empire_from_text(text);
 
     log::info!(
         "Extracted {} countries, {} provinces, {} subjects",
@@ -1656,4 +1681,70 @@ fn extract_buildings(content: &str) -> Vec<String> {
         }
     }
     buildings
+}
+
+/// Extract celestial empire data from text save
+///
+/// Celestial empire data appears in a block like:
+/// ```text
+/// celestial_empire={
+///     emperor="MNG"
+///     mandate=87.123
+///     passed_reforms={ reform_1 reform_2 }
+/// }
+/// ```
+fn extract_celestial_empire_from_text(text: &str) -> Option<crate::ExtractedCelestialEmpire> {
+    // Find the celestial_empire section
+    let ce_start = text.find("\ncelestial_empire={")?;
+    let block_start = ce_start + "\ncelestial_empire={".len();
+    let ce_block = extract_block(&text[block_start..])?;
+
+    // Extract emperor tag
+    let emperor_re = regex::Regex::new(r#"emperor="([A-Z]{3})""#).ok()?;
+    let emperor = emperor_re
+        .captures(ce_block)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().to_string());
+
+    // If no emperor, celestial empire doesn't exist or is dismantled
+    emperor.as_ref()?;
+
+    // Extract mandate value
+    let mandate_re = regex::Regex::new(r"mandate=(-?\d+\.?\d*)").ok()?;
+    let mandate = mandate_re
+        .captures(ce_block)
+        .and_then(|c| c.get(1))
+        .and_then(|m| m.as_str().parse::<f64>().ok());
+
+    // Extract passed reforms
+    let mut reforms_passed = Vec::new();
+    if let Some(reforms_start) = ce_block.find("passed_reforms={") {
+        let reforms_block_start = reforms_start + "passed_reforms={".len();
+        if let Some(reforms_block) = extract_block(&ce_block[reforms_block_start..]) {
+            // Reform names are space-separated identifiers
+            for reform_name in reforms_block.split_whitespace() {
+                // Filter out non-reform strings (might have formatting)
+                if reform_name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_')
+                {
+                    reforms_passed.push(reform_name.to_string());
+                }
+            }
+        }
+    }
+
+    log::debug!(
+        "Extracted celestial empire: emperor={:?}, mandate={:?}, reforms={}",
+        emperor,
+        mandate,
+        reforms_passed.len()
+    );
+
+    Some(crate::ExtractedCelestialEmpire {
+        emperor,
+        mandate,
+        dismantled: false,
+        reforms_passed,
+    })
 }

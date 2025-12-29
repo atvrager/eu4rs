@@ -2,7 +2,8 @@ use crate::ai::VisibleWorldState;
 use crate::estates::{EstateTypeId, PrivilegeId};
 use crate::ideas::IdeaGroupId;
 use crate::state::{
-    ArmyId, FleetId, InstitutionId, PeaceTerms, ProvinceId, ReformId, Tag, TechType, WarId,
+    ArmyId, CelestialReformId, FleetId, InstitutionId, PeaceTerms, ProvinceId, ReformId, Tag,
+    TechType, WarId,
 };
 use crate::trade::{MerchantAction, TradeNodeId};
 use serde::{Deserialize, Serialize};
@@ -323,6 +324,38 @@ pub enum Command {
     ImperialBan {
         target: Tag,
     },
+
+    // Celestial Empire (Emperor of China)
+    /// Claim the Mandate of Heaven (via peace deal or decision).
+    /// Transfers emperor status, resets reforms, sets mandate to 80.
+    TakeMandate,
+    /// Pass a celestial reform (emperor only).
+    /// Requires 80+ mandate, costs 70 mandate and 1 stability.
+    PassCelestialReform {
+        reform: CelestialReformId,
+    },
+    /// Issue a celestial decree (emperor only).
+    /// Costs 20 meritocracy, lasts 10 years.
+    IssueCelestialDecree {
+        decree: String,
+    },
+    /// Force a nation to become tributary (peace deal).
+    ForceTributary {
+        target: Tag,
+    },
+    /// Diplomatic request for tributary status.
+    RequestTributary {
+        target: Tag,
+    },
+    /// Release a tributary from subject status.
+    RevokeTributary {
+        target: Tag,
+    },
+    /// Spend 100 MIL power for +10 meritocracy (emperor only).
+    StrengthenGovernment,
+    /// Abandon the Mandate of Heaven.
+    /// Gives up Celestial Empire status.
+    AbandonMandate,
 
     // Control
     MoveCapital {

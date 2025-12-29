@@ -132,6 +132,12 @@ pub const fn new_tradition() -> BoundedFixed {
     BoundedFixed::new(Fixed::ZERO, Fixed::ZERO, Fixed::from_int(100))
 }
 
+/// Create a new meritocracy value (-100 to 100, starting at 0).
+/// Used by the Celestial Emperor of China.
+pub const fn new_meritocracy() -> BoundedFixed {
+    BoundedFixed::new(Fixed::ZERO, Fixed::from_int(-100), Fixed::from_int(100))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

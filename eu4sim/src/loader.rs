@@ -342,6 +342,7 @@ pub fn load_initial_state(
             building_construction: None,
             has_port: false, // TODO: Detect from coastal + port buildings
             is_in_hre: hist.hre.unwrap_or(false),
+            devastation: Fixed::ZERO,
         };
         provinces.insert(id, p.clone());
 
