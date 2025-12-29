@@ -55,10 +55,15 @@ pub struct ExtractedCountry {
     pub current_manpower: Option<f64>,
     pub treasury: Option<f64>,
 
-    // Monarch power points
+    // Monarch power points (current stored amounts)
     pub adm_power: Option<f64>,
     pub dip_power: Option<f64>,
     pub mil_power: Option<f64>,
+
+    // Ruler stats (0-6, determines monthly power generation)
+    pub ruler_adm: Option<u16>,
+    pub ruler_dip: Option<u16>,
+    pub ruler_mil: Option<u16>,
 
     // Tribute type (for tributary states)
     pub tribute_type: Option<i32>,

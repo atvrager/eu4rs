@@ -134,6 +134,26 @@ pub fn hydrate_from_save(
                 country.mil_mana = Fixed::from_f32(mil as f32);
             }
 
+            // Update ruler stats from save (determines monthly power generation)
+            if let Some(adm) = save_country.ruler_adm {
+                country.ruler_adm = adm as u8;
+            }
+            if let Some(dip) = save_country.ruler_dip {
+                country.ruler_dip = dip as u8;
+            }
+            if let Some(mil) = save_country.ruler_mil {
+                country.ruler_mil = mil as u8;
+            }
+            if save_country.ruler_adm.is_some() {
+                log::debug!(
+                    "{} ruler stats from save: ADM={}, DIP={}, MIL={}",
+                    tag,
+                    country.ruler_adm,
+                    country.ruler_dip,
+                    country.ruler_mil
+                );
+            }
+
             // Extract advisors from save
             country.advisors = save_country
                 .advisors

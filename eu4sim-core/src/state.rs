@@ -800,6 +800,15 @@ pub struct CountryState {
     pub dip_mana: Fixed,
     /// Military monarch power
     pub mil_mana: Fixed,
+    /// Ruler's administrative stat (0-6). Determines monthly ADM generation.
+    #[serde(default = "default_ruler_stat")]
+    pub ruler_adm: u8,
+    /// Ruler's diplomatic stat (0-6). Determines monthly DIP generation.
+    #[serde(default = "default_ruler_stat")]
+    pub ruler_dip: u8,
+    /// Ruler's military stat (0-6). Determines monthly MIL generation.
+    #[serde(default = "default_ruler_stat")]
+    pub ruler_mil: u8,
     /// Administrative technology level
     pub adm_tech: u8,
     /// Diplomatic technology level
@@ -912,6 +921,11 @@ pub struct IncomeBreakdown {
     pub expenses: Fixed,
 }
 
+/// Default ruler stat (3 = average ruler skill).
+fn default_ruler_stat() -> u8 {
+    3
+}
+
 impl Default for CountryState {
     fn default() -> Self {
         Self {
@@ -924,6 +938,9 @@ impl Default for CountryState {
             fixed_expenses: Fixed::ZERO,
             dip_mana: Fixed::ZERO,
             mil_mana: Fixed::ZERO,
+            ruler_adm: default_ruler_stat(),
+            ruler_dip: default_ruler_stat(),
+            ruler_mil: default_ruler_stat(),
             adm_tech: 0,
             dip_tech: 0,
             mil_tech: 0,

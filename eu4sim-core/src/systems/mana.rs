@@ -1,19 +1,39 @@
 use crate::fixed::Fixed;
 use crate::state::WorldState;
 
-/// Generates monarch power for all countries (+3/+3/+3 per month)
+/// Generates monarch power for all countries based on ruler stats.
+///
+/// Each month, countries gain monarch power:
+/// - Base: +3 for each category
+/// - Ruler: +ruler_stat (0-6) for each category
+/// - Total: base + ruler = 3 to 9 per month per category
+///
+/// Power is capped at 999.
 pub fn run_mana_tick(state: &mut WorldState) {
-    let monthly_gain = Fixed::from_int(3);
     const MAX_MANA: Fixed = Fixed::from_int(999);
+    const BASE_GAIN: i64 = 3;
 
     let country_tags: Vec<String> = state.countries.keys().cloned().collect();
     for tag in country_tags {
         if let Some(country) = state.countries.get_mut(&tag) {
-            country.adm_mana = (country.adm_mana + monthly_gain).min(MAX_MANA);
-            country.dip_mana = (country.dip_mana + monthly_gain).min(MAX_MANA);
-            country.mil_mana = (country.mil_mana + monthly_gain).min(MAX_MANA);
+            let adm_gain = Fixed::from_int(BASE_GAIN + country.ruler_adm as i64);
+            let dip_gain = Fixed::from_int(BASE_GAIN + country.ruler_dip as i64);
+            let mil_gain = Fixed::from_int(BASE_GAIN + country.ruler_mil as i64);
 
-            log::debug!("Mana tick for {}: +3/+3/+3", tag);
+            country.adm_mana = (country.adm_mana + adm_gain).min(MAX_MANA);
+            country.dip_mana = (country.dip_mana + dip_gain).min(MAX_MANA);
+            country.mil_mana = (country.mil_mana + mil_gain).min(MAX_MANA);
+
+            log::trace!(
+                "Mana tick for {}: +{}/+{}/+{} (base 3 + ruler {}/{}/{})",
+                tag,
+                adm_gain,
+                dip_gain,
+                mil_gain,
+                country.ruler_adm,
+                country.ruler_dip,
+                country.ruler_mil
+            );
         }
     }
 }
@@ -30,24 +50,25 @@ mod tests {
         run_mana_tick(&mut state);
 
         let swe = state.countries.get("SWE").unwrap();
-        assert_eq!(swe.adm_mana, Fixed::from_int(3));
-        assert_eq!(swe.dip_mana, Fixed::from_int(3));
-        assert_eq!(swe.mil_mana, Fixed::from_int(3));
+        // Default ruler has 3/3/3 stats, plus base 3 = +6/+6/+6 per month
+        assert_eq!(swe.adm_mana, Fixed::from_int(6));
+        assert_eq!(swe.dip_mana, Fixed::from_int(6));
+        assert_eq!(swe.mil_mana, Fixed::from_int(6));
     }
 
     #[test]
     fn test_mana_accumulation() {
         let mut state = WorldStateBuilder::new().with_country("SWE").build();
 
-        // Run tick 5 times
+        // Run tick 5 times: 5 * 6 = 30
         for _ in 0..5 {
             run_mana_tick(&mut state);
         }
 
         let swe = state.countries.get("SWE").unwrap();
-        assert_eq!(swe.adm_mana, Fixed::from_int(15));
-        assert_eq!(swe.dip_mana, Fixed::from_int(15));
-        assert_eq!(swe.mil_mana, Fixed::from_int(15));
+        assert_eq!(swe.adm_mana, Fixed::from_int(30));
+        assert_eq!(swe.dip_mana, Fixed::from_int(30));
+        assert_eq!(swe.mil_mana, Fixed::from_int(30));
     }
 
     #[test]
@@ -62,7 +83,7 @@ mod tests {
         run_mana_tick(&mut state);
 
         let swe = state.countries.get("SWE").unwrap();
-        // 998 + 3 = 1001 -> capped at 999
+        // 998 + 6 (base 3 + ruler 3) = 1004 -> capped at 999
         assert_eq!(swe.adm_mana, Fixed::from_int(999));
     }
 }

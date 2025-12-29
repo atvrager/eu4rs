@@ -138,6 +138,9 @@ impl ExtractedState {
             adm_mana: Fixed::from_f32(self.adm_mana.unwrap_or(0) as f32),
             dip_mana: Fixed::from_f32(self.dip_mana.unwrap_or(0) as f32),
             mil_mana: Fixed::from_f32(self.mil_mana.unwrap_or(0) as f32),
+            ruler_adm: 3, // Default - can't extract from OCR yet
+            ruler_dip: 3,
+            ruler_mil: 3,
             // 1444 starting tech - can't extract from OCR yet
             adm_tech: 3,
             dip_tech: 3,

@@ -4050,8 +4050,9 @@ mod tests {
             .with_province_full(1, Some("SWE"), None, Fixed::from_int(5))
             .build();
 
-        // Generate mana (17 months = 51 mana each)
-        for _ in 0..17 {
+        // Generate mana (9 months × 6/month = 54 mana each)
+        // Base 3 + ruler 3 (default) = 6 per month
+        for _ in 0..9 {
             state.date = state.date.add_days(30);
             crate::systems::run_mana_tick(&mut state);
         }
@@ -4067,7 +4068,7 @@ mod tests {
         let swe = state.countries.get("SWE").unwrap();
         let prov = state.provinces.get(&1).unwrap();
 
-        assert_eq!(swe.adm_mana, Fixed::from_int(1)); // 51 - 50
+        assert_eq!(swe.adm_mana, Fixed::from_int(4)); // 54 - 50
         assert_eq!(prov.base_tax, Fixed::from_int(2)); // 1 + 1
 
         // Insufficient mana should fail
@@ -4085,16 +4086,17 @@ mod tests {
             .with_province_full(1, Some("SWE"), None, Fixed::from_int(5))
             .build();
 
-        // Generate mana (51 months = 153 mana each)
-        for _ in 0..51 {
+        // Generate mana (25 months × 6/month = 150 mana each)
+        // Base 3 + ruler 3 (default) = 6 per month
+        for _ in 0..25 {
             state.date = state.date.add_days(30);
             crate::systems::run_mana_tick(&mut state);
         }
 
         let initial_swe = state.countries.get("SWE").unwrap();
-        assert_eq!(initial_swe.adm_mana, Fixed::from_int(153));
-        assert_eq!(initial_swe.dip_mana, Fixed::from_int(153));
-        assert_eq!(initial_swe.mil_mana, Fixed::from_int(153));
+        assert_eq!(initial_swe.adm_mana, Fixed::from_int(150));
+        assert_eq!(initial_swe.dip_mana, Fixed::from_int(150));
+        assert_eq!(initial_swe.mil_mana, Fixed::from_int(150));
 
         // Purchase all three types
         execute_command(
@@ -4132,9 +4134,9 @@ mod tests {
 
         // Verify all mana types decreased
         let swe = state.countries.get("SWE").unwrap();
-        assert_eq!(swe.adm_mana, Fixed::from_int(103)); // 153 - 50
-        assert_eq!(swe.dip_mana, Fixed::from_int(103)); // 153 - 50
-        assert_eq!(swe.mil_mana, Fixed::from_int(103)); // 153 - 50
+        assert_eq!(swe.adm_mana, Fixed::from_int(100)); // 150 - 50
+        assert_eq!(swe.dip_mana, Fixed::from_int(100)); // 150 - 50
+        assert_eq!(swe.mil_mana, Fixed::from_int(100)); // 150 - 50
 
         // Verify all dev types increased
         let prov = state.provinces.get(&1).unwrap();

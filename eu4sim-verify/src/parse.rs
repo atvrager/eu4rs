@@ -295,6 +295,9 @@ fn parse_binary_gamestate(data: &[u8]) -> Result<ExtractedState> {
             total: total_income as f64,
         });
 
+        // Extract ruler stats from history
+        let (ruler_adm, ruler_dip, ruler_mil) = extract_ruler_stats(country);
+
         let extracted = crate::ExtractedCountry {
             tag: tag_str.clone(),
             max_manpower: Some(country.max_manpower.into()),
@@ -303,6 +306,9 @@ fn parse_binary_gamestate(data: &[u8]) -> Result<ExtractedState> {
             adm_power: None, // Not directly available in eu4save Country struct
             dip_power: None,
             mil_power: None,
+            ruler_adm,
+            ruler_dip,
+            ruler_mil,
             tribute_type: country.tribute_type,
             monthly_income,
             total_monthly_expenses: None, // Will be calculated from ledger array in text parse
@@ -419,6 +425,53 @@ fn extract_advisors_from_ledger(
             is_hired: true,
         })
         .collect()
+}
+
+/// Extract the current ruler's ADM/DIP/MIL stats from country history.
+///
+/// Iterates through history events to find the most recent monarch,
+/// then returns their stats (0-6 for each). Returns None if no monarch found.
+fn extract_ruler_stats(
+    country: &eu4save::models::Country,
+) -> (Option<u16>, Option<u16>, Option<u16>) {
+    // Find the most recent monarch in history
+    // History events are in chronological order, so we iterate and take the last monarch
+    let mut last_monarch: Option<&eu4save::models::Monarch> = None;
+
+    log::trace!(
+        "Checking country history events: {} entries",
+        country.history.events.len()
+    );
+
+    for (date, events) in &country.history.events {
+        for event in &events.0 {
+            if let Some(monarch) = event.as_monarch() {
+                log::trace!(
+                    "Found monarch in history at {:?}: {} (ADM={}, DIP={}, MIL={})",
+                    date,
+                    monarch.name,
+                    monarch.adm,
+                    monarch.dip,
+                    monarch.mil
+                );
+                last_monarch = Some(monarch);
+            }
+        }
+    }
+
+    if let Some(monarch) = last_monarch {
+        log::debug!(
+            "Current ruler: {} (ADM={}, DIP={}, MIL={})",
+            monarch.name,
+            monarch.adm,
+            monarch.dip,
+            monarch.mil
+        );
+        (Some(monarch.adm), Some(monarch.dip), Some(monarch.mil))
+    } else {
+        log::trace!("No monarch found in history events");
+        (None, None, None)
+    }
 }
 
 /// Find tokens file in standard locations
@@ -599,6 +652,9 @@ fn parse_with_query(query: eu4save::query::Query) -> Result<ExtractedState> {
             total: total_income as f64,
         });
 
+        // Extract ruler stats from history
+        let (ruler_adm, ruler_dip, ruler_mil) = extract_ruler_stats(country);
+
         let extracted = crate::ExtractedCountry {
             tag: tag_str.clone(),
             max_manpower: Some(country.max_manpower.into()),
@@ -607,6 +663,9 @@ fn parse_with_query(query: eu4save::query::Query) -> Result<ExtractedState> {
             adm_power: None,
             dip_power: None,
             mil_power: None,
+            ruler_adm,
+            ruler_dip,
+            ruler_mil,
             tribute_type: country.tribute_type,
             monthly_income,
             total_monthly_expenses: None, // Will be calculated from ledger array in text parse
@@ -862,6 +921,28 @@ fn parse_country_block(tag: &str, content: &str) -> crate::ExtractedCountry {
 
     // Extract advisors
     country.advisors = extract_advisors(content, tag);
+
+    // Extract ruler stats from history section
+    if let Some((adm, dip, mil)) = extract_ruler_stats_from_text(content) {
+        country.ruler_adm = Some(adm);
+        country.ruler_dip = Some(dip);
+        country.ruler_mil = Some(mil);
+        log::debug!(
+            "{} ruler stats from text: ADM={}, DIP={}, MIL={}",
+            tag,
+            adm,
+            dip,
+            mil
+        );
+    } else if tag == "KOR" {
+        // Debug: check if we can find monarch= at all
+        let monarch_count = content.matches("monarch={").count();
+        log::debug!(
+            "KOR: No ruler stats found. monarch={{ count={}, content_len={}",
+            monarch_count,
+            content.len()
+        );
+    }
 
     // Extract ideas
     country.ideas = extract_ideas(content, tag);
@@ -1188,6 +1269,87 @@ fn extract_country_modifiers(content: &str) -> Vec<String> {
     }
 
     modifiers
+}
+
+/// Extract ruler ADM/DIP/MIL stats from country history section.
+///
+/// Monarchs appear in the history section like:
+/// ```text
+/// history={
+///     1392.8.14={
+///         monarch={
+///             name="Sejong"
+///             ADM=6
+///             DIP=5
+///             MIL=5
+///         }
+///     }
+/// }
+/// ```
+///
+/// We find all monarch blocks and take the last one (most recent).
+fn extract_ruler_stats_from_text(content: &str) -> Option<(u16, u16, u16)> {
+    // Find all monarch blocks in history that have stats
+    // Country-level monarch blocks are just references (monarch={ id=... type=... })
+    // History-level monarch blocks have the actual stats (monarch={ ... ADM=X ... })
+    //
+    // Strategy: find all monarch={ blocks, check if they contain ADM=,
+    // and take the last one that does.
+
+    let mut last_stats: Option<(u16, u16, u16)> = None;
+    let mut search_from = 0;
+
+    let adm_re = regex::Regex::new(r"ADM=(\d+)").ok()?;
+    let dip_re = regex::Regex::new(r"DIP=(\d+)").ok()?;
+    let mil_re = regex::Regex::new(r"MIL=(\d+)").ok()?;
+
+    while let Some(pos) = content[search_from..].find("monarch={") {
+        let actual_pos = search_from + pos;
+
+        // Take a chunk after monarch= to check for stats (500 chars should be enough)
+        // Make sure we don't slice in the middle of a UTF-8 character
+        let chunk_end = (actual_pos + 500).min(content.len());
+        // Find the nearest valid char boundary
+        let chunk_end = content[actual_pos..]
+            .char_indices()
+            .take_while(|(i, _)| actual_pos + i <= chunk_end)
+            .last()
+            .map(|(i, c)| actual_pos + i + c.len_utf8())
+            .unwrap_or(actual_pos);
+        let monarch_chunk = &content[actual_pos..chunk_end];
+
+        // Try to extract stats from this block
+        let adm = adm_re
+            .captures(monarch_chunk)
+            .and_then(|c| c.get(1))
+            .and_then(|m| m.as_str().parse::<u16>().ok());
+        let dip = dip_re
+            .captures(monarch_chunk)
+            .and_then(|c| c.get(1))
+            .and_then(|m| m.as_str().parse::<u16>().ok());
+        let mil = mil_re
+            .captures(monarch_chunk)
+            .and_then(|c| c.get(1))
+            .and_then(|m| m.as_str().parse::<u16>().ok());
+
+        // Only consider this block if it has all three stats
+        if let (Some(a), Some(d), Some(m)) = (adm, dip, mil) {
+            last_stats = Some((a, d, m));
+        }
+
+        search_from = actual_pos + 1;
+    }
+
+    if let Some((adm, dip, mil)) = last_stats {
+        log::trace!(
+            "Found ruler with stats: ADM={}, DIP={}, MIL={}",
+            adm,
+            dip,
+            mil
+        );
+    }
+
+    last_stats
 }
 
 /// Extract a float value following a pattern like "field=123.456"
