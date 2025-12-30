@@ -622,6 +622,227 @@ impl GuiRenderer {
         }
         None
     }
+
+    /// Render only the speed controls component (for isolated testing).
+    #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_speed_controls_only<'a>(
+        &'a mut self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        sprite_renderer: &'a SpriteRenderer,
+        state: &GuiState,
+        screen_size: (u32, u32),
+    ) {
+        self.ensure_textures(device, queue, sprite_renderer);
+        self.ensure_font(device, queue, sprite_renderer);
+
+        // Place speed controls in center of screen for testing
+        let window_anchor = (screen_size.0 as f32 / 2.0, screen_size.1 as f32 / 2.0);
+
+        // Draw background
+        if let Some(ref bind_group) = self.bg_bind_group {
+            let bg_screen_pos = position_from_anchor(
+                window_anchor,
+                self.speed_controls.bg_pos,
+                self.speed_controls.bg_orientation,
+                self.bg_size,
+            );
+            let (clip_x, clip_y, clip_w, clip_h) =
+                rect_to_clip_space(bg_screen_pos, self.bg_size, screen_size);
+            sprite_renderer.draw(
+                render_pass,
+                bind_group,
+                queue,
+                clip_x,
+                clip_y,
+                clip_w,
+                clip_h,
+            );
+        }
+
+        // Draw buttons
+        for (name, pos, orientation, _) in &self.speed_controls.buttons {
+            if let Some(idx) = self
+                .button_bind_groups
+                .iter()
+                .position(|(n, _, _, _)| n == name)
+            {
+                let (_, _, w, h) = &self.button_bind_groups[idx];
+                let screen_pos = position_from_anchor(window_anchor, *pos, *orientation, (*w, *h));
+                let (clip_x, clip_y, clip_w, clip_h) =
+                    rect_to_clip_space(screen_pos, (*w, *h), screen_size);
+                let bind_group = &self.button_bind_groups[idx].1;
+                sprite_renderer.draw(
+                    render_pass,
+                    bind_group,
+                    queue,
+                    clip_x,
+                    clip_y,
+                    clip_w,
+                    clip_h,
+                );
+            }
+        }
+
+        // Draw speed indicator
+        if let Some(ref bind_group) = self.speed_bind_group {
+            let frame = if state.paused {
+                5
+            } else {
+                (state.speed.saturating_sub(1)).min(4)
+            };
+
+            let speed_screen_pos = position_from_anchor(
+                window_anchor,
+                self.speed_controls.speed_pos,
+                self.speed_controls.speed_orientation,
+                self.speed_size,
+            );
+
+            if let Some(sprite) = self.gfx_db.get(&self.speed_controls.speed_sprite) {
+                let (u_min, v_min, u_max, v_max) = sprite.frame_uv(frame);
+                let (clip_x, clip_y, clip_w, clip_h) =
+                    rect_to_clip_space(speed_screen_pos, self.speed_size, screen_size);
+                sprite_renderer.draw_uv(
+                    render_pass,
+                    bind_group,
+                    queue,
+                    clip_x,
+                    clip_y,
+                    clip_w,
+                    clip_h,
+                    u_min,
+                    v_min,
+                    u_max,
+                    v_max,
+                );
+            }
+        }
+
+        // Draw date text
+        if let Some(ref font_bind_group) = self.font_bind_group {
+            let font_name = &self.speed_controls.date_font;
+            if let Some(loaded) = self.font_cache.get(font_name, device, queue) {
+                let font = &loaded.font;
+                let text_box_size = (
+                    self.speed_controls.date_max_width,
+                    self.speed_controls.date_max_height,
+                );
+                let text_screen_pos = position_from_anchor(
+                    window_anchor,
+                    self.speed_controls.date_pos,
+                    self.speed_controls.date_orientation,
+                    text_box_size,
+                );
+
+                // Measure text width for centering
+                let text_width = font.measure_width(&state.date);
+                let border = self.speed_controls.date_border_size;
+                let start_x = text_screen_pos.0 + (text_box_size.0 as f32 - text_width) / 2.0;
+                let start_y = text_screen_pos.1 + border.1 as f32;
+                let mut cursor_x = start_x;
+
+                for c in state.date.chars() {
+                    if let Some(glyph) = font.get_glyph(c) {
+                        if glyph.width > 0 && glyph.height > 0 {
+                            let glyph_x = cursor_x + glyph.xoffset as f32;
+                            let glyph_y = start_y + glyph.yoffset as f32;
+                            let (u_min, v_min, u_max, v_max) = font.glyph_uv(glyph);
+                            let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
+                                (glyph_x, glyph_y),
+                                (glyph.width, glyph.height),
+                                screen_size,
+                            );
+                            sprite_renderer.draw_uv(
+                                render_pass,
+                                font_bind_group,
+                                queue,
+                                clip_x,
+                                clip_y,
+                                clip_w,
+                                clip_h,
+                                u_min,
+                                v_min,
+                                u_max,
+                                v_max,
+                            );
+                        }
+                        cursor_x += glyph.xadvance as f32;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Render only the topbar component (for isolated testing).
+    #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_topbar_only<'a>(
+        &'a mut self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        sprite_renderer: &'a SpriteRenderer,
+        screen_size: (u32, u32),
+    ) {
+        self.ensure_topbar_textures(device, queue, sprite_renderer);
+
+        // Use standard topbar anchor (UPPER_LEFT at position 0,0)
+        let topbar_anchor =
+            get_window_anchor(self.topbar.window_pos, self.topbar.orientation, screen_size);
+
+        // Draw backgrounds
+        for icon in &self.topbar.backgrounds {
+            if let Some(idx) = self
+                .topbar_icons
+                .iter()
+                .position(|(name, _, _, _)| name == &icon.sprite)
+            {
+                let (_, _, w, h) = &self.topbar_icons[idx];
+                let screen_pos =
+                    position_from_anchor(topbar_anchor, icon.position, icon.orientation, (*w, *h));
+                let (clip_x, clip_y, clip_w, clip_h) =
+                    rect_to_clip_space(screen_pos, (*w, *h), screen_size);
+                let bind_group = &self.topbar_icons[idx].1;
+                sprite_renderer.draw(
+                    render_pass,
+                    bind_group,
+                    queue,
+                    clip_x,
+                    clip_y,
+                    clip_w,
+                    clip_h,
+                );
+            }
+        }
+
+        // Draw icons
+        for icon in &self.topbar.icons {
+            if let Some(idx) = self
+                .topbar_icons
+                .iter()
+                .position(|(name, _, _, _)| name == &icon.sprite)
+            {
+                let (_, _, w, h) = &self.topbar_icons[idx];
+                let screen_pos =
+                    position_from_anchor(topbar_anchor, icon.position, icon.orientation, (*w, *h));
+                let (clip_x, clip_y, clip_w, clip_h) =
+                    rect_to_clip_space(screen_pos, (*w, *h), screen_size);
+                let bind_group = &self.topbar_icons[idx].1;
+                sprite_renderer.draw(
+                    render_pass,
+                    bind_group,
+                    queue,
+                    clip_x,
+                    clip_y,
+                    clip_w,
+                    clip_h,
+                );
+            }
+        }
+    }
 }
 
 /// Load speed controls layout from game files.
@@ -941,14 +1162,18 @@ mod tests {
         Some((gpu, game_path))
     }
 
-    /// Render GUI to an image for snapshot testing.
-    ///
-    /// This function encapsulates all rendering logic to avoid closure lifetime issues.
-    fn render_gui_to_image(
+    enum RenderMode {
+        SpeedControlsOnly,
+        TopbarOnly,
+    }
+
+    /// Render a specific GUI component to an image for snapshot testing.
+    fn render_component_to_image(
         gpu: &HeadlessGpu,
         game_path: &std::path::Path,
         gui_state: &GuiState,
         screen_size: (u32, u32),
+        mode: RenderMode,
     ) -> RgbaImage {
         let format = gpu.format;
         let sprite_renderer = SpriteRenderer::new(&gpu.device, format);
@@ -1014,14 +1239,27 @@ mod tests {
             });
 
             sprite_renderer.begin_frame();
-            gui_renderer.render(
-                &mut render_pass,
-                &gpu.device,
-                &gpu.queue,
-                &sprite_renderer,
-                gui_state,
-                screen_size,
-            );
+            match mode {
+                RenderMode::SpeedControlsOnly => {
+                    gui_renderer.render_speed_controls_only(
+                        &mut render_pass,
+                        &gpu.device,
+                        &gpu.queue,
+                        &sprite_renderer,
+                        gui_state,
+                        screen_size,
+                    );
+                }
+                RenderMode::TopbarOnly => {
+                    gui_renderer.render_topbar_only(
+                        &mut render_pass,
+                        &gpu.device,
+                        &gpu.queue,
+                        &sprite_renderer,
+                        screen_size,
+                    );
+                }
+            }
         }
 
         // Copy to buffer
@@ -1084,14 +1322,21 @@ mod tests {
             return;
         };
 
-        let screen_size = (400, 200);
+        // Size to fit speed controls panel (centered)
+        let screen_size = (512, 256);
         let gui_state = GuiState {
             date: "11 November 1444".to_string(),
             speed: 3,
             paused: false,
         };
 
-        let image = render_gui_to_image(&gpu, &game_path, &gui_state, screen_size);
+        let image = render_component_to_image(
+            &gpu,
+            &game_path,
+            &gui_state,
+            screen_size,
+            RenderMode::SpeedControlsOnly,
+        );
         assert_snapshot(&image, "speed_controls");
     }
 
@@ -1102,15 +1347,21 @@ mod tests {
             return;
         };
 
-        // Use a wider screen to show full topbar
-        let screen_size = (1024, 100);
+        // Wide enough for full topbar, short height since it's just the bar
+        let screen_size = (1024, 128);
         let gui_state = GuiState {
             date: "11 November 1444".to_string(),
             speed: 1,
             paused: true,
         };
 
-        let image = render_gui_to_image(&gpu, &game_path, &gui_state, screen_size);
+        let image = render_component_to_image(
+            &gpu,
+            &game_path,
+            &gui_state,
+            screen_size,
+            RenderMode::TopbarOnly,
+        );
         assert_snapshot(&image, "topbar");
     }
 
