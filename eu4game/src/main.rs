@@ -11,6 +11,8 @@ mod gui;
 mod input;
 mod render;
 mod sim_thread;
+#[cfg(test)]
+mod testing;
 mod text;
 
 use sim_thread::{SimEvent, SimHandle, SimSpeed};

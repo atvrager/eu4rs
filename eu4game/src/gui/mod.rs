@@ -922,3 +922,259 @@ fn extract_topbar(
 
     topbar
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::render::SpriteRenderer;
+    use crate::testing::{HeadlessGpu, assert_snapshot};
+    use image::RgbaImage;
+
+    fn get_test_context() -> Option<(HeadlessGpu, std::path::PathBuf)> {
+        // Try to get GPU
+        let gpu = pollster::block_on(HeadlessGpu::new())?;
+
+        // Try to get game path
+        let game_path = eu4data::path::detect_game_path()?;
+
+        Some((gpu, game_path))
+    }
+
+    /// Render GUI to an image for snapshot testing.
+    ///
+    /// This function encapsulates all rendering logic to avoid closure lifetime issues.
+    fn render_gui_to_image(
+        gpu: &HeadlessGpu,
+        game_path: &std::path::Path,
+        gui_state: &GuiState,
+        screen_size: (u32, u32),
+    ) -> RgbaImage {
+        let format = gpu.format;
+        let sprite_renderer = SpriteRenderer::new(&gpu.device, format);
+        let mut gui_renderer = GuiRenderer::new(game_path);
+
+        // Create offscreen texture
+        let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Test Texture"),
+            size: wgpu::Extent3d {
+                width: screen_size.0,
+                height: screen_size.1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // Create readback buffer with proper alignment
+        // wgpu requires COPY_BYTES_PER_ROW_ALIGNMENT (256 bytes)
+        let bytes_per_pixel = 4u32;
+        let unpadded_bytes_per_row = bytes_per_pixel * screen_size.0;
+        let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        let padded_bytes_per_row = unpadded_bytes_per_row.div_ceil(align) * align;
+        let buffer_size = (padded_bytes_per_row * screen_size.1) as wgpu::BufferAddress;
+        let output_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Readback Buffer"),
+            size: buffer_size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        // Render
+        let mut encoder = gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Test Encoder"),
+            });
+
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Test Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.1,
+                            g: 0.1,
+                            b: 0.1,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+
+            sprite_renderer.begin_frame();
+            gui_renderer.render(
+                &mut render_pass,
+                &gpu.device,
+                &gpu.queue,
+                &sprite_renderer,
+                gui_state,
+                screen_size,
+            );
+        }
+
+        // Copy to buffer
+        encoder.copy_texture_to_buffer(
+            wgpu::ImageCopyTexture {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::ImageCopyBuffer {
+                buffer: &output_buffer,
+                layout: wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded_bytes_per_row),
+                    rows_per_image: Some(screen_size.1),
+                },
+            },
+            wgpu::Extent3d {
+                width: screen_size.0,
+                height: screen_size.1,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        gpu.queue.submit(Some(encoder.finish()));
+
+        // Read back
+        let buffer_slice = output_buffer.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |v| tx.send(v).unwrap());
+        gpu.device.poll(wgpu::Maintain::Wait);
+        rx.recv().unwrap().unwrap();
+
+        let data = buffer_slice.get_mapped_range();
+
+        // Strip row padding if present
+        let image = if padded_bytes_per_row != unpadded_bytes_per_row {
+            let mut pixels = Vec::with_capacity((unpadded_bytes_per_row * screen_size.1) as usize);
+            for row in 0..screen_size.1 {
+                let row_start = (row * padded_bytes_per_row) as usize;
+                let row_end = row_start + unpadded_bytes_per_row as usize;
+                pixels.extend_from_slice(&data[row_start..row_end]);
+            }
+            RgbaImage::from_raw(screen_size.0, screen_size.1, pixels).unwrap()
+        } else {
+            RgbaImage::from_raw(screen_size.0, screen_size.1, data.to_vec()).unwrap()
+        };
+
+        drop(data);
+        output_buffer.unmap();
+
+        image
+    }
+
+    #[test]
+    fn test_speed_controls_snapshot() {
+        let Some((gpu, game_path)) = get_test_context() else {
+            println!("Skipping test_speed_controls_snapshot: prerequisites not available");
+            return;
+        };
+
+        let screen_size = (400, 200);
+        let gui_state = GuiState {
+            date: "11 November 1444".to_string(),
+            speed: 3,
+            paused: false,
+        };
+
+        let image = render_gui_to_image(&gpu, &game_path, &gui_state, screen_size);
+        assert_snapshot(&image, "speed_controls");
+    }
+
+    #[test]
+    fn test_topbar_snapshot() {
+        let Some((gpu, game_path)) = get_test_context() else {
+            println!("Skipping test_topbar_snapshot: prerequisites not available");
+            return;
+        };
+
+        // Use a wider screen to show full topbar
+        let screen_size = (1024, 100);
+        let gui_state = GuiState {
+            date: "11 November 1444".to_string(),
+            speed: 1,
+            paused: true,
+        };
+
+        let image = render_gui_to_image(&gpu, &game_path, &gui_state, screen_size);
+        assert_snapshot(&image, "topbar");
+    }
+
+    #[test]
+    fn test_gui_layout_coverage() {
+        let Some((_, game_path)) = get_test_context() else {
+            println!("Skipping test_gui_layout_coverage: prerequisites not available");
+            return;
+        };
+
+        let gui_renderer = GuiRenderer::new(&game_path);
+
+        // Check speed controls coverage
+        let sc = &gui_renderer.speed_controls;
+        assert!(
+            !sc.bg_sprite.is_empty(),
+            "Background sprite should be loaded"
+        );
+        assert!(!sc.speed_sprite.is_empty(), "Speed sprite should be loaded");
+        assert!(!sc.date_font.is_empty(), "Date font should be specified");
+        assert!(!sc.buttons.is_empty(), "Buttons should be parsed");
+
+        println!("Speed controls layout coverage:");
+        println!("  Background: {} at {:?}", sc.bg_sprite, sc.bg_pos);
+        println!(
+            "  Speed indicator: {} at {:?}",
+            sc.speed_sprite, sc.speed_pos
+        );
+        println!("  Date text at {:?}, font: {}", sc.date_pos, sc.date_font);
+        println!("  Buttons: {}", sc.buttons.len());
+        for (name, pos, _, sprite) in &sc.buttons {
+            println!("    - {} at {:?} ({})", name, pos, sprite);
+        }
+
+        // Check topbar coverage
+        let tb = &gui_renderer.topbar;
+        println!("\nTopbar layout coverage:");
+        println!(
+            "  Window pos: {:?}, orientation: {:?}",
+            tb.window_pos, tb.orientation
+        );
+        println!("  Backgrounds: {}", tb.backgrounds.len());
+        for bg in &tb.backgrounds {
+            println!("    - {} at {:?} ({})", bg.name, bg.position, bg.sprite);
+        }
+        println!("  Icons: {}", tb.icons.len());
+        for icon in &tb.icons {
+            println!(
+                "    - {} at {:?} ({})",
+                icon.name, icon.position, icon.sprite
+            );
+        }
+        println!("  Texts: {}", tb.texts.len());
+        for text in &tb.texts {
+            println!(
+                "    - {} at {:?} (font: {})",
+                text.name, text.position, text.font
+            );
+        }
+
+        // Assert minimum expected elements
+        assert!(
+            !tb.backgrounds.is_empty(),
+            "Should have at least 1 background"
+        );
+        assert!(tb.icons.len() >= 5, "Should have at least 5 icons");
+    }
+}
