@@ -5,6 +5,7 @@
 
 mod camera;
 mod dds;
+mod flags;
 mod input;
 mod render;
 mod sim_thread;
@@ -93,6 +94,12 @@ struct App {
     country_colors: std::collections::HashMap<String, [u8; 3]>,
     /// Whether the GPU lookup texture needs updating.
     lookup_dirty: bool,
+    /// Flag texture cache.
+    flag_cache: flags::FlagCache,
+    /// Sprite renderer for UI elements.
+    sprite_renderer: render::SpriteRenderer,
+    /// Bind group for the player's flag (created when country is selected).
+    player_flag_bind_group: Option<wgpu::BindGroup>,
 }
 
 impl App {
@@ -186,6 +193,15 @@ impl App {
         let initial_date = initial_state.date;
         let sim_handle = sim_thread::spawn_sim_thread(initial_state);
 
+        // Initialize flag cache with fallback texture
+        let flags_dir = eu4data::path::detect_game_path()
+            .map(|p| p.join("gfx/flags"))
+            .unwrap_or_default();
+        let flag_cache = flags::FlagCache::with_fallback(flags_dir, &device, &queue);
+
+        // Create sprite renderer for UI elements
+        let sprite_renderer = render::SpriteRenderer::new(&device, config.format);
+
         Self {
             window,
             surface,
@@ -219,6 +235,9 @@ impl App {
             province_centers,
             country_colors,
             lookup_dirty: true, // Update lookup on first tick
+            flag_cache,
+            sprite_renderer,
+            player_flag_bind_group: None,
         }
     }
 
@@ -480,6 +499,23 @@ impl App {
                 // 6 vertices per diamond, fleet_count instances
                 render_pass.draw(0..6, 0..self.renderer.fleet_count);
             }
+
+            // Draw player flag in top-left corner
+            if let Some(ref bind_group) = self.player_flag_bind_group {
+                // Flag position: top-left corner with some padding
+                // Clip space: (-1, 1) is top-left, (1, -1) is bottom-right
+                let flag_size = 0.1; // 10% of screen width
+                let padding = 0.02;
+                self.sprite_renderer.draw(
+                    &mut render_pass,
+                    bind_group,
+                    &self.queue,
+                    -1.0 + padding,   // x: left edge + padding
+                    1.0 - padding,    // y: top edge - padding
+                    flag_size,        // width
+                    flag_size * 1.78, // height (account for aspect ratio)
+                );
+            }
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -579,6 +615,16 @@ impl App {
                         self.game_phase = GamePhase::Playing;
                         self.lookup_dirty = true; // Update GPU lookup texture
                         self.update_window_title();
+
+                        // Load the player's flag
+                        if let Some(flag_view) = self.flag_cache.get(tag, &self.device, &self.queue)
+                        {
+                            self.player_flag_bind_group = Some(
+                                self.sprite_renderer
+                                    .create_bind_group(&self.device, flag_view),
+                            );
+                            log::info!("Loaded flag for {}", tag);
+                        }
                     }
                 }
                 _ => {}

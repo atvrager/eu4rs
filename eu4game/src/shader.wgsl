@@ -276,3 +276,57 @@ fn fs_fleet(in: FleetVertexOutput) -> @location(0) vec4<f32> {
 
     return in.color;
 }
+
+// =============================================================================
+// UI Sprite Rendering (for flags, icons, etc.)
+// =============================================================================
+
+struct SpriteVertexOutput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) tex_coords: vec2<f32>,
+};
+
+// Sprite texture
+@group(0) @binding(0)
+var t_sprite: texture_2d<f32>;
+@group(0) @binding(1)
+var s_sprite: sampler;
+
+@vertex
+fn vs_sprite(
+    @builtin(vertex_index) vertex_index: u32,
+    @location(0) pos: vec2<f32>,      // Screen position (clip space)
+    @location(1) size: vec2<f32>,     // Size in clip space
+) -> SpriteVertexOutput {
+    var out: SpriteVertexOutput;
+
+    // Quad vertices (2 triangles, 6 vertices)
+    var positions = array<vec2<f32>, 6>(
+        vec2<f32>(0.0, 0.0),  // bottom-left
+        vec2<f32>(1.0, 0.0),  // bottom-right
+        vec2<f32>(1.0, 1.0),  // top-right
+        vec2<f32>(0.0, 0.0),  // bottom-left
+        vec2<f32>(1.0, 1.0),  // top-right
+        vec2<f32>(0.0, 1.0),  // top-left
+    );
+
+    let local_pos = positions[vertex_index];
+
+    // Position in clip space
+    out.clip_position = vec4<f32>(
+        pos.x + local_pos.x * size.x,
+        pos.y - local_pos.y * size.y,  // Y goes down in clip space
+        0.0,
+        1.0
+    );
+
+    // Texture coordinates (no flip - TGA origin is bottom-left, image crate handles it)
+    out.tex_coords = vec2<f32>(local_pos.x, local_pos.y);
+
+    return out;
+}
+
+@fragment
+fn fs_sprite(in: SpriteVertexOutput) -> @location(0) vec4<f32> {
+    return textureSample(t_sprite, s_sprite, in.tex_coords);
+}

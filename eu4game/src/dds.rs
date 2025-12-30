@@ -10,6 +10,7 @@ use std::path::Path;
 /// Loads a DDS file and returns an RGBA image.
 ///
 /// Handles both uncompressed (ARGB8888) and compressed (DXT1/DXT5) formats.
+#[allow(dead_code)] // Will be used for UI textures
 pub fn load_dds(path: &Path) -> Result<image::RgbaImage, DdsError> {
     let file = std::fs::File::open(path).map_err(|e| DdsError::Io {
         path: path.to_path_buf(),
@@ -31,6 +32,7 @@ pub fn load_dds(path: &Path) -> Result<image::RgbaImage, DdsError> {
 }
 
 /// Loads a DDS file and creates a wgpu texture.
+#[allow(dead_code)] // Will be used for UI textures
 pub fn load_dds_texture(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -88,6 +90,7 @@ pub fn load_dds_texture(
 }
 
 /// Information about a loaded DDS file.
+#[allow(dead_code)] // Used in tests
 #[derive(Debug, Clone)]
 pub struct DdsInfo {
     /// Width in pixels.
@@ -99,6 +102,7 @@ pub struct DdsInfo {
 }
 
 /// Gets information about a DDS file without fully loading it.
+#[allow(dead_code)] // Used in tests
 pub fn dds_info(path: &Path) -> Result<DdsInfo, DdsError> {
     let file = std::fs::File::open(path).map_err(|e| DdsError::Io {
         path: path.to_path_buf(),
@@ -126,6 +130,7 @@ pub fn dds_info(path: &Path) -> Result<DdsInfo, DdsError> {
 }
 
 /// DDS loading errors.
+#[allow(dead_code)] // Used by public API
 #[derive(Debug)]
 pub enum DdsError {
     /// File I/O error.
@@ -184,8 +189,8 @@ mod tests {
     #[test]
     #[ignore = "Requires EU4 installation"]
     fn test_load_eu4_dds_uncompressed() {
-        let game_path = std::env::var("EU4_GAME_PATH")
-            .expect("EU4_GAME_PATH environment variable not set");
+        let game_path =
+            std::env::var("EU4_GAME_PATH").expect("EU4_GAME_PATH environment variable not set");
         let path = Path::new(&game_path).join("gfx/interface/menu.dds");
 
         let info = dds_info(&path).expect("Failed to get DDS info");
@@ -203,8 +208,8 @@ mod tests {
     #[test]
     #[ignore = "Requires EU4 installation"]
     fn test_load_eu4_dds_compressed() {
-        let game_path = std::env::var("EU4_GAME_PATH")
-            .expect("EU4_GAME_PATH environment variable not set");
+        let game_path =
+            std::env::var("EU4_GAME_PATH").expect("EU4_GAME_PATH environment variable not set");
         // Event pictures use DXT1 compression
         let path = Path::new(&game_path)
             .join("gfx/event_pictures/event_pictures_EUROPEAN/EXPLORERS_eventPicture.dds");

@@ -115,14 +115,14 @@ Main Thread (winit)              Sim Thread
 
 **Exit criteria met**: Map renders at 60fps with no CPU pixel work.
 
-### Phase D: Visual Polish [NEXT]
-- [ ] DDS texture loading (image-dds crate)
+### Phase D: Visual Polish [IN PROGRESS]
+- [x] DDS texture loading (image-dds crate)
+- [x] Country flags in UI (TGA loading, LRU cache, sprite renderer)
 - [ ] Terrain textures from EU4
 - [ ] Unit sprites on map (instanced)
 - [ ] Selection highlights
 - [ ] 9-slice panels with EU4 textures
 - [ ] Button/checkbox widgets with EU4 sprites
-- [ ] Country flags in UI
 - [ ] Province info panel (sidebar)
 - [ ] Load EU4 fonts, render text
 - [ ] Top bar: date display, speed buttons
@@ -143,8 +143,10 @@ eu4game/
     ├── camera.rs         # 2D camera with pan/zoom
     ├── sim_thread.rs     # Simulation runner, speed control
     ├── input.rs          # Input state machine (Normal, MoveArmy, etc.)
-    ├── render.rs         # GPU rendering (shaders, textures)
+    ├── render.rs         # GPU rendering (shaders, textures, sprites)
     ├── shader.wgsl       # Map rendering shader
+    ├── dds.rs            # DDS texture loading (ARGB8888, DXT1/DXT5)
+    ├── flags.rs          # Country flag loading with LRU cache
     └── (future: ui/, assets/)
 ```
 
@@ -165,7 +167,8 @@ eu4game/
 |------|------------|
 | ~~CPU rendering too slow~~ | ~~Priority: Move to GPU shaders ASAP~~ **RESOLVED** - GPU rendering implemented |
 | Province ID encoding | Used RG8 packing (R=low, G=high byte) - works well |
-| DDS format variants | Test image-dds early; fallback to manual BC7 decoder |
+| ~~DDS format variants~~ | **RESOLVED** - image-dds handles ARGB8888, DXT1, DXT5 |
+| TGA 16-bit unsupported | 5/1027 flags use 16-bit TGA; fallback texture used |
 | Lookup texture updates | Keep small (~32KB for 8192 provinces), update on ownership change |
 
 ## Not In Scope (v1)
