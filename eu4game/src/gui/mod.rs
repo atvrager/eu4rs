@@ -76,6 +76,53 @@ impl Default for SpeedControls {
     }
 }
 
+/// Icon element from topbar layout.
+#[derive(Debug, Clone)]
+pub struct TopBarIcon {
+    #[allow(dead_code)] // Used for debugging and future hit box registration
+    pub name: String,
+    pub sprite: String,
+    pub position: (i32, i32),
+    pub orientation: Orientation,
+}
+
+/// Text element from topbar layout.
+#[allow(dead_code)] // Will be used for topbar text rendering
+#[derive(Debug, Clone)]
+pub struct TopBarText {
+    pub name: String,
+    pub position: (i32, i32),
+    pub font: String,
+    pub max_width: u32,
+    pub orientation: Orientation,
+}
+
+/// Main topbar layout data.
+pub struct TopBar {
+    /// Window position.
+    pub window_pos: (i32, i32),
+    /// Window orientation.
+    pub orientation: Orientation,
+    /// Background icons (rendered first).
+    pub backgrounds: Vec<TopBarIcon>,
+    /// Resource icons (gold, manpower, etc).
+    pub icons: Vec<TopBarIcon>,
+    /// Text labels for resources.
+    pub texts: Vec<TopBarText>,
+}
+
+impl Default for TopBar {
+    fn default() -> Self {
+        Self {
+            window_pos: (0, -1),
+            orientation: Orientation::UpperLeft,
+            backgrounds: vec![],
+            icons: vec![],
+            texts: vec![],
+        }
+    }
+}
+
 /// GUI renderer that uses EU4's authentic layout and sprites.
 pub struct GuiRenderer {
     /// Sprite database from .gfx files.
@@ -86,11 +133,17 @@ pub struct GuiRenderer {
     font_cache: BitmapFontCache,
     /// Speed controls layout.
     speed_controls: SpeedControls,
+    /// Main topbar layout.
+    topbar: TopBar,
     /// Cached bind groups for frequently used sprites.
     bg_bind_group: Option<wgpu::BindGroup>,
     speed_bind_group: Option<wgpu::BindGroup>,
     /// Font texture bind group.
     font_bind_group: Option<wgpu::BindGroup>,
+    /// Cached topbar icon bind groups: (sprite_name, bind_group, width, height).
+    topbar_icons: Vec<(String, wgpu::BindGroup, u32, u32)>,
+    /// Cached button bind groups: (button_name, bind_group, width, height).
+    button_bind_groups: Vec<(String, wgpu::BindGroup, u32, u32)>,
     /// Hit boxes for interactive elements (screen pixel coords).
     hit_boxes: Vec<(String, HitBox)>,
     /// Background sprite dimensions.
@@ -125,14 +178,20 @@ impl GuiRenderer {
         // Load speed_controls.gui layout
         let speed_controls = load_speed_controls(game_path);
 
+        // Load topbar.gui layout
+        let topbar = load_topbar(game_path);
+
         Self {
             gfx_db,
             sprite_cache: SpriteCache::new(game_path.to_path_buf()),
             font_cache: BitmapFontCache::new(game_path),
             speed_controls,
+            topbar,
             bg_bind_group: None,
             speed_bind_group: None,
             font_bind_group: None,
+            topbar_icons: Vec::new(),
+            button_bind_groups: Vec::new(),
             hit_boxes: Vec::new(),
             bg_size: (1, 1),    // Updated from texture in ensure_textures()
             speed_size: (1, 1), // Updated from texture in ensure_textures()
@@ -182,6 +241,27 @@ impl GuiRenderer {
             self.speed_size = (w / num_frames, h);
             self.speed_bind_group = Some(sprite_renderer.create_bind_group(device, view));
         }
+
+        // Load button textures
+        if self.button_bind_groups.is_empty() {
+            for (name, _, _, sprite_name) in &self.speed_controls.buttons {
+                if let Some(sprite) = self.gfx_db.get(sprite_name)
+                    && let Some((view, w, h)) =
+                        self.sprite_cache.get(&sprite.texture_file, device, queue)
+                {
+                    let bind_group = sprite_renderer.create_bind_group(device, view);
+                    log::debug!(
+                        "Loaded button texture {}: {} -> {}x{}",
+                        name,
+                        sprite.texture_file,
+                        w,
+                        h
+                    );
+                    self.button_bind_groups
+                        .push((name.clone(), bind_group, w, h));
+                }
+            }
+        }
     }
 
     /// Ensure the font texture is loaded.
@@ -200,6 +280,39 @@ impl GuiRenderer {
         }
     }
 
+    /// Ensure topbar icon textures are loaded.
+    fn ensure_topbar_textures(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        sprite_renderer: &SpriteRenderer,
+    ) {
+        // Only load once
+        if !self.topbar_icons.is_empty() {
+            return;
+        }
+
+        // Collect all sprites we need
+        let all_icons: Vec<_> = self
+            .topbar
+            .backgrounds
+            .iter()
+            .chain(self.topbar.icons.iter())
+            .collect();
+
+        for icon in all_icons {
+            if let Some(sprite) = self.gfx_db.get(&icon.sprite)
+                && let Some((view, w, h)) =
+                    self.sprite_cache.get(&sprite.texture_file, device, queue)
+            {
+                let bind_group = sprite_renderer.create_bind_group(device, view);
+                self.topbar_icons
+                    .push((icon.sprite.clone(), bind_group, w, h));
+                log::debug!("Loaded topbar texture: {} -> {}x{}", icon.sprite, w, h);
+            }
+        }
+    }
+
     /// Render the GUI overlay.
     #[allow(clippy::too_many_arguments)]
     pub fn render<'a>(
@@ -213,7 +326,68 @@ impl GuiRenderer {
     ) {
         self.ensure_textures(device, queue, sprite_renderer);
         self.ensure_font(device, queue, sprite_renderer);
+        self.ensure_topbar_textures(device, queue, sprite_renderer);
         self.hit_boxes.clear();
+
+        // Collect topbar draw commands first (to avoid borrowing self during draw)
+        let topbar_draws: Vec<(usize, f32, f32, f32, f32)> = {
+            let topbar_anchor =
+                get_window_anchor(self.topbar.window_pos, self.topbar.orientation, screen_size);
+
+            let mut draws = Vec::new();
+
+            // Backgrounds first
+            for bg in &self.topbar.backgrounds {
+                if let Some(idx) = self
+                    .topbar_icons
+                    .iter()
+                    .position(|(name, _, _, _)| name == &bg.sprite)
+                {
+                    let (_, _, w, h) = &self.topbar_icons[idx];
+                    let screen_pos =
+                        position_from_anchor(topbar_anchor, bg.position, bg.orientation, (*w, *h));
+                    let (clip_x, clip_y, clip_w, clip_h) =
+                        rect_to_clip_space(screen_pos, (*w, *h), screen_size);
+                    draws.push((idx, clip_x, clip_y, clip_w, clip_h));
+                }
+            }
+
+            // Icons
+            for icon in &self.topbar.icons {
+                if let Some(idx) = self
+                    .topbar_icons
+                    .iter()
+                    .position(|(name, _, _, _)| name == &icon.sprite)
+                {
+                    let (_, _, w, h) = &self.topbar_icons[idx];
+                    let screen_pos = position_from_anchor(
+                        topbar_anchor,
+                        icon.position,
+                        icon.orientation,
+                        (*w, *h),
+                    );
+                    let (clip_x, clip_y, clip_w, clip_h) =
+                        rect_to_clip_space(screen_pos, (*w, *h), screen_size);
+                    draws.push((idx, clip_x, clip_y, clip_w, clip_h));
+                }
+            }
+
+            draws
+        };
+
+        // Execute topbar draws
+        for (idx, clip_x, clip_y, clip_w, clip_h) in topbar_draws {
+            let bind_group = &self.topbar_icons[idx].1;
+            sprite_renderer.draw(
+                render_pass,
+                bind_group,
+                queue,
+                clip_x,
+                clip_y,
+                clip_w,
+                clip_h,
+            );
+        }
 
         // Get window anchor point - window is just an anchor, not a rectangle
         let window_anchor = get_window_anchor(
@@ -234,6 +408,41 @@ impl GuiRenderer {
             let (clip_x, clip_y, clip_w, clip_h) =
                 rect_to_clip_space(bg_screen_pos, self.bg_size, screen_size);
 
+            sprite_renderer.draw(
+                render_pass,
+                bind_group,
+                queue,
+                clip_x,
+                clip_y,
+                clip_w,
+                clip_h,
+            );
+        }
+
+        // Draw button backgrounds/chrome BEFORE speed indicator and text
+        // (button_pause is a background element that goes behind the date)
+        let button_draws: Vec<(usize, f32, f32, f32, f32)> = {
+            let mut draws = Vec::new();
+            for (name, pos, orientation, _) in &self.speed_controls.buttons {
+                // Find the bind group index for this button
+                if let Some(idx) = self
+                    .button_bind_groups
+                    .iter()
+                    .position(|(n, _, _, _)| n == name)
+                {
+                    let (_, _, w, h) = &self.button_bind_groups[idx];
+                    let screen_pos =
+                        position_from_anchor(window_anchor, *pos, *orientation, (*w, *h));
+                    let (clip_x, clip_y, clip_w, clip_h) =
+                        rect_to_clip_space(screen_pos, (*w, *h), screen_size);
+                    draws.push((idx, clip_x, clip_y, clip_w, clip_h));
+                }
+            }
+            draws
+        };
+
+        for (idx, clip_x, clip_y, clip_w, clip_h) in button_draws {
+            let bind_group = &self.button_bind_groups[idx].1;
             sprite_renderer.draw(
                 render_pass,
                 bind_group,
@@ -286,7 +495,7 @@ impl GuiRenderer {
             }
         }
 
-        // Draw date text using bitmap font
+        // Draw date text using bitmap font (on top of buttons)
         // Text position relative to window anchor
         let text_box_size = (
             self.speed_controls.date_max_width,
@@ -549,4 +758,167 @@ fn extract_speed_controls(
     }
 
     controls
+}
+
+/// Load topbar layout from game files.
+fn load_topbar(game_path: &Path) -> TopBar {
+    let gui_path = game_path.join("interface/topbar.gui");
+
+    if !gui_path.exists() {
+        log::warn!("topbar.gui not found, using defaults");
+        return TopBar::default();
+    }
+
+    match parse_gui_file(&gui_path) {
+        Ok(elements) => {
+            // Find the topbar window
+            for element in &elements {
+                if let GuiElement::Window {
+                    name,
+                    position,
+                    orientation,
+                    children,
+                    ..
+                } = element
+                    && name == "topbar"
+                {
+                    return extract_topbar(position, orientation, children);
+                }
+            }
+            log::warn!("topbar window not found in GUI file");
+            TopBar::default()
+        }
+        Err(e) => {
+            log::warn!("Failed to parse topbar.gui: {}", e);
+            TopBar::default()
+        }
+    }
+}
+
+/// Extract topbar data from parsed GUI elements.
+fn extract_topbar(
+    window_pos: &(i32, i32),
+    orientation: &Orientation,
+    children: &[GuiElement],
+) -> TopBar {
+    let mut topbar = TopBar {
+        window_pos: *window_pos,
+        orientation: *orientation,
+        ..Default::default()
+    };
+
+    // Background icon names - rendered first
+    let bg_names = [
+        "topbar_upper_left_bg",
+        "topbar_upper_left_bg2",
+        "topbar_upper_left_bg4",
+        "brown_bg",
+    ];
+
+    // Resource icon names we want to render
+    let icon_names = [
+        "icon_gold",
+        "icon_manpower",
+        "icon_sailors",
+        "icon_stability",
+        "icon_prestige",
+        "icon_ADM",
+        "icon_DIP",
+        "icon_MIL",
+    ];
+
+    for child in children {
+        match child {
+            GuiElement::Icon {
+                name,
+                sprite_type,
+                position,
+                orientation,
+                ..
+            } => {
+                let icon = TopBarIcon {
+                    name: name.clone(),
+                    sprite: sprite_type.clone(),
+                    position: *position,
+                    orientation: *orientation,
+                };
+
+                if bg_names.contains(&name.as_str()) {
+                    log::debug!(
+                        "Parsed topbar bg {}: pos={:?}, sprite={}",
+                        name,
+                        position,
+                        sprite_type
+                    );
+                    topbar.backgrounds.push(icon);
+                } else if icon_names.contains(&name.as_str()) {
+                    log::debug!(
+                        "Parsed topbar icon {}: pos={:?}, sprite={}",
+                        name,
+                        position,
+                        sprite_type
+                    );
+                    topbar.icons.push(icon);
+                }
+            }
+            GuiElement::Button {
+                name,
+                sprite_type,
+                position,
+                orientation,
+                ..
+            } => {
+                // Some icons are buttons (like mana icons)
+                if icon_names.contains(&name.as_str()) {
+                    log::debug!(
+                        "Parsed topbar button-icon {}: pos={:?}, sprite={}",
+                        name,
+                        position,
+                        sprite_type
+                    );
+                    topbar.icons.push(TopBarIcon {
+                        name: name.clone(),
+                        sprite: sprite_type.clone(),
+                        position: *position,
+                        orientation: *orientation,
+                    });
+                }
+            }
+            GuiElement::TextBox {
+                name,
+                position,
+                font,
+                max_width,
+                orientation,
+                ..
+            } => {
+                // Text labels for resources
+                if name.starts_with("text_") {
+                    log::debug!(
+                        "Parsed topbar text {}: pos={:?}, font={}",
+                        name,
+                        position,
+                        font
+                    );
+                    topbar.texts.push(TopBarText {
+                        name: name.clone(),
+                        position: *position,
+                        font: font.clone(),
+                        max_width: *max_width,
+                        orientation: *orientation,
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    log::info!(
+        "Loaded topbar: {} backgrounds, {} icons, {} texts",
+        topbar.backgrounds.len(),
+        topbar.icons.len(),
+        topbar.texts.len()
+    );
+
+    topbar
 }
