@@ -76,10 +76,12 @@ struct App {
     playable_countries: Vec<(String, String, i32)>, // (tag, name, development)
     /// Index of currently highlighted country in selection.
     country_selection_index: usize,
-    /// Current input mode (Normal, MovingArmy, etc.).
+    /// Current input mode (Normal, MovingArmy, MovingFleet, etc.).
     input_mode: input::InputMode,
     /// Currently selected army (if any).
     selected_army: Option<u32>,
+    /// Currently selected fleet (if any).
+    selected_fleet: Option<u32>,
     /// Latest world state snapshot from sim thread.
     world_state: Option<Arc<eu4sim_core::WorldState>>,
     /// Province ID -> pixel center (for army markers).
@@ -211,6 +213,7 @@ impl App {
             country_selection_index: 0,
             input_mode: input::InputMode::Normal,
             selected_army: None,
+            selected_fleet: None,
             world_state: None,
             province_centers,
             country_colors,
@@ -459,13 +462,22 @@ impl App {
             render_pass.set_bind_group(0, &self.renderer.bind_group, &[]);
             render_pass.draw(0..3, 0..1);
 
-            // Draw army markers (instanced)
+            // Draw army markers (instanced squares)
             if self.renderer.army_count > 0 {
                 render_pass.set_pipeline(&self.renderer.army_pipeline);
                 render_pass.set_bind_group(0, &self.renderer.army_bind_group, &[]);
                 render_pass.set_vertex_buffer(0, self.renderer.army_instance_buffer.slice(..));
-                // 6 vertices per diamond, army_count instances
+                // 6 vertices per square, army_count instances
                 render_pass.draw(0..6, 0..self.renderer.army_count);
+            }
+
+            // Draw fleet markers (instanced diamonds)
+            if self.renderer.fleet_count > 0 {
+                render_pass.set_pipeline(&self.renderer.fleet_pipeline);
+                render_pass.set_bind_group(0, &self.renderer.fleet_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, self.renderer.fleet_instance_buffer.slice(..));
+                // 6 vertices per diamond, fleet_count instances
+                render_pass.draw(0..6, 0..self.renderer.fleet_count);
             }
         }
 
@@ -604,6 +616,19 @@ impl App {
                     self.update_window_title();
                 } else {
                     log::info!("No army selected - click on a province with your army first");
+                }
+            }
+            KeyCode::KeyF => {
+                // Enter move fleet mode if we have a selected fleet
+                if let Some(fleet_id) = self.selected_fleet {
+                    self.input_mode = input::InputMode::MovingFleet { fleet_id };
+                    log::info!(
+                        "Fleet move mode: click sea zone destination for fleet {}",
+                        fleet_id
+                    );
+                    self.update_window_title();
+                } else {
+                    log::info!("No fleet selected - click on a sea zone with your fleet first");
                 }
             }
             KeyCode::KeyW => {
@@ -753,6 +778,45 @@ impl App {
                 player_tag,
                 player_armies.len()
             );
+
+            // Update fleet markers for player (diamond shape, blue color)
+            let player_fleets: Vec<_> = world_state
+                .fleets
+                .values()
+                .filter(|fleet| &fleet.owner == player_tag)
+                .collect();
+
+            let fleet_instances: Vec<render::FleetInstance> = player_fleets
+                .iter()
+                .filter_map(|fleet| {
+                    // Get sea zone center in pixel coordinates
+                    let center = self.province_centers.get(&fleet.location);
+                    if center.is_none() {
+                        log::warn!(
+                            "Fleet '{}' in sea zone {} has no center point",
+                            fleet.name,
+                            fleet.location
+                        );
+                        return None;
+                    }
+                    let (px, py) = center.unwrap();
+                    // Convert to UV space (0..1)
+                    let u = *px as f32 / map_width;
+                    let v = *py as f32 / map_height;
+                    Some(render::FleetInstance {
+                        world_pos: [u, v],
+                        color: [0.0, 0.5, 1.0, 1.0], // Blue for player fleets
+                    })
+                })
+                .collect();
+
+            let fleet_count = self.renderer.update_fleets(&self.queue, &fleet_instances);
+            log::trace!(
+                "Updated {} fleet markers for {} ({} total player fleets)",
+                fleet_count,
+                player_tag,
+                player_fleets.len()
+            );
         }
 
         log::debug!("Updated GPU lookup texture ({} provinces)", max_province_id);
@@ -891,23 +955,41 @@ impl App {
             input::PlayerAction::SelectProvince(pid) => {
                 self.selected_province = Some(pid);
 
-                // Check if player has an army in this province
+                // Check if player has an army or fleet in this province
                 if let Some(ws) = &self.world_state {
+                    // Check for army
                     let player_army = ws
                         .armies
                         .iter()
                         .find(|(_, army)| army.location == pid && army.owner == player_tag);
 
+                    // Check for fleet (in sea zones)
+                    let player_fleet = ws
+                        .fleets
+                        .iter()
+                        .find(|(_, fleet)| fleet.location == pid && fleet.owner == player_tag);
+
                     if let Some((&army_id, army)) = player_army {
                         self.selected_army = Some(army_id);
+                        self.selected_fleet = None;
                         log::info!(
                             "Selected {} ({} regiments) in province {} - press M to move",
                             army.name,
                             army.regiments.len(),
                             pid
                         );
+                    } else if let Some((&fleet_id, fleet)) = player_fleet {
+                        self.selected_fleet = Some(fleet_id);
+                        self.selected_army = None;
+                        log::info!(
+                            "Selected {} ({} ships) in sea zone {} - press F to move",
+                            fleet.name,
+                            fleet.ships.len(),
+                            pid
+                        );
                     } else {
                         self.selected_army = None;
+                        self.selected_fleet = None;
                         // Log province info
                         if let Some(lookup) = &self.province_lookup
                             && let Some(def) = lookup.by_id.get(&pid)
@@ -924,6 +1006,14 @@ impl App {
                 log::info!("Moving army {} to province {}", army_id, destination);
                 self.send_move_command(army_id, destination);
                 self.selected_army = None;
+            }
+            input::PlayerAction::MoveFleet {
+                fleet_id,
+                destination,
+            } => {
+                log::info!("Moving fleet {} to sea zone {}", fleet_id, destination);
+                self.send_fleet_move_command(fleet_id, destination);
+                self.selected_fleet = None;
             }
             input::PlayerAction::DeclareWar { target } => {
                 log::info!("Declaring war on {}!", target);
@@ -958,6 +1048,33 @@ impl App {
         log::info!(
             "Sent Move command: army {} -> province {}",
             army_id,
+            destination
+        );
+    }
+
+    /// Sends a fleet move command to the simulation thread.
+    fn send_fleet_move_command(&self, fleet_id: u32, destination: u32) {
+        use eu4sim_core::input::{Command, PlayerInputs};
+
+        let player_tag = match &self.player_tag {
+            Some(tag) => tag.clone(),
+            None => return,
+        };
+
+        let inputs = PlayerInputs {
+            country: player_tag,
+            commands: vec![Command::MoveFleet {
+                fleet_id,
+                destination,
+            }],
+            available_commands: Vec::new(),
+            visible_state: None,
+        };
+
+        self.sim_handle.enqueue_commands(inputs);
+        log::info!(
+            "Sent MoveFleet command: fleet {} -> sea zone {}",
+            fleet_id,
             destination
         );
     }

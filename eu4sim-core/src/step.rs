@@ -110,6 +110,10 @@ pub enum ActionError {
     InsufficientTechForIdea { required: u8, current: u8 },
     #[error("Ewiger Landfriede prohibits wars between HRE members")]
     EwigerLandfriedeActive,
+    #[error("Province not found: {province_id}")]
+    ProvinceNotFound { province_id: u32 },
+    #[error("Invalid destination for unit type: {destination}")]
+    InvalidDestination { destination: u32 },
 }
 
 /// Advance the world by one tick.
@@ -130,7 +134,7 @@ pub fn step_world(
     for player_input in inputs {
         for cmd in &player_input.commands {
             if let Err(e) = execute_command(&mut new_state, &player_input.country, cmd, adjacency) {
-                // Downgrade to debug - these are often valid simultaneous move conflicts (e.g. race to war)
+                // Downgrade to debug - these are often valid simultaneous move conflicts
                 log::debug!(
                     "Failed to execute command for {}: {}",
                     player_input.country,
@@ -1881,6 +1885,24 @@ fn execute_command(
             }
 
             let current_location = fleet.location;
+
+            // Validate destination is a sea zone
+            if let Some(dest_province) = state.provinces.get(destination) {
+                if !dest_province.is_sea {
+                    log::warn!(
+                        "Fleet {} cannot move to land province {}",
+                        fleet_id,
+                        destination
+                    );
+                    return Err(ActionError::InvalidDestination {
+                        destination: *destination,
+                    });
+                }
+            } else {
+                return Err(ActionError::ProvinceNotFound {
+                    province_id: *destination,
+                });
+            }
 
             // Find path using adjacency graph (if available)
             let path = if let Some(graph) = adjacency {

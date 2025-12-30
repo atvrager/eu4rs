@@ -194,3 +194,85 @@ fn fs_army(in: ArmyVertexOutput) -> @location(0) vec4<f32> {
 
     return in.color;
 }
+
+// =============================================================================
+// Fleet Marker Instanced Rendering (Diamond Shape)
+// =============================================================================
+
+struct FleetInstance {
+    @location(0) world_pos: vec2<f32>,  // Position in UV space (0..1)
+    @location(1) color: vec4<f32>,       // Marker color (RGBA)
+};
+
+struct FleetVertexOutput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) color: vec4<f32>,
+    @location(1) local_pos: vec2<f32>,  // For diamond shape
+};
+
+@vertex
+fn vs_fleet(
+    @builtin(vertex_index) vertex_index: u32,
+    instance: FleetInstance,
+) -> FleetVertexOutput {
+    var out: FleetVertexOutput;
+
+    // Same quad vertices as army (actual shape determined in fragment shader)
+    var positions = array<vec2<f32>, 6>(
+        // First triangle
+        vec2<f32>(-1.0, -1.0),  // bottom-left
+        vec2<f32>(1.0, -1.0),   // bottom-right
+        vec2<f32>(1.0, 1.0),    // top-right
+        // Second triangle
+        vec2<f32>(-1.0, -1.0),  // bottom-left
+        vec2<f32>(1.0, 1.0),    // top-right
+        vec2<f32>(-1.0, 1.0),   // top-left
+    );
+
+    let local_pos = positions[vertex_index];
+    out.local_pos = local_pos;
+
+    // Transform fleet world position to clip space
+    let centered = instance.world_pos - army_camera.pos;
+    let center_clip = centered / army_camera.inv_zoom * vec2<f32>(2.0, -2.0);
+
+    // Scale marker with zoom level (same as army)
+    let zoom_scale = clamp(0.15 / army_camera.inv_zoom.y, 0.3, 2.0);
+
+    // Account for aspect ratio
+    let aspect = 1.78;
+    let base_size = 0.02;
+    let screen_size = base_size * zoom_scale;
+    let screen_offset = vec2<f32>(
+        local_pos.x * screen_size / aspect,
+        local_pos.y * screen_size
+    );
+
+    out.clip_position = vec4<f32>(
+        center_clip.x + screen_offset.x,
+        center_clip.y + screen_offset.y,
+        0.0,
+        1.0
+    );
+    out.color = instance.color;
+
+    return out;
+}
+
+@fragment
+fn fs_fleet(in: FleetVertexOutput) -> @location(0) vec4<f32> {
+    // Diamond shape: check if inside diamond (|x| + |y| <= 1)
+    let diamond_dist = abs(in.local_pos.x) + abs(in.local_pos.y);
+
+    if (diamond_dist > 1.0) {
+        // Outside diamond - transparent
+        discard;
+    }
+
+    if (diamond_dist > 0.75) {
+        // Black border
+        return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+    }
+
+    return in.color;
+}

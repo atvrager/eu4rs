@@ -2,8 +2,8 @@ use anyhow::Result;
 use eu4sim_core::ideas::{IdeaGroupRegistry, RawIdea, RawIdeaGroup};
 use eu4sim_core::modifiers::TradegoodId;
 use eu4sim_core::state::{
-    Army, CountryState, Date, HashMap as ImHashMap, ProvinceState, Regiment, RegimentType,
-    SubjectRelationship, Terrain,
+    Army, CountryState, Date, Fleet, HashMap as ImHashMap, ProvinceState, Regiment, RegimentType,
+    Ship, ShipType, SubjectRelationship, Terrain,
 };
 use eu4sim_core::subjects::{RawSubjectType, SubjectTypeRegistry};
 use eu4sim_core::systems::ideas::{recalculate_idea_modifiers, ModifierStubTracker};
@@ -529,6 +529,163 @@ pub fn load_initial_state(
 
     log::info!("Initialized {} armies", armies.len());
 
+    // 2c. Initialize Fleets
+    // EU4 spawns fleets at 90% of naval force limit in coastal sea zones
+    let mut fleets = StdHashMap::new();
+    let mut next_fleet_id = 1u32;
+
+    // Find coastal sea zones for each country (sea provinces adjacent to owned land)
+    let mut country_sea_zones: StdHashMap<String, Vec<u32>> = StdHashMap::new();
+    for (&prov_id, prov) in &provinces {
+        if prov.is_sea {
+            continue; // Skip sea provinces themselves
+        }
+        if let Some(ref owner) = prov.owner {
+            // Check neighbors for sea zones
+            for neighbor in adjacency.neighbors(prov_id) {
+                if sea_provinces.contains(&neighbor) {
+                    country_sea_zones
+                        .entry(owner.clone())
+                        .or_default()
+                        .push(neighbor);
+                }
+            }
+        }
+    }
+    // Deduplicate sea zones per country
+    for zones in country_sea_zones.values_mut() {
+        zones.sort();
+        zones.dedup();
+    }
+
+    // Naval force limit: ~1 per 10 coastal development + base 6
+    // TODO: Simplified formula, needs verification via hydration
+    for (tag, provs_by_dev) in &country_provinces_by_dev {
+        let Some(sea_zones) = country_sea_zones.get(tag) else {
+            continue; // Landlocked country
+        };
+        if sea_zones.is_empty() {
+            continue;
+        }
+
+        // Count coastal development (provinces adjacent to sea)
+        let coastal_dev: u32 = provs_by_dev
+            .iter()
+            .filter(|(prov_id, _)| {
+                adjacency
+                    .neighbors(*prov_id)
+                    .iter()
+                    .any(|n| sea_provinces.contains(n))
+            })
+            .map(|(_, dev)| dev)
+            .sum();
+
+        let naval_force_limit = 6 + (coastal_dev as usize / 10);
+        let total_ships = (naval_force_limit * 90 / 100).max(1);
+
+        if total_ships == 0 {
+            continue;
+        }
+
+        // Ship composition: ~40% galleys, ~30% light ships, ~30% transports
+        // (No heavies at game start - they're expensive and late-game)
+        let galley_count = total_ships * 40 / 100;
+        let light_count = total_ships * 30 / 100;
+        let transport_count = total_ships - galley_count - light_count;
+
+        // Split into 1-2 fleets based on size
+        let num_fleets = if total_ships > 20 { 2 } else { 1 };
+        let ships_per_fleet = total_ships / num_fleets;
+
+        // Find sea zones adjacent to highest-dev coastal provinces
+        // (provs_by_dev is already sorted by development descending)
+        let mut fleet_sea_zones: Vec<u32> = Vec::new();
+        for (prov_id, _dev) in provs_by_dev.iter() {
+            // Find sea zones adjacent to this province
+            for neighbor in adjacency.neighbors(*prov_id) {
+                if sea_provinces.contains(&neighbor) && !fleet_sea_zones.contains(&neighbor) {
+                    fleet_sea_zones.push(neighbor);
+                    if fleet_sea_zones.len() >= num_fleets {
+                        break;
+                    }
+                }
+            }
+            if fleet_sea_zones.len() >= num_fleets {
+                break;
+            }
+        }
+        // Fallback to any sea zone if needed
+        if fleet_sea_zones.is_empty() {
+            fleet_sea_zones.push(sea_zones[0]);
+        }
+
+        for fleet_idx in 0..num_fleets {
+            let location = fleet_sea_zones[fleet_idx % fleet_sea_zones.len()];
+
+            // Distribute ships to this fleet
+            let fleet_galley = if fleet_idx == 0 { galley_count } else { 0 };
+            let fleet_light = if fleet_idx == 0 { 0 } else { light_count };
+            let fleet_transport = if fleet_idx == 0 {
+                transport_count
+            } else {
+                ships_per_fleet.saturating_sub(fleet_light)
+            };
+
+            let mut ships = Vec::new();
+            for _ in 0..fleet_galley {
+                ships.push(Ship {
+                    type_: ShipType::Galley,
+                    hull: Fixed::from_int(100),
+                    durability: Fixed::from_int(100),
+                });
+            }
+            for _ in 0..fleet_light {
+                ships.push(Ship {
+                    type_: ShipType::LightShip,
+                    hull: Fixed::from_int(100),
+                    durability: Fixed::from_int(100),
+                });
+            }
+            for _ in 0..fleet_transport {
+                ships.push(Ship {
+                    type_: ShipType::Transport,
+                    hull: Fixed::from_int(100),
+                    durability: Fixed::from_int(100),
+                });
+            }
+
+            if ships.is_empty() {
+                continue;
+            }
+
+            let fleet_id = next_fleet_id;
+            next_fleet_id += 1;
+
+            let fleet_name = if num_fleets > 1 {
+                format!("{} {} Fleet", tag, fleet_idx + 1)
+            } else {
+                format!("{} Fleet", tag)
+            };
+
+            fleets.insert(
+                fleet_id,
+                Fleet {
+                    id: fleet_id,
+                    name: fleet_name,
+                    owner: tag.clone(),
+                    location,
+                    ships,
+                    embarked_armies: Vec::new(),
+                    movement: None,
+                    admiral: None,
+                    in_battle: None,
+                },
+            );
+        }
+    }
+
+    log::info!("Initialized {} fleets", fleets.len());
+
     // 5. Load Subject Types
     log::info!("Loading subject types...");
     let raw_subject_types = eu4data::subject_types::load_subject_types(game_path)
@@ -723,8 +880,8 @@ pub fn load_initial_state(
             global: Default::default(),
             armies: armies.into(),
             next_army_id,
-            fleets: ImHashMap::default(),
-            next_fleet_id: 1,
+            fleets: fleets.into(),
+            next_fleet_id,
             colonies: ImHashMap::default(),
             // Combat system
             generals: ImHashMap::default(),

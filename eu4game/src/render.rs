@@ -10,6 +10,9 @@ use wgpu::util::DeviceExt;
 /// Maximum number of army markers that can be rendered.
 const MAX_ARMIES: usize = 1024;
 
+/// Maximum number of fleet markers that can be rendered.
+const MAX_FLEETS: usize = 512;
+
 /// Size of the color lookup texture (must be power of 2, >= max province ID).
 pub const LOOKUP_SIZE: u32 = 8192;
 
@@ -50,6 +53,41 @@ impl ArmyInstance {
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<ArmyInstance>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                // world_pos
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                // color
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+            ],
+        }
+    }
+}
+
+/// Fleet marker instance data for GPU instanced rendering.
+/// Uses same layout as ArmyInstance but rendered as diamond shape.
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct FleetInstance {
+    /// World position in UV space (0..1).
+    pub world_pos: [f32; 2],
+    /// Marker color (RGBA, normalized 0..1).
+    pub color: [f32; 4],
+}
+
+impl FleetInstance {
+    /// Vertex buffer layout for instanced rendering.
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<FleetInstance>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &[
                 // world_pos
@@ -335,6 +373,14 @@ pub struct Renderer {
     pub army_instance_buffer: wgpu::Buffer,
     /// Current number of army instances.
     pub army_count: u32,
+    /// Fleet marker pipeline.
+    pub fleet_pipeline: wgpu::RenderPipeline,
+    /// Fleet marker bind group (same as army, just camera).
+    pub fleet_bind_group: wgpu::BindGroup,
+    /// Fleet instance buffer.
+    pub fleet_instance_buffer: wgpu::Buffer,
+    /// Current number of fleet instances.
+    pub fleet_count: u32,
 }
 
 impl Renderer {
@@ -615,6 +661,68 @@ impl Renderer {
 
         log::info!("Created army marker pipeline");
 
+        // =====================================================================
+        // Fleet marker pipeline (diamond shape, same layout as army)
+        // =====================================================================
+
+        // Fleet bind group (reuses same camera buffer via same layout)
+        let fleet_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Fleet Bind Group"),
+            layout: &army_bind_group_layout, // Same layout - just camera uniform
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
+        });
+
+        // Fleet instance buffer
+        let fleet_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Fleet Instance Buffer"),
+            size: (MAX_FLEETS * std::mem::size_of::<FleetInstance>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Fleet render pipeline (same layout as army, different shader entry points)
+        let fleet_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Fleet Render Pipeline"),
+            layout: Some(&army_pipeline_layout), // Same layout - just camera uniform
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_fleet",
+                buffers: &[FleetInstance::desc()],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_fleet",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: surface_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        });
+
+        log::info!("Created fleet marker pipeline");
+
         Self {
             pipeline,
             bind_group,
@@ -627,6 +735,10 @@ impl Renderer {
             army_bind_group,
             army_instance_buffer,
             army_count: 0,
+            fleet_pipeline,
+            fleet_bind_group,
+            fleet_instance_buffer,
+            fleet_count: 0,
         }
     }
 
@@ -653,6 +765,21 @@ impl Renderer {
             );
         }
         self.army_count = count as u32;
+        count as u32
+    }
+
+    /// Updates the fleet instance buffer with current fleet positions.
+    /// Returns the number of fleets to render.
+    pub fn update_fleets(&mut self, queue: &wgpu::Queue, instances: &[FleetInstance]) -> u32 {
+        let count = instances.len().min(MAX_FLEETS);
+        if count > 0 {
+            queue.write_buffer(
+                &self.fleet_instance_buffer,
+                0,
+                bytemuck::cast_slice(&instances[..count]),
+            );
+        }
+        self.fleet_count = count as u32;
         count as u32
     }
 }
