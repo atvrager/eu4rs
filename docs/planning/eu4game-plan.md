@@ -119,13 +119,13 @@ Main Thread (winit)              Sim Thread
 - [x] DDS texture loading (image-dds crate)
 - [x] Country flags in UI (TGA loading, LRU cache, sprite renderer)
 - [x] Terrain textures from EU4 (heightmap shading - tune params later on terrain-only view)
+- [x] Load EU4 fonts, render text (ab_glyph, 512x512 glyph atlas)
+- [x] Top bar: date display, speed indicator, input mode
 - [ ] Unit sprites on map (instanced)
 - [ ] Selection highlights
 - [ ] 9-slice panels with EU4 textures
 - [ ] Button/checkbox widgets with EU4 sprites
 - [ ] Province info panel (sidebar)
-- [ ] Load EU4 fonts, render text
-- [ ] Top bar: date display, speed buttons
 
 ### Phase E: Full Game Flow
 - [ ] Save/load game state (serde)
