@@ -419,7 +419,13 @@ pub fn load_initial_state(
     }
 
     // Calculate force limit for each country based on development
-    // EU4 formula: base 6 + ~1 per 10 development (simplified)
+    // TODO: This is a simplified formula. EU4's actual force limit calculation includes:
+    // - Base force limit from government type
+    // - Modifiers from ideas, policies, buildings, advisors
+    // - Subject contributions
+    // - Trade company force limit
+    // Verify accuracy via eu4sim-verify hydration tests
+    // EU4 formula (simplified): base 6 + ~1 per 10 development
     let mut country_force_limit: StdHashMap<String, usize> = StdHashMap::new();
     for (tag, provs) in &country_provinces_by_dev {
         let total_dev: u32 = provs.iter().map(|(_, dev)| dev).sum();

@@ -402,6 +402,17 @@ Before starting work on a feature:
 
 ---
 
+## Known Accuracy Issues ⚠️
+
+Simplified formulas that may need refinement. Track via `eu4sim-verify` hydration tests.
+
+| System | Issue | Current Formula | Notes |
+|--------|-------|-----------------|-------|
+| Force Limit | Simplified calculation | `6 + dev/10` | Missing: gov type, ideas, policies, buildings, subjects |
+| Starting Armies | Approximate placement | Top dev provinces | EU4 may use additional factors |
+
+---
+
 ## Future Explorations 💡
 
 Ideas worth exploring but not on the critical path:
