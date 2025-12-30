@@ -1,0 +1,1147 @@
+//! EU4 Source Port - Game Binary
+//!
+//! A playable EU4 experience using eu4sim-core for simulation
+//! and wgpu for rendering.
+
+mod camera;
+mod input;
+mod render;
+mod sim_thread;
+
+use sim_thread::{SimEvent, SimHandle, SimSpeed};
+use std::sync::Arc;
+
+/// Game state machine - tracks whether we're selecting a country or playing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum GamePhase {
+    /// Selecting a country to play as.
+    CountrySelection,
+    /// Playing the game.
+    Playing,
+}
+
+use winit::{
+    dpi::PhysicalSize,
+    event::{ElementState, Event, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
+    event_loop::EventLoop,
+    keyboard::{KeyCode, PhysicalKey},
+    window::WindowBuilder,
+};
+
+/// Target resolution for OCR pipeline compatibility.
+const TARGET_WIDTH: u32 = 1920;
+const TARGET_HEIGHT: u32 = 1080;
+
+/// Application state holding all game resources.
+struct App {
+    /// The winit window.
+    window: winit::window::Window,
+    /// wgpu surface for presenting frames.
+    surface: wgpu::Surface<'static>,
+    /// wgpu device for GPU operations.
+    device: wgpu::Device,
+    /// wgpu queue for submitting commands.
+    queue: wgpu::Queue,
+    /// Surface configuration.
+    config: wgpu::SurfaceConfiguration,
+    /// Window size.
+    size: PhysicalSize<u32>,
+    /// Renderer holding pipelines and textures.
+    renderer: render::Renderer,
+    /// Camera for pan/zoom.
+    camera: camera::Camera,
+    /// Current cursor position.
+    cursor_pos: (f64, f64),
+    /// Whether we're currently panning (middle mouse held).
+    panning: bool,
+    /// Last cursor position for delta calculation.
+    last_cursor_pos: (f64, f64),
+    /// Simulation thread handle.
+    sim_handle: SimHandle,
+    /// Current simulation speed.
+    sim_speed: SimSpeed,
+    /// Current game date (from last tick).
+    current_date: eu4sim_core::state::Date,
+    /// Province lookup table (color -> province ID).
+    province_lookup: Option<eu4data::map::ProvinceLookup>,
+    /// Province map image for pixel lookup.
+    province_map: image::RgbaImage,
+    /// Currently selected province.
+    selected_province: Option<u32>,
+    /// Current game phase.
+    game_phase: GamePhase,
+    /// Player's country tag (set after selection).
+    player_tag: Option<String>,
+    /// List of playable countries (sorted by development).
+    playable_countries: Vec<(String, String, i32)>, // (tag, name, development)
+    /// Index of currently highlighted country in selection.
+    country_selection_index: usize,
+    /// Current input mode (Normal, MovingArmy, etc.).
+    input_mode: input::InputMode,
+    /// Currently selected army (if any).
+    selected_army: Option<u32>,
+    /// Latest world state snapshot from sim thread.
+    world_state: Option<Arc<eu4sim_core::WorldState>>,
+    /// Province ID -> pixel center (for army markers).
+    /// Will be used for instanced army rendering.
+    #[allow(dead_code)]
+    province_centers: std::collections::HashMap<u32, (u32, u32)>,
+    /// Country tag -> RGB color (from game data).
+    country_colors: std::collections::HashMap<String, [u8; 3]>,
+    /// Whether the GPU lookup texture needs updating.
+    lookup_dirty: bool,
+}
+
+impl App {
+    /// Creates the application with wgpu initialized.
+    async fn new(window: winit::window::Window) -> Self {
+        let size = window.inner_size();
+
+        // wgpu instance with Vulkan preference
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::VULKAN | wgpu::Backends::METAL | wgpu::Backends::DX12,
+            ..Default::default()
+        });
+
+        // SAFETY: window lives as long as surface (both in App struct)
+        let surface = unsafe {
+            instance
+                .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::from_window(&window).unwrap())
+                .unwrap()
+        };
+
+        // Request adapter
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                compatible_surface: Some(&surface),
+                force_fallback_adapter: false,
+            })
+            .await
+            .expect("Failed to find a suitable GPU adapter");
+
+        log::info!("Using adapter: {:?}", adapter.get_info().name);
+
+        // Request device
+        let (device, queue) = adapter
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    label: Some("eu4game device"),
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::default(),
+                },
+                None,
+            )
+            .await
+            .expect("Failed to create device");
+
+        // Surface configuration
+        let surface_caps = surface.get_capabilities(&adapter);
+        let surface_format = surface_caps
+            .formats
+            .iter()
+            .find(|f| f.is_srgb())
+            .copied()
+            .unwrap_or(surface_caps.formats[0]);
+
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format: surface_format,
+            width: size.width.max(1),
+            height: size.height.max(1),
+            present_mode: wgpu::PresentMode::AutoVsync,
+            alpha_mode: surface_caps.alpha_modes[0],
+            view_formats: vec![],
+            desired_maximum_frame_latency: 2,
+        };
+        surface.configure(&device, &config);
+
+        // Load province map and lookup table
+        let (province_img, province_lookup) = Self::load_province_data();
+        let province_map = province_img.to_rgba8();
+        let content_aspect = province_img.width() as f64 / province_img.height() as f64;
+
+        // Compute province centers (for army markers)
+        let province_centers = Self::compute_province_centers(&province_map, &province_lookup);
+        log::info!("Computed {} province centers", province_centers.len());
+
+        // Create GPU renderer with province lookup for shader-based coloring
+        let lookup_map = province_lookup.as_ref().map(|l| &l.by_color);
+        let renderer = render::Renderer::new(
+            &device,
+            &queue,
+            surface_format,
+            &province_map,
+            lookup_map.unwrap_or(&std::collections::HashMap::new()),
+        );
+
+        // Create camera
+        let camera = camera::Camera::new(content_aspect);
+
+        // Load world state from game files (or use default if unavailable)
+        let (initial_state, playable_countries, country_colors) = Self::load_world_state();
+        let initial_date = initial_state.date;
+        let sim_handle = sim_thread::spawn_sim_thread(initial_state);
+
+        Self {
+            window,
+            surface,
+            device,
+            queue,
+            config,
+            size,
+            renderer,
+            camera,
+            cursor_pos: (0.0, 0.0),
+            panning: false,
+            last_cursor_pos: (0.0, 0.0),
+            sim_handle,
+            sim_speed: SimSpeed::Paused,
+            current_date: initial_date,
+            province_lookup,
+            province_map,
+            selected_province: None,
+            game_phase: if playable_countries.is_empty() {
+                GamePhase::Playing // No countries to select, just play
+            } else {
+                GamePhase::CountrySelection
+            },
+            player_tag: None,
+            playable_countries,
+            country_selection_index: 0,
+            input_mode: input::InputMode::Normal,
+            selected_army: None,
+            world_state: None,
+            province_centers,
+            country_colors,
+            lookup_dirty: true, // Update lookup on first tick
+        }
+    }
+
+    /// Computes the center point of each province for marker placement.
+    fn compute_province_centers(
+        province_map: &image::RgbaImage,
+        province_lookup: &Option<eu4data::map::ProvinceLookup>,
+    ) -> std::collections::HashMap<u32, (u32, u32)> {
+        let Some(lookup) = province_lookup else {
+            return std::collections::HashMap::new();
+        };
+
+        // Accumulate pixel positions for each province
+        let mut sums: std::collections::HashMap<u32, (u64, u64, u64)> =
+            std::collections::HashMap::new();
+
+        for (x, y, pixel) in province_map.enumerate_pixels() {
+            let color = (pixel[0], pixel[1], pixel[2]);
+            if let Some(&province_id) = lookup.by_color.get(&color) {
+                let entry = sums.entry(province_id).or_insert((0, 0, 0));
+                entry.0 += x as u64;
+                entry.1 += y as u64;
+                entry.2 += 1;
+            }
+        }
+
+        // Calculate centers
+        sums.into_iter()
+            .filter_map(|(id, (sum_x, sum_y, count))| {
+                if count > 0 {
+                    Some((id, ((sum_x / count) as u32, (sum_y / count) as u32)))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Loads the world state from game files.
+    /// Returns (world_state, playable_countries, country_colors).
+    #[allow(clippy::type_complexity)]
+    fn load_world_state() -> (
+        eu4sim_core::WorldState,
+        Vec<(String, String, i32)>,
+        std::collections::HashMap<String, [u8; 3]>,
+    ) {
+        use eu4sim_core::state::Date;
+
+        // Try to load from EU4 game path
+        if let Some(game_path) = eu4data::path::detect_game_path() {
+            log::info!("Loading world state from: {}", game_path.display());
+            let start_date = Date::new(1444, 11, 11);
+
+            // Load country colors from game data
+            let country_colors: std::collections::HashMap<String, [u8; 3]> =
+                match eu4data::countries::load_tags(&game_path) {
+                    Ok(tags) => {
+                        let colors: std::collections::HashMap<String, [u8; 3]> =
+                            eu4data::countries::load_country_map(&game_path, &tags)
+                                .into_iter()
+                                .filter_map(|(tag, country)| {
+                                    if country.color.len() >= 3 {
+                                        Some((
+                                            tag,
+                                            [country.color[0], country.color[1], country.color[2]],
+                                        ))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect();
+                        log::info!("Loaded {} country colors", colors.len());
+                        colors
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to load country colors: {}", e);
+                        std::collections::HashMap::new()
+                    }
+                };
+
+            match eu4sim::loader::load_initial_state(&game_path, start_date, 42) {
+                Ok((world, _adjacency)) => {
+                    log::info!(
+                        "Loaded world: {} provinces, {} countries",
+                        world.provinces.len(),
+                        world.countries.len()
+                    );
+
+                    // Calculate development for each country by summing owned province development
+                    let mut country_dev: std::collections::HashMap<String, i32> =
+                        std::collections::HashMap::new();
+                    for (_, prov) in &world.provinces {
+                        if let Some(ref owner) = prov.owner {
+                            let dev = (prov.base_tax + prov.base_production + prov.base_manpower)
+                                .to_f32() as i32;
+                            *country_dev.entry(owner.clone()).or_insert(0) += dev;
+                        }
+                    }
+
+                    // Build list of playable countries (only those with provinces)
+                    let mut playable: Vec<(String, String, i32)> = country_dev
+                        .iter()
+                        .filter(|(_, dev)| **dev > 0) // Only countries with positive development
+                        .map(|(tag, dev)| {
+                            let dev = *dev;
+                            // Use tag as name for now (country definitions may have proper names)
+                            (tag.clone(), tag.clone(), dev)
+                        })
+                        .collect();
+
+                    // Sort by development (descending)
+                    playable.sort_by(|a, b| b.2.cmp(&a.2));
+
+                    log::info!("Found {} playable countries", playable.len());
+                    if !playable.is_empty() {
+                        log::info!("Top 5: {:?}", playable.iter().take(5).collect::<Vec<_>>());
+                    }
+
+                    return (world, playable, country_colors);
+                }
+                Err(e) => {
+                    log::warn!("Failed to load world state: {}", e);
+                }
+            }
+        }
+
+        // Fallback: empty world
+        log::warn!("Using empty world state");
+        (
+            eu4sim_core::WorldState::default(),
+            Vec::new(),
+            std::collections::HashMap::new(),
+        )
+    }
+
+    /// Returns a reference to the window.
+    fn window(&self) -> &winit::window::Window {
+        &self.window
+    }
+
+    /// Loads province map and lookup table from EU4 game files.
+    fn load_province_data() -> (image::DynamicImage, Option<eu4data::map::ProvinceLookup>) {
+        // Try to load from EU4 game path
+        if let Some(game_path) = eu4data::path::detect_game_path() {
+            let provinces_path = game_path.join("map/provinces.bmp");
+            let definitions_path = game_path.join("map/definition.csv");
+
+            if provinces_path.exists() {
+                log::info!("Loading province map from: {}", provinces_path.display());
+                if let Ok(img) = image::open(&provinces_path) {
+                    // Try to load province definitions
+                    let lookup = if definitions_path.exists() {
+                        match eu4data::map::ProvinceLookup::load(&definitions_path) {
+                            Ok(lookup) => {
+                                log::info!("Loaded {} province definitions", lookup.by_id.len());
+                                Some(lookup)
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to load province definitions: {}", e);
+                                None
+                            }
+                        }
+                    } else {
+                        log::warn!(
+                            "Province definitions not found at: {}",
+                            definitions_path.display()
+                        );
+                        None
+                    };
+                    return (img, lookup);
+                }
+            }
+        }
+
+        // Fallback: generate a simple test pattern
+        log::warn!("Could not load provinces.bmp, using test pattern");
+        let mut img = image::RgbaImage::new(5632, 2048);
+        for (x, y, pixel) in img.enumerate_pixels_mut() {
+            let r = ((x * 7) % 256) as u8;
+            let g = ((y * 11) % 256) as u8;
+            let b = ((x + y) % 256) as u8;
+            *pixel = image::Rgba([r, g, b, 255]);
+        }
+        (image::DynamicImage::ImageRgba8(img), None)
+    }
+
+    /// Handles window resize.
+    fn resize(&mut self, new_size: PhysicalSize<u32>) {
+        if new_size.width > 0 && new_size.height > 0 {
+            self.size = new_size;
+            self.config.width = new_size.width;
+            self.config.height = new_size.height;
+            self.surface.configure(&self.device, &self.config);
+            log::debug!("Resized to {}x{}", new_size.width, new_size.height);
+        }
+    }
+
+    /// Renders a frame.
+    fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        let output = self.surface.get_current_texture()?;
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        // Update camera uniform
+        let camera_uniform = self
+            .camera
+            .to_uniform(self.config.width as f32, self.config.height as f32);
+        self.renderer.update_camera(&self.queue, camera_uniform);
+
+        // Create command encoder
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
+
+        // Render pass
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            // Draw map (big triangle)
+            render_pass.set_pipeline(&self.renderer.pipeline);
+            render_pass.set_bind_group(0, &self.renderer.bind_group, &[]);
+            render_pass.draw(0..3, 0..1);
+
+            // Draw army markers (instanced)
+            if self.renderer.army_count > 0 {
+                render_pass.set_pipeline(&self.renderer.army_pipeline);
+                render_pass.set_bind_group(0, &self.renderer.army_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, self.renderer.army_instance_buffer.slice(..));
+                // 6 vertices per diamond, army_count instances
+                render_pass.draw(0..6, 0..self.renderer.army_count);
+            }
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+        output.present();
+
+        Ok(())
+    }
+
+    /// Handles input events. Returns (consumed, should_exit).
+    fn input(&mut self, event: &WindowEvent) -> (bool, bool) {
+        match event {
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(key),
+                        state,
+                        ..
+                    },
+                ..
+            } => {
+                let should_exit = self.handle_key(*key, *state);
+                (true, should_exit)
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                self.handle_scroll(*delta);
+                self.window.request_redraw();
+                (true, false)
+            }
+            WindowEvent::MouseInput { button, state, .. } => {
+                self.handle_mouse_button(*button, *state);
+                (true, false)
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                let needs_redraw = self.handle_cursor_move(position.x, position.y);
+                if needs_redraw {
+                    self.window.request_redraw();
+                }
+                (true, false)
+            }
+            _ => (false, false),
+        }
+    }
+
+    /// Handles keyboard input. Returns true if should exit.
+    fn handle_key(&mut self, key: KeyCode, state: ElementState) -> bool {
+        if state != ElementState::Pressed {
+            return false;
+        }
+
+        // Handle country selection mode
+        if self.game_phase == GamePhase::CountrySelection {
+            match key {
+                KeyCode::Escape => {
+                    log::info!("Escape pressed, exiting");
+                    self.sim_handle.shutdown();
+                    return true;
+                }
+                KeyCode::ArrowUp => {
+                    if self.country_selection_index > 0 {
+                        self.country_selection_index -= 1;
+                        self.log_country_selection();
+                    }
+                }
+                KeyCode::ArrowDown => {
+                    if self.country_selection_index + 1 < self.playable_countries.len() {
+                        self.country_selection_index += 1;
+                        self.log_country_selection();
+                    }
+                }
+                KeyCode::PageUp => {
+                    self.country_selection_index = self.country_selection_index.saturating_sub(10);
+                    self.log_country_selection();
+                }
+                KeyCode::PageDown => {
+                    self.country_selection_index = (self.country_selection_index + 10)
+                        .min(self.playable_countries.len().saturating_sub(1));
+                    self.log_country_selection();
+                }
+                KeyCode::Home => {
+                    self.country_selection_index = 0;
+                    self.log_country_selection();
+                }
+                KeyCode::End => {
+                    self.country_selection_index = self.playable_countries.len().saturating_sub(1);
+                    self.log_country_selection();
+                }
+                KeyCode::Enter => {
+                    if let Some((tag, _name, dev)) =
+                        self.playable_countries.get(self.country_selection_index)
+                    {
+                        log::info!(
+                            ">>> SELECTED: {} with {} development - GAME STARTING <<<",
+                            tag,
+                            dev
+                        );
+                        self.player_tag = Some(tag.clone());
+                        self.game_phase = GamePhase::Playing;
+                        self.lookup_dirty = true; // Update GPU lookup texture
+                        self.update_window_title();
+                    }
+                }
+                _ => {}
+            }
+            return false;
+        }
+
+        // Normal game mode
+        match key {
+            KeyCode::Escape => {
+                // Cancel current mode or exit
+                if self.input_mode.is_cancellable() {
+                    log::info!("Cancelled {}", self.input_mode.description());
+                    self.input_mode = input::InputMode::Normal;
+                    self.update_window_title();
+                } else {
+                    log::info!("Escape pressed, exiting");
+                    self.sim_handle.shutdown();
+                    return true;
+                }
+            }
+            KeyCode::Space => {
+                self.sim_handle.toggle_pause();
+                log::info!("Toggled pause");
+            }
+            KeyCode::Digit1 => self.set_speed(SimSpeed::Speed1),
+            KeyCode::Digit2 => self.set_speed(SimSpeed::Speed2),
+            KeyCode::Digit3 => self.set_speed(SimSpeed::Speed3),
+            KeyCode::Digit4 => self.set_speed(SimSpeed::Speed4),
+            KeyCode::Digit5 => self.set_speed(SimSpeed::Speed5),
+            KeyCode::KeyM => {
+                // Enter move army mode if we have a selected army
+                if let Some(army_id) = self.selected_army {
+                    self.input_mode = input::InputMode::MovingArmy { army_id };
+                    log::info!("Move mode: click destination for army {}", army_id);
+                    self.update_window_title();
+                } else {
+                    log::info!("No army selected - click on a province with your army first");
+                }
+            }
+            KeyCode::KeyW => {
+                // Enter declare war mode
+                self.input_mode = input::InputMode::DeclaringWar;
+                log::info!("Declare War mode: click on enemy province to declare war");
+                self.update_window_title();
+            }
+            KeyCode::KeyR => {
+                // Force refresh political map
+                self.lookup_dirty = true;
+                log::info!("Refreshing map lookup texture");
+            }
+            _ => {}
+        }
+        false
+    }
+
+    /// Sets the simulation speed.
+    fn set_speed(&mut self, speed: SimSpeed) {
+        self.sim_handle.set_speed(speed);
+        log::info!("Set speed to {:?}", speed);
+    }
+
+    /// Logs the current country selection to console.
+    fn log_country_selection(&self) {
+        if let Some((tag, _name, dev)) = self.playable_countries.get(self.country_selection_index) {
+            log::info!(
+                "SELECT COUNTRY [{}/{}]: {} (Dev: {}) - Up/Down/PgUp/PgDn to browse, Enter to select",
+                self.country_selection_index + 1,
+                self.playable_countries.len(),
+                tag,
+                dev
+            );
+        }
+    }
+
+    /// Polls and processes events from the simulation thread.
+    fn poll_sim_events(&mut self) {
+        for event in self.sim_handle.poll_events() {
+            match event {
+                SimEvent::Tick { state, tick } => {
+                    let is_first_tick = self.world_state.is_none();
+                    self.current_date = state.date;
+                    self.world_state = Some(state);
+                    // Update lookup on first tick (GPU rendering is fast, no need to throttle)
+                    if is_first_tick {
+                        self.lookup_dirty = true;
+                    }
+                    log::debug!("Tick {} - Date: {}", tick, self.current_date);
+                }
+                SimEvent::SpeedChanged(speed) => {
+                    self.sim_speed = speed;
+                    self.update_window_title();
+                }
+                SimEvent::Shutdown => {
+                    log::info!("Sim thread shutdown acknowledged");
+                }
+            }
+        }
+    }
+
+    /// Updates the GPU lookup texture and army markers if needed.
+    /// This is fast - only updates a 32KB texture and army instance buffer.
+    fn update_lookup(&mut self) {
+        if !self.lookup_dirty {
+            return;
+        }
+        self.lookup_dirty = false;
+
+        let Some(world_state) = &self.world_state else {
+            return;
+        };
+
+        // Build province owners map and sea provinces set
+        let mut province_owners = std::collections::HashMap::new();
+        let mut sea_provinces = std::collections::HashSet::new();
+        let mut max_province_id: u32 = 0;
+
+        for (&province_id, province) in &world_state.provinces {
+            max_province_id = max_province_id.max(province_id);
+            if province.is_sea {
+                sea_provinces.insert(province_id);
+            }
+            if let Some(ref owner) = province.owner {
+                province_owners.insert(province_id, owner.clone());
+            }
+        }
+
+        // Update GPU lookup texture (fast - only 32KB!)
+        let data = render::LookupUpdateData {
+            province_owners: &province_owners,
+            sea_provinces: &sea_provinces,
+            country_colors: &self.country_colors,
+            max_province_id,
+        };
+
+        self.renderer.update_lookup(&self.queue, &data);
+
+        // Update army markers for player
+        if let Some(ref player_tag) = self.player_tag {
+            let map_width = self.renderer.map_size.0 as f32;
+            let map_height = self.renderer.map_size.1 as f32;
+
+            // Count player armies for debugging
+            let player_armies: Vec<_> = world_state
+                .armies
+                .values()
+                .filter(|army| &army.owner == player_tag)
+                .collect();
+
+            let instances: Vec<render::ArmyInstance> = player_armies
+                .iter()
+                .filter_map(|army| {
+                    // Get province center in pixel coordinates
+                    let center = self.province_centers.get(&army.location);
+                    if center.is_none() {
+                        log::warn!(
+                            "Army '{}' in province {} has no center point",
+                            army.name,
+                            army.location
+                        );
+                        return None;
+                    }
+                    let (px, py) = center.unwrap();
+                    // Convert to UV space (0..1)
+                    let u = *px as f32 / map_width;
+                    let v = *py as f32 / map_height;
+                    Some(render::ArmyInstance {
+                        world_pos: [u, v],
+                        color: [1.0, 0.0, 0.0, 1.0], // Red for player armies
+                    })
+                })
+                .collect();
+
+            if instances.len() != player_armies.len() {
+                log::warn!(
+                    "Player {} has {} armies but only {} have province centers",
+                    player_tag,
+                    player_armies.len(),
+                    instances.len()
+                );
+            }
+
+            let count = self.renderer.update_armies(&self.queue, &instances);
+            log::info!(
+                "Updated {} army markers for {} ({} total player armies)",
+                count,
+                player_tag,
+                player_armies.len()
+            );
+        }
+
+        log::debug!("Updated GPU lookup texture ({} provinces)", max_province_id);
+    }
+
+    /// Updates the window title with current date and speed.
+    fn update_window_title(&self) {
+        let title = match self.game_phase {
+            GamePhase::CountrySelection => {
+                if let Some((tag, name, dev)) =
+                    self.playable_countries.get(self.country_selection_index)
+                {
+                    format!(
+                        "EU4 Source Port - SELECT COUNTRY ({}/{}) - {} ({}) [Dev: {}] - Up/Down to browse, Enter to select",
+                        self.country_selection_index + 1,
+                        self.playable_countries.len(),
+                        name,
+                        tag,
+                        dev
+                    )
+                } else {
+                    "EU4 Source Port - No countries available".to_string()
+                }
+            }
+            GamePhase::Playing => {
+                let province_info = if let Some(id) = self.selected_province {
+                    if let Some(lookup) = &self.province_lookup {
+                        if let Some(def) = lookup.by_id.get(&id) {
+                            format!(" - {} ({})", def.name, id)
+                        } else {
+                            format!(" - Province {}", id)
+                        }
+                    } else {
+                        format!(" - Province {}", id)
+                    }
+                } else {
+                    String::new()
+                };
+                let player_info = if let Some(ref tag) = self.player_tag {
+                    format!(" [{}]", tag)
+                } else {
+                    String::new()
+                };
+                let mode_info = if self.input_mode != input::InputMode::Normal {
+                    format!(" | {}", self.input_mode.description())
+                } else {
+                    String::new()
+                };
+                format!(
+                    "EU4 Source Port - {} - {}{}{}{}",
+                    self.current_date,
+                    self.sim_speed.name(),
+                    player_info,
+                    province_info,
+                    mode_info
+                )
+            }
+        };
+        self.window.set_title(&title);
+    }
+
+    /// Selects the province at the given world coordinates.
+    fn select_province_at(&mut self, world_x: f64, world_y: f64) {
+        // Wrap X to 0..1 range
+        let world_x = world_x.rem_euclid(1.0);
+
+        // Check bounds for Y (provinces.bmp is in 0..1 texture space)
+        if !(0.0..=1.0).contains(&world_y) {
+            log::debug!("Click outside map bounds: y={:.4}", world_y);
+            self.selected_province = None;
+            self.update_window_title();
+            return;
+        }
+
+        // Convert to pixel coordinates
+        let map_width = self.province_map.width();
+        let map_height = self.province_map.height();
+        let pixel_x = (world_x * map_width as f64) as u32;
+        let pixel_y = (world_y * map_height as f64) as u32;
+
+        // Clamp to valid range
+        let pixel_x = pixel_x.min(map_width - 1);
+        let pixel_y = pixel_y.min(map_height - 1);
+
+        // Sample pixel color
+        let pixel = self.province_map.get_pixel(pixel_x, pixel_y);
+        let color = (pixel[0], pixel[1], pixel[2]);
+
+        // Look up province ID
+        let province_id = if let Some(lookup) = &self.province_lookup {
+            lookup.by_color.get(&color).copied()
+        } else {
+            None
+        };
+
+        let Some(province_id) = province_id else {
+            log::debug!(
+                "No province at pixel ({}, {}) - color {:?}",
+                pixel_x,
+                pixel_y,
+                color
+            );
+            self.selected_province = None;
+            self.update_window_title();
+            return;
+        };
+
+        // Get province owner from world state
+        let province_owner = self
+            .world_state
+            .as_ref()
+            .and_then(|ws| ws.provinces.get(&province_id).and_then(|p| p.owner.clone()));
+
+        // Get player tag
+        let player_tag = match &self.player_tag {
+            Some(tag) => tag.clone(),
+            None => {
+                self.selected_province = Some(province_id);
+                self.update_window_title();
+                return;
+            }
+        };
+
+        // Handle click based on input mode
+        let (new_mode, action) = input::handle_province_click(
+            &self.input_mode,
+            province_id,
+            province_owner.as_deref(),
+            &player_tag,
+        );
+
+        self.input_mode = new_mode;
+
+        // Process the action
+        match action {
+            input::PlayerAction::SelectProvince(pid) => {
+                self.selected_province = Some(pid);
+
+                // Check if player has an army in this province
+                if let Some(ws) = &self.world_state {
+                    let player_army = ws
+                        .armies
+                        .iter()
+                        .find(|(_, army)| army.location == pid && army.owner == player_tag);
+
+                    if let Some((&army_id, army)) = player_army {
+                        self.selected_army = Some(army_id);
+                        log::info!(
+                            "Selected {} ({} regiments) in province {} - press M to move",
+                            army.name,
+                            army.regiments.len(),
+                            pid
+                        );
+                    } else {
+                        self.selected_army = None;
+                        // Log province info
+                        if let Some(lookup) = &self.province_lookup
+                            && let Some(def) = lookup.by_id.get(&pid)
+                        {
+                            log::info!("Selected province {} ({})", def.name, pid);
+                        }
+                    }
+                }
+            }
+            input::PlayerAction::MoveArmy {
+                army_id,
+                destination,
+            } => {
+                log::info!("Moving army {} to province {}", army_id, destination);
+                self.send_move_command(army_id, destination);
+                self.selected_army = None;
+            }
+            input::PlayerAction::DeclareWar { target } => {
+                log::info!("Declaring war on {}!", target);
+                self.send_declare_war_command(&target);
+            }
+            input::PlayerAction::Cancel | input::PlayerAction::None => {}
+        }
+
+        self.update_window_title();
+    }
+
+    /// Sends a move command to the simulation thread.
+    fn send_move_command(&self, army_id: u32, destination: u32) {
+        use eu4sim_core::input::{Command, PlayerInputs};
+
+        let player_tag = match &self.player_tag {
+            Some(tag) => tag.clone(),
+            None => return,
+        };
+
+        let inputs = PlayerInputs {
+            country: player_tag,
+            commands: vec![Command::Move {
+                army_id,
+                destination,
+            }],
+            available_commands: Vec::new(),
+            visible_state: None,
+        };
+
+        self.sim_handle.enqueue_commands(inputs);
+        log::info!(
+            "Sent Move command: army {} -> province {}",
+            army_id,
+            destination
+        );
+    }
+
+    /// Sends a declare war command to the simulation thread.
+    fn send_declare_war_command(&self, target: &str) {
+        use eu4sim_core::input::{Command, PlayerInputs};
+
+        let player_tag = match &self.player_tag {
+            Some(tag) => tag.clone(),
+            None => return,
+        };
+
+        let inputs = PlayerInputs {
+            country: player_tag,
+            commands: vec![Command::DeclareWar {
+                target: target.to_string(),
+                cb: None,
+            }],
+            available_commands: Vec::new(),
+            visible_state: None,
+        };
+
+        self.sim_handle.enqueue_commands(inputs);
+        log::info!(
+            "Sent DeclareWar command: {} -> {}",
+            self.player_tag.as_deref().unwrap_or("?"),
+            target
+        );
+    }
+
+    /// Handles mouse scroll for zooming.
+    fn handle_scroll(&mut self, delta: MouseScrollDelta) {
+        let zoom_factor = match delta {
+            MouseScrollDelta::LineDelta(_, y) => {
+                log::debug!("Scroll line delta: {}", y);
+                if y > 0.0 {
+                    1.1
+                } else if y < 0.0 {
+                    0.9
+                } else {
+                    return;
+                }
+            }
+            MouseScrollDelta::PixelDelta(pos) => {
+                log::debug!("Scroll pixel delta: {}", pos.y);
+                if pos.y > 0.0 {
+                    1.1
+                } else if pos.y < 0.0 {
+                    0.9
+                } else {
+                    return;
+                }
+            }
+        };
+
+        log::debug!(
+            "Zooming by factor {}, cursor at {:?}",
+            zoom_factor,
+            self.cursor_pos
+        );
+        self.camera.zoom(
+            zoom_factor,
+            self.cursor_pos.0,
+            self.cursor_pos.1,
+            self.config.width as f64,
+            self.config.height as f64,
+        );
+        log::debug!("New camera zoom: {}", self.camera.zoom);
+    }
+
+    /// Handles mouse button events.
+    fn handle_mouse_button(&mut self, button: MouseButton, state: ElementState) {
+        log::debug!("Mouse button {:?} {:?}", button, state);
+        match button {
+            MouseButton::Middle => {
+                self.panning = state == ElementState::Pressed;
+                self.last_cursor_pos = self.cursor_pos;
+                log::debug!("Panning: {}", self.panning);
+            }
+            MouseButton::Left => {
+                if state == ElementState::Pressed {
+                    let world_pos = self.camera.screen_to_world(
+                        self.cursor_pos.0,
+                        self.cursor_pos.1,
+                        self.config.width as f64,
+                        self.config.height as f64,
+                    );
+                    self.select_province_at(world_pos.0, world_pos.1);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Handles cursor movement. Returns true if a redraw is needed.
+    fn handle_cursor_move(&mut self, x: f64, y: f64) -> bool {
+        self.cursor_pos = (x, y);
+
+        if self.panning {
+            let dx = x - self.last_cursor_pos.0;
+            let dy = y - self.last_cursor_pos.1;
+            self.last_cursor_pos = (x, y);
+
+            self.camera
+                .pan(dx, dy, self.config.width as f64, self.config.height as f64);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Reconfigures the surface (needed after Outdated error).
+    fn reconfigure_surface(&mut self) {
+        self.surface.configure(&self.device, &self.config);
+    }
+}
+
+fn main() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
+    log::info!("EU4 Source Port starting...");
+
+    let event_loop = EventLoop::new().unwrap();
+
+    // Create borderless window at target resolution
+    let window = WindowBuilder::new()
+        .with_title("EU4 Source Port")
+        .with_inner_size(PhysicalSize::new(TARGET_WIDTH, TARGET_HEIGHT))
+        .with_decorations(false) // Borderless
+        .with_resizable(false)
+        .build(&event_loop)
+        .expect("Failed to create window");
+
+    log::info!(
+        "Created borderless window: {}x{}",
+        TARGET_WIDTH,
+        TARGET_HEIGHT
+    );
+
+    // Initialize app
+    let mut app = pollster::block_on(App::new(window));
+
+    // Set initial window title and show country selection prompt
+    app.update_window_title();
+    if app.game_phase == GamePhase::CountrySelection {
+        app.log_country_selection();
+    }
+
+    // Run event loop
+    let _ = event_loop.run(move |event, control_flow| match event {
+        Event::WindowEvent {
+            ref event,
+            window_id,
+        } if window_id == app.window().id() => {
+            let (consumed, should_exit) = app.input(event);
+            if should_exit {
+                control_flow.exit();
+                return;
+            }
+            if !consumed {
+                match event {
+                    WindowEvent::CloseRequested => control_flow.exit(),
+                    WindowEvent::Resized(physical_size) => {
+                        app.resize(*physical_size);
+                    }
+                    WindowEvent::RedrawRequested => match app.render() {
+                        Ok(_) => {}
+                        Err(wgpu::SurfaceError::Lost) => app.resize(app.size),
+                        Err(wgpu::SurfaceError::Outdated) => app.reconfigure_surface(),
+                        Err(wgpu::SurfaceError::OutOfMemory) => control_flow.exit(),
+                        Err(e) => log::warn!("Render error: {:?}", e),
+                    },
+                    _ => {}
+                }
+            }
+        }
+        Event::AboutToWait => {
+            app.poll_sim_events();
+            app.update_lookup();
+            app.window().request_redraw();
+        }
+        _ => {}
+    });
+}

@@ -1,0 +1,27 @@
+[package]
+name = "eu4game"
+version = "0.1.0"
+edition = "2024"
+description = "EU4 source port - playable game binary"
+
+[dependencies]
+# GPU Rendering
+wgpu = "0.20.0"
+winit = "0.29.15"
+bytemuck = { version = "1.24.0", features = ["derive"] }
+pollster = "0.4.0"
+
+# Image handling
+image = "0.25.9"
+
+# Text rendering
+ab_glyph = "0.2.32"
+
+# Data loading
+eu4data = { version = "0.1.0", path = "../eu4data" }
+eu4sim-core = { version = "0.1.0", path = "../eu4sim-core" }
+eu4sim = { version = "0.1.0", path = "../eu4sim" }
+
+# Logging
+log = "0.4.29"
+env_logger = "0.11.8"

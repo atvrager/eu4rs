@@ -1809,6 +1809,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "eu4game"
+version = "0.1.0"
+dependencies = [
+ "ab_glyph",
+ "bytemuck",
+ "env_logger 0.11.8",
+ "eu4data",
+ "eu4sim",
+ "eu4sim-core",
+ "image",
+ "log",
+ "pollster",
+ "wgpu 0.20.1",
+ "winit 0.29.15",
+]
+
+[[package]]
 name = "eu4save"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
