@@ -16,6 +16,70 @@ const MAX_FLEETS: usize = 512;
 /// Size of the color lookup texture (must be power of 2, >= max province ID).
 pub const LOOKUP_SIZE: u32 = 8192;
 
+/// Creates a heightmap texture from a grayscale image.
+/// The heightmap is used for terrain shading in the fragment shader.
+pub fn create_heightmap_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    heightmap: &image::GrayImage,
+) -> (wgpu::Texture, wgpu::TextureView, wgpu::Sampler) {
+    let width = heightmap.width();
+    let height = heightmap.height();
+
+    // Convert grayscale to RGBA (R=height, GBA=255 for simplicity)
+    let mut rgba_data: Vec<u8> = Vec::with_capacity((width * height * 4) as usize);
+    for pixel in heightmap.pixels() {
+        let h = pixel[0];
+        rgba_data.extend_from_slice(&[h, h, h, 255]);
+    }
+
+    let size = wgpu::Extent3d {
+        width,
+        height,
+        depth_or_array_layers: 1,
+    };
+
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Heightmap Texture"),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm, // Linear for height values
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+
+    queue.write_texture(
+        wgpu::ImageCopyTexture {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &rgba_data,
+        wgpu::ImageDataLayout {
+            offset: 0,
+            bytes_per_row: Some(4 * width),
+            rows_per_image: Some(height),
+        },
+        size,
+    );
+
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        address_mode_u: wgpu::AddressMode::Repeat, // Match province texture wrapping
+        address_mode_v: wgpu::AddressMode::ClampToEdge,
+        address_mode_w: wgpu::AddressMode::ClampToEdge,
+        mag_filter: wgpu::FilterMode::Linear, // Smooth interpolation for terrain
+        min_filter: wgpu::FilterMode::Linear,
+        mipmap_filter: wgpu::FilterMode::Linear,
+        ..Default::default()
+    });
+
+    (texture, view, sampler)
+}
+
 /// Map settings uniform for shader.
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -385,12 +449,15 @@ pub struct Renderer {
 
 impl Renderer {
     /// Creates a new GPU-based renderer.
+    ///
+    /// If `heightmap` is provided, terrain shading will be enabled.
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         surface_format: wgpu::TextureFormat,
         province_map: &image::RgbaImage,
         province_lookup: &HashMap<(u8, u8, u8), u32>,
+        heightmap: Option<&image::GrayImage>,
     ) -> Self {
         let map_size = (province_map.width(), province_map.height());
         log::info!(
@@ -427,6 +494,23 @@ impl Renderer {
             contents: bytemuck::cast_slice(&[settings]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+
+        // Create heightmap texture (or fallback to flat gray if not provided)
+        let (heightmap_view, heightmap_sampler) = if let Some(hm) = heightmap {
+            log::info!(
+                "Creating heightmap texture ({}x{})",
+                hm.width(),
+                hm.height()
+            );
+            let (_tex, view, sampler) = create_heightmap_texture(device, queue, hm);
+            (view, sampler)
+        } else {
+            // Create a 1x1 flat gray heightmap as fallback (no terrain shading)
+            log::info!("No heightmap provided, using flat terrain");
+            let flat = image::GrayImage::from_pixel(1, 1, image::Luma([128u8]));
+            let (_tex, view, sampler) = create_heightmap_texture(device, queue, &flat);
+            (view, sampler)
+        };
 
         // Bind group layout matching shader
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -490,6 +574,24 @@ impl Renderer {
                     },
                     count: None,
                 },
+                // binding 6: heightmap texture
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                // binding 7: heightmap sampler
+                wgpu::BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
             ],
         });
 
@@ -521,6 +623,14 @@ impl Renderer {
                 wgpu::BindGroupEntry {
                     binding: 5,
                     resource: settings_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::TextureView(&heightmap_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: wgpu::BindingResource::Sampler(&heightmap_sampler),
                 },
             ],
         });

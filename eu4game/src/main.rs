@@ -166,8 +166,8 @@ impl App {
         };
         surface.configure(&device, &config);
 
-        // Load province map and lookup table
-        let (province_img, province_lookup) = Self::load_province_data();
+        // Load province map, lookup table, and heightmap
+        let (province_img, province_lookup, heightmap) = Self::load_province_data();
         let province_map = province_img.to_rgba8();
         let content_aspect = province_img.width() as f64 / province_img.height() as f64;
 
@@ -183,6 +183,7 @@ impl App {
             surface_format,
             &province_map,
             lookup_map.unwrap_or(&std::collections::HashMap::new()),
+            heightmap.as_ref(),
         );
 
         // Create camera
@@ -378,12 +379,17 @@ impl App {
         &self.window
     }
 
-    /// Loads province map and lookup table from EU4 game files.
-    fn load_province_data() -> (image::DynamicImage, Option<eu4data::map::ProvinceLookup>) {
+    /// Loads province map, lookup table, and heightmap from EU4 game files.
+    fn load_province_data() -> (
+        image::DynamicImage,
+        Option<eu4data::map::ProvinceLookup>,
+        Option<image::GrayImage>,
+    ) {
         // Try to load from EU4 game path
         if let Some(game_path) = eu4data::path::detect_game_path() {
             let provinces_path = game_path.join("map/provinces.bmp");
             let definitions_path = game_path.join("map/definition.csv");
+            let heightmap_path = game_path.join("map/heightmap.bmp");
 
             if provinces_path.exists() {
                 log::info!("Loading province map from: {}", provinces_path.display());
@@ -407,7 +413,27 @@ impl App {
                         );
                         None
                     };
-                    return (img, lookup);
+
+                    // Try to load heightmap for terrain shading
+                    let heightmap = if heightmap_path.exists() {
+                        log::info!("Loading heightmap from: {}", heightmap_path.display());
+                        match image::open(&heightmap_path) {
+                            Ok(hm) => {
+                                let gray = hm.to_luma8();
+                                log::info!("Loaded heightmap ({}x{})", gray.width(), gray.height());
+                                Some(gray)
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to load heightmap: {}", e);
+                                None
+                            }
+                        }
+                    } else {
+                        log::warn!("Heightmap not found at: {}", heightmap_path.display());
+                        None
+                    };
+
+                    return (img, lookup, heightmap);
                 }
             }
         }
@@ -421,7 +447,7 @@ impl App {
             let b = ((x + y) % 256) as u8;
             *pixel = image::Rgba([r, g, b, 255]);
         }
-        (image::DynamicImage::ImageRgba8(img), None)
+        (image::DynamicImage::ImageRgba8(img), None, None)
     }
 
     /// Handles window resize.

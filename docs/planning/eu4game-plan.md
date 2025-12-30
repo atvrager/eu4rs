@@ -118,7 +118,7 @@ Main Thread (winit)              Sim Thread
 ### Phase D: Visual Polish [IN PROGRESS]
 - [x] DDS texture loading (image-dds crate)
 - [x] Country flags in UI (TGA loading, LRU cache, sprite renderer)
-- [ ] Terrain textures from EU4
+- [x] Terrain textures from EU4 (heightmap shading - tune params later on terrain-only view)
 - [ ] Unit sprites on map (instanced)
 - [ ] Selection highlights
 - [ ] 9-slice panels with EU4 textures

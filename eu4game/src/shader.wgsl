@@ -48,6 +48,12 @@ var<uniform> camera: CameraUniform;
 @group(0) @binding(5)
 var<uniform> settings: MapSettings;
 
+// Heightmap texture for terrain shading
+@group(0) @binding(6)
+var t_heightmap: texture_2d<f32>;
+@group(0) @binding(7)
+var s_heightmap: sampler;
+
 // Decode province ID from RG channels (R = low byte, G = high byte)
 fn decode_province_id(color: vec4<f32>) -> u32 {
     let low = u32(color.r * 255.0 + 0.5);
@@ -82,6 +88,44 @@ fn is_border(uv: vec2<f32>, center_id: u32) -> bool {
            up_id != center_id || down_id != center_id;
 }
 
+// Compute terrain shading from heightmap using directional lighting
+// Returns a multiplier in range [0.6, 1.4] to darken/lighten the base color
+fn compute_terrain_shading(uv: vec2<f32>) -> f32 {
+    let pixel_size = 1.0 / settings.texture_size;
+
+    // Sample heightmap at current position and neighbors
+    let h_center = textureSample(t_heightmap, s_heightmap, uv).r;
+    let h_left = textureSample(t_heightmap, s_heightmap, uv + vec2<f32>(-pixel_size.x, 0.0)).r;
+    let h_right = textureSample(t_heightmap, s_heightmap, uv + vec2<f32>(pixel_size.x, 0.0)).r;
+    let h_up = textureSample(t_heightmap, s_heightmap, uv + vec2<f32>(0.0, -pixel_size.y)).r;
+    let h_down = textureSample(t_heightmap, s_heightmap, uv + vec2<f32>(0.0, pixel_size.y)).r;
+
+    // Compute gradient (approximates surface normal)
+    let dx = (h_right - h_left) * 0.5;
+    let dy = (h_down - h_up) * 0.5;
+
+    // Light direction: from upper-left (NW), simulating sun position
+    // Negative X (from left), negative Y (from top)
+    let light_dir = normalize(vec3<f32>(-0.5, -0.7, 0.5));
+
+    // Approximate surface normal from gradient
+    // Scale gradient to control shading intensity
+    let gradient_scale = 8.0;
+    let normal = normalize(vec3<f32>(-dx * gradient_scale, -dy * gradient_scale, 1.0));
+
+    // Lambertian diffuse lighting
+    let diffuse = max(dot(normal, light_dir), 0.0);
+
+    // Add ambient to prevent pure black shadows
+    let ambient = 0.5;
+    let shading = ambient + diffuse * 0.5;
+
+    // Also add subtle height-based tinting (higher = slightly lighter)
+    let height_boost = (h_center - 0.3) * 0.15;
+
+    return clamp(shading + height_boost, 0.6, 1.3);
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Transform UV to world space using camera
@@ -103,6 +147,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Look up the color for this province
     var color = lookup_color(province_id);
+
+    // Apply terrain shading from heightmap
+    let terrain_shade = compute_terrain_shading(final_uv);
+    color = vec4<f32>(color.rgb * terrain_shade, color.a);
 
     // Apply border darkening if enabled
     if (settings.border_enabled > 0.5 && is_border(final_uv, province_id)) {
