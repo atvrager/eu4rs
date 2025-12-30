@@ -391,21 +391,89 @@ pub fn load_initial_state(
     );
 
     // 2b. Initialize Armies
+    // Split large countries into multiple armies distributed across provinces with forts
     let mut armies = StdHashMap::new();
     let mut next_army_id = 1;
     let reg_strength = Fixed::from_int(1000); // 1000 men
 
+    // Split armies for reasonable stack sizes (can carpet siege with many small armies)
+    const TARGET_REGIMENTS_PER_ARMY: usize = 25;
+    const MAX_ARMIES_PER_COUNTRY: usize = 255;
+
+    // Build mapping of country -> owned provinces with forts (for army distribution)
+    let mut country_fort_provinces: StdHashMap<String, Vec<u32>> = StdHashMap::new();
+    for (&prov_id, prov) in &provinces {
+        if let Some(ref owner) = prov.owner {
+            if prov.fort_level > 0 {
+                country_fort_provinces
+                    .entry(owner.clone())
+                    .or_default()
+                    .push(prov_id);
+            }
+        }
+    }
+
     for (tag, &total_mp) in &country_total_manpower {
-        let reg_count = (total_mp / 5.0).floor() as usize;
-        if reg_count == 0 {
+        let total_reg_count = (total_mp / 5.0).floor() as usize;
+        if total_reg_count == 0 {
             continue;
         }
 
-        if let Some(&location) = country_capitals.get(tag) {
-            let mut regiments = Vec::with_capacity(reg_count);
-            for _ in 0..reg_count {
+        // Get locations for armies: capital first, then forts
+        let mut army_locations = Vec::new();
+        if let Some(&capital) = country_capitals.get(tag) {
+            army_locations.push(capital);
+        }
+        if let Some(fort_provs) = country_fort_provinces.get(tag) {
+            for &prov_id in fort_provs {
+                if !army_locations.contains(&prov_id) {
+                    army_locations.push(prov_id);
+                }
+            }
+        }
+
+        if army_locations.is_empty() {
+            continue;
+        }
+
+        // Calculate number of armies needed (not limited by locations - extras go to capital)
+        let num_armies = total_reg_count
+            .div_ceil(TARGET_REGIMENTS_PER_ARMY)
+            .clamp(1, MAX_ARMIES_PER_COUNTRY);
+        let regs_per_army = total_reg_count / num_armies;
+        let mut remaining_regs = total_reg_count % num_armies;
+
+        for army_idx in 0..num_armies {
+            // Cycle through locations, defaulting to capital (first) when we run out
+            let location = army_locations[army_idx % army_locations.len()];
+            // Distribute remainder to first armies
+            let extra = if remaining_regs > 0 {
+                remaining_regs -= 1;
+                1
+            } else {
+                0
+            };
+            let army_reg_count = regs_per_army + extra;
+
+            if army_reg_count == 0 {
+                continue;
+            }
+
+            // Mix infantry and cavalry (roughly 15% cavalry)
+            let cav_count = (army_reg_count * 15 / 100).max(if army_reg_count > 3 { 1 } else { 0 });
+            let inf_count = army_reg_count - cav_count;
+
+            let mut regiments = Vec::with_capacity(army_reg_count);
+            for _ in 0..inf_count {
                 regiments.push(Regiment {
                     type_: RegimentType::Infantry,
+                    strength: reg_strength,
+                    morale: Fixed::from_f32(eu4data::defines::combat::BASE_MORALE),
+                });
+            }
+            for _ in 0..cav_count {
+                regiments.push(Regiment {
+                    type_: RegimentType::Cavalry,
                     strength: reg_strength,
                     morale: Fixed::from_f32(eu4data::defines::combat::BASE_MORALE),
                 });
@@ -414,11 +482,18 @@ pub fn load_initial_state(
             let army_id = next_army_id;
             next_army_id += 1;
 
+            // Name armies with ordinal for larger countries
+            let army_name = if num_armies > 1 {
+                format!("{} {} Army", tag, army_idx + 1)
+            } else {
+                format!("{} Army", tag)
+            };
+
             armies.insert(
                 army_id,
                 Army {
                     id: army_id,
-                    name: format!("{} Army", tag),
+                    name: army_name,
                     owner: tag.clone(),
                     location,
                     previous_location: None,
@@ -427,9 +502,8 @@ pub fn load_initial_state(
                     embarked_on: None,
                     general: None,
                     in_battle: None,
-                    // All regiments are infantry at game start
-                    infantry_count: reg_count as u32,
-                    cavalry_count: 0,
+                    infantry_count: inf_count as u32,
+                    cavalry_count: cav_count as u32,
                     artillery_count: 0,
                 },
             );
