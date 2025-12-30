@@ -36,6 +36,76 @@ pub fn parse_gui_file(path: &Path) -> Result<Vec<GuiElement>, String> {
     Ok(elements)
 }
 
+/// Raw element counts from a GUI file (for gap detection).
+#[derive(Debug, Default, Clone)]
+#[allow(dead_code)]
+pub struct RawGuiCounts {
+    pub windows: usize,
+    pub icons: usize,
+    pub textboxes: usize,
+    pub buttons: usize,
+    /// Element type names we saw but don't parse yet
+    pub unknown_types: Vec<String>,
+}
+
+impl RawGuiCounts {
+    #[allow(dead_code)]
+    pub fn total(&self) -> usize {
+        self.windows + self.icons + self.textboxes + self.buttons
+    }
+}
+
+/// Count all GUI elements in a file without filtering.
+/// This helps detect parsing gaps by comparing raw counts to parsed output.
+#[allow(dead_code)]
+pub fn count_raw_gui_elements(path: &Path) -> Result<RawGuiCounts, String> {
+    let tokens = DefaultEU4Txt::open_txt(path.to_str().unwrap_or(""))
+        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+
+    let ast = DefaultEU4Txt::parse(tokens)
+        .map_err(|e| format!("Failed to parse {}: {}", path.display(), e))?;
+
+    let mut counts = RawGuiCounts::default();
+    count_elements_recursive(&ast, &mut counts);
+
+    Ok(counts)
+}
+
+/// Recursively count all GUI element types in the AST.
+#[allow(dead_code)]
+fn count_elements_recursive(node: &EU4TxtParseNode, counts: &mut RawGuiCounts) {
+    if let EU4TxtAstItem::Assignment = &node.entry
+        && let Some(key) = get_assignment_key(node)
+    {
+        match key.as_str() {
+            "windowType" => counts.windows += 1,
+            "iconType" => counts.icons += 1,
+            "instantTextBoxType" => counts.textboxes += 1,
+            "guiButtonType" => counts.buttons += 1,
+            // Track element types we don't parse yet
+            "checkboxType"
+            | "editBoxType"
+            | "listboxType"
+            | "scrollbarType"
+            | "OverlappingElementsBoxType"
+            | "positionType"
+            | "smoothListboxType"
+            | "textBoxType"
+            | "extendedScrollbarType"
+            | "gridBoxType" => {
+                if !counts.unknown_types.contains(&key) {
+                    counts.unknown_types.push(key);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    for child in &node.children {
+        count_elements_recursive(child, counts);
+    }
+}
+
 /// Extract sprites from a parsed AST node.
 fn extract_sprites_from_node(node: &EU4TxtParseNode, db: &mut GfxDatabase) {
     match &node.entry {

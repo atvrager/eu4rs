@@ -925,6 +925,7 @@ fn extract_topbar(
 
 #[cfg(test)]
 mod tests {
+    use super::parser::count_raw_gui_elements;
     use super::*;
     use crate::render::SpriteRenderer;
     use crate::testing::{HeadlessGpu, assert_snapshot};
@@ -1176,5 +1177,108 @@ mod tests {
             "Should have at least 1 background"
         );
         assert!(tb.icons.len() >= 5, "Should have at least 5 icons");
+    }
+
+    #[test]
+    fn test_gui_gap_detection() {
+        let Some((_, game_path)) = get_test_context() else {
+            println!("Skipping test_gui_gap_detection: prerequisites not available");
+            return;
+        };
+
+        println!("\n=== GUI Gap Detection Report ===\n");
+
+        // Check speed_controls.gui
+        let speed_controls_path = game_path.join("interface/speed_controls.gui");
+        if speed_controls_path.exists() {
+            let raw_counts = count_raw_gui_elements(&speed_controls_path)
+                .expect("Failed to count speed_controls.gui elements");
+
+            let gui_renderer = GuiRenderer::new(&game_path);
+            let sc = &gui_renderer.speed_controls;
+
+            // Count what we actually use
+            let used_icons = 1; // speed indicator
+            let used_buttons = sc.buttons.len();
+            let used_texts = 1; // date text
+
+            println!("speed_controls.gui:");
+            println!(
+                "  Raw: {} windows, {} icons, {} buttons, {} textboxes",
+                raw_counts.windows, raw_counts.icons, raw_counts.buttons, raw_counts.textboxes
+            );
+            println!(
+                "  Used: {} icons, {} buttons, {} texts",
+                used_icons, used_buttons, used_texts
+            );
+
+            let icon_gap = raw_counts.icons.saturating_sub(used_icons);
+            let button_gap = raw_counts.buttons.saturating_sub(used_buttons);
+            let text_gap = raw_counts.textboxes.saturating_sub(used_texts);
+
+            if icon_gap > 0 || button_gap > 0 || text_gap > 0 {
+                println!(
+                    "  GAPS: {} icons, {} buttons, {} textboxes not rendered",
+                    icon_gap, button_gap, text_gap
+                );
+            } else {
+                println!("  OK: All elements accounted for");
+            }
+
+            if !raw_counts.unknown_types.is_empty() {
+                println!(
+                    "  Unsupported element types: {:?}",
+                    raw_counts.unknown_types
+                );
+            }
+        }
+
+        // Check topbar.gui
+        let topbar_path = game_path.join("interface/topbar.gui");
+        if topbar_path.exists() {
+            let raw_counts =
+                count_raw_gui_elements(&topbar_path).expect("Failed to count topbar.gui elements");
+
+            let gui_renderer = GuiRenderer::new(&game_path);
+            let tb = &gui_renderer.topbar;
+
+            // Count what we actually use (backgrounds are icons in the raw file)
+            let used_icons = tb.backgrounds.len() + tb.icons.len();
+            let used_texts = tb.texts.len();
+
+            println!("\ntopbar.gui:");
+            println!(
+                "  Raw: {} windows, {} icons, {} buttons, {} textboxes",
+                raw_counts.windows, raw_counts.icons, raw_counts.buttons, raw_counts.textboxes
+            );
+            println!(
+                "  Used: {} icons (incl. backgrounds), {} texts",
+                used_icons, used_texts
+            );
+
+            let icon_gap = raw_counts.icons.saturating_sub(used_icons);
+            let text_gap = raw_counts.textboxes.saturating_sub(used_texts);
+
+            if icon_gap > 0 || text_gap > 0 {
+                println!(
+                    "  GAPS: {} icons, {} textboxes not rendered",
+                    icon_gap, text_gap
+                );
+            } else {
+                println!("  OK: All elements accounted for");
+            }
+
+            if !raw_counts.unknown_types.is_empty() {
+                println!(
+                    "  Unsupported element types: {:?}",
+                    raw_counts.unknown_types
+                );
+            }
+        }
+
+        println!("\n=== End Gap Detection Report ===\n");
+
+        // This test is informational - it doesn't fail CI
+        // But we print the gaps so developers know what's missing
     }
 }
