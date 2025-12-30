@@ -391,26 +391,31 @@ pub fn load_initial_state(
     );
 
     // 2b. Initialize Armies
-    // Split large countries into multiple armies distributed across provinces with forts
+    // EU4 spawns armies at 75% of force limit, distributed across top-dev provinces
+    // Army sizes are proportional to province development
     let mut armies = StdHashMap::new();
     let mut next_army_id = 1;
     let reg_strength = Fixed::from_int(1000); // 1000 men
 
-    // Split armies for reasonable stack sizes (can carpet siege with many small armies)
+    // Split armies for reasonable stack sizes
     const TARGET_REGIMENTS_PER_ARMY: usize = 25;
     const MAX_ARMIES_PER_COUNTRY: usize = 255;
 
-    // Build mapping of country -> owned provinces with forts (for army distribution)
-    let mut country_fort_provinces: StdHashMap<String, Vec<u32>> = StdHashMap::new();
+    // Build mapping of country -> provinces sorted by development (for army distribution)
+    let mut country_provinces_by_dev: StdHashMap<String, Vec<(u32, u32)>> = StdHashMap::new();
     for (&prov_id, prov) in &provinces {
         if let Some(ref owner) = prov.owner {
-            if prov.fort_level > 0 {
-                country_fort_provinces
-                    .entry(owner.clone())
-                    .or_default()
-                    .push(prov_id);
-            }
+            // Sum development (convert from Fixed to u32 for sorting)
+            let dev = (prov.base_tax + prov.base_production + prov.base_manpower).to_f32() as u32;
+            country_provinces_by_dev
+                .entry(owner.clone())
+                .or_default()
+                .push((prov_id, dev));
         }
+    }
+    // Sort each country's provinces by development (descending)
+    for provs in country_provinces_by_dev.values_mut() {
+        provs.sort_by(|a, b| b.1.cmp(&a.1));
     }
 
     for (tag, &total_mp) in &country_total_manpower {
@@ -419,41 +424,38 @@ pub fn load_initial_state(
             continue;
         }
 
-        // Get locations for armies: capital first, then forts
-        let mut army_locations = Vec::new();
-        if let Some(&capital) = country_capitals.get(tag) {
-            army_locations.push(capital);
-        }
-        if let Some(fort_provs) = country_fort_provinces.get(tag) {
-            for &prov_id in fort_provs {
-                if !army_locations.contains(&prov_id) {
-                    army_locations.push(prov_id);
-                }
-            }
-        }
+        // Get top provinces by development for army locations
+        let Some(provs_by_dev) = country_provinces_by_dev.get(tag) else {
+            continue;
+        };
+
+        // Calculate number of armies needed
+        let num_armies = total_reg_count
+            .div_ceil(TARGET_REGIMENTS_PER_ARMY)
+            .clamp(1, MAX_ARMIES_PER_COUNTRY);
+
+        // Take top N provinces by dev for army locations
+        let army_locations: Vec<(u32, u32)> =
+            provs_by_dev.iter().take(num_armies).copied().collect();
 
         if army_locations.is_empty() {
             continue;
         }
 
-        // Calculate number of armies needed (not limited by locations - extras go to capital)
-        let num_armies = total_reg_count
-            .div_ceil(TARGET_REGIMENTS_PER_ARMY)
-            .clamp(1, MAX_ARMIES_PER_COUNTRY);
-        let regs_per_army = total_reg_count / num_armies;
-        let mut remaining_regs = total_reg_count % num_armies;
+        // Calculate total dev of army locations for proportional distribution
+        let total_army_dev: u32 = army_locations.iter().map(|(_, dev)| dev).sum();
 
-        for army_idx in 0..num_armies {
-            // Cycle through locations, defaulting to capital (first) when we run out
-            let location = army_locations[army_idx % army_locations.len()];
-            // Distribute remainder to first armies
-            let extra = if remaining_regs > 0 {
-                remaining_regs -= 1;
-                1
+        // Distribute regiments proportionally to development
+        let mut assigned_regs = 0usize;
+        for (army_idx, &(location, dev)) in army_locations.iter().enumerate() {
+            // Last army gets remainder to avoid rounding errors
+            let army_reg_count = if army_idx == army_locations.len() - 1 {
+                total_reg_count - assigned_regs
             } else {
-                0
+                let proportion = dev as f64 / total_army_dev as f64;
+                (total_reg_count as f64 * proportion).round() as usize
             };
-            let army_reg_count = regs_per_army + extra;
+            assigned_regs += army_reg_count;
 
             if army_reg_count == 0 {
                 continue;
