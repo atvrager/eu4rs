@@ -9,6 +9,7 @@ mod flags;
 mod input;
 mod render;
 mod sim_thread;
+mod text;
 
 use sim_thread::{SimEvent, SimHandle, SimSpeed};
 use std::sync::Arc;
@@ -100,6 +101,8 @@ struct App {
     sprite_renderer: render::SpriteRenderer,
     /// Bind group for the player's flag (created when country is selected).
     player_flag_bind_group: Option<wgpu::BindGroup>,
+    /// Text renderer for UI text.
+    text_renderer: Option<text::TextRenderer>,
 }
 
 impl App {
@@ -203,6 +206,28 @@ impl App {
         // Create sprite renderer for UI elements
         let sprite_renderer = render::SpriteRenderer::new(&device, config.format);
 
+        // Create text renderer with EU4 font
+        let text_renderer = eu4data::path::detect_game_path()
+            .and_then(|game_path| {
+                let font_path = game_path.join("assets/font.ttf");
+                if font_path.exists() {
+                    log::info!("Loading font from: {}", font_path.display());
+                    std::fs::read(&font_path).ok()
+                } else {
+                    log::warn!("Font not found at: {}", font_path.display());
+                    None
+                }
+            })
+            .and_then(|font_data| {
+                text::TextRenderer::new(&device, &queue, config.format, &font_data)
+            });
+
+        if text_renderer.is_some() {
+            log::info!("Text renderer initialized");
+        } else {
+            log::warn!("Text rendering unavailable");
+        }
+
         Self {
             window,
             surface,
@@ -239,6 +264,7 @@ impl App {
             flag_cache,
             sprite_renderer,
             player_flag_bind_group: None,
+            text_renderer,
         }
     }
 
@@ -541,6 +567,87 @@ impl App {
                     flag_size,        // width
                     flag_size * 1.78, // height (account for aspect ratio)
                 );
+            }
+
+            // Draw top bar with date and speed
+            if let Some(ref text_renderer) = self.text_renderer {
+                let screen_size = (self.config.width as f32, self.config.height as f32);
+
+                // Format date string
+                let date_str = format!(
+                    "{} {} {}",
+                    self.current_date.day,
+                    match self.current_date.month {
+                        1 => "January",
+                        2 => "February",
+                        3 => "March",
+                        4 => "April",
+                        5 => "May",
+                        6 => "June",
+                        7 => "July",
+                        8 => "August",
+                        9 => "September",
+                        10 => "October",
+                        11 => "November",
+                        _ => "December",
+                    },
+                    self.current_date.year
+                );
+
+                // Speed indicator
+                let speed_str = match self.sim_speed {
+                    SimSpeed::Paused => "II".to_string(),
+                    SimSpeed::Speed1 => ">".to_string(),
+                    SimSpeed::Speed2 => ">>".to_string(),
+                    SimSpeed::Speed3 => ">>>".to_string(),
+                    SimSpeed::Speed4 => ">>>>".to_string(),
+                    SimSpeed::Speed5 => ">>>>>".to_string(),
+                };
+
+                // Draw date (right side of screen)
+                let date_width = text_renderer.measure_width(&date_str);
+                let date_x = screen_size.0 - date_width - 20.0;
+                text_renderer.draw_text(
+                    &mut render_pass,
+                    &self.queue,
+                    &date_str,
+                    date_x,
+                    10.0,
+                    [1.0, 1.0, 1.0, 1.0], // White
+                    screen_size,
+                );
+
+                // Draw speed (next to date)
+                let speed_x = date_x - text_renderer.measure_width(&speed_str) - 30.0;
+                text_renderer.draw_text(
+                    &mut render_pass,
+                    &self.queue,
+                    &speed_str,
+                    speed_x,
+                    10.0,
+                    if self.sim_speed == SimSpeed::Paused {
+                        [1.0, 0.5, 0.5, 1.0] // Reddish when paused
+                    } else {
+                        [0.5, 1.0, 0.5, 1.0] // Greenish when running
+                    },
+                    screen_size,
+                );
+
+                // Draw input mode indicator (left side, below flag area)
+                if self.game_phase == GamePhase::Playing {
+                    let mode_str = self.input_mode.description();
+                    if mode_str != "Normal" {
+                        text_renderer.draw_text(
+                            &mut render_pass,
+                            &self.queue,
+                            mode_str,
+                            20.0,
+                            screen_size.1 - 40.0, // Bottom left
+                            [1.0, 1.0, 0.0, 1.0], // Yellow for mode indicator
+                            screen_size,
+                        );
+                    }
+                }
             }
         }
 
