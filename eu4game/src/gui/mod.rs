@@ -19,6 +19,28 @@ use crate::bmfont::BitmapFontCache;
 use crate::render::SpriteRenderer;
 use std::path::Path;
 
+/// Icon element from speed controls layout.
+#[derive(Debug, Clone)]
+pub struct SpeedControlsIcon {
+    pub name: String,
+    pub sprite: String,
+    pub position: (i32, i32),
+    pub orientation: Orientation,
+}
+
+/// Text element from speed controls layout.
+#[allow(dead_code)] // Will be used for score/rank text rendering
+#[derive(Debug, Clone)]
+pub struct SpeedControlsText {
+    pub name: String,
+    pub position: (i32, i32),
+    pub font: String,
+    pub max_width: u32,
+    pub max_height: u32,
+    pub orientation: Orientation,
+    pub border_size: (i32, i32),
+}
+
 /// Loaded speed controls layout.
 pub struct SpeedControls {
     /// Background panel sprite.
@@ -51,6 +73,10 @@ pub struct SpeedControls {
     pub orientation: Orientation,
     /// Speed buttons: (name, position, orientation, sprite).
     pub buttons: Vec<(String, (i32, i32), Orientation, String)>,
+    /// Additional icons (score icon, etc).
+    pub icons: Vec<SpeedControlsIcon>,
+    /// Additional text labels (score, rank, etc).
+    pub texts: Vec<SpeedControlsText>,
 }
 
 impl Default for SpeedControls {
@@ -72,6 +98,8 @@ impl Default for SpeedControls {
             window_pos: (0, 0),
             orientation: Orientation::UpperLeft,
             buttons: vec![],
+            icons: vec![],
+            texts: vec![],
         }
     }
 }
@@ -144,6 +172,8 @@ pub struct GuiRenderer {
     topbar_icons: Vec<(String, wgpu::BindGroup, u32, u32)>,
     /// Cached button bind groups: (button_name, bind_group, width, height).
     button_bind_groups: Vec<(String, wgpu::BindGroup, u32, u32)>,
+    /// Cached speed controls icon bind groups: (sprite_name, bind_group, width, height).
+    speed_icon_bind_groups: Vec<(String, wgpu::BindGroup, u32, u32)>,
     /// Hit boxes for interactive elements (screen pixel coords).
     hit_boxes: Vec<(String, HitBox)>,
     /// Background sprite dimensions.
@@ -192,6 +222,7 @@ impl GuiRenderer {
             font_bind_group: None,
             topbar_icons: Vec::new(),
             button_bind_groups: Vec::new(),
+            speed_icon_bind_groups: Vec::new(),
             hit_boxes: Vec::new(),
             bg_size: (1, 1),    // Updated from texture in ensure_textures()
             speed_size: (1, 1), // Updated from texture in ensure_textures()
@@ -259,6 +290,27 @@ impl GuiRenderer {
                     );
                     self.button_bind_groups
                         .push((name.clone(), bind_group, w, h));
+                }
+            }
+        }
+
+        // Load additional icon textures (e.g., score icon)
+        if self.speed_icon_bind_groups.is_empty() {
+            for icon in &self.speed_controls.icons {
+                if let Some(sprite) = self.gfx_db.get(&icon.sprite)
+                    && let Some((view, w, h)) =
+                        self.sprite_cache.get(&sprite.texture_file, device, queue)
+                {
+                    let bind_group = sprite_renderer.create_bind_group(device, view);
+                    log::debug!(
+                        "Loaded speed controls icon {}: {} -> {}x{}",
+                        icon.name,
+                        sprite.texture_file,
+                        w,
+                        h
+                    );
+                    self.speed_icon_bind_groups
+                        .push((icon.sprite.clone(), bind_group, w, h));
                 }
             }
         }
@@ -452,6 +504,31 @@ impl GuiRenderer {
                 clip_w,
                 clip_h,
             );
+        }
+
+        // Draw additional icons (score icon, etc.)
+        for icon in &self.speed_controls.icons {
+            if let Some(idx) = self
+                .speed_icon_bind_groups
+                .iter()
+                .position(|(sprite, _, _, _)| sprite == &icon.sprite)
+            {
+                let (_, _, w, h) = &self.speed_icon_bind_groups[idx];
+                let screen_pos =
+                    position_from_anchor(window_anchor, icon.position, icon.orientation, (*w, *h));
+                let (clip_x, clip_y, clip_w, clip_h) =
+                    rect_to_clip_space(screen_pos, (*w, *h), screen_size);
+                let bind_group = &self.speed_icon_bind_groups[idx].1;
+                sprite_renderer.draw(
+                    render_pass,
+                    bind_group,
+                    queue,
+                    clip_x,
+                    clip_y,
+                    clip_w,
+                    clip_h,
+                );
+            }
         }
 
         // Draw speed indicator
@@ -674,6 +751,31 @@ impl GuiRenderer {
                 let (clip_x, clip_y, clip_w, clip_h) =
                     rect_to_clip_space(screen_pos, (*w, *h), screen_size);
                 let bind_group = &self.button_bind_groups[idx].1;
+                sprite_renderer.draw(
+                    render_pass,
+                    bind_group,
+                    queue,
+                    clip_x,
+                    clip_y,
+                    clip_w,
+                    clip_h,
+                );
+            }
+        }
+
+        // Draw additional icons (score icon, etc.)
+        for icon in &self.speed_controls.icons {
+            if let Some(idx) = self
+                .speed_icon_bind_groups
+                .iter()
+                .position(|(sprite, _, _, _)| sprite == &icon.sprite)
+            {
+                let (_, _, w, h) = &self.speed_icon_bind_groups[idx];
+                let screen_pos =
+                    position_from_anchor(window_anchor, icon.position, icon.orientation, (*w, *h));
+                let (clip_x, clip_y, clip_w, clip_h) =
+                    rect_to_clip_space(screen_pos, (*w, *h), screen_size);
+                let bind_group = &self.speed_icon_bind_groups[idx].1;
                 sprite_renderer.draw(
                     render_pass,
                     bind_group,
@@ -911,6 +1013,21 @@ fn extract_speed_controls(
                         orientation,
                         sprite_type
                     );
+                } else {
+                    // Collect additional icons (e.g., icon_score)
+                    controls.icons.push(SpeedControlsIcon {
+                        name: name.clone(),
+                        sprite: sprite_type.clone(),
+                        position: *position,
+                        orientation: *orientation,
+                    });
+                    log::debug!(
+                        "Parsed icon {}: pos={:?}, orientation={:?}, sprite={}",
+                        name,
+                        position,
+                        orientation,
+                        sprite_type
+                    );
                 }
             }
             GuiElement::TextBox {
@@ -939,6 +1056,24 @@ fn extract_speed_controls(
                         max_height,
                         font,
                         border_size
+                    );
+                } else {
+                    // Collect additional text labels (e.g., text_score, text_score_rank)
+                    controls.texts.push(SpeedControlsText {
+                        name: name.clone(),
+                        position: *position,
+                        font: font.clone(),
+                        max_width: *max_width,
+                        max_height: *max_height,
+                        orientation: *orientation,
+                        border_size: *border_size,
+                    });
+                    log::debug!(
+                        "Parsed text {}: pos={:?}, orientation={:?}, font={}",
+                        name,
+                        position,
+                        orientation,
+                        font
                     );
                 }
             }
@@ -1449,9 +1584,11 @@ mod tests {
             let sc = &gui_renderer.speed_controls;
 
             // Count what we actually use
-            let used_icons = 1; // speed indicator
+            // 1 = background icon, plus any additional icons we parsed
+            let used_icons = 1 + sc.icons.len();
             let used_buttons = sc.buttons.len();
-            let used_texts = 1; // date text
+            // 1 = date text, plus any additional texts we parsed
+            let used_texts = 1 + sc.texts.len();
 
             println!("speed_controls.gui:");
             println!(
