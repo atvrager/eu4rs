@@ -646,13 +646,11 @@ impl App {
         for event in self.sim_handle.poll_events() {
             match event {
                 SimEvent::Tick { state, tick } => {
-                    let is_first_tick = self.world_state.is_none();
                     self.current_date = state.date;
                     self.world_state = Some(state);
-                    // Update lookup on first tick (GPU rendering is fast, no need to throttle)
-                    if is_first_tick {
-                        self.lookup_dirty = true;
-                    }
+                    // Update lookup on every tick (GPU rendering is fast - only 32KB texture)
+                    // This ensures army markers move when armies move
+                    self.lookup_dirty = true;
                     log::debug!("Tick {} - Date: {}", tick, self.current_date);
                 }
                 SimEvent::SpeedChanged(speed) => {
@@ -749,7 +747,7 @@ impl App {
             }
 
             let count = self.renderer.update_armies(&self.queue, &instances);
-            log::info!(
+            log::trace!(
                 "Updated {} army markers for {} ({} total player armies)",
                 count,
                 player_tag,
