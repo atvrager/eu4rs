@@ -1847,10 +1847,12 @@ dependencies = [
  "eu4data",
  "eu4sim",
  "eu4sim-core",
+ "eu4txt",
  "image",
  "image_dds",
  "log",
  "pollster",
+ "tempfile",
  "wgpu 0.20.1",
  "winit 0.29.15",
 ]
@@ -2984,8 +2986,6 @@ dependencies = [
  "ddsfile",
  "half",
  "image",
- "intel_tex_2",
- "strum",
  "thiserror 1.0.69",
 ]
 
@@ -3068,15 +3068,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "intel_tex_2"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd699c0e6adcac28c06db24a220c834c8ec811e0d2d80f0261bb14e01737b4dc"
-dependencies = [
- "ispc_rt",
-]
-
-[[package]]
 name = "interpolate_name"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3119,16 +3110,6 @@ name = "is_terminal_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
-
-[[package]]
-name = "ispc_rt"
-version = "2.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "975b362d330dc07079e546ef0e7c6e7ab03f7fbcf251609d5d5dcd3caf398ed6"
-dependencies = [
- "libc",
- "num_cpus",
-]
 
 [[package]]
 name = "itertools"

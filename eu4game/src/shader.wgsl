@@ -345,6 +345,8 @@ fn vs_sprite(
     @builtin(vertex_index) vertex_index: u32,
     @location(0) pos: vec2<f32>,      // Screen position (clip space)
     @location(1) size: vec2<f32>,     // Size in clip space
+    @location(2) uv_min: vec2<f32>,   // UV top-left
+    @location(3) uv_max: vec2<f32>,   // UV bottom-right
 ) -> SpriteVertexOutput {
     var out: SpriteVertexOutput;
 
@@ -368,8 +370,8 @@ fn vs_sprite(
         1.0
     );
 
-    // Texture coordinates (no flip - TGA origin is bottom-left, image crate handles it)
-    out.tex_coords = vec2<f32>(local_pos.x, local_pos.y);
+    // Interpolate UV coordinates based on vertex position
+    out.tex_coords = mix(uv_min, uv_max, local_pos);
 
     return out;
 }

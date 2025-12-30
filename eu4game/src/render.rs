@@ -906,6 +906,10 @@ pub struct SpriteInstance {
     pub pos: [f32; 2],
     /// Size in clip space.
     pub size: [f32; 2],
+    /// UV coordinates: min (top-left).
+    pub uv_min: [f32; 2],
+    /// UV coordinates: max (bottom-right).
+    pub uv_max: [f32; 2],
 }
 
 impl SpriteInstance {
@@ -914,14 +918,28 @@ impl SpriteInstance {
             array_stride: std::mem::size_of::<SpriteInstance>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &[
+                // pos
                 wgpu::VertexAttribute {
                     offset: 0,
                     shader_location: 0,
                     format: wgpu::VertexFormat::Float32x2,
                 },
+                // size
                 wgpu::VertexAttribute {
                     offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
                     shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                // uv_min
+                wgpu::VertexAttribute {
+                    offset: (std::mem::size_of::<[f32; 2]>() * 2) as wgpu::BufferAddress,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                // uv_max
+                wgpu::VertexAttribute {
+                    offset: (std::mem::size_of::<[f32; 2]>() * 3) as wgpu::BufferAddress,
+                    shader_location: 3,
                     format: wgpu::VertexFormat::Float32x2,
                 },
             ],
@@ -929,12 +947,20 @@ impl SpriteInstance {
     }
 }
 
+/// Maximum sprites per frame.
+const MAX_SPRITES_PER_FRAME: usize = 64;
+
 /// Sprite renderer for drawing textured quads (flags, icons).
+///
+/// Uses a ring buffer to support multiple draw calls per frame without
+/// overwriting instance data before the GPU reads it.
 pub struct SpriteRenderer {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     instance_buffer: wgpu::Buffer,
+    /// Current slot in the instance buffer (reset each frame).
+    current_slot: std::cell::Cell<usize>,
 }
 
 impl SpriteRenderer {
@@ -1013,7 +1039,7 @@ impl SpriteRenderer {
 
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Sprite Instance Buffer"),
-            size: std::mem::size_of::<SpriteInstance>() as u64 * 16, // Up to 16 sprites
+            size: std::mem::size_of::<SpriteInstance>() as u64 * MAX_SPRITES_PER_FRAME as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -1023,7 +1049,13 @@ impl SpriteRenderer {
             bind_group_layout,
             sampler,
             instance_buffer,
+            current_slot: std::cell::Cell::new(0),
         }
+    }
+
+    /// Reset the slot counter at the start of each frame.
+    pub fn begin_frame(&self) {
+        self.current_slot.set(0);
     }
 
     /// Creates a bind group for a texture.
@@ -1048,7 +1080,7 @@ impl SpriteRenderer {
         })
     }
 
-    /// Draws a sprite at the given position and size.
+    /// Draws a sprite at the given position and size (full texture).
     /// Position is in clip space (-1..1), size is in clip space units.
     #[allow(clippy::too_many_arguments)]
     pub fn draw<'a>(
@@ -1061,15 +1093,72 @@ impl SpriteRenderer {
         width: f32,
         height: f32,
     ) {
+        self.draw_uv(
+            render_pass,
+            bind_group,
+            queue,
+            x,
+            y,
+            width,
+            height,
+            0.0,
+            0.0,
+            1.0,
+            1.0,
+        );
+    }
+
+    /// Draws a sprite with custom UV coordinates (for sprite strips).
+    /// Position is in clip space (-1..1), size is in clip space units.
+    /// UV coords specify the texture region: (u_min, v_min, u_max, v_max).
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_uv<'a>(
+        &'a self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        bind_group: &'a wgpu::BindGroup,
+        queue: &wgpu::Queue,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        u_min: f32,
+        v_min: f32,
+        u_max: f32,
+        v_max: f32,
+    ) {
+        // Get next slot and advance counter
+        let slot = self.current_slot.get();
+        if slot >= MAX_SPRITES_PER_FRAME {
+            log::warn!(
+                "Too many sprites in one frame (max {})",
+                MAX_SPRITES_PER_FRAME
+            );
+            return;
+        }
+        self.current_slot.set(slot + 1);
+
         let instance = SpriteInstance {
             pos: [x, y],
             size: [width, height],
+            uv_min: [u_min, v_min],
+            uv_max: [u_max, v_max],
         };
-        queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&[instance]));
+
+        // Write to this slot's offset in the buffer
+        let offset = (slot * std::mem::size_of::<SpriteInstance>()) as u64;
+        queue.write_buffer(
+            &self.instance_buffer,
+            offset,
+            bytemuck::cast_slice(&[instance]),
+        );
+
+        // Draw using just this one instance from its slot
+        let start = offset;
+        let end = offset + std::mem::size_of::<SpriteInstance>() as u64;
 
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, bind_group, &[]);
-        render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
+        render_pass.set_vertex_buffer(0, self.instance_buffer.slice(start..end));
         render_pass.draw(0..6, 0..1);
     }
 }

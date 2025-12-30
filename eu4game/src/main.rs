@@ -3,9 +3,11 @@
 //! A playable EU4 experience using eu4sim-core for simulation
 //! and wgpu for rendering.
 
+mod bmfont;
 mod camera;
 mod dds;
 mod flags;
+mod gui;
 mod input;
 mod render;
 mod sim_thread;
@@ -103,6 +105,8 @@ struct App {
     player_flag_bind_group: Option<wgpu::BindGroup>,
     /// Text renderer for UI text.
     text_renderer: Option<text::TextRenderer>,
+    /// EU4-authentic GUI renderer.
+    gui_renderer: Option<gui::GuiRenderer>,
 }
 
 impl App {
@@ -228,6 +232,18 @@ impl App {
             log::warn!("Text rendering unavailable");
         }
 
+        // Create EU4 GUI renderer
+        let gui_renderer = eu4data::path::detect_game_path().map(|game_path| {
+            log::info!("Initializing GUI renderer from: {}", game_path.display());
+            gui::GuiRenderer::new(&game_path)
+        });
+
+        if gui_renderer.is_some() {
+            log::info!("GUI renderer initialized");
+        } else {
+            log::warn!("GUI rendering unavailable (game path not found)");
+        }
+
         Self {
             window,
             surface,
@@ -265,6 +281,7 @@ impl App {
             sprite_renderer,
             player_flag_bind_group: None,
             text_renderer,
+            gui_renderer,
         }
     }
 
@@ -529,6 +546,9 @@ impl App {
                 occlusion_query_set: None,
             });
 
+            // Reset sprite slot counter for this frame
+            self.sprite_renderer.begin_frame();
+
             // Draw map (big triangle)
             render_pass.set_pipeline(&self.renderer.pipeline);
             render_pass.set_bind_group(0, &self.renderer.bind_group, &[]);
@@ -569,84 +589,70 @@ impl App {
                 );
             }
 
-            // Draw top bar with date and speed
-            if let Some(ref text_renderer) = self.text_renderer {
-                let screen_size = (self.config.width as f32, self.config.height as f32);
+            // Draw top bar with EU4 authentic GUI
+            let screen_size = (self.config.width, self.config.height);
 
-                // Format date string
-                let date_str = format!(
-                    "{} {} {}",
-                    self.current_date.day,
-                    match self.current_date.month {
-                        1 => "January",
-                        2 => "February",
-                        3 => "March",
-                        4 => "April",
-                        5 => "May",
-                        6 => "June",
-                        7 => "July",
-                        8 => "August",
-                        9 => "September",
-                        10 => "October",
-                        11 => "November",
-                        _ => "December",
-                    },
-                    self.current_date.year
-                );
+            // Prepare GUI state
+            let date_str = format!(
+                "{} {} {}",
+                self.current_date.day,
+                match self.current_date.month {
+                    1 => "January",
+                    2 => "February",
+                    3 => "March",
+                    4 => "April",
+                    5 => "May",
+                    6 => "June",
+                    7 => "July",
+                    8 => "August",
+                    9 => "September",
+                    10 => "October",
+                    11 => "November",
+                    _ => "December",
+                },
+                self.current_date.year
+            );
 
-                // Speed indicator
-                let speed_str = match self.sim_speed {
-                    SimSpeed::Paused => "II".to_string(),
-                    SimSpeed::Speed1 => ">".to_string(),
-                    SimSpeed::Speed2 => ">>".to_string(),
-                    SimSpeed::Speed3 => ">>>".to_string(),
-                    SimSpeed::Speed4 => ">>>>".to_string(),
-                    SimSpeed::Speed5 => ">>>>>".to_string(),
-                };
+            let gui_state = gui::GuiState {
+                date: date_str.clone(),
+                speed: match self.sim_speed {
+                    SimSpeed::Paused => 0,
+                    SimSpeed::Speed1 => 1,
+                    SimSpeed::Speed2 => 2,
+                    SimSpeed::Speed3 => 3,
+                    SimSpeed::Speed4 => 4,
+                    SimSpeed::Speed5 => 5,
+                },
+                paused: self.sim_speed == SimSpeed::Paused,
+            };
 
-                // Draw date (right side of screen)
-                let date_width = text_renderer.measure_width(&date_str);
-                let date_x = screen_size.0 - date_width - 20.0;
-                text_renderer.draw_text(
+            // Render EU4 GUI overlay
+            if let Some(gui_renderer) = &mut self.gui_renderer {
+                gui_renderer.render(
                     &mut render_pass,
+                    &self.device,
                     &self.queue,
-                    &date_str,
-                    date_x,
-                    10.0,
-                    [1.0, 1.0, 1.0, 1.0], // White
+                    &self.sprite_renderer,
+                    &gui_state,
                     screen_size,
                 );
+            }
 
-                // Draw speed (next to date)
-                let speed_x = date_x - text_renderer.measure_width(&speed_str) - 30.0;
-                text_renderer.draw_text(
-                    &mut render_pass,
-                    &self.queue,
-                    &speed_str,
-                    speed_x,
-                    10.0,
-                    if self.sim_speed == SimSpeed::Paused {
-                        [1.0, 0.5, 0.5, 1.0] // Reddish when paused
-                    } else {
-                        [0.5, 1.0, 0.5, 1.0] // Greenish when running
-                    },
-                    screen_size,
-                );
-
-                // Draw input mode indicator (left side, below flag area)
-                if self.game_phase == GamePhase::Playing {
-                    let mode_str = self.input_mode.description();
-                    if mode_str != "Normal" {
-                        text_renderer.draw_text(
-                            &mut render_pass,
-                            &self.queue,
-                            mode_str,
-                            20.0,
-                            screen_size.1 - 40.0, // Bottom left
-                            [1.0, 1.0, 0.0, 1.0], // Yellow for mode indicator
-                            screen_size,
-                        );
-                    }
+            // Draw input mode indicator (left side, below flag area)
+            if self.game_phase == GamePhase::Playing
+                && let Some(ref text_renderer) = self.text_renderer
+            {
+                let mode_str = self.input_mode.description();
+                if mode_str != "Normal" {
+                    text_renderer.draw_text(
+                        &mut render_pass,
+                        &self.queue,
+                        mode_str,
+                        20.0,
+                        screen_size.1 as f32 - 40.0, // Bottom left
+                        [1.0, 1.0, 0.0, 1.0],        // Yellow for mode indicator
+                        (screen_size.0 as f32, screen_size.1 as f32),
+                    );
                 }
             }
         }
@@ -1337,6 +1343,35 @@ impl App {
             }
             MouseButton::Left => {
                 if state == ElementState::Pressed {
+                    // Check GUI clicks first
+                    if self.game_phase == GamePhase::Playing
+                        && let Some(ref gui_renderer) = self.gui_renderer
+                    {
+                        // Create current GUI state for hit testing
+                        let gui_state = gui::GuiState {
+                            date: String::new(), // Not needed for hit testing
+                            speed: match self.sim_speed {
+                                SimSpeed::Paused => 0,
+                                SimSpeed::Speed1 => 1,
+                                SimSpeed::Speed2 => 2,
+                                SimSpeed::Speed3 => 3,
+                                SimSpeed::Speed4 => 4,
+                                SimSpeed::Speed5 => 5,
+                            },
+                            paused: self.sim_speed == SimSpeed::Paused,
+                        };
+
+                        if let Some(action) = gui_renderer.handle_click(
+                            self.cursor_pos.0 as f32,
+                            self.cursor_pos.1 as f32,
+                            &gui_state,
+                        ) {
+                            self.handle_gui_action(action);
+                            return; // Don't process as province click
+                        }
+                    }
+
+                    // Regular province click
                     let world_pos = self.camera.screen_to_world(
                         self.cursor_pos.0,
                         self.cursor_pos.1,
@@ -1348,6 +1383,34 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    /// Handles GUI actions from button clicks.
+    fn handle_gui_action(&mut self, action: gui::GuiAction) {
+        match action {
+            gui::GuiAction::SetSpeed(speed) => {
+                self.sim_speed = match speed {
+                    0 => SimSpeed::Paused,
+                    1 => SimSpeed::Speed1,
+                    2 => SimSpeed::Speed2,
+                    3 => SimSpeed::Speed3,
+                    4 => SimSpeed::Speed4,
+                    _ => SimSpeed::Speed5,
+                };
+                self.sim_handle.set_speed(self.sim_speed);
+                log::info!("Speed set to {:?} via GUI click", self.sim_speed);
+            }
+            gui::GuiAction::TogglePause => {
+                self.sim_speed = if self.sim_speed == SimSpeed::Paused {
+                    SimSpeed::Speed3
+                } else {
+                    SimSpeed::Paused
+                };
+                self.sim_handle.set_speed(self.sim_speed);
+                log::info!("Pause toggled via GUI click: {:?}", self.sim_speed);
+            }
+        }
+        self.window.request_redraw();
     }
 
     /// Handles cursor movement. Returns true if a redraw is needed.

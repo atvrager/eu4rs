@@ -205,6 +205,7 @@ impl GlyphCache {
     }
 
     /// Measures the width of a text string in pixels.
+    #[allow(dead_code)]
     pub fn measure_width(&self, text: &str) -> f32 {
         text.chars()
             .filter_map(|c| self.glyphs.get(&c))
@@ -468,6 +469,83 @@ impl TextRenderer {
         self.draw(render_pass, queue, &quads);
     }
 
+    /// Draw text centered at the given position.
+    /// The (x, y) position is the center point of the text.
+    #[allow(dead_code, clippy::too_many_arguments)]
+    pub fn draw_text_centered<'a>(
+        &'a self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        queue: &wgpu::Queue,
+        text: &str,
+        center_x: f32,
+        center_y: f32,
+        font_size: f32,
+        color: [f32; 4],
+        screen_size: (u32, u32),
+    ) {
+        // Scale factor to convert from cached font size to requested size
+        let scale = font_size / DEFAULT_FONT_SIZE;
+
+        // Calculate scaled text width to center it
+        let text_width = self.measure_width(text) * scale;
+        let x = center_x - text_width / 2.0;
+        // Adjust y for vertical centering (approximate)
+        let y = center_y - font_size / 2.0;
+
+        let quads = self.layout_text_scaled(
+            text,
+            x,
+            y,
+            scale,
+            color,
+            (screen_size.0 as f32, screen_size.1 as f32),
+        );
+        self.draw(render_pass, queue, &quads);
+    }
+
+    /// Layout text with scaling applied.
+    #[allow(dead_code)]
+    fn layout_text_scaled(
+        &self,
+        text: &str,
+        x: f32,
+        y: f32,
+        scale: f32,
+        color: [f32; 4],
+        screen_size: (f32, f32),
+    ) -> Vec<TextQuad> {
+        let mut quads = Vec::new();
+        let mut cursor_x = x;
+        let baseline_y = y + self.glyph_cache.ascent * scale;
+
+        for c in text.chars() {
+            if let Some(glyph) = self.glyph_cache.get(c) {
+                if glyph.size[0] > 0.0 && glyph.size[1] > 0.0 {
+                    // Convert pixel position to clip space (-1 to 1)
+                    // Apply scale to glyph offset and size
+                    let px = cursor_x + glyph.bearing_x * scale;
+                    let py = baseline_y + glyph.bearing_y * scale;
+
+                    let clip_x = (px / screen_size.0) * 2.0 - 1.0;
+                    let clip_y = 1.0 - (py / screen_size.1) * 2.0;
+                    let clip_w = (glyph.size[0] * scale / screen_size.0) * 2.0;
+                    let clip_h = (glyph.size[1] * scale / screen_size.1) * 2.0;
+
+                    quads.push(TextQuad {
+                        pos: [clip_x, clip_y],
+                        size: [clip_w, clip_h],
+                        uv_min: [glyph.uv[0], glyph.uv[1]],
+                        uv_max: [glyph.uv[2], glyph.uv[3]],
+                        color,
+                    });
+                }
+                cursor_x += glyph.advance * scale;
+            }
+        }
+
+        quads
+    }
+
     /// Gets the line height in pixels.
     #[allow(dead_code)]
     pub fn line_height(&self) -> f32 {
@@ -475,6 +553,7 @@ impl TextRenderer {
     }
 
     /// Measures text width in pixels.
+    #[allow(dead_code)]
     pub fn measure_width(&self, text: &str) -> f32 {
         self.glyph_cache.measure_width(text)
     }

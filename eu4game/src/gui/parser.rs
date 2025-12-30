@@ -1,0 +1,604 @@
+//! Parser for EU4 .gfx and .gui files.
+//!
+//! Uses eu4txt for tokenization and parsing.
+
+use super::types::{GfxDatabase, GfxSprite, GuiElement, Orientation, TextFormat};
+use eu4txt::{DefaultEU4Txt, EU4Txt, EU4TxtAstItem, EU4TxtParseNode};
+use std::path::Path;
+
+/// Parse a .gfx file and extract sprite definitions.
+pub fn parse_gfx_file(path: &Path) -> Result<GfxDatabase, String> {
+    let tokens = DefaultEU4Txt::open_txt(path.to_str().unwrap_or(""))
+        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+
+    let ast = DefaultEU4Txt::parse(tokens)
+        .map_err(|e| format!("Failed to parse {}: {}", path.display(), e))?;
+
+    let mut db = GfxDatabase::default();
+
+    // Walk the AST looking for spriteTypes
+    extract_sprites_from_node(&ast, &mut db);
+
+    Ok(db)
+}
+
+/// Parse a .gui file and extract GUI elements.
+pub fn parse_gui_file(path: &Path) -> Result<Vec<GuiElement>, String> {
+    let tokens = DefaultEU4Txt::open_txt(path.to_str().unwrap_or(""))
+        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+
+    let ast = DefaultEU4Txt::parse(tokens)
+        .map_err(|e| format!("Failed to parse {}: {}", path.display(), e))?;
+
+    let mut elements = Vec::new();
+    extract_gui_elements_from_node(&ast, &mut elements);
+
+    Ok(elements)
+}
+
+/// Extract sprites from a parsed AST node.
+fn extract_sprites_from_node(node: &EU4TxtParseNode, db: &mut GfxDatabase) {
+    match &node.entry {
+        EU4TxtAstItem::AssignmentList => {
+            // Look for spriteTypes block
+            for child in &node.children {
+                if let EU4TxtAstItem::Assignment = &child.entry
+                    && let Some(key) = get_assignment_key(child)
+                    && key == "spriteTypes"
+                {
+                    // Found spriteTypes block - process children
+                    if let Some(list) = get_assignment_value(child) {
+                        extract_sprite_types(list, db);
+                    }
+                }
+            }
+        }
+        _ => {
+            for child in &node.children {
+                extract_sprites_from_node(child, db);
+            }
+        }
+    }
+}
+
+/// Extract spriteType blocks from a spriteTypes list.
+fn extract_sprite_types(node: &EU4TxtParseNode, db: &mut GfxDatabase) {
+    for child in &node.children {
+        if let EU4TxtAstItem::Assignment = &child.entry
+            && let Some(key) = get_assignment_key(child)
+            && key == "spriteType"
+            && let Some(sprite) = parse_sprite_type(get_assignment_value(child))
+        {
+            db.sprites.insert(sprite.name.clone(), sprite);
+        }
+    }
+}
+
+/// Parse a single spriteType block.
+fn parse_sprite_type(node: Option<&EU4TxtParseNode>) -> Option<GfxSprite> {
+    let node = node?;
+
+    let mut name = None;
+    let mut texture_file = None;
+    let mut num_frames = 1u32;
+
+    for child in &node.children {
+        if let EU4TxtAstItem::Assignment = &child.entry
+            && let Some(key) = get_assignment_key(child)
+        {
+            match key.as_str() {
+                "name" => {
+                    name = get_string_value(get_assignment_value(child));
+                }
+                "texturefile" => {
+                    texture_file = get_string_value(get_assignment_value(child));
+                }
+                "noOfFrames" => {
+                    if let Some(n) = get_int_value(get_assignment_value(child)) {
+                        num_frames = n as u32;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Some(GfxSprite {
+        name: name?,
+        texture_file: texture_file?,
+        num_frames,
+        horizontal_frames: true, // EU4 uses horizontal strips by default
+    })
+}
+
+/// Extract GUI elements from a parsed AST.
+fn extract_gui_elements_from_node(node: &EU4TxtParseNode, elements: &mut Vec<GuiElement>) {
+    match &node.entry {
+        EU4TxtAstItem::AssignmentList => {
+            for child in &node.children {
+                if let EU4TxtAstItem::Assignment = &child.entry
+                    && let Some(key) = get_assignment_key(child)
+                {
+                    match key.as_str() {
+                        "guiTypes" => {
+                            if let Some(list) = get_assignment_value(child) {
+                                extract_gui_types(list, elements);
+                            }
+                        }
+                        "windowType" => {
+                            if let Some(window) = parse_window_type(get_assignment_value(child)) {
+                                elements.push(window);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        _ => {
+            for child in &node.children {
+                extract_gui_elements_from_node(child, elements);
+            }
+        }
+    }
+}
+
+/// Extract elements from a guiTypes block.
+fn extract_gui_types(node: &EU4TxtParseNode, elements: &mut Vec<GuiElement>) {
+    for child in &node.children {
+        if let EU4TxtAstItem::Assignment = &child.entry
+            && let Some(key) = get_assignment_key(child)
+        {
+            match key.as_str() {
+                "windowType" => {
+                    if let Some(window) = parse_window_type(get_assignment_value(child)) {
+                        elements.push(window);
+                    }
+                }
+                "iconType" => {
+                    if let Some(icon) = parse_icon_type(get_assignment_value(child)) {
+                        elements.push(icon);
+                    }
+                }
+                "instantTextBoxType" => {
+                    if let Some(text) = parse_textbox_type(get_assignment_value(child)) {
+                        elements.push(text);
+                    }
+                }
+                "guiButtonType" => {
+                    if let Some(button) = parse_button_type(get_assignment_value(child)) {
+                        elements.push(button);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Parse a windowType block.
+fn parse_window_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
+    let node = node?;
+
+    let mut name = String::new();
+    let mut position = (0i32, 0i32);
+    let mut size = (100u32, 100u32);
+    let mut orientation = Orientation::UpperLeft;
+    let mut children = Vec::new();
+
+    for child in &node.children {
+        if let EU4TxtAstItem::Assignment = &child.entry
+            && let Some(key) = get_assignment_key(child)
+        {
+            match key.as_str() {
+                "name" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        name = s;
+                    }
+                }
+                "position" => {
+                    position = parse_position(get_assignment_value(child));
+                }
+                "size" => {
+                    size = parse_size(get_assignment_value(child));
+                }
+                "Orientation" | "orientation" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        orientation = Orientation::from_str(&s);
+                    }
+                }
+                "iconType" => {
+                    if let Some(icon) = parse_icon_type(get_assignment_value(child)) {
+                        children.push(icon);
+                    }
+                }
+                "instantTextBoxType" => {
+                    if let Some(text) = parse_textbox_type(get_assignment_value(child)) {
+                        children.push(text);
+                    }
+                }
+                "guiButtonType" => {
+                    if let Some(button) = parse_button_type(get_assignment_value(child)) {
+                        children.push(button);
+                    }
+                }
+                "windowType" => {
+                    if let Some(window) = parse_window_type(get_assignment_value(child)) {
+                        children.push(window);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Some(GuiElement::Window {
+        name,
+        position,
+        size,
+        orientation,
+        children,
+    })
+}
+
+/// Parse an iconType block.
+fn parse_icon_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
+    let node = node?;
+
+    let mut name = String::new();
+    let mut position = (0i32, 0i32);
+    let mut sprite_type = String::new();
+    let mut frame = 0u32;
+    let mut orientation = Orientation::UpperLeft;
+
+    for child in &node.children {
+        if let EU4TxtAstItem::Assignment = &child.entry
+            && let Some(key) = get_assignment_key(child)
+        {
+            match key.as_str() {
+                "name" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        name = s;
+                    }
+                }
+                "position" => {
+                    position = parse_position(get_assignment_value(child));
+                }
+                "spriteType" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        sprite_type = s;
+                    }
+                }
+                "frame" => {
+                    if let Some(n) = get_int_value(get_assignment_value(child)) {
+                        frame = n as u32;
+                    }
+                }
+                "Orientation" | "orientation" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        orientation = Orientation::from_str(&s);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Some(GuiElement::Icon {
+        name,
+        position,
+        sprite_type,
+        frame,
+        orientation,
+    })
+}
+
+/// Parse an instantTextBoxType block.
+fn parse_textbox_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
+    let node = node?;
+
+    let mut name = String::new();
+    let mut position = (0i32, 0i32);
+    let mut font = String::from("vic_18");
+    let mut max_width = 200u32;
+    let mut max_height = 32u32;
+    let mut format = TextFormat::Left;
+    let mut orientation = Orientation::UpperLeft;
+    let mut text = String::new();
+    let mut border_size = (0i32, 0i32);
+
+    for child in &node.children {
+        if let EU4TxtAstItem::Assignment = &child.entry
+            && let Some(key) = get_assignment_key(child)
+        {
+            match key.as_str() {
+                "name" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        name = s;
+                    }
+                }
+                "position" => {
+                    position = parse_position(get_assignment_value(child));
+                }
+                "font" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        font = s;
+                    }
+                }
+                "maxWidth" => {
+                    if let Some(n) = get_int_value(get_assignment_value(child)) {
+                        max_width = n as u32;
+                    }
+                }
+                "maxHeight" => {
+                    if let Some(n) = get_int_value(get_assignment_value(child)) {
+                        max_height = n as u32;
+                    }
+                }
+                "format" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        format = TextFormat::from_str(&s);
+                    }
+                }
+                "Orientation" | "orientation" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        orientation = Orientation::from_str(&s);
+                    }
+                }
+                "text" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        text = s;
+                    }
+                }
+                "borderSize" => {
+                    border_size = parse_position(get_assignment_value(child));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Some(GuiElement::TextBox {
+        name,
+        position,
+        font,
+        max_width,
+        max_height,
+        format,
+        orientation,
+        text,
+        border_size,
+    })
+}
+
+/// Parse a guiButtonType block.
+fn parse_button_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
+    let node = node?;
+
+    let mut name = String::new();
+    let mut position = (0i32, 0i32);
+    let mut sprite_type = String::new();
+    let mut orientation = Orientation::UpperLeft;
+    let mut shortcut = None;
+
+    for child in &node.children {
+        if let EU4TxtAstItem::Assignment = &child.entry
+            && let Some(key) = get_assignment_key(child)
+        {
+            match key.as_str() {
+                "name" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        name = s;
+                    }
+                }
+                "position" => {
+                    position = parse_position(get_assignment_value(child));
+                }
+                "spriteType" | "quadTextureSprite" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        sprite_type = s;
+                    }
+                }
+                "Orientation" | "orientation" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        orientation = Orientation::from_str(&s);
+                    }
+                }
+                "shortcut" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        shortcut = Some(s);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Some(GuiElement::Button {
+        name,
+        position,
+        sprite_type,
+        orientation,
+        shortcut,
+    })
+}
+
+/// Parse a position = { x = N y = N } block.
+fn parse_position(node: Option<&EU4TxtParseNode>) -> (i32, i32) {
+    let Some(node) = node else {
+        return (0, 0);
+    };
+
+    let mut x = 0i32;
+    let mut y = 0i32;
+
+    for child in &node.children {
+        if let EU4TxtAstItem::Assignment = &child.entry
+            && let Some(key) = get_assignment_key(child)
+        {
+            match key.as_str() {
+                "x" => {
+                    if let Some(n) = get_int_value(get_assignment_value(child)) {
+                        x = n;
+                    }
+                }
+                "y" => {
+                    if let Some(n) = get_int_value(get_assignment_value(child)) {
+                        y = n;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    (x, y)
+}
+
+/// Parse a size = { x = N y = N } block.
+fn parse_size(node: Option<&EU4TxtParseNode>) -> (u32, u32) {
+    let pos = parse_position(node);
+    (pos.0.max(0) as u32, pos.1.max(0) as u32)
+}
+
+// Helper functions to extract values from AST nodes
+
+fn get_assignment_key(node: &EU4TxtParseNode) -> Option<String> {
+    let key_node = node.children.first()?;
+    match &key_node.entry {
+        EU4TxtAstItem::Identifier(s) | EU4TxtAstItem::StringValue(s) => Some(s.clone()),
+        _ => None,
+    }
+}
+
+fn get_assignment_value(node: &EU4TxtParseNode) -> Option<&EU4TxtParseNode> {
+    node.children.get(1)
+}
+
+fn get_string_value(node: Option<&EU4TxtParseNode>) -> Option<String> {
+    let node = node?;
+    match &node.entry {
+        EU4TxtAstItem::StringValue(s) | EU4TxtAstItem::Identifier(s) => Some(s.clone()),
+        _ => None,
+    }
+}
+
+fn get_int_value(node: Option<&EU4TxtParseNode>) -> Option<i32> {
+    let node = node?;
+    match &node.entry {
+        EU4TxtAstItem::IntValue(n) => Some(*n),
+        EU4TxtAstItem::FloatValue(f) => Some(*f as i32),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn test_parse_simple_sprite() {
+        let content = r#"
+spriteTypes = {
+    spriteType = {
+        name = "GFX_speed_indicator"
+        texturefile = "gfx/interface/speed_indicator.dds"
+        noOfFrames = 10
+    }
+}
+"#;
+
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        write!(file, "{}", content).unwrap();
+        let path = file.path();
+
+        let db = parse_gfx_file(path).unwrap();
+        assert_eq!(db.sprites.len(), 1);
+
+        let sprite = db.get("GFX_speed_indicator").unwrap();
+        assert_eq!(sprite.texture_file, "gfx/interface/speed_indicator.dds");
+        assert_eq!(sprite.num_frames, 10);
+    }
+
+    #[test]
+    fn test_parse_simple_gui() {
+        let content = r#"
+guiTypes = {
+    windowType = {
+        name = "test_window"
+        position = { x = 100 y = 50 }
+        size = { x = 200 y = 100 }
+        Orientation = "UPPER_RIGHT"
+
+        iconType = {
+            name = "test_icon"
+            position = { x = 10 y = 20 }
+            spriteType = "GFX_test"
+            frame = 5
+        }
+    }
+}
+"#;
+
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        write!(file, "{}", content).unwrap();
+        let path = file.path();
+
+        let elements = parse_gui_file(path).unwrap();
+        assert_eq!(elements.len(), 1);
+
+        if let GuiElement::Window {
+            name,
+            position,
+            size,
+            orientation,
+            children,
+        } = &elements[0]
+        {
+            assert_eq!(name, "test_window");
+            assert_eq!(*position, (100, 50));
+            assert_eq!(*size, (200, 100));
+            assert_eq!(*orientation, Orientation::UpperRight);
+            assert_eq!(children.len(), 1);
+
+            if let GuiElement::Icon {
+                name,
+                position,
+                sprite_type,
+                frame,
+                ..
+            } = &children[0]
+            {
+                assert_eq!(name, "test_icon");
+                assert_eq!(*position, (10, 20));
+                assert_eq!(sprite_type, "GFX_test");
+                assert_eq!(*frame, 5);
+            } else {
+                panic!("Expected Icon");
+            }
+        } else {
+            panic!("Expected Window");
+        }
+    }
+
+    #[test]
+    fn test_sprite_frame_uv() {
+        let sprite = GfxSprite {
+            name: "test".to_string(),
+            texture_file: "test.dds".to_string(),
+            num_frames: 5,
+            horizontal_frames: true,
+        };
+
+        let (u_min, v_min, u_max, v_max) = sprite.frame_uv(0);
+        assert!((u_min - 0.0).abs() < 0.001);
+        assert!((u_max - 0.2).abs() < 0.001);
+        assert!((v_min - 0.0).abs() < 0.001);
+        assert!((v_max - 1.0).abs() < 0.001);
+
+        let (u_min, _, u_max, _) = sprite.frame_uv(2);
+        assert!((u_min - 0.4).abs() < 0.001);
+        assert!((u_max - 0.6).abs() < 0.001);
+    }
+}
