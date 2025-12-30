@@ -4,6 +4,7 @@
 //! and wgpu for rendering.
 
 mod camera;
+mod dds;
 mod input;
 mod render;
 mod sim_thread;

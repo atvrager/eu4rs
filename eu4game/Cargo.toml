@@ -13,6 +13,7 @@ pollster = "0.4.0"
 
 # Image handling
 image = "0.25.9"
+image_dds = "0.7.2"
 
 # Text rendering
 ab_glyph = "0.2.32"
