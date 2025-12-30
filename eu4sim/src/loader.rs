@@ -418,16 +418,25 @@ pub fn load_initial_state(
         provs.sort_by(|a, b| b.1.cmp(&a.1));
     }
 
-    for (tag, &total_mp) in &country_total_manpower {
-        let total_reg_count = (total_mp / 5.0).floor() as usize;
+    // Calculate force limit for each country based on development
+    // EU4 formula: base 6 + ~1 per 10 development (simplified)
+    let mut country_force_limit: StdHashMap<String, usize> = StdHashMap::new();
+    for (tag, provs) in &country_provinces_by_dev {
+        let total_dev: u32 = provs.iter().map(|(_, dev)| dev).sum();
+        let force_limit = 6 + (total_dev as usize / 10);
+        country_force_limit.insert(tag.clone(), force_limit);
+    }
+
+    for (tag, provs_by_dev) in &country_provinces_by_dev {
+        let Some(&force_limit) = country_force_limit.get(tag) else {
+            continue;
+        };
+
+        // EU4 starts countries at 75% of force limit
+        let total_reg_count = (force_limit * 75 / 100).max(1);
         if total_reg_count == 0 {
             continue;
         }
-
-        // Get top provinces by development for army locations
-        let Some(provs_by_dev) = country_provinces_by_dev.get(tag) else {
-            continue;
-        };
 
         // Calculate number of armies needed
         let num_armies = total_reg_count
