@@ -71,6 +71,19 @@ impl GuiIcon {
             .map(|d| d.name.as_str())
             .unwrap_or("<placeholder>")
     }
+
+    /// Get the position (for rendering).
+    pub fn position(&self) -> (i32, i32) {
+        self.element.as_ref().map(|d| d.position).unwrap_or((0, 0))
+    }
+
+    /// Get the orientation (for rendering).
+    pub fn orientation(&self) -> Orientation {
+        self.element
+            .as_ref()
+            .map(|d| d.orientation)
+            .unwrap_or(Orientation::UpperLeft)
+    }
 }
 
 impl Bindable for GuiIcon {
@@ -92,6 +105,24 @@ impl Bindable for GuiIcon {
                     orientation: *orientation,
                     scale: *scale,
                     visible: true, // Icons start visible by default
+                }),
+            }),
+            // Speed indicators in EU4 are Button elements (sprite strips)
+            GuiElement::Button {
+                name,
+                position,
+                sprite_type,
+                orientation,
+                ..
+            } => Some(Self {
+                element: Some(IconData {
+                    name: name.clone(),
+                    position: *position,
+                    sprite_type: sprite_type.clone(),
+                    frame: 0, // Start at frame 0
+                    orientation: *orientation,
+                    scale: 1.0, // Buttons don't have scale, use default
+                    visible: true,
                 }),
             }),
             _ => None,

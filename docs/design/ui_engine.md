@@ -337,12 +337,12 @@ Analysis of `parser.rs` reveals several other standard EU4 types we will need ev
     - [x] Replace legacy `TopBar` struct in `gui/mod.rs`
     - [x] Update `render_topbar()` to use macro-based implementation
     - [x] Verify topbar snapshot test still passes
-- [ ] **3.5.2. SpeedControls Migration**
-    - [ ] Create `SpeedControls` struct with `#[derive(GuiWindow)]` binding to speed panel widgets
-    - [ ] Implement `update(&mut self, speed: SimSpeed, paused: bool)` method
-    - [ ] Replace legacy `SpeedControls` struct in `gui/mod.rs`
-    - [ ] Update `render_speed_controls()` to use macro-based implementation
-    - [ ] Verify speed controls snapshot test still passes
+- [x] **3.5.2. SpeedControls Migration**
+    - [x] Create `SpeedControls` struct with `#[derive(GuiWindow)]` binding to speed panel widgets
+    - [x] Implement `update(&mut self, speed: SimSpeed, paused: bool)` method
+    - [x] Replace legacy `SpeedControls` struct in `gui/mod.rs`
+    - [x] Update `render_speed_controls()` to use macro-based implementation
+    - [x] Verify speed controls snapshot test still passes
 - [ ] **3.5.3. CountrySelect Production Integration**
     - [ ] Update `render_country_select_only()` to use `CountrySelectPanel` instead of `CountrySelectLayout`
     - [ ] Migrate icon and text rendering loops to use panel widget handles

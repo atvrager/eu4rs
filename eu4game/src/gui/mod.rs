@@ -24,6 +24,7 @@ pub mod primitives;
 mod macro_test;
 
 // Phase 3.5: Macro-based UI panels
+pub mod speed_controls;
 pub mod topbar;
 
 #[allow(unused_imports)] // SelectedCountryState used in tests
@@ -64,8 +65,11 @@ pub struct SpeedControlsText {
     pub border_size: (i32, i32),
 }
 
-/// Loaded speed controls layout.
-pub struct SpeedControls {
+/// Loaded speed controls layout (rendering metadata only).
+///
+/// Phase 3.5: Renamed from SpeedControls. Dynamic text widgets moved to
+/// macro-based speed_controls::SpeedControls struct.
+pub struct SpeedControlsLayout {
     /// Background panel sprite.
     pub bg_sprite: String,
     /// Background position (relative to window).
@@ -102,7 +106,7 @@ pub struct SpeedControls {
     pub texts: Vec<SpeedControlsText>,
 }
 
-impl Default for SpeedControls {
+impl Default for SpeedControlsLayout {
     fn default() -> Self {
         // Fallback values if parsing fails - these should rarely be used
         Self {
@@ -192,8 +196,11 @@ pub struct GuiRenderer {
     sprite_cache: SpriteCache,
     /// Bitmap font cache.
     font_cache: BitmapFontCache,
-    /// Speed controls layout.
-    speed_controls: SpeedControls,
+    /// Legacy speed controls layout (Phase 3.5: rendering metadata only).
+    speed_controls_layout: SpeedControlsLayout,
+    /// Macro-based speed controls widgets (Phase 3.5).
+    #[allow(dead_code)] // Used in render_speed_controls_only
+    speed_controls: Option<speed_controls::SpeedControls>,
     /// Legacy topbar layout (Phase 3.5: rendering metadata only).
     topbar_layout: TopBarLayout,
     /// Macro-based topbar text widgets (Phase 3.5).
@@ -265,8 +272,10 @@ impl GuiRenderer {
 
         let interner = interner::StringInterner::new();
 
-        // Load speed_controls.gui layout
-        let speed_controls = load_speed_controls(game_path, &interner);
+        // Load speed_controls.gui layout (Phase 3.5: split into layout + macro-based widgets)
+        let (speed_controls_layout, speed_root) = load_speed_controls_split(game_path, &interner);
+        let speed_controls =
+            speed_root.map(|root| speed_controls::SpeedControls::bind(&root, &interner));
 
         // Load topbar.gui layout (Phase 3.5: split into layout + macro-based widgets)
         let (topbar_layout, topbar_root) = load_topbar_split(game_path, &interner);
@@ -280,6 +289,7 @@ impl GuiRenderer {
             interner,
             sprite_cache: SpriteCache::new(game_path.to_path_buf()),
             font_cache: BitmapFontCache::new(game_path),
+            speed_controls_layout,
             speed_controls,
             topbar_layout,
             topbar,
@@ -308,7 +318,7 @@ impl GuiRenderer {
     ) {
         // Load background texture
         if self.bg_bind_group.is_none()
-            && let Some(sprite) = self.gfx_db.get(&self.speed_controls.bg_sprite)
+            && let Some(sprite) = self.gfx_db.get(&self.speed_controls_layout.bg_sprite)
             && let Some((view, w, h)) = self.sprite_cache.get(&sprite.texture_file, device, queue)
         {
             log::debug!(
@@ -316,8 +326,8 @@ impl GuiRenderer {
                 sprite.texture_file,
                 w,
                 h,
-                self.speed_controls.window_pos,
-                self.speed_controls.orientation
+                self.speed_controls_layout.window_pos,
+                self.speed_controls_layout.orientation
             );
             self.bg_size = (w, h);
             self.bg_bind_group = Some(sprite_renderer.create_bind_group(device, view));
@@ -325,7 +335,7 @@ impl GuiRenderer {
 
         // Load speed indicator texture
         if self.speed_bind_group.is_none()
-            && let Some(sprite) = self.gfx_db.get(&self.speed_controls.speed_sprite)
+            && let Some(sprite) = self.gfx_db.get(&self.speed_controls_layout.speed_sprite)
             && let Some((view, w, h)) = self.sprite_cache.get(&sprite.texture_file, device, queue)
         {
             // Speed indicator is a horizontal strip - frame height = total / frames
@@ -345,7 +355,7 @@ impl GuiRenderer {
 
         // Load button textures
         if self.button_bind_groups.is_empty() {
-            for (name, _, _, sprite_name) in &self.speed_controls.buttons {
+            for (name, _, _, sprite_name) in &self.speed_controls_layout.buttons {
                 if let Some(sprite) = self.gfx_db.get(sprite_name)
                     && let Some((view, w, h)) =
                         self.sprite_cache.get(&sprite.texture_file, device, queue)
@@ -366,7 +376,7 @@ impl GuiRenderer {
 
         // Load additional icon textures (e.g., score icon)
         if self.speed_icon_bind_groups.is_empty() {
-            for icon in &self.speed_controls.icons {
+            for icon in &self.speed_controls_layout.icons {
                 if let Some(sprite) = self.gfx_db.get(&icon.sprite)
                     && let Some((view, w, h)) =
                         self.sprite_cache.get(&sprite.texture_file, device, queue)
@@ -394,7 +404,7 @@ impl GuiRenderer {
         sprite_renderer: &SpriteRenderer,
     ) {
         if self.font_bind_group.is_none() {
-            let font_name = &self.speed_controls.date_font;
+            let font_name = &self.speed_controls_layout.date_font;
             if let Some(loaded) = self.font_cache.get(font_name, device, queue) {
                 self.font_bind_group =
                     Some(sprite_renderer.create_bind_group(device, &loaded.view));
@@ -622,7 +632,7 @@ impl GuiRenderer {
             }
 
             // Get font for text rendering (reuse existing font from speed controls)
-            let font_name = &self.speed_controls.date_font; // vic_18
+            let font_name = &self.speed_controls_layout.date_font; // vic_18
             if let Some(loaded) = self.font_cache.get(font_name, device, queue)
                 && let Some(ref topbar) = self.topbar
             {
@@ -710,8 +720,8 @@ impl GuiRenderer {
 
         // Get window anchor point - window is just an anchor, not a rectangle
         let window_anchor = get_window_anchor(
-            self.speed_controls.window_pos,
-            self.speed_controls.orientation,
+            self.speed_controls_layout.window_pos,
+            self.speed_controls_layout.orientation,
             screen_size,
         );
 
@@ -719,8 +729,8 @@ impl GuiRenderer {
         if let Some(ref bind_group) = self.bg_bind_group {
             let bg_screen_pos = position_from_anchor(
                 window_anchor,
-                self.speed_controls.bg_pos,
-                self.speed_controls.bg_orientation,
+                self.speed_controls_layout.bg_pos,
+                self.speed_controls_layout.bg_orientation,
                 self.bg_size,
             );
 
@@ -742,7 +752,7 @@ impl GuiRenderer {
         // (button_pause is a background element that goes behind the date)
         let button_draws: Vec<(usize, f32, f32, f32, f32)> = {
             let mut draws = Vec::new();
-            for (name, pos, orientation, _) in &self.speed_controls.buttons {
+            for (name, pos, orientation, _) in &self.speed_controls_layout.buttons {
                 // Find the bind group index for this button
                 if let Some(idx) = self
                     .button_bind_groups
@@ -774,7 +784,7 @@ impl GuiRenderer {
         }
 
         // Draw additional icons (score icon, etc.)
-        for icon in &self.speed_controls.icons {
+        for icon in &self.speed_controls_layout.icons {
             if let Some(idx) = self
                 .speed_icon_bind_groups
                 .iter()
@@ -811,13 +821,13 @@ impl GuiRenderer {
             // Speed indicator position relative to window anchor
             let speed_screen_pos = position_from_anchor(
                 window_anchor,
-                self.speed_controls.speed_pos,
-                self.speed_controls.speed_orientation,
+                self.speed_controls_layout.speed_pos,
+                self.speed_controls_layout.speed_orientation,
                 self.speed_size,
             );
 
             // Get UVs for this frame
-            if let Some(sprite) = self.gfx_db.get(&self.speed_controls.speed_sprite) {
+            if let Some(sprite) = self.gfx_db.get(&self.speed_controls_layout.speed_sprite) {
                 let (u_min, v_min, u_max, v_max) = sprite.frame_uv(frame);
 
                 let (clip_x, clip_y, clip_w, clip_h) =
@@ -842,19 +852,19 @@ impl GuiRenderer {
         // Draw date text using bitmap font (on top of buttons)
         // Text position relative to window anchor
         let text_box_size = (
-            self.speed_controls.date_max_width,
-            self.speed_controls.date_max_height,
+            self.speed_controls_layout.date_max_width,
+            self.speed_controls_layout.date_max_height,
         );
         let date_screen_pos = position_from_anchor(
             window_anchor,
-            self.speed_controls.date_pos,
-            self.speed_controls.date_orientation,
+            self.speed_controls_layout.date_pos,
+            self.speed_controls_layout.date_orientation,
             text_box_size,
         );
 
         // Render text using bitmap font
         if let Some(ref font_bind_group) = self.font_bind_group {
-            let font_name = &self.speed_controls.date_font;
+            let font_name = &self.speed_controls_layout.date_font;
             if let Some(loaded) = self.font_cache.get(font_name, device, queue) {
                 let font = &loaded.font;
 
@@ -863,7 +873,7 @@ impl GuiRenderer {
 
                 // Apply border/padding
                 // In EU4, borderSize.y is top offset, format=centre is horizontal only
-                let border = self.speed_controls.date_border_size;
+                let border = self.speed_controls_layout.date_border_size;
 
                 // Center horizontally within text box
                 let start_x = date_screen_pos.0 + (text_box_size.0 as f32 - text_width) / 2.0;
@@ -907,7 +917,7 @@ impl GuiRenderer {
         }
 
         // Register hit boxes for speed controls from parsed button positions
-        for (name, pos, orientation, sprite_name) in &self.speed_controls.buttons {
+        for (name, pos, orientation, sprite_name) in &self.speed_controls_layout.buttons {
             // Get button size from sprite dimensions if available
             let button_size = self
                 .gfx_db
@@ -989,8 +999,8 @@ impl GuiRenderer {
         if let Some(ref bind_group) = self.bg_bind_group {
             let bg_screen_pos = position_from_anchor(
                 window_anchor,
-                self.speed_controls.bg_pos,
-                self.speed_controls.bg_orientation,
+                self.speed_controls_layout.bg_pos,
+                self.speed_controls_layout.bg_orientation,
                 self.bg_size,
             );
             let (clip_x, clip_y, clip_w, clip_h) =
@@ -1007,7 +1017,7 @@ impl GuiRenderer {
         }
 
         // Draw buttons
-        for (name, pos, orientation, _) in &self.speed_controls.buttons {
+        for (name, pos, orientation, _) in &self.speed_controls_layout.buttons {
             if let Some(idx) = self
                 .button_bind_groups
                 .iter()
@@ -1031,7 +1041,7 @@ impl GuiRenderer {
         }
 
         // Draw additional icons (score icon, etc.)
-        for icon in &self.speed_controls.icons {
+        for icon in &self.speed_controls_layout.icons {
             if let Some(idx) = self
                 .speed_icon_bind_groups
                 .iter()
@@ -1055,22 +1065,24 @@ impl GuiRenderer {
             }
         }
 
-        // Draw speed indicator
-        if let Some(ref bind_group) = self.speed_bind_group {
-            let frame = if state.paused {
-                5
-            } else {
-                (state.speed.saturating_sub(1)).min(4)
-            };
+        // Update speed controls widgets with current state
+        if let Some(ref mut speed_controls) = self.speed_controls {
+            speed_controls.update(&state.date, state.speed as u8, state.paused);
+        }
 
+        // Draw speed indicator
+        if let Some(ref bind_group) = self.speed_bind_group
+            && let Some(ref speed_controls) = self.speed_controls
+        {
             let speed_screen_pos = position_from_anchor(
                 window_anchor,
-                self.speed_controls.speed_pos,
-                self.speed_controls.speed_orientation,
+                speed_controls.speed_indicator.position(),
+                speed_controls.speed_indicator.orientation(),
                 self.speed_size,
             );
 
-            if let Some(sprite) = self.gfx_db.get(&self.speed_controls.speed_sprite) {
+            if let Some(sprite) = self.gfx_db.get(&self.speed_controls_layout.speed_sprite) {
+                let frame = speed_controls.speed_indicator.frame();
                 let (u_min, v_min, u_max, v_max) = sprite.frame_uv(frame);
                 let (clip_x, clip_y, clip_w, clip_h) =
                     rect_to_clip_space(speed_screen_pos, self.speed_size, screen_size);
@@ -1091,54 +1103,56 @@ impl GuiRenderer {
         }
 
         // Draw date text
-        if let Some(ref font_bind_group) = self.font_bind_group {
-            let font_name = &self.speed_controls.date_font;
+        if let Some(ref font_bind_group) = self.font_bind_group
+            && let Some(ref speed_controls) = self.speed_controls
+        {
+            let font_name = &self.speed_controls_layout.date_font;
             if let Some(loaded) = self.font_cache.get(font_name, device, queue) {
                 let font = &loaded.font;
-                let text_box_size = (
-                    self.speed_controls.date_max_width,
-                    self.speed_controls.date_max_height,
-                );
-                let text_screen_pos = position_from_anchor(
-                    window_anchor,
-                    self.speed_controls.date_pos,
-                    self.speed_controls.date_orientation,
-                    text_box_size,
-                );
+                let text = speed_controls.date_text.text();
+                if !text.is_empty() {
+                    let text_box_size = speed_controls.date_text.max_dimensions();
+                    let text_screen_pos = position_from_anchor(
+                        window_anchor,
+                        speed_controls.date_text.position(),
+                        speed_controls.date_text.orientation(),
+                        text_box_size,
+                    );
 
-                // Measure text width for centering
-                let text_width = font.measure_width(&state.date);
-                let border = self.speed_controls.date_border_size;
-                let start_x = text_screen_pos.0 + (text_box_size.0 as f32 - text_width) / 2.0;
-                let start_y = text_screen_pos.1 + border.1 as f32;
-                let mut cursor_x = start_x;
+                    // Measure text width for centering
+                    let text_width = font.measure_width(text);
+                    let border = speed_controls.date_text.border_size();
+                    let start_x = text_screen_pos.0 + (text_box_size.0 as f32 - text_width) / 2.0;
+                    let start_y = text_screen_pos.1 + border.1 as f32;
+                    let mut cursor_x = start_x;
 
-                for c in state.date.chars() {
-                    if let Some(glyph) = font.get_glyph(c) {
-                        if glyph.width > 0 && glyph.height > 0 {
-                            let glyph_x = cursor_x + glyph.xoffset as f32;
-                            let glyph_y = start_y + glyph.yoffset as f32;
-                            let (u_min, v_min, u_max, v_max) = font.glyph_uv(glyph);
-                            let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
-                                (glyph_x, glyph_y),
-                                (glyph.width, glyph.height),
-                                screen_size,
-                            );
-                            sprite_renderer.draw_uv(
-                                render_pass,
-                                font_bind_group,
-                                queue,
-                                clip_x,
-                                clip_y,
-                                clip_w,
-                                clip_h,
-                                u_min,
-                                v_min,
-                                u_max,
-                                v_max,
-                            );
+                    for c in text.chars() {
+                        if let Some(glyph) = font.get_glyph(c) {
+                            if glyph.width > 0 && glyph.height > 0 {
+                                let glyph_x = cursor_x + glyph.xoffset as f32;
+                                let glyph_y = start_y + glyph.yoffset as f32;
+                                let (u_min, v_min, u_max, v_max) = font.glyph_uv(glyph);
+                                let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
+                                    (glyph_x, glyph_y),
+                                    (glyph.width, glyph.height),
+                                    screen_size,
+                                );
+                                sprite_renderer.draw_uv(
+                                    render_pass,
+                                    font_bind_group,
+                                    queue,
+                                    clip_x,
+                                    clip_y,
+                                    clip_w,
+                                    clip_h,
+                                    u_min,
+                                    v_min,
+                                    u_max,
+                                    v_max,
+                                );
+                            }
+                            cursor_x += glyph.xadvance as f32;
                         }
-                        cursor_x += glyph.xadvance as f32;
                     }
                 }
             }
@@ -1226,7 +1240,7 @@ impl GuiRenderer {
                 topbar.update(country);
             }
 
-            let font_name = &self.speed_controls.date_font; // vic_18
+            let font_name = &self.speed_controls_layout.date_font; // vic_18
             if let Some(loaded) = self.font_cache.get(font_name, device, queue)
                 && let Some(ref topbar) = self.topbar
             {
@@ -1705,45 +1719,54 @@ impl GuiRenderer {
     }
 }
 
-/// Load speed controls layout from game files.
-fn load_speed_controls(game_path: &Path, interner: &interner::StringInterner) -> SpeedControls {
+/// Load speed controls layout from game files (Phase 3.5: returns layout + root element).
+///
+/// Returns a tuple of (SpeedControlsLayout, Option<GuiElement>) where:
+/// - SpeedControlsLayout contains rendering metadata (background, buttons, icons, etc.)
+/// - GuiElement is the root window for macro-based widget binding (speed indicator, date text)
+fn load_speed_controls_split(
+    game_path: &Path,
+    interner: &interner::StringInterner,
+) -> (SpeedControlsLayout, Option<GuiElement>) {
     let gui_path = game_path.join("interface/speed_controls.gui");
 
     if !gui_path.exists() {
         log::warn!("speed_controls.gui not found, using defaults");
-        return SpeedControls::default();
+        return (SpeedControlsLayout::default(), None);
     }
 
     match parse_gui_file(&gui_path, interner) {
         Ok(db) => {
             // Find the speed_controls window
             let symbol = interner.intern("speed_controls");
-            if let Some(GuiElement::Window {
-                position,
-                orientation,
-                children,
-                ..
-            }) = db.get(&symbol)
+            if let Some(root) = db.get(&symbol)
+                && let GuiElement::Window {
+                    position,
+                    orientation,
+                    children,
+                    ..
+                } = root
             {
-                return extract_speed_controls(position, orientation, children);
+                let layout = extract_speed_controls_layout(position, orientation, children);
+                return (layout, Some(root.clone()));
             }
             log::warn!("speed_controls window not found in GUI file");
-            SpeedControls::default()
+            (SpeedControlsLayout::default(), None)
         }
         Err(e) => {
             log::warn!("Failed to parse speed_controls.gui: {}", e);
-            SpeedControls::default()
+            (SpeedControlsLayout::default(), None)
         }
     }
 }
 
-/// Extract speed controls data from parsed GUI elements.
-fn extract_speed_controls(
+/// Extract speed controls layout data from parsed GUI elements (rendering metadata only).
+fn extract_speed_controls_layout(
     window_pos: &(i32, i32),
     orientation: &Orientation,
     children: &[GuiElement],
-) -> SpeedControls {
-    let mut controls = SpeedControls {
+) -> SpeedControlsLayout {
+    let mut controls = SpeedControlsLayout {
         window_pos: *window_pos,
         orientation: *orientation,
         ..Default::default()
@@ -2636,7 +2659,7 @@ mod tests {
         let gui_renderer = GuiRenderer::new(&game_path);
 
         // Check speed controls coverage
-        let sc = &gui_renderer.speed_controls;
+        let sc = &gui_renderer.speed_controls_layout;
         assert!(
             !sc.bg_sprite.is_empty(),
             "Background sprite should be loaded"
@@ -2702,13 +2725,13 @@ mod tests {
                 .expect("Failed to count speed_controls.gui elements");
 
             let gui_renderer = GuiRenderer::new(&game_path);
-            let sc = &gui_renderer.speed_controls;
+            let sc = &gui_renderer.speed_controls_layout;
 
             // Count what we actually use
             // 1 = background icon, plus any additional icons we parsed
             let used_icons = 1 + sc.icons.len();
             let used_buttons = sc.buttons.len();
-            // 1 = date text, plus any additional texts we parsed
+            // 1 = date text (macro-based), plus any additional texts we parsed (layout)
             let used_texts = 1 + sc.texts.len();
 
             println!("speed_controls.gui:");
