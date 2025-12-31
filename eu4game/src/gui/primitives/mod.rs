@@ -13,6 +13,7 @@
 mod button;
 mod checkbox;
 mod container;
+mod editbox;
 mod icon;
 mod text;
 
@@ -22,5 +23,7 @@ pub use button::{ButtonState, GuiButton};
 pub use checkbox::GuiCheckbox;
 #[allow(unused_imports)] // Reserved for future nested UI panel layouts
 pub use container::GuiContainer;
+#[allow(unused_imports)] // Reserved for future interactive UI panels (Phase 4.3)
+pub use editbox::GuiEditBox;
 pub use icon::GuiIcon;
 pub use text::GuiText;

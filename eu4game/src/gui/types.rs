@@ -187,6 +187,16 @@ pub enum GuiElement {
         sprite_type: String,
         orientation: Orientation,
     },
+    /// Text input field.
+    EditBox {
+        name: String,
+        position: (i32, i32),
+        size: (u32, u32),
+        font: String,
+        orientation: Orientation,
+        /// Maximum text length.
+        max_characters: u32,
+    },
 }
 
 impl GuiElement {
@@ -198,6 +208,7 @@ impl GuiElement {
             GuiElement::TextBox { name, .. } => name,
             GuiElement::Button { name, .. } => name,
             GuiElement::Checkbox { name, .. } => name,
+            GuiElement::EditBox { name, .. } => name,
         }
     }
 
@@ -209,6 +220,7 @@ impl GuiElement {
             GuiElement::TextBox { position, .. } => *position,
             GuiElement::Button { position, .. } => *position,
             GuiElement::Checkbox { position, .. } => *position,
+            GuiElement::EditBox { position, .. } => *position,
         }
     }
 
@@ -220,6 +232,7 @@ impl GuiElement {
             GuiElement::TextBox { orientation, .. } => *orientation,
             GuiElement::Button { orientation, .. } => *orientation,
             GuiElement::Checkbox { orientation, .. } => *orientation,
+            GuiElement::EditBox { orientation, .. } => *orientation,
         }
     }
 

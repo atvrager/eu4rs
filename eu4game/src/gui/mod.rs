@@ -2292,6 +2292,9 @@ fn extract_country_select(
             GuiElement::Checkbox { .. } => {
                 // Skip checkboxes for now (not used in country select)
             }
+            GuiElement::EditBox { .. } => {
+                // Skip editboxes for now (not used in country select)
+            }
         }
     }
 

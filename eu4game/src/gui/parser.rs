@@ -48,6 +48,7 @@ pub struct RawGuiCounts {
     pub textboxes: usize,
     pub buttons: usize,
     pub checkboxes: usize,
+    pub editboxes: usize,
     /// Element type names we saw but don't parse yet
     pub unknown_types: Vec<String>,
 }
@@ -55,7 +56,7 @@ pub struct RawGuiCounts {
 impl RawGuiCounts {
     #[allow(dead_code)]
     pub fn total(&self) -> usize {
-        self.windows + self.icons + self.textboxes + self.buttons + self.checkboxes
+        self.windows + self.icons + self.textboxes + self.buttons + self.checkboxes + self.editboxes
     }
 }
 
@@ -87,9 +88,9 @@ fn count_elements_recursive(node: &EU4TxtParseNode, counts: &mut RawGuiCounts) {
             "instantTextBoxType" => counts.textboxes += 1,
             "guiButtonType" => counts.buttons += 1,
             "checkboxType" => counts.checkboxes += 1,
+            "editBoxType" => counts.editboxes += 1,
             // Track element types we don't parse yet
-            "editBoxType"
-            | "listboxType"
+            "listboxType"
             | "scrollbarType"
             | "OverlappingElementsBoxType"
             | "positionType"
@@ -359,6 +360,11 @@ fn parse_window_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
                         children.push(checkbox);
                     }
                 }
+                "editBoxType" => {
+                    if let Some(editbox) = parse_editbox_type(get_assignment_value(child)) {
+                        children.push(editbox);
+                    }
+                }
                 "windowType" => {
                     if let Some(window) = parse_window_type(get_assignment_value(child)) {
                         children.push(window);
@@ -609,6 +615,63 @@ fn parse_checkbox_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
         position,
         sprite_type,
         orientation,
+    })
+}
+
+/// Parse an editBoxType block.
+fn parse_editbox_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
+    let node = node?;
+
+    let mut name = String::new();
+    let mut position = (0i32, 0i32);
+    let mut size = (0u32, 0u32);
+    let mut font = String::from("default");
+    let mut orientation = Orientation::UpperLeft;
+    let mut max_characters = 256; // Default reasonable limit
+
+    for child in &node.children {
+        if let EU4TxtAstItem::Assignment = &child.entry
+            && let Some(key) = get_assignment_key(child)
+        {
+            match key.as_str() {
+                "name" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        name = s;
+                    }
+                }
+                "position" => {
+                    position = parse_position(get_assignment_value(child));
+                }
+                "size" => {
+                    size = parse_size(get_assignment_value(child));
+                }
+                "font" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        font = s;
+                    }
+                }
+                "Orientation" | "orientation" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        orientation = Orientation::from_str(&s);
+                    }
+                }
+                "max_characters" | "maxCharacters" => {
+                    if let Some(n) = get_int_value(get_assignment_value(child)) {
+                        max_characters = n.max(0) as u32;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Some(GuiElement::EditBox {
+        name,
+        position,
+        size,
+        font,
+        orientation,
+        max_characters,
     })
 }
 

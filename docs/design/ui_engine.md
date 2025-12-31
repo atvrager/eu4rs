@@ -395,15 +395,15 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Current State (after Phase 4.2)**:
+**Current State (after Phase 4.3)**:
 - ✅ CountrySelectPanel (right panel) - fully macro-based
 - ✅ TopBar, SpeedControls - production integrated
 - ✅ GuiButton primitive - with UiAction support
 - ✅ GuiCheckbox primitive - with toggle state
+- ✅ GuiEditBox primitive - with text input support
 - ✅ MainMenuPanel - button bindings for frontend navigation
 - ✅ UiAction enum - button click results
 - ✅ Basic hit testing - works for speed buttons
-- ❌ EditBox widget
 - ❌ Left panel (bookmarks, save list, date picker)
 - ❌ Top panel (map modes, labels)
 - ❌ Listbox widget
@@ -425,11 +425,13 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] Implement `GuiCheckbox` struct with `checked: bool` state
     - [x] Handle click events to toggle state
     - [x] Support checkbox in macro binder (bindable via `GuiNode`)
-- [ ] **4.3. EditBox Support** (`gui/primitives/editbox.rs`)
-    - [ ] Parse `editBoxType` (used for date input, player name)
-    - [ ] Implement `GuiEditBox` with `String` buffer
-    - [ ] Handle keyboard focus and text input
-    - [ ] Support cursor positioning and selection (basic)
+- [x] **4.3. EditBox Support** (`gui/primitives/editbox.rs`)
+    - [x] Parse `editBoxType` (used for date input, player name)
+    - [x] Implement `GuiEditBox` with `String` buffer
+    - [x] Handle keyboard focus and text input
+    - [x] Support cursor positioning (left/right arrow keys)
+    - [x] Support backspace and delete keys
+    - [x] Enforce max_characters limit
 
 ### Phase 5: Input System & Focus Management
 *Objective: Enable proper event handling and keyboard focus.*
