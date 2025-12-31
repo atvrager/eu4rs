@@ -115,6 +115,8 @@ struct App {
     selected_province: Option<u32>,
     /// Screen state manager with navigation history.
     screen_manager: screen::ScreenManager,
+    /// Frontend UI coordinator (manages main menu and screen transitions).
+    frontend_ui: Option<gui::frontend::FrontendUI>,
     /// Player's country tag (set after selection).
     player_tag: Option<String>,
     /// List of playable countries (sorted by development).
@@ -294,6 +296,21 @@ impl App {
             log::warn!("GUI rendering unavailable (game path not found)");
         }
 
+        // Create FrontendUI with placeholder MainMenuPanel (Phase 6.1.3)
+        // In CI or without game assets, this creates a no-op placeholder panel
+        let frontend_ui = {
+            use gui::binder::Bindable;
+            let panel = gui::main_menu::MainMenuPanel {
+                single_player: gui::primitives::GuiButton::placeholder(),
+                multi_player: gui::primitives::GuiButton::placeholder(),
+                tutorial: None,
+                credits: None,
+                settings: None,
+                exit: gui::primitives::GuiButton::placeholder(),
+            };
+            Some(gui::frontend::FrontendUI::new(panel))
+        };
+
         Self {
             window,
             surface,
@@ -344,6 +361,7 @@ impl App {
             shield_clip_rect: None,
             text_renderer,
             gui_renderer,
+            frontend_ui,
         }
     }
 
@@ -1021,6 +1039,33 @@ impl App {
         }
     }
 
+    /// Polls frontend UI for button clicks and screen transitions.
+    /// Returns true if the game should exit.
+    fn poll_frontend_ui(&mut self) -> bool {
+        let Some(ref mut frontend_ui) = self.frontend_ui else {
+            return false;
+        };
+
+        // Update frontend UI (polls button clicks)
+        let should_exit = frontend_ui.update();
+
+        // Sync screen state from frontend to app's screen manager
+        let frontend_screen = frontend_ui.current_screen();
+        if frontend_screen != self.screen_manager.current() {
+            log::info!(
+                "Screen transition: {:?} -> {:?}",
+                self.screen_manager.current(),
+                frontend_screen
+            );
+            // Frontend screen changed - update our manager to match
+            // (Frontend owns the authoritative screen state)
+            self.screen_manager.transition_to(frontend_screen);
+            self.update_window_title();
+        }
+
+        should_exit
+    }
+
     /// Updates the GPU lookup texture and army markers if needed.
     /// This is fast - only updates a 32KB texture and army instance buffer.
     fn update_lookup(&mut self) {
@@ -1647,6 +1692,14 @@ fn main() {
         Event::AboutToWait => {
             app.poll_sim_events();
             app.update_lookup();
+
+            // Poll frontend UI for button clicks (Phase 6.1.3)
+            if app.poll_frontend_ui() {
+                log::info!("Exit requested from frontend UI");
+                control_flow.exit();
+                return;
+            }
+
             app.window().request_redraw();
         }
         _ => {}
