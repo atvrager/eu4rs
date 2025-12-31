@@ -23,6 +23,7 @@ eu4data = { version = "0.1.0", path = "../eu4data" }
 eu4sim-core = { version = "0.1.0", path = "../eu4sim-core" }
 eu4sim = { version = "0.1.0", path = "../eu4sim" }
 eu4txt = { version = "0.1.0", path = "../eu4txt" }
+eu4_macros = { version = "0.1.0", path = "../eu4_macros" }
 
 # Logging
 log = "0.4.29"

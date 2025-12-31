@@ -12,7 +12,7 @@ members = [
     "game_pathfinding",
     "eu4tokens",
     "eu4sim-verify",
-    "eu4game",
+    "eu4game", "eu4_macros",
 ]
 resolver = "2"
 

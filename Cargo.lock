@@ -1806,6 +1806,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "eu4_macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
+]
+
+[[package]]
 name = "eu4data"
 version = "0.1.0"
 dependencies = [
@@ -1844,6 +1853,7 @@ dependencies = [
  "ab_glyph",
  "bytemuck",
  "env_logger 0.11.8",
+ "eu4_macros",
  "eu4data",
  "eu4sim",
  "eu4sim-core",

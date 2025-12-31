@@ -318,15 +318,42 @@ Analysis of `parser.rs` reveals several other standard EU4 types we will need ev
 ### Phase 3: Macro & Data Binding
 *Objective: Remove boilerplate and enforce type safety.*
 
-- [ ] **3.1. Macro Skeleton** (`eu4_macros crate`)
-    - [ ] `cargo new eu4_macros --lib --proc-macro`.
-    - [ ] Implement `#[derive(GuiWindow)]` primitive parser.
-- [ ] **3.2. Macro Logic**
-    - [ ] Generate `pub struct MyPanel` fields.
-    - [ ] Generate `impl MyPanel { pub fn bind(root: &GuiNode) -> Self }`.
-- [ ] **3.3. Verify & Migrate**
-    - [ ] Migrate `CountrySelectPanel` to use `#[derive(GuiWindow)]`.
-    - [ ] Verify identical behavior in-game.
+- [x] **3.1. Macro Skeleton** (`eu4_macros crate`)
+    - [x] `cargo new eu4_macros --lib --proc-macro`.
+    - [x] Implement `#[derive(GuiWindow)]` primitive parser.
+- [x] **3.2. Macro Logic**
+    - [x] Generate `pub struct MyPanel` fields.
+    - [x] Generate `impl MyPanel { pub fn bind(root: &GuiNode) -> Self }`.
+- [x] **3.3. Verify & Migrate**
+    - [x] Migrate `CountrySelectPanel` to use `#[derive(GuiWindow)]`.
+    - [x] Verify identical behavior in-game.
+
+### Phase 3.5: Production Migration
+*Objective: Replace all legacy UI implementations with macro-based versions.*
+
+- [ ] **3.5.1. TopBar Migration**
+    - [ ] Create `TopBar` struct with `#[derive(GuiWindow)]` binding to topbar widgets
+    - [ ] Implement `update(&mut self, resources: &CountryResources)` method
+    - [ ] Replace legacy `TopBar` struct in `gui/mod.rs`
+    - [ ] Update `render_topbar()` to use macro-based implementation
+    - [ ] Verify topbar snapshot test still passes
+- [ ] **3.5.2. SpeedControls Migration**
+    - [ ] Create `SpeedControls` struct with `#[derive(GuiWindow)]` binding to speed panel widgets
+    - [ ] Implement `update(&mut self, speed: SimSpeed, paused: bool)` method
+    - [ ] Replace legacy `SpeedControls` struct in `gui/mod.rs`
+    - [ ] Update `render_speed_controls()` to use macro-based implementation
+    - [ ] Verify speed controls snapshot test still passes
+- [ ] **3.5.3. CountrySelect Production Integration**
+    - [ ] Update `render_country_select_only()` to use `CountrySelectPanel` instead of `CountrySelectLayout`
+    - [ ] Migrate icon and text rendering loops to use panel widget handles
+    - [ ] Remove `CountrySelectLayout`, `CountrySelectIcon`, `CountrySelectText`, `CountrySelectButton` structs
+    - [ ] Remove `load_country_select()`, `find_singleplayer_window_in_node()`, `extract_country_select()` functions
+    - [ ] Verify country select snapshot test still passes
+- [ ] **3.5.4. Legacy Cleanup**
+    - [ ] Remove all `#[allow(dead_code)]` annotations from Phase 2 primitives
+    - [ ] Verify all primitive types (`GuiText`, `GuiIcon`, `GuiButton`, `GuiContainer`) are actively used
+    - [ ] Audit and remove any transitional helper functions
+    - [ ] Update module-level documentation to reflect production status
 
 ### Phase 4: Interactive Control Primitives (Future)
 *Objective: Enable user input beyond simple buttons.*

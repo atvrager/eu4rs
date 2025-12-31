@@ -19,8 +19,12 @@ pub mod core;
 pub mod interner;
 pub mod primitives;
 
+// Phase 3: Macro system tests
+#[cfg(test)]
+mod macro_test;
+
 #[allow(unused_imports)] // SelectedCountryState used in tests
-pub use country_select::{CountrySelectLayout, SelectedCountryState};
+pub use country_select::{CountrySelectLayout, CountrySelectPanel, SelectedCountryState};
 pub use layout::{
     compute_masked_flag_rect, get_window_anchor, position_from_anchor, rect_to_clip_space,
 };
