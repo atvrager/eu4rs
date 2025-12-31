@@ -151,6 +151,16 @@ struct App {
     sprite_renderer: render::SpriteRenderer,
     /// Bind group for the player's flag (created when country is selected).
     player_flag_bind_group: Option<wgpu::BindGroup>,
+    /// Masked flag bind group (flag + shield mask) for shield rendering.
+    masked_flag_bind_group: Option<wgpu::BindGroup>,
+    /// Shield overlay bind group (for drawing frame on top of flag).
+    shield_overlay_bind_group: Option<wgpu::BindGroup>,
+    /// Shield overlay dimensions (from texture).
+    shield_overlay_size: (u32, u32),
+    /// Shield mask dimensions (from texture).
+    shield_mask_size: (u32, u32),
+    /// Cached shield clip rect (position for player flag in topbar).
+    shield_clip_rect: Option<(f32, f32, f32, f32)>,
     /// Text renderer for UI text.
     text_renderer: Option<text::TextRenderer>,
     /// EU4-authentic GUI renderer.
@@ -328,6 +338,11 @@ impl App {
             flag_cache,
             sprite_renderer,
             player_flag_bind_group: None,
+            masked_flag_bind_group: None,
+            shield_overlay_bind_group: None,
+            shield_overlay_size: (1, 1),
+            shield_mask_size: (1, 1),
+            shield_clip_rect: None,
             text_renderer,
             gui_renderer,
         }
@@ -549,6 +564,13 @@ impl App {
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
             log::debug!("Resized to {}x{}", new_size.width, new_size.height);
+
+            // Recalculate shield clip rect for new screen size
+            if let Some(gui_renderer) = &self.gui_renderer {
+                let screen_size = (new_size.width, new_size.height);
+                self.shield_clip_rect =
+                    gui_renderer.get_player_shield_clip_rect(screen_size, self.shield_overlay_size);
+            }
         }
     }
 
@@ -620,23 +642,6 @@ impl App {
                 render_pass.draw(0..6, 0..self.renderer.fleet_count);
             }
 
-            // Draw player flag in top-left corner
-            if let Some(ref bind_group) = self.player_flag_bind_group {
-                // Flag position: top-left corner with some padding
-                // Clip space: (-1, 1) is top-left, (1, -1) is bottom-right
-                let flag_size = 0.1; // 10% of screen width
-                let padding = 0.02;
-                self.sprite_renderer.draw(
-                    &mut render_pass,
-                    bind_group,
-                    &self.queue,
-                    -1.0 + padding,   // x: left edge + padding
-                    1.0 - padding,    // y: top edge - padding
-                    flag_size,        // width
-                    flag_size * 1.78, // height (account for aspect ratio)
-                );
-            }
-
             // Draw top bar with EU4 authentic GUI
             let screen_size = (self.config.width, self.config.height);
 
@@ -692,6 +697,43 @@ impl App {
                     &gui_state,
                     screen_size,
                 );
+            }
+
+            // Draw player flag with shield mask and overlay
+            // (uses App-owned bind groups to avoid borrow issues with gui_renderer)
+            if let Some(overlay_rect) = self.shield_clip_rect {
+                // Compute flag rect scaled and centered to match mask within overlay
+                let flag_rect = gui::compute_masked_flag_rect(
+                    overlay_rect,
+                    self.shield_mask_size,
+                    self.shield_overlay_size,
+                );
+
+                // Draw masked flag (flag clipped to shield shape)
+                if let Some(ref masked_bind_group) = self.masked_flag_bind_group {
+                    self.sprite_renderer.draw_masked_flag(
+                        &mut render_pass,
+                        masked_bind_group,
+                        &self.queue,
+                        flag_rect.0,
+                        flag_rect.1,
+                        flag_rect.2,
+                        flag_rect.3,
+                    );
+                }
+
+                // Draw shield overlay on top (decorative frame) at full size
+                if let Some(ref overlay_bind_group) = self.shield_overlay_bind_group {
+                    self.sprite_renderer.draw(
+                        &mut render_pass,
+                        overlay_bind_group,
+                        &self.queue,
+                        overlay_rect.0,
+                        overlay_rect.1,
+                        overlay_rect.2,
+                        overlay_rect.3,
+                    );
+                }
             }
 
             // Draw input mode indicator (left side, below flag area)
@@ -811,13 +853,61 @@ impl App {
                         self.lookup_dirty = true; // Update GPU lookup texture
                         self.update_window_title();
 
-                        // Load the player's flag
+                        // Load the player's flag and create bind groups
                         if let Some(flag_view) = self.flag_cache.get(tag, &self.device, &self.queue)
                         {
+                            // Regular flag bind group (for fallback)
                             self.player_flag_bind_group = Some(
                                 self.sprite_renderer
                                     .create_bind_group(&self.device, flag_view),
                             );
+
+                            // Also create masked flag bind group and overlay if available
+                            if let Some(gui_renderer) = &mut self.gui_renderer {
+                                // Masked flag bind group (flag + shield mask)
+                                if let Some((mask_view, mask_w, mask_h)) =
+                                    gui_renderer.get_shield_mask(&self.device, &self.queue)
+                                {
+                                    self.shield_mask_size = (mask_w, mask_h);
+                                    self.masked_flag_bind_group =
+                                        Some(self.sprite_renderer.create_masked_bind_group(
+                                            &self.device,
+                                            flag_view,
+                                            mask_view,
+                                        ));
+                                    log::info!(
+                                        "Created masked flag bind group for {} (mask {}x{})",
+                                        tag,
+                                        mask_w,
+                                        mask_h
+                                    );
+                                }
+
+                                // Shield overlay bind group
+                                if let Some((overlay_view, overlay_w, overlay_h)) =
+                                    gui_renderer.get_shield_overlay(&self.device, &self.queue)
+                                {
+                                    self.shield_overlay_size = (overlay_w, overlay_h);
+                                    self.shield_overlay_bind_group = Some(
+                                        self.sprite_renderer
+                                            .create_bind_group(&self.device, overlay_view),
+                                    );
+                                    log::info!(
+                                        "Created shield overlay bind group ({}x{})",
+                                        overlay_w,
+                                        overlay_h
+                                    );
+                                }
+
+                                // Cache the shield clip rect (position in topbar)
+                                // Use overlay size for positioning since that's the full frame
+                                let screen_size = (self.size.width, self.size.height);
+                                self.shield_clip_rect = gui_renderer.get_player_shield_clip_rect(
+                                    screen_size,
+                                    self.shield_overlay_size,
+                                );
+                            }
+
                             log::info!("Loaded flag for {}", tag);
                         }
                     }

@@ -380,3 +380,32 @@ fn vs_sprite(
 fn fs_sprite(in: SpriteVertexOutput) -> @location(0) vec4<f32> {
     return textureSample(t_sprite, s_sprite, in.tex_coords);
 }
+
+// =============================================================================
+// Masked Flag Rendering (for shield-style flag display)
+// =============================================================================
+
+// Mask texture (used to clip the flag to shield shape)
+@group(0) @binding(2)
+var t_mask: texture_2d<f32>;
+@group(0) @binding(3)
+var s_mask: sampler;
+
+@fragment
+fn fs_masked_flag(in: SpriteVertexOutput) -> @location(0) vec4<f32> {
+    // Sample flag texture
+    let flag_color = textureSample(t_sprite, s_sprite, in.tex_coords);
+
+    // Sample mask texture (using same UV coords)
+    // The mask data is in the ALPHA channel (RGB is black)
+    let mask_value = textureSample(t_mask, s_mask, in.tex_coords);
+    let mask_alpha = mask_value.a;
+
+    // Discard pixels where mask alpha is low (outside shield shape)
+    if (mask_alpha < 0.5) {
+        discard;
+    }
+
+    // Return opaque flag color
+    return vec4<f32>(flag_color.rgb, 1.0);
+}

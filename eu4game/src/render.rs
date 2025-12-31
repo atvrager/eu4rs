@@ -958,6 +958,10 @@ const MAX_SPRITES_PER_FRAME: usize = 256;
 pub struct SpriteRenderer {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
+    /// Pipeline for masked flag rendering (flag + mask + overlay).
+    masked_flag_pipeline: wgpu::RenderPipeline,
+    /// Bind group layout for masked flag (4 bindings: sprite + sampler + mask + sampler).
+    masked_flag_bind_group_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     instance_buffer: wgpu::Buffer,
     /// Current slot in the instance buffer (reset each frame).
@@ -1045,9 +1049,90 @@ impl SpriteRenderer {
             mapped_at_creation: false,
         });
 
+        // Masked flag pipeline (for shield-style flag rendering)
+        let masked_flag_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Masked Flag Bind Group Layout"),
+                entries: &[
+                    // binding 0: flag texture
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    // binding 1: flag sampler
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                    // binding 2: mask texture
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    // binding 3: mask sampler
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
+        let masked_flag_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Masked Flag Pipeline Layout"),
+                bind_group_layouts: &[&masked_flag_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        let masked_flag_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Masked Flag Render Pipeline"),
+            layout: Some(&masked_flag_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_sprite",
+                buffers: &[SpriteInstance::desc()],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_masked_flag",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: surface_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        });
+
         Self {
             pipeline,
             bind_group_layout,
+            masked_flag_pipeline,
+            masked_flag_bind_group_layout,
             sampler,
             instance_buffer,
             current_slot: std::cell::Cell::new(0),
@@ -1079,6 +1164,86 @@ impl SpriteRenderer {
                 },
             ],
         })
+    }
+
+    /// Creates a bind group for masked flag rendering (flag + mask textures).
+    pub fn create_masked_bind_group(
+        &self,
+        device: &wgpu::Device,
+        flag_view: &wgpu::TextureView,
+        mask_view: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Masked Flag Bind Group"),
+            layout: &self.masked_flag_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(flag_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(mask_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        })
+    }
+
+    /// Draws a masked flag (flag texture clipped by mask).
+    /// Position is in clip space (-1..1), size is in clip space units.
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_masked_flag<'a>(
+        &'a self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        bind_group: &'a wgpu::BindGroup,
+        queue: &wgpu::Queue,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+    ) {
+        // Get next slot and advance counter
+        let slot = self.current_slot.get();
+        if slot >= MAX_SPRITES_PER_FRAME {
+            log::warn!(
+                "Too many sprites in one frame (max {})",
+                MAX_SPRITES_PER_FRAME
+            );
+            return;
+        }
+        self.current_slot.set(slot + 1);
+
+        let instance = SpriteInstance {
+            pos: [x, y],
+            size: [width, height],
+            uv_min: [0.0, 0.0],
+            uv_max: [1.0, 1.0],
+        };
+
+        // Write to this slot's offset in the buffer
+        let offset = (slot * std::mem::size_of::<SpriteInstance>()) as u64;
+        queue.write_buffer(
+            &self.instance_buffer,
+            offset,
+            bytemuck::cast_slice(&[instance]),
+        );
+
+        // Draw using masked flag pipeline
+        let start = offset;
+        let end = offset + std::mem::size_of::<SpriteInstance>() as u64;
+
+        render_pass.set_pipeline(&self.masked_flag_pipeline);
+        render_pass.set_bind_group(0, bind_group, &[]);
+        render_pass.set_vertex_buffer(0, self.instance_buffer.slice(start..end));
+        render_pass.draw(0..6, 0..1);
     }
 
     /// Draws a sprite at the given position and size (full texture).

@@ -91,6 +91,22 @@ To enable proper symlink support on Windows:
 - **Remove allows**: Check for unnecessary `#[allow(...)]` attributes when refactoring.
 - **Clippy Fixes**: Use `cargo clippy --fix` for simple lint resolution.
 
+## No Magic Numbers or Strings
+
+**CRITICAL**: Never hardcode values that come from data files.
+
+- **Dimensions**: Texture sizes, sprite dimensions, UI element sizes → read from loaded assets
+- **Paths**: File paths, sprite names → use constants or read from config/data files
+- **Game values**: Stats, multipliers, thresholds → parse from game data files
+- **Positions**: UI element positions, offsets → read from `.gui` files
+
+**Why**: EU4 has extensive mod support. Hardcoded values break when:
+- Game patches change values
+- Mods override assets with different dimensions
+- DLC adds new content with different specifications
+
+**Pattern**: Load data → store dimensions/values → use stored values at render/compute time.
+
 ## Code Coverage
 - **Goal**: >75% in all categories (lines, functions, branches) is a MUST.
 - **No Regressions**: New commits cannot regress below 75% without explicit acknowledgement.

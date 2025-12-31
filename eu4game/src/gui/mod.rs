@@ -10,7 +10,9 @@ pub mod sprite_cache;
 #[allow(dead_code)]
 pub mod types;
 
-pub use layout::{get_window_anchor, position_from_anchor, rect_to_clip_space};
+pub use layout::{
+    compute_masked_flag_rect, get_window_anchor, position_from_anchor, rect_to_clip_space,
+};
 pub use parser::{parse_gfx_file, parse_gui_file};
 pub use sprite_cache::SpriteCache;
 pub use types::{
@@ -173,6 +175,8 @@ pub struct TopBar {
     pub icons: Vec<TopBarIcon>,
     /// Text labels for resources.
     pub texts: Vec<TopBarText>,
+    /// Player shield position (for flag display).
+    pub player_shield: Option<TopBarIcon>,
 }
 
 impl Default for TopBar {
@@ -183,6 +187,7 @@ impl Default for TopBar {
             backgrounds: vec![],
             icons: vec![],
             texts: vec![],
+            player_shield: None,
         }
     }
 }
@@ -1172,6 +1177,56 @@ impl GuiRenderer {
             }
         }
     }
+
+    /// Get the clip space rectangle for the player shield (flag position).
+    ///
+    /// Returns (x, y, width, height) in clip space if player_shield is defined,
+    /// or None if not found in the topbar layout.
+    pub fn get_player_shield_clip_rect(
+        &self,
+        screen_size: (u32, u32),
+        flag_size: (u32, u32),
+    ) -> Option<(f32, f32, f32, f32)> {
+        let shield = self.topbar.player_shield.as_ref()?;
+
+        let topbar_anchor =
+            get_window_anchor(self.topbar.window_pos, self.topbar.orientation, screen_size);
+
+        let screen_pos = position_from_anchor(
+            topbar_anchor,
+            shield.position,
+            shield.orientation,
+            flag_size,
+        );
+
+        Some(rect_to_clip_space(screen_pos, flag_size, screen_size))
+    }
+
+    /// Get the shield mask texture view and dimensions for masked flag rendering.
+    /// Returns None if the mask hasn't been loaded yet.
+    pub fn get_shield_mask(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Option<(&wgpu::TextureView, u32, u32)> {
+        let mask_path = "gfx/interface/shield_fancy_mask.tga";
+        let result = self.sprite_cache.get(mask_path, device, queue);
+        if result.is_none() {
+            log::warn!("Failed to load shield mask from {}", mask_path);
+        }
+        result
+    }
+
+    /// Get the shield overlay texture view and dimensions for drawing frame on top of flag.
+    /// Returns None if the overlay hasn't been loaded yet.
+    pub fn get_shield_overlay(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Option<(&wgpu::TextureView, u32, u32)> {
+        let overlay_path = "gfx/interface/shield_fancy_overlay.dds";
+        self.sprite_cache.get(overlay_path, device, queue)
+    }
 }
 
 /// Load speed controls layout from game files.
@@ -1437,7 +1492,14 @@ fn extract_topbar(
                     orientation: *orientation,
                 };
 
-                if bg_names.contains(&name.as_str()) {
+                if name == "player_shield" {
+                    log::debug!(
+                        "Parsed player_shield: pos={:?}, sprite={}",
+                        position,
+                        sprite_type
+                    );
+                    topbar.player_shield = Some(icon);
+                } else if bg_names.contains(&name.as_str()) {
                     log::debug!(
                         "Parsed topbar bg {}: pos={:?}, sprite={}",
                         name,
@@ -1462,8 +1524,21 @@ fn extract_topbar(
                 orientation,
                 ..
             } => {
-                // Some icons are buttons (like mana icons)
-                if icon_names.contains(&name.as_str()) {
+                // player_shield is a guiButtonType in topbar.gui
+                if name == "player_shield" {
+                    log::debug!(
+                        "Parsed player_shield (button): pos={:?}, sprite={}",
+                        position,
+                        sprite_type
+                    );
+                    topbar.player_shield = Some(TopBarIcon {
+                        name: name.clone(),
+                        sprite: sprite_type.clone(),
+                        position: *position,
+                        orientation: *orientation,
+                    });
+                } else if icon_names.contains(&name.as_str()) {
+                    // Some icons are buttons (like mana icons)
                     log::debug!(
                         "Parsed topbar button-icon {}: pos={:?}, sprite={}",
                         name,
@@ -1515,10 +1590,11 @@ fn extract_topbar(
     }
 
     log::info!(
-        "Loaded topbar: {} backgrounds, {} icons, {} texts",
+        "Loaded topbar: {} backgrounds, {} icons, {} texts, player_shield={}",
         topbar.backgrounds.len(),
         topbar.icons.len(),
-        topbar.texts.len()
+        topbar.texts.len(),
+        topbar.player_shield.is_some()
     );
 
     topbar

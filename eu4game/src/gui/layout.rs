@@ -187,6 +187,45 @@ pub fn rect_to_clip_space(
     (clip_x, clip_y, clip_w, clip_h)
 }
 
+/// Compute the masked flag rectangle within an overlay frame.
+///
+/// The mask is typically smaller than the overlay frame and centered within it.
+/// This function calculates the scaled and centered position for the flag texture
+/// so it aligns with the mask area.
+///
+/// # Arguments
+/// * `overlay_rect` - The clip-space rectangle (x, y, w, h) of the full overlay
+/// * `mask_size` - The pixel dimensions (width, height) of the mask texture
+/// * `overlay_size` - The pixel dimensions (width, height) of the overlay texture
+///
+/// # Returns
+/// The clip-space rectangle (x, y, w, h) for the flag, scaled and centered within the overlay.
+pub fn compute_masked_flag_rect(
+    overlay_rect: (f32, f32, f32, f32),
+    mask_size: (u32, u32),
+    overlay_size: (u32, u32),
+) -> (f32, f32, f32, f32) {
+    let (clip_x, clip_y, clip_w, clip_h) = overlay_rect;
+    let (mask_w, mask_h) = mask_size;
+    let (overlay_w, overlay_h) = overlay_size;
+
+    // Scale factors: how much smaller the mask is compared to overlay
+    let scale_x = mask_w as f32 / overlay_w as f32;
+    let scale_y = mask_h as f32 / overlay_h as f32;
+
+    // Offset to center the flag within the overlay
+    let offset_x = (1.0 - scale_x) / 2.0;
+    let offset_y = (1.0 - scale_y) / 2.0;
+
+    // Compute final flag dimensions and position
+    let flag_w = clip_w * scale_x;
+    let flag_h = clip_h * scale_y;
+    let flag_x = clip_x + clip_w * offset_x;
+    let flag_y = clip_y - clip_h * offset_y; // Y is inverted in clip space
+
+    (flag_x, flag_y, flag_w, flag_h)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -397,5 +436,68 @@ mod tests {
         // Background should be positioned near top-right
         assert!((bg_pos.0 - 1666.0).abs() < 0.001); // 1920 - 254
         assert!((bg_pos.1 - (-1.0)).abs() < 0.001);
+    }
+
+    // ========== Masked flag rect tests ==========
+
+    #[test]
+    fn test_masked_flag_rect_same_size() {
+        // When mask and overlay are the same size, flag should match overlay exactly
+        let overlay_rect = (-0.5, 0.5, 0.2, 0.2);
+        let (x, y, w, h) = compute_masked_flag_rect(overlay_rect, (100, 100), (100, 100));
+        assert!((x - (-0.5)).abs() < 0.001);
+        assert!((y - 0.5).abs() < 0.001);
+        assert!((w - 0.2).abs() < 0.001);
+        assert!((h - 0.2).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_masked_flag_rect_smaller_mask() {
+        // EU4 shield: mask is 92x92, overlay is 152x152
+        // Scale factor = 92/152 ≈ 0.605
+        let overlay_rect = (0.0, 0.0, 1.0, 1.0);
+        let (x, y, w, h) = compute_masked_flag_rect(overlay_rect, (92, 92), (152, 152));
+
+        let expected_scale = 92.0 / 152.0;
+        let expected_offset = (1.0 - expected_scale) / 2.0;
+
+        assert!((w - expected_scale).abs() < 0.001);
+        assert!((h - expected_scale).abs() < 0.001);
+        assert!((x - expected_offset).abs() < 0.001);
+        // Y offset is negative due to clip space inversion
+        assert!((y - (-expected_offset)).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_masked_flag_rect_non_square() {
+        // Test with non-square dimensions
+        let overlay_rect = (0.0, 0.0, 0.4, 0.3);
+        let (x, y, w, h) = compute_masked_flag_rect(overlay_rect, (80, 60), (100, 100));
+
+        // scale_x = 80/100 = 0.8, scale_y = 60/100 = 0.6
+        let scale_x = 0.8;
+        let scale_y = 0.6;
+        let offset_x = (1.0 - scale_x) / 2.0; // 0.1
+        let offset_y = (1.0 - scale_y) / 2.0; // 0.2
+
+        assert!((w - (0.4 * scale_x)).abs() < 0.001);
+        assert!((h - (0.3 * scale_y)).abs() < 0.001);
+        assert!((x - (0.0 + 0.4 * offset_x)).abs() < 0.001);
+        assert!((y - (0.0 - 0.3 * offset_y)).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_masked_flag_rect_centered() {
+        // Flag should be centered within overlay
+        // With overlay at center of screen (0,0) in clip space
+        let overlay_rect = (0.0, 0.0, 0.5, 0.5);
+        let (x, y, w, h) = compute_masked_flag_rect(overlay_rect, (50, 50), (100, 100));
+
+        // Scale = 0.5, offset = 0.25
+        // Flag should be at (0.125, -0.125) with size (0.25, 0.25)
+        assert!((x - 0.125).abs() < 0.001);
+        assert!((y - (-0.125)).abs() < 0.001);
+        assert!((w - 0.25).abs() < 0.001);
+        assert!((h - 0.25).abs() < 0.001);
     }
 }
