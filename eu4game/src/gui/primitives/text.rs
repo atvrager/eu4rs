@@ -1,5 +1,6 @@
-#![allow(dead_code)]
 //! GuiText - wrapper around TextBox elements for runtime binding.
+//!
+//! Used by TopBar, SpeedControls, and CountrySelectPanel for dynamic text labels.
 
 use crate::gui::binder::{Bindable, GuiNode};
 use crate::gui::core::{EventResult, GuiRenderer, GuiWidget, UiContext, UiEvent};
@@ -18,8 +19,10 @@ pub struct GuiText {
 
 #[derive(Debug, Clone)]
 struct TextBoxData {
+    #[allow(dead_code)] // Used in tests for binding verification
     name: String,
     position: (i32, i32),
+    #[allow(dead_code)] // Reserved for font queries
     font: String,
     max_width: u32,
     max_height: u32,
@@ -48,6 +51,7 @@ impl GuiText {
     }
 
     /// Get the element name (for debugging).
+    #[allow(dead_code)] // Used in tests for binding verification
     pub fn name(&self) -> &str {
         self.element
             .as_ref()

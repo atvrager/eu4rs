@@ -1,5 +1,8 @@
-#![allow(dead_code)]
+#![allow(dead_code)] // Reserved for future nested UI panel layouts
 //! GuiContainer - wrapper around Window elements for hierarchical layouts.
+//!
+//! Not yet used in production panels. Reserved for future use when implementing
+//! complex nested layouts or scrollable containers (Phase 4+).
 
 use crate::gui::binder::{Bindable, GuiNode};
 use crate::gui::core::{EventResult, GuiRenderer, GuiWidget, UiContext, UiEvent};

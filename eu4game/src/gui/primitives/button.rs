@@ -1,5 +1,8 @@
-#![allow(dead_code)]
+#![allow(dead_code)] // Reserved for future interactive UI panels
 //! GuiButton - wrapper around Button elements with interactive state.
+//!
+//! Currently used in macro tests to verify the binding system works with buttons.
+//! Will be used in production when implementing interactive UI panels (Phase 4).
 
 use crate::gui::binder::{Bindable, GuiNode};
 use crate::gui::core::{

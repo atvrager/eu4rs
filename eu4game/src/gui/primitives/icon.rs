@@ -1,5 +1,6 @@
-#![allow(dead_code)]
 //! GuiIcon - wrapper around Icon elements for runtime binding.
+//!
+//! Used by SpeedControls (speed indicator) and CountrySelectPanel (government rank, religion, tech group icons).
 
 use crate::gui::binder::{Bindable, GuiNode};
 use crate::gui::core::{EventResult, GuiRenderer, GuiWidget, UiContext, UiEvent};
@@ -17,14 +18,18 @@ pub struct GuiIcon {
 
 #[derive(Debug, Clone)]
 struct IconData {
+    #[allow(dead_code)] // Used in tests for binding verification
     name: String,
     position: (i32, i32),
+    #[allow(dead_code)] // Reserved for sprite type queries
     sprite_type: String,
     /// Current animation frame.
     frame: u32,
     orientation: Orientation,
+    #[allow(dead_code)] // Reserved for render scaling
     scale: f32,
     /// Whether the icon is visible.
+    #[allow(dead_code)] // Reserved for visibility toggling
     visible: bool,
 }
 
@@ -40,11 +45,13 @@ impl GuiIcon {
     }
 
     /// Get the current frame.
+    #[allow(dead_code)] // Used in test-only rendering (render_country_select_only, render_speed_controls_only)
     pub fn frame(&self) -> u32 {
         self.element.as_ref().map(|d| d.frame).unwrap_or(0)
     }
 
     /// Set visibility.
+    #[allow(dead_code)] // Reserved for future visibility toggling
     pub fn set_visible(&mut self, visible: bool) {
         if let Some(ref mut data) = self.element {
             data.visible = visible;
@@ -52,11 +59,13 @@ impl GuiIcon {
     }
 
     /// Check if visible.
+    #[allow(dead_code)] // Reserved for future visibility toggling
     pub fn is_visible(&self) -> bool {
         self.element.as_ref().map(|d| d.visible).unwrap_or(false)
     }
 
     /// Get the sprite type name.
+    #[allow(dead_code)] // Reserved for sprite type queries
     pub fn sprite_type(&self) -> &str {
         self.element
             .as_ref()
@@ -65,6 +74,7 @@ impl GuiIcon {
     }
 
     /// Get the element name (for debugging).
+    #[allow(dead_code)] // Used in tests for binding verification
     pub fn name(&self) -> &str {
         self.element
             .as_ref()
@@ -73,11 +83,13 @@ impl GuiIcon {
     }
 
     /// Get the position (for rendering).
+    #[allow(dead_code)] // Used in test-only rendering (render_country_select_only, render_speed_controls_only)
     pub fn position(&self) -> (i32, i32) {
         self.element.as_ref().map(|d| d.position).unwrap_or((0, 0))
     }
 
     /// Get the orientation (for rendering).
+    #[allow(dead_code)] // Used in test-only rendering (render_country_select_only, render_speed_controls_only)
     pub fn orientation(&self) -> Orientation {
         self.element
             .as_ref()
