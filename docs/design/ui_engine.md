@@ -395,7 +395,7 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Current State (after Phase 4.3)**:
+**Current State (after Phase 5)**:
 - ✅ CountrySelectPanel (right panel) - fully macro-based
 - ✅ TopBar, SpeedControls - production integrated
 - ✅ GuiButton primitive - with UiAction support
@@ -403,7 +403,7 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
 - ✅ GuiEditBox primitive - with text input support
 - ✅ MainMenuPanel - button bindings for frontend navigation
 - ✅ UiAction enum - button click results
-- ✅ Basic hit testing - works for speed buttons
+- ✅ Input system infrastructure (hit testing, focus management)
 - ❌ Left panel (bookmarks, save list, date picker)
 - ❌ Top panel (map modes, labels)
 - ❌ Listbox widget
@@ -436,25 +436,20 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
 ### Phase 5: Input System & Focus Management
 *Objective: Enable proper event handling and keyboard focus.*
 
-- [ ] **5.1. Event Types** (`eu4game/src/gui/events.rs`)
-    - [ ] Define `UiEvent` enum: `MouseMove { x, y }`, `MouseButton { button, state, x, y }`, `KeyPress { key, modifiers }`, `TextInput { char }`
-    - [ ] Define `MouseButton` enum: `Left`, `Right`, `Middle`
-    - [ ] Define `ButtonState` enum: `Pressed`, `Released`
-- [ ] **5.2. Hit Testing** (`eu4game/src/gui/hit_test.rs`)
-    - [ ] Unify existing hit box system with new input dispatch
-    - [ ] Implement `UiRoot::hit_test(x, y) -> Option<WidgetId>`
-    - [ ] Cache flattened widget bounds list, rebuild on layout change
-    - [ ] Traverse in reverse render order (topmost first)
-- [ ] **5.3. Focus Management** (`eu4game/src/gui/focus.rs`)
-    - [ ] `struct FocusManager { focused: Option<WidgetId> }`
-    - [ ] `focus(id)`: Set focus, send `FocusLost` to previous, `FocusGained` to new
-    - [ ] `clear_focus()`: Remove focus from current widget
-    - [ ] Handle widget removal: if focused widget is removed, clear focus
-- [ ] **5.4. Input Dispatch Loop**
-    - [ ] `UiRoot::dispatch_event(event) -> Option<UiAction>`
-    - [ ] For mouse events: hit test → dispatch to widget → return action
-    - [ ] For keyboard events: dispatch to focused widget (if any)
-    - [ ] Convert button clicks to `UiAction` for screen transitions
+- [x] **5.1. Event Types** (`eu4game/src/gui/core.rs`) ✅ (Already implemented)
+    - [x] Define `UiEvent` enum: `MouseMove { x, y }`, `MouseButton { button, state, x, y }`, `KeyPress { key, modifiers }`, `TextInput { char }`
+    - [x] Define `MouseButton` enum: `Left`, `Right`, `Middle`
+    - [x] Define `ButtonState` enum: `Pressed`, `Released`
+- [x] **5.2. Hit Testing** (`eu4game/src/gui/input.rs`) ✅ (2025-12-31)
+    - [x] Implement `hit_test(x, y, widgets) -> Option<WidgetId>` function
+    - [x] Define `HitTestEntry` struct for widget bounds tracking
+    - [x] Traverse in reverse render order (topmost first)
+- [x] **5.3. Focus Management** (`eu4game/src/gui/input.rs`) ✅ (2025-12-31)
+    - [x] `struct FocusManager { focused: Option<WidgetId> }`
+    - [x] `focus(id)`: Set focus, send `FocusLost` to previous, `FocusGained` to new
+    - [x] `clear_focus()`: Remove focus from current widget
+    - [x] Handle widget removal: if focused widget is removed, clear focus
+    - [x] `generate_focus_events()`: Helper for creating focus transition events
 
 ### Phase 6: Screen & Panel Management
 *Objective: Enable screen transitions and panel visibility control.*
@@ -477,6 +472,15 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
 - [ ] **6.4. Back Navigation**
     - [ ] Back button returns to previous screen
     - [ ] Escape key triggers back action (when not in text input)
+- [ ] **6.5. Input Dispatch Loop** (from Phase 5)
+    - [ ] Create `UiRoot` struct to manage panels and input routing
+    - [ ] `UiRoot::dispatch_event(event) -> Option<UiAction>`
+    - [ ] For mouse events: hit test → dispatch to widget → return action
+    - [ ] For keyboard events: dispatch to focused widget (if any)
+    - [ ] Integrate `FocusManager` from `gui/input.rs`
+    - [ ] Integrate `hit_test()` from `gui/input.rs`
+    - [ ] Convert button clicks to `UiAction` for screen transitions
+    - [ ] Cache flattened widget bounds list, rebuild on layout change
 
 ### Phase 7: Listbox Support
 *Objective: Enable scrollable lists for country/save selection.*
