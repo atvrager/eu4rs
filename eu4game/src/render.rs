@@ -1327,4 +1327,212 @@ impl SpriteRenderer {
         render_pass.set_vertex_buffer(0, self.instance_buffer.slice(start..end));
         render_pass.draw(0..6, 0..1);
     }
+
+    /// Draw a 9-slice (cornered tile) sprite.
+    ///
+    /// 9-slice divides a texture into 9 regions using border sizes:
+    /// - 4 corners: fixed size, never stretched
+    /// - 4 edges: stretched along one axis
+    /// - 1 center: stretched along both axes
+    ///
+    /// # Arguments
+    /// * `x, y, width, height` - Target rectangle in clip space
+    /// * `border_x, border_y` - Border size in pixels (defines corner/edge regions)
+    /// * `tex_w, tex_h` - Actual texture dimensions in pixels
+    #[allow(dead_code)] // Used in tests
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_nine_slice<'a>(
+        &'a self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        bind_group: &'a wgpu::BindGroup,
+        queue: &wgpu::Queue,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        border_x: u32,
+        border_y: u32,
+        tex_w: u32,
+        tex_h: u32,
+        screen_size: (u32, u32),
+    ) {
+        // Calculate UV boundaries (texture coordinates 0.0-1.0)
+        let u_left = border_x as f32 / tex_w as f32;
+        let u_right = 1.0 - u_left;
+        let v_top = border_y as f32 / tex_h as f32;
+        let v_bottom = 1.0 - v_top;
+
+        // Calculate clip-space border sizes
+        // Clip space is -1..1, so multiply by 2 and divide by screen dimension
+        let bx_clip = (border_x as f32 * 2.0) / screen_size.0 as f32;
+        let by_clip = (border_y as f32 * 2.0) / screen_size.1 as f32;
+
+        // Calculate the stretched middle region sizes
+        let mid_width = width - 2.0 * bx_clip;
+        let mid_height = height - 2.0 * by_clip;
+
+        // Skip rendering if the target is smaller than the borders can handle
+        if mid_width < 0.0 || mid_height < 0.0 {
+            // Fall back to just drawing stretched (no 9-slice)
+            self.draw_uv(
+                render_pass,
+                bind_group,
+                queue,
+                x,
+                y,
+                width,
+                height,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+            );
+            return;
+        }
+
+        // Positions for the 3x3 grid (in clip space, Y increases upward)
+        // x: left edge, middle start, right edge start
+        let x0 = x;
+        let x1 = x + bx_clip;
+        let x2 = x + width - bx_clip;
+
+        // y: top edge (remember clip space Y is flipped from screen Y)
+        let y0 = y;
+        let y1 = y - by_clip; // Below top edge
+        let y2 = y - height + by_clip; // Above bottom edge
+
+        // Draw all 9 regions:
+
+        // Top row (y0 to y1)
+        // Top-left corner
+        self.draw_uv(
+            render_pass,
+            bind_group,
+            queue,
+            x0,
+            y0,
+            bx_clip,
+            by_clip,
+            0.0,
+            0.0,
+            u_left,
+            v_top,
+        );
+        // Top edge (stretched horizontally)
+        self.draw_uv(
+            render_pass,
+            bind_group,
+            queue,
+            x1,
+            y0,
+            mid_width,
+            by_clip,
+            u_left,
+            0.0,
+            u_right,
+            v_top,
+        );
+        // Top-right corner
+        self.draw_uv(
+            render_pass,
+            bind_group,
+            queue,
+            x2,
+            y0,
+            bx_clip,
+            by_clip,
+            u_right,
+            0.0,
+            1.0,
+            v_top,
+        );
+
+        // Middle row (y1 to y2)
+        // Left edge (stretched vertically)
+        self.draw_uv(
+            render_pass,
+            bind_group,
+            queue,
+            x0,
+            y1,
+            bx_clip,
+            mid_height,
+            0.0,
+            v_top,
+            u_left,
+            v_bottom,
+        );
+        // Center (stretched both ways)
+        self.draw_uv(
+            render_pass,
+            bind_group,
+            queue,
+            x1,
+            y1,
+            mid_width,
+            mid_height,
+            u_left,
+            v_top,
+            u_right,
+            v_bottom,
+        );
+        // Right edge (stretched vertically)
+        self.draw_uv(
+            render_pass,
+            bind_group,
+            queue,
+            x2,
+            y1,
+            bx_clip,
+            mid_height,
+            u_right,
+            v_top,
+            1.0,
+            v_bottom,
+        );
+
+        // Bottom row (y2 to bottom)
+        // Bottom-left corner
+        self.draw_uv(
+            render_pass,
+            bind_group,
+            queue,
+            x0,
+            y2,
+            bx_clip,
+            by_clip,
+            0.0,
+            v_bottom,
+            u_left,
+            1.0,
+        );
+        // Bottom edge (stretched horizontally)
+        self.draw_uv(
+            render_pass,
+            bind_group,
+            queue,
+            x1,
+            y2,
+            mid_width,
+            by_clip,
+            u_left,
+            v_bottom,
+            u_right,
+            1.0,
+        );
+        // Bottom-right corner
+        self.draw_uv(
+            render_pass,
+            bind_group,
+            queue,
+            x2,
+            y2,
+            bx_clip,
+            by_clip,
+            u_right,
+            v_bottom,
+            1.0,
+            1.0,
+        );
+    }
 }

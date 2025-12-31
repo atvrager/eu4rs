@@ -226,6 +226,11 @@ pub struct GuiRenderer {
     /// Cached country select icon bind groups: (sprite_name, bind_group, width, height, WIP - used in tests).
     #[allow(dead_code)]
     country_select_icons: Vec<(String, wgpu::BindGroup, u32, u32)>,
+    /// Cached panel background bind group: (bind_group, tex_width, tex_height).
+    #[allow(dead_code)]
+    panel_bg_bind_group: Option<(wgpu::BindGroup, u32, u32)>,
+    /// Cached shield frame bind group for country select.
+    shield_frame_bind_group: Option<(wgpu::BindGroup, u32, u32)>,
     /// Hit boxes for interactive elements (screen pixel coords).
     hit_boxes: Vec<(String, HitBox)>,
     /// Background sprite dimensions.
@@ -292,6 +297,8 @@ impl GuiRenderer {
             button_bind_groups: Vec::new(),
             speed_icon_bind_groups: Vec::new(),
             country_select_icons: Vec::new(),
+            panel_bg_bind_group: None,
+            shield_frame_bind_group: None,
             hit_boxes: Vec::new(),
             bg_size: (1, 1),    // Updated from texture in ensure_textures()
             speed_size: (1, 1), // Updated from texture in ensure_textures()
@@ -487,6 +494,34 @@ impl GuiRenderer {
             } else {
                 log::warn!("Country select: sprite not in gfx_db: {}", sprite_name);
             }
+        }
+
+        // Load panel background (9-slice sprite)
+        if self.panel_bg_bind_group.is_none()
+            && let Some(panel_bg) = self
+                .gfx_db
+                .get_cornered_tile("GFX_country_selection_panel_bg")
+            && let Some((view, w, h)) = self.sprite_cache.get(&panel_bg.texture_file, device, queue)
+        {
+            let bind_group = sprite_renderer.create_bind_group(device, view);
+            self.panel_bg_bind_group = Some((bind_group, w, h));
+            log::debug!(
+                "Loaded panel background: {} -> {}x{}",
+                panel_bg.texture_file,
+                w,
+                h
+            );
+        }
+
+        // Load shield frame texture for country select
+        if self.shield_frame_bind_group.is_none()
+            && let Some((view, w, h)) =
+                self.sprite_cache
+                    .get("gfx/interface/shield_frame.dds", device, queue)
+        {
+            let bind_group = sprite_renderer.create_bind_group(device, view);
+            self.shield_frame_bind_group = Some((bind_group, w, h));
+            log::debug!("Loaded shield frame texture: {}x{}", w, h);
         }
     }
 
@@ -1277,9 +1312,83 @@ impl GuiRenderer {
         self.ensure_country_select_textures(device, queue, sprite_renderer);
         self.ensure_font(device, queue, sprite_renderer);
 
-        // For isolated testing, center the window
-        // In real game, use: get_window_anchor(self.country_select.window_pos, ...)
-        let window_anchor = (screen_size.0 as f32 / 2.0, screen_size.1 as f32 / 2.0);
+        // Window content area
+        let window_size = (
+            self.country_select.window_size.0 as f32,
+            self.country_select.window_size.1 as f32,
+        );
+
+        // Get border size from panel definition
+        let border_size = self
+            .gfx_db
+            .get_cornered_tile("GFX_country_selection_panel_bg")
+            .map(|p| (p.border_size.0 as f32, p.border_size.1 as f32))
+            .unwrap_or((32.0, 32.0));
+
+        // Calculate panel size to fit content: window + border padding
+        // The y_offset (40) positions content within the panel
+        let y_offset = self.country_select.window_pos.1 as f32;
+
+        // Content extends beyond declared window_size (e.g., diplomacy label at y=402)
+        // Calculate actual content height from element positions
+        let max_content_y = self
+            .country_select
+            .icons
+            .iter()
+            .map(|i| i.position.1)
+            .chain(self.country_select.texts.iter().map(|t| t.position.1))
+            .max()
+            .unwrap_or(340) as f32
+            + 30.0; // Add padding for element height
+
+        let panel_size = (
+            window_size.0 + border_size.0 * 2.0, // content + left/right borders
+            y_offset + max_content_y + border_size.1, // y_offset + content + bottom border
+        );
+
+        // For isolated testing, center the panel on screen
+        let panel_top_left = (
+            (screen_size.0 as f32 - panel_size.0) / 2.0,
+            (screen_size.1 as f32 - panel_size.1) / 2.0,
+        );
+
+        // Content offset: border padding left, y_offset from top
+        let content_offset = (border_size.0, y_offset);
+
+        // Draw 9-slice panel background first (behind everything else)
+        if let Some(panel_bg) = self
+            .gfx_db
+            .get_cornered_tile("GFX_country_selection_panel_bg")
+            && let Some((ref bind_group, tex_w, tex_h)) = self.panel_bg_bind_group
+        {
+            // Convert to clip space - use computed panel_size, not the gfx file size
+            let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
+                panel_top_left,
+                (panel_size.0 as u32, panel_size.1 as u32),
+                screen_size,
+            );
+
+            sprite_renderer.draw_nine_slice(
+                render_pass,
+                bind_group,
+                queue,
+                clip_x,
+                clip_y,
+                clip_w,
+                clip_h,
+                panel_bg.border_size.0,
+                panel_bg.border_size.1,
+                tex_w,
+                tex_h,
+                screen_size,
+            );
+        }
+
+        // Content anchor is panel top-left plus centering offset
+        let window_anchor = (
+            panel_top_left.0 + content_offset.0,
+            panel_top_left.1 + content_offset.1,
+        );
 
         // Draw icons (with proper frame selection)
         for icon in &self.country_select.icons {
@@ -1315,14 +1424,18 @@ impl GuiRenderer {
                     (*tex_w, *tex_h)
                 };
 
+                // Apply scale factor
+                let scaled_w = (frame_w as f32 * icon.scale) as u32;
+                let scaled_h = (frame_h as f32 * icon.scale) as u32;
+
                 let screen_pos = position_from_anchor(
                     window_anchor,
                     icon.position,
                     icon.orientation,
-                    (frame_w, frame_h),
+                    (scaled_w, scaled_h),
                 );
                 let (clip_x, clip_y, clip_w, clip_h) =
-                    rect_to_clip_space(screen_pos, (frame_w, frame_h), screen_size);
+                    rect_to_clip_space(screen_pos, (scaled_w, scaled_h), screen_size);
 
                 // Calculate UVs for frame
                 let (u_min, v_min, u_max, v_max) = if let Some(s) = sprite {
@@ -1438,9 +1551,36 @@ impl GuiRenderer {
             }
         }
 
-        // Note: Shield (player_shield button) uses masked flag rendering which
-        // requires the MaskedFlagRenderer from main. For isolated testing,
-        // we skip it here. In the full render path, it would be drawn separately.
+        // Render shield frame (without the actual masked flag which requires MaskedFlagRenderer)
+        // This shows the shield positioning for isolated testing
+        if let Some((ref shield_bind_group, overlay_w, overlay_h)) = self.shield_frame_bind_group
+            && let Some(shield) = self
+                .country_select
+                .buttons
+                .iter()
+                .find(|b| b.name == "player_shield")
+        {
+            let shield_size = (overlay_w, overlay_h);
+            let screen_pos = position_from_anchor(
+                window_anchor,
+                shield.position,
+                shield.orientation,
+                shield_size,
+            );
+
+            let (clip_x, clip_y, clip_w, clip_h) =
+                rect_to_clip_space(screen_pos, shield_size, screen_size);
+
+            sprite_renderer.draw(
+                render_pass,
+                shield_bind_group,
+                queue,
+                clip_x,
+                clip_y,
+                clip_w,
+                clip_h,
+            );
+        }
     }
 
     /// Get the clip space rectangle for the player shield (flag position).
@@ -1491,6 +1631,65 @@ impl GuiRenderer {
     ) -> Option<(&wgpu::TextureView, u32, u32)> {
         let overlay_path = "gfx/interface/shield_fancy_overlay.dds";
         self.sprite_cache.get(overlay_path, device, queue)
+    }
+
+    /// Get the thin shield mask texture view and dimensions for country select.
+    /// Returns None if the mask hasn't been loaded yet.
+    #[allow(dead_code)] // API for future masked flag rendering
+    pub fn get_thin_shield_mask(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Option<(&wgpu::TextureView, u32, u32)> {
+        let mask_path = "gfx/interface/shield_mask.tga";
+        self.sprite_cache.get(mask_path, device, queue)
+    }
+
+    /// Get the thin shield overlay (frame) texture view and dimensions.
+    /// Returns None if the overlay hasn't been loaded yet.
+    #[allow(dead_code)] // API for future masked flag rendering
+    pub fn get_thin_shield_overlay(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Option<(&wgpu::TextureView, u32, u32)> {
+        let overlay_path = "gfx/interface/shield_frame.dds";
+        self.sprite_cache.get(overlay_path, device, queue)
+    }
+
+    /// Get the clip space rectangle for the country select player shield.
+    ///
+    /// The panel_top_left is the screen position of the country select panel.
+    /// Returns (x, y, width, height) in clip space if player_shield button is defined.
+    #[allow(dead_code)] // API for future masked flag rendering
+    pub fn get_country_select_shield_clip_rect(
+        &self,
+        panel_top_left: (f32, f32),
+        content_offset: (f32, f32),
+        shield_size: (u32, u32),
+        screen_size: (u32, u32),
+    ) -> Option<(f32, f32, f32, f32)> {
+        // Find player_shield button
+        let shield = self
+            .country_select
+            .buttons
+            .iter()
+            .find(|b| b.name == "player_shield")?;
+
+        // Window anchor is panel top-left plus content offset
+        let window_anchor = (
+            panel_top_left.0 + content_offset.0,
+            panel_top_left.1 + content_offset.1,
+        );
+
+        let screen_pos = position_from_anchor(
+            window_anchor,
+            shield.position,
+            shield.orientation,
+            shield_size,
+        );
+
+        Some(rect_to_clip_space(screen_pos, shield_size, screen_size))
     }
 }
 
@@ -1943,12 +2142,14 @@ fn extract_country_select(
                 position,
                 orientation,
                 frame,
+                scale,
             } => {
                 log::debug!(
-                    "Parsed country select icon {}: pos={:?}, sprite={}",
+                    "Parsed country select icon {}: pos={:?}, sprite={}, scale={}",
                     name,
                     position,
-                    sprite_type
+                    sprite_type,
+                    scale
                 );
                 layout.icons.push(CountrySelectIcon {
                     name: name.clone(),
@@ -1956,6 +2157,7 @@ fn extract_country_select(
                     position: *position,
                     orientation: *orientation,
                     frame: *frame,
+                    scale: *scale,
                 });
             }
             GuiElement::Button {

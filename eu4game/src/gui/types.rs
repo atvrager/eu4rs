@@ -151,6 +151,8 @@ pub enum GuiElement {
         sprite_type: String,
         frame: u32,
         orientation: Orientation,
+        /// Scale factor (1.0 = normal size).
+        scale: f32,
     },
     /// Text display.
     TextBox {

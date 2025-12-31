@@ -13,6 +13,8 @@ pub struct CountrySelectIcon {
     pub position: (i32, i32),
     pub orientation: Orientation,
     pub frame: u32,
+    /// Scale factor (1.0 = normal size).
+    pub scale: f32,
 }
 
 /// Text element parsed from the singleplayer window.

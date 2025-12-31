@@ -384,6 +384,7 @@ fn parse_icon_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
     let mut sprite_type = String::new();
     let mut frame = 0u32;
     let mut orientation = Orientation::UpperLeft;
+    let mut scale = 1.0f32;
 
     for child in &node.children {
         if let EU4TxtAstItem::Assignment = &child.entry
@@ -413,6 +414,11 @@ fn parse_icon_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
                         orientation = Orientation::from_str(&s);
                     }
                 }
+                "scale" => {
+                    if let Some(n) = get_float_value(get_assignment_value(child)) {
+                        scale = n;
+                    }
+                }
                 _ => {}
             }
         }
@@ -424,6 +430,7 @@ fn parse_icon_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
         sprite_type,
         frame,
         orientation,
+        scale,
     })
 }
 
@@ -622,6 +629,15 @@ fn get_int_value(node: Option<&EU4TxtParseNode>) -> Option<i32> {
     match &node.entry {
         EU4TxtAstItem::IntValue(n) => Some(*n),
         EU4TxtAstItem::FloatValue(f) => Some(*f as i32),
+        _ => None,
+    }
+}
+
+fn get_float_value(node: Option<&EU4TxtParseNode>) -> Option<f32> {
+    let node = node?;
+    match &node.entry {
+        EU4TxtAstItem::FloatValue(f) => Some(*f),
+        EU4TxtAstItem::IntValue(n) => Some(*n as f32),
         _ => None,
     }
 }
