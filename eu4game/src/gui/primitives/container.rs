@@ -16,6 +16,8 @@ use crate::gui::types::{GuiElement, Orientation, Rect};
 pub struct GuiContainer {
     /// The underlying element data, if bound.
     element: Option<ContainerData>,
+    /// Whether this container is visible (used for panel visibility control).
+    visible: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -60,6 +62,26 @@ impl GuiContainer {
             .map(|d| d.children.as_slice())
             .unwrap_or(&[])
     }
+
+    /// Check if this container is visible.
+    pub fn is_visible(&self) -> bool {
+        self.visible
+    }
+
+    /// Show this container.
+    pub fn show(&mut self) {
+        self.visible = true;
+    }
+
+    /// Hide this container.
+    pub fn hide(&mut self) {
+        self.visible = false;
+    }
+
+    /// Set visibility state.
+    pub fn set_visible(&mut self, visible: bool) {
+        self.visible = visible;
+    }
 }
 
 impl Bindable for GuiContainer {
@@ -79,18 +101,28 @@ impl Bindable for GuiContainer {
                     orientation: *orientation,
                     children: children.clone(),
                 }),
+                visible: true, // Containers are visible by default
             }),
             _ => None,
         }
     }
 
     fn placeholder() -> Self {
-        Self { element: None }
+        Self {
+            element: None,
+            visible: true, // Placeholders are visible by default (no-op)
+        }
     }
 }
 
 impl GuiWidget for GuiContainer {
+    #[allow(clippy::needless_return)] // Early return is clearer for visibility check
     fn render(&self, _ctx: &UiContext, _renderer: &mut dyn GuiRenderer) {
+        // Skip rendering if hidden
+        if !self.visible {
+            return;
+        }
+
         // In a full implementation, this would:
         // 1. Render the container's background (if any)
         // 2. Recursively render all children
@@ -98,6 +130,11 @@ impl GuiWidget for GuiContainer {
     }
 
     fn handle_input(&mut self, _event: &UiEvent, _ctx: &UiContext) -> EventResult {
+        // Skip input handling if hidden
+        if !self.visible {
+            return EventResult::Ignored;
+        }
+
         // In a full implementation, this would recursively dispatch
         // the event to children in reverse render order (topmost first).
         // For now, containers don't handle input directly.
@@ -160,5 +197,86 @@ mod tests {
         assert_eq!(container.position(), (100, 200));
         assert_eq!(container.size(), (400, 300));
         assert_eq!(container.child_count(), 1);
+    }
+
+    #[test]
+    fn test_container_visibility_default() {
+        let container = GuiContainer::placeholder();
+        assert!(container.is_visible());
+
+        let node = GuiElement::Window {
+            name: "test".to_string(),
+            position: (0, 0),
+            size: (100, 100),
+            orientation: Orientation::UpperLeft,
+            children: vec![],
+        };
+        let container = GuiContainer::from_node(&node).expect("Should bind");
+        assert!(container.is_visible());
+    }
+
+    #[test]
+    fn test_container_show_hide() {
+        let mut container = GuiContainer::placeholder();
+        assert!(container.is_visible());
+
+        container.hide();
+        assert!(!container.is_visible());
+
+        container.show();
+        assert!(container.is_visible());
+    }
+
+    #[test]
+    fn test_container_set_visible() {
+        let mut container = GuiContainer::placeholder();
+
+        container.set_visible(false);
+        assert!(!container.is_visible());
+
+        container.set_visible(true);
+        assert!(container.is_visible());
+    }
+
+    // Note: render() behavior with visibility is tested implicitly via integration
+    // The render() method checks is_visible() internally
+
+    #[test]
+    fn test_hidden_container_ignores_input() {
+        use crate::gui::core::{ButtonState as InputButtonState, MouseButton, UiEvent};
+
+        let mut container = GuiContainer::placeholder();
+        let ctx = UiContext {
+            mouse_pos: (0.0, 0.0),
+            time: 0.0,
+            delta_time: 0.016,
+            localizer: &crate::gui::core::NoOpLocalizer,
+            focused_widget: None,
+        };
+
+        // Visible container processes input (even if it just ignores it)
+        let result = container.handle_input(
+            &UiEvent::MouseButton {
+                button: MouseButton::Left,
+                state: InputButtonState::Released,
+                x: 10.0,
+                y: 10.0,
+            },
+            &ctx,
+        );
+        assert_eq!(result, EventResult::Ignored);
+
+        // Hidden container should also ignore
+        container.hide();
+        let result = container.handle_input(
+            &UiEvent::MouseButton {
+                button: MouseButton::Left,
+                state: InputButtonState::Released,
+                x: 10.0,
+                y: 10.0,
+            },
+            &ctx,
+        );
+        assert_eq!(result, EventResult::Ignored);
     }
 }

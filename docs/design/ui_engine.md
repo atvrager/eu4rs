@@ -395,7 +395,7 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Current State (after Phase 5)**:
+**Current State (after Phase 6 core)**:
 - ✅ CountrySelectPanel (right panel) - fully macro-based
 - ✅ TopBar, SpeedControls - production integrated
 - ✅ GuiButton primitive - with UiAction support
@@ -404,11 +404,14 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
 - ✅ MainMenuPanel - button bindings for frontend navigation
 - ✅ UiAction enum - button click results
 - ✅ Input system infrastructure (hit testing, focus management)
+- ✅ Screen state machine (Screen enum, ScreenManager with navigation history)
+- ✅ Panel visibility (GuiContainer with show/hide methods)
+- ✅ UiRoot for input dispatch and focus management
+- ❌ Frontend container (FrontendUI struct)
+- ❌ Screen/panel integration
 - ❌ Left panel (bookmarks, save list, date picker)
 - ❌ Top panel (map modes, labels)
 - ❌ Listbox widget
-- ❌ Screen state machine
-- ❌ Panel visibility/transitions
 
 ---
 
@@ -419,7 +422,7 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] Create `MainMenuPanel` struct with button bindings (single_player, multiplayer, exit, etc.)
     - [x] Define `UiAction` enum for button click results (`ShowSinglePlayer`, `Exit`, etc.)
     - [x] Wire button clicks to action handlers via `poll_click()` method
-    - [ ] Integrate button hit boxes into unified input dispatch (deferred to Phase 5)
+    - [x] Integrate button hit boxes into unified input dispatch (moved to Phase 6.1.3)
 - [x] **4.2. Checkbox Support** (`gui/primitives/checkbox.rs`)
     - [x] Parse `checkboxType` in GUI parser
     - [x] Implement `GuiCheckbox` struct with `checked: bool` state
@@ -454,33 +457,50 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
 ### Phase 6: Screen & Panel Management
 *Objective: Enable screen transitions and panel visibility control.*
 
-- [ ] **6.1. Screen State Machine** (`eu4game/src/screen.rs`)
-    - [ ] Define `Screen` enum: `MainMenu`, `SinglePlayer`, `Multiplayer`, `Playing`
-    - [ ] Define `ScreenManager` with `current_screen: Screen`
-    - [ ] `transition_to(screen)`: Handle screen changes with proper cleanup
-    - [ ] Integrate with main loop to route input/render to correct screen
-- [ ] **6.2. Panel Visibility**
-    - [ ] Add `visible: bool` property to panel structs
-    - [ ] Skip rendering hidden panels
-    - [ ] Skip hit testing for hidden panels
-    - [ ] `show()`/`hide()` methods for panels
-- [ ] **6.3. Frontend Container**
+- [x] **6.1. Screen State Machine** (`eu4game/src/screen.rs`) ✅ (2025-12-31)
+    - [x] Define `Screen` enum: `MainMenu`, `SinglePlayer`, `Multiplayer`, `Playing`
+    - [x] Define `ScreenManager` with `current_screen: Screen`
+    - [x] `transition_to(screen)`: Handle screen changes with proper cleanup
+    - [x] Navigation history stack for back button support
+- [x] **6.2. Panel Visibility** (`gui/primitives/container.rs`) ✅ (2025-12-31)
+    - [x] Add `visible: bool` property to `GuiContainer`
+    - [x] Skip rendering hidden panels (early return in render)
+    - [x] Skip hit testing for hidden panels (early return in handle_input)
+    - [x] `show()`, `hide()`, `set_visible()`, `is_visible()` methods
+- [x] **6.3. Input Dispatch Loop** (`gui/ui_root.rs`) ✅ (2025-12-31)
+    - [x] Create `UiRoot` struct to manage panels and input routing
+    - [x] `UiRoot::dispatch_event(event) -> Option<UiAction>`
+    - [x] For mouse events: hit test → dispatch to widget → return action
+    - [x] For keyboard events: dispatch to focused widget (if any)
+    - [x] Integrate `FocusManager` from `gui/input.rs`
+    - [x] Integrate `hit_test()` from `gui/input.rs`
+    - [x] Focus event generation (`set_focus`, `clear_focus`, `handle_widget_removed`)
+    - [x] Cache flattened widget bounds list, rebuild on layout change
+
+### Phase 6.1: Frontend Integration
+*Objective: Wire up Phase 6 infrastructure with actual panels and navigation.*
+
+- [ ] **6.1.1. Frontend Container**
     - [ ] Create `FrontendUI` struct containing all menu panels
-    - [ ] `MainMenuPanel` - main menu buttons
-    - [ ] `SinglePlayerPanel` - left/top/right panels combined
-    - [ ] Handle panel switching on button actions
-- [ ] **6.4. Back Navigation**
-    - [ ] Back button returns to previous screen
+    - [ ] Add `MainMenuPanel` field (already exists)
+    - [ ] Add `SinglePlayerPanel` placeholder (for future left/top/right panels)
+    - [ ] Integrate `ScreenManager` to control which panels are visible
+    - [ ] Handle panel visibility based on current screen
+- [ ] **6.1.2. Screen Integration in Main Loop**
+    - [ ] Add `ScreenManager` to main game state
+    - [ ] Route rendering based on current screen
+    - [ ] Route input events through `UiRoot` based on current screen
+- [ ] **6.1.3. Button Action to Screen Transition** (completes Phase 4.1 deferred task)
+    - [ ] Wire `MainMenuPanel` button clicks to `ScreenManager.transition_to()`
+    - [ ] `single_player` button → `Screen::SinglePlayer`
+    - [ ] `exit` button → exit game
+    - [ ] Return `UiAction` from button clicks through `UiRoot.dispatch_event()`
+    - [ ] Integrate button hit boxes into `UiRoot` for unified input dispatch
+- [ ] **6.1.4. Back Navigation**
+    - [ ] Add back button to panels that need it
+    - [ ] Wire back button to `ScreenManager.go_back()`
     - [ ] Escape key triggers back action (when not in text input)
-- [ ] **6.5. Input Dispatch Loop** (from Phase 5)
-    - [ ] Create `UiRoot` struct to manage panels and input routing
-    - [ ] `UiRoot::dispatch_event(event) -> Option<UiAction>`
-    - [ ] For mouse events: hit test → dispatch to widget → return action
-    - [ ] For keyboard events: dispatch to focused widget (if any)
-    - [ ] Integrate `FocusManager` from `gui/input.rs`
-    - [ ] Integrate `hit_test()` from `gui/input.rs`
-    - [ ] Convert button clicks to `UiAction` for screen transitions
-    - [ ] Cache flattened widget bounds list, rebuild on layout change
+    - [ ] Disable back navigation when in `Screen::Playing` (clear history)
 
 ### Phase 7: Listbox Support
 *Objective: Enable scrollable lists for country/save selection.*

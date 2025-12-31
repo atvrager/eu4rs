@@ -10,6 +10,7 @@ mod flags;
 mod gui;
 mod input;
 mod render;
+mod screen;
 mod sim_thread;
 #[cfg(test)]
 mod testing;

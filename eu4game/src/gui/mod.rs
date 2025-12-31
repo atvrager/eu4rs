@@ -22,6 +22,9 @@ pub mod primitives;
 // Phase 5: Input system & focus management
 pub mod input;
 
+// Phase 6: Screen & panel management
+pub mod ui_root;
+
 // Phase 3: Macro system tests
 #[cfg(test)]
 mod macro_test;
