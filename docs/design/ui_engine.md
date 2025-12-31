@@ -359,100 +359,266 @@ Analysis of `parser.rs` reveals several other standard EU4 types we will need ev
     - [x] Add `#[allow(unused_imports)]` to GuiButton and GuiContainer exports (not yet used in production)
     - [x] Verify all 726 tests pass with cleaned up annotations
 
-### Phase 4: Interactive Control Primitives (Future)
-*Objective: Enable user input beyond simple buttons.*
+---
 
-- [ ] **4.1. Checkbox Support** (`gui/primitives/checkbox.rs`)
-    - [ ] **Task**: Parse `checkboxType`.
-    - [ ] **Task**: Implement `GuiCheckbox` struct with `checked: bool` state.
-    - [ ] **Task**: Handle `OnClick` events to toggle state.
-- [ ] **4.2. EditBox Support** (`gui/primitives/editbox.rs`)
-    - [ ] **Task**: Parse `editBoxType` (Confirmed usage in `frontend.gui` for player name/IP).
-    - [ ] **Task**: Implement `GuiEditBox` with `String` buffer.
-    - [ ] **Task**: Handle `winit::WindowEvent::KeyboardInput` focus and typing.
+## Frontend Flow Goal
+
+*Target Experience*: Launch → Main Menu → Single Player → Pick Country → Start Game
+
+This mirrors the authentic EU4 experience. The phases below are ordered to achieve this goal incrementally.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           FRONTEND FLOW                                  │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌──────────────┐     ┌─────────────────────────────────────────────┐   │
+│  │  MAIN MENU   │     │         COUNTRY SELECTION SCREEN            │   │
+│  │              │     │  ┌─────────┐ ┌───────────────┐ ┌─────────┐  │   │
+│  │ [Single     ]│────▶│  │  LEFT   │ │     TOP       │ │  RIGHT  │  │   │
+│  │  Player     ]│     │  │ ─────── │ │ ───────────── │ │ ─────── │  │   │
+│  │ [Multiplayer]│     │  │Bookmarks│ │  Map Modes    │ │ Country │  │   │
+│  │ [Tutorial   ]│     │  │Save List│ │  Start Date   │ │  Info   │  │   │
+│  │ [Credits    ]│     │  │Date Pick│ │  Labels       │ │ Panel   │  │   │
+│  │ [Exit       ]│     │  └─────────┘ └───────────────┘ │(already │  │   │
+│  └──────────────┘     │                                │ done!)  │  │   │
+│         │             │  ┌──────────────────────────┐  └─────────┘  │   │
+│         │ [Back]◀─────│  │     [PLAY] Button        │               │   │
+│                       │  └──────────────────────────┘               │   │
+│                       └─────────────────────────────────────────────┘   │
+│                                        │                                 │
+│                                        ▼                                 │
+│                              ┌──────────────────┐                        │
+│                              │   GAME PLAYING   │                        │
+│                              │   (existing!)    │                        │
+│                              └──────────────────┘                        │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Current State (after Phase 3.5)**:
+- ✅ CountrySelectPanel (right panel) - fully macro-based
+- ✅ TopBar, SpeedControls - production integrated
+- ✅ GuiButton primitive - exists, needs production wiring
+- ✅ Basic hit testing - works for speed buttons
+- ❌ Main menu panel
+- ❌ Left panel (bookmarks, save list, date picker)
+- ❌ Top panel (map modes, labels)
+- ❌ Listbox widget
+- ❌ Screen state machine
+- ❌ Panel visibility/transitions
+
+---
+
+### Phase 4: Button Integration & Interactive Primitives
+*Objective: Make buttons work and add checkbox/editbox support.*
+
+- [ ] **4.1. GuiButton Production Integration**
+    - [ ] Create `MainMenuPanel` struct with button bindings (single_player, multiplayer, exit, etc.)
+    - [ ] Integrate button hit boxes into unified input dispatch
+    - [ ] Define `UiAction` enum for button click results (`ShowSinglePlayer`, `Exit`, etc.)
+    - [ ] Wire button clicks to action handlers
+- [ ] **4.2. Checkbox Support** (`gui/primitives/checkbox.rs`)
+    - [ ] Parse `checkboxType` in GUI parser
+    - [ ] Implement `GuiCheckbox` struct with `checked: bool` state
+    - [ ] Handle click events to toggle state
+    - [ ] Support checkbox in macro binder (for Ironman toggle, etc.)
+- [ ] **4.3. EditBox Support** (`gui/primitives/editbox.rs`)
+    - [ ] Parse `editBoxType` (used for date input, player name)
+    - [ ] Implement `GuiEditBox` with `String` buffer
+    - [ ] Handle keyboard focus and text input
+    - [ ] Support cursor positioning and selection (basic)
 
 ### Phase 5: Input System & Focus Management
 *Objective: Enable proper event handling and keyboard focus.*
 
 - [ ] **5.1. Event Types** (`eu4game/src/gui/events.rs`)
-    - [ ] Define `UiEvent` enum: `MouseMove { x, y }`, `MouseButton { button, state, x, y }`, `KeyPress { key, modifiers }`, `TextInput { char }`.
-    - [ ] Define `MouseButton` enum: `Left`, `Right`, `Middle`.
-    - [ ] Define `ButtonState` enum: `Pressed`, `Released`.
-- [ ] **5.2. Hit Testing** (`eu4game/src/gui/input.rs`)
-    - [ ] Implement `UiRoot::hit_test(x, y) -> Option<WidgetId>`.
-    - [ ] Cache flattened widget bounds list, rebuild on layout change.
-    - [ ] Traverse in reverse render order (topmost first).
+    - [ ] Define `UiEvent` enum: `MouseMove { x, y }`, `MouseButton { button, state, x, y }`, `KeyPress { key, modifiers }`, `TextInput { char }`
+    - [ ] Define `MouseButton` enum: `Left`, `Right`, `Middle`
+    - [ ] Define `ButtonState` enum: `Pressed`, `Released`
+- [ ] **5.2. Hit Testing** (`eu4game/src/gui/hit_test.rs`)
+    - [ ] Unify existing hit box system with new input dispatch
+    - [ ] Implement `UiRoot::hit_test(x, y) -> Option<WidgetId>`
+    - [ ] Cache flattened widget bounds list, rebuild on layout change
+    - [ ] Traverse in reverse render order (topmost first)
 - [ ] **5.3. Focus Management** (`eu4game/src/gui/focus.rs`)
-    - [ ] `struct FocusManager { focused: Option<WidgetId> }`.
-    - [ ] `focus(id)`: Set focus, send `FocusLost` to previous, `FocusGained` to new.
-    - [ ] `clear_focus()`: Remove focus from current widget.
-    - [ ] Handle widget removal: if focused widget is removed, clear focus.
+    - [ ] `struct FocusManager { focused: Option<WidgetId> }`
+    - [ ] `focus(id)`: Set focus, send `FocusLost` to previous, `FocusGained` to new
+    - [ ] `clear_focus()`: Remove focus from current widget
+    - [ ] Handle widget removal: if focused widget is removed, clear focus
 - [ ] **5.4. Input Dispatch Loop**
-    - [ ] `UiRoot::dispatch_event(event) -> EventResult`.
-    - [ ] For mouse events: hit test → dispatch to widget.
-    - [ ] For keyboard events: dispatch to focused widget (if any).
+    - [ ] `UiRoot::dispatch_event(event) -> Option<UiAction>`
+    - [ ] For mouse events: hit test → dispatch to widget → return action
+    - [ ] For keyboard events: dispatch to focused widget (if any)
+    - [ ] Convert button clicks to `UiAction` for screen transitions
 
-### Phase 6: Localization System
+### Phase 6: Screen & Panel Management
+*Objective: Enable screen transitions and panel visibility control.*
+
+- [ ] **6.1. Screen State Machine** (`eu4game/src/screen.rs`)
+    - [ ] Define `Screen` enum: `MainMenu`, `SinglePlayer`, `Multiplayer`, `Playing`
+    - [ ] Define `ScreenManager` with `current_screen: Screen`
+    - [ ] `transition_to(screen)`: Handle screen changes with proper cleanup
+    - [ ] Integrate with main loop to route input/render to correct screen
+- [ ] **6.2. Panel Visibility**
+    - [ ] Add `visible: bool` property to panel structs
+    - [ ] Skip rendering hidden panels
+    - [ ] Skip hit testing for hidden panels
+    - [ ] `show()`/`hide()` methods for panels
+- [ ] **6.3. Frontend Container**
+    - [ ] Create `FrontendUI` struct containing all menu panels
+    - [ ] `MainMenuPanel` - main menu buttons
+    - [ ] `SinglePlayerPanel` - left/top/right panels combined
+    - [ ] Handle panel switching on button actions
+- [ ] **6.4. Back Navigation**
+    - [ ] Back button returns to previous screen
+    - [ ] Escape key triggers back action (when not in text input)
+
+### Phase 7: Listbox Support
+*Objective: Enable scrollable lists for country/save selection.*
+
+- [ ] **7.1. Parser Support**
+    - [ ] Parse `listboxType` element in GUI parser
+    - [ ] Extract: name, position, size, orientation, spacing, scrollbartype
+    - [ ] Parse `scrollbarType` definitions from core.gui
+    - [ ] Store listbox definitions in WindowDatabase
+- [ ] **7.2. Entry Templates**
+    - [ ] Parse entry template windows (e.g., `savegameentry`, `interesting_country`)
+    - [ ] Support multiple widget types in entry: icon, text, button, checkbox
+    - [ ] Entry templates define row height and layout
+- [ ] **7.3. GuiListbox Primitive** (`gui/primitives/listbox.rs`)
+    - [ ] `struct GuiListbox<T>` with item data binding
+    - [ ] Adapter pattern: `trait ListAdapter { fn item_count(); fn bind_entry(idx, entry); }`
+    - [ ] Scroll offset tracking (0.0 to max_scroll)
+    - [ ] Visible item range calculation
+- [ ] **7.4. Rendering**
+    - [ ] Implement scissor rect clipping (wgpu::RenderPass::set_scissor_rect)
+    - [ ] Only render items in visible range
+    - [ ] Render entry widgets at calculated positions
+    - [ ] Render scrollbar if content overflows
+- [ ] **7.5. Interaction**
+    - [ ] Mouse wheel scrolling
+    - [ ] Click on item → selection callback
+    - [ ] Scrollbar drag interaction
+    - [ ] Keyboard navigation (up/down arrows, page up/down)
+
+### Phase 8: Frontend Panels
+*Objective: Build the complete main menu and country selection UI.*
+
+- [ ] **8.1. Main Menu Panel** (`gui/frontend/main_menu.rs`)
+    - [ ] Create `MainMenuPanel` with macro binding to `mainmenu` window
+    - [ ] Bind buttons: single_player, multi_player, tutorial, credits, settings, exit
+    - [ ] Logo and version text display
+    - [ ] Button click → screen transition actions
+- [ ] **8.2. Country Selection Left Panel** (`gui/frontend/country_select_left.rs`)
+    - [ ] `CountrySelectLeftPanel` struct
+    - [ ] Bookmarks listbox (historical start dates)
+    - [ ] Save games listbox (if save support added)
+    - [ ] Date widget (year/month/day editors)
+    - [ ] Back button
+- [ ] **8.3. Country Selection Top Panel** (`gui/frontend/country_select_top.rs`)
+    - [ ] `CountrySelectTopPanel` struct
+    - [ ] Map mode buttons (terrain, political, religion, etc.)
+    - [ ] Start date label ("The World in 1444")
+    - [ ] Nation selection prompt label
+- [ ] **8.4. Play Button & Game Start**
+    - [ ] Bind play_button from lobby/singleplayer area
+    - [ ] Click → validate country selected → start game
+    - [ ] Transition to Playing screen
+
+### Phase 9: Game Integration
+*Objective: Connect UI to game systems for complete start flow.*
+
+- [ ] **9.1. Bookmark System**
+    - [ ] Parse bookmarks from game data (historical start dates)
+    - [ ] Populate bookmarks listbox
+    - [ ] Bookmark selection updates start date
+    - [ ] Bookmark selection may suggest default country
+- [ ] **9.2. Country Selection Data Flow**
+    - [ ] Map click → country selection (extend existing province click)
+    - [ ] Listbox click → country selection
+    - [ ] Selection updates `CountrySelectPanel` (already working)
+    - [ ] Track `selected_country: Option<CountryTag>`
+- [ ] **9.3. Game Initialization**
+    - [ ] On Play click: validate selection (country selected, valid date)
+    - [ ] Load world state for selected date
+    - [ ] Set player country
+    - [ ] Transition to Playing screen
+    - [ ] Initialize simulation thread with selected state
+- [ ] **9.4. Screen State Integration**
+    - [ ] Replace current `GamePhase` enum with `Screen` system
+    - [ ] Update main loop to use screen-based input routing
+    - [ ] Menu screens don't advance simulation
+    - [ ] Playing screen runs simulation normally
+
+### Phase 10: Localization System
 *Objective: Support EU4's $KEY$ localization tokens.*
 
-- [ ] **6.1. Localizer Trait** (`eu4game/src/gui/localization.rs`)
-    - [ ] Define `trait Localizer: Send + Sync`.
-    - [ ] Implement `NoOpLocalizer` for CI (returns input unchanged).
-    - [ ] Implement `FileLocalizer` that loads from `localisation/*.yml`.
-- [ ] **6.2. Token Resolution**
-    - [ ] Parse `$KEY$` tokens from strings.
-    - [ ] Handle nested tokens: `$KEY1$` resolves to `"Hello $KEY2$"`, which needs further resolution.
-    - [ ] Limit recursion depth (max 5) to prevent infinite loops from malformed data.
-- [ ] **6.3. Caching**
-    - [ ] Cache resolved strings with `(raw_hash, language_gen) -> resolved` map.
-    - [ ] Invalidate cache on language change (bump generation counter).
-- [ ] **6.4. Integration**
-    - [ ] Add `localizer: Arc<dyn Localizer>` to `UiContext`.
-    - [ ] `GuiText::render()` calls `ctx.localizer.resolve()` before drawing.
+- [ ] **10.1. Localizer Trait** (`eu4game/src/gui/localization.rs`)
+    - [ ] Define `trait Localizer: Send + Sync`
+    - [ ] Implement `NoOpLocalizer` for CI (returns input unchanged)
+    - [ ] Implement `FileLocalizer` that loads from `localisation/*.yml`
+- [ ] **10.2. Token Resolution**
+    - [ ] Parse `$KEY$` tokens from strings
+    - [ ] Handle nested tokens: `$KEY1$` resolves to `"Hello $KEY2$"`, which needs further resolution
+    - [ ] Limit recursion depth (max 5) to prevent infinite loops from malformed data
+- [ ] **10.3. Caching**
+    - [ ] Cache resolved strings with `(raw_hash, language_gen) -> resolved` map
+    - [ ] Invalidate cache on language change (bump generation counter)
+- [ ] **10.4. Integration**
+    - [ ] Add `localizer: Arc<dyn Localizer>` to `UiContext`
+    - [ ] `GuiText::render()` calls `ctx.localizer.resolve()` before drawing
 
-### Phase 7: Complex Views (Future)
-*Objective: Support dynamic lists and data visualization.*
-
-- [ ] **7.1. Scroll Area / ListBox** (`gui/primitives/list.rs`)
-    - [ ] **Task**: Parse `listboxType` and `smoothListboxType`.
-    - [ ] **Task**: Implement `GuiList<T>` with generic row type and `Adapter` pattern.
-    - [ ] **Task**: Implement scissoring (clipping) rect in `GuiRenderer` using stencil buffer or scissor test.
-    - [ ] **Task**: Handle scroll wheel input, smooth scrolling animation.
-- [ ] **7.2. Pie Charts** (`gui/primitives/chart.rs`)
-    - [ ] **Note**: EU4 has no `pieChartType` widget. Ledger charts are engine-rendered to texture.
-    - [ ] **Task**: Implement `PieChartRenderer` that generates geometry for slices from `Vec<(f32, Color)>`.
-    - [ ] **Task**: Either render to offscreen texture (bind to `GuiIcon`) or draw directly in UI pass.
-    - [ ] **Task**: Add hover detection for individual slices via angle-from-center calculation.
-
-### Phase 8: Animation System (Future)
+### Phase 11: Animation System
 *Objective: Support EU4's UI animations and transitions.*
 
-- [ ] **8.1. Transition Types** (`eu4game/src/gui/animation.rs`)
-    - [ ] `PositionTransition`: Animate from `show_position` to `position`.
-    - [ ] `AlphaTransition`: Fade in/out.
-    - [ ] `FrameAnimation`: Cycle through sprite frames.
-- [ ] **8.2. Timing**
-    - [ ] `animation_time` property support.
-    - [ ] Easing functions: `Linear`, `EaseIn`, `EaseOut`, `EaseInOut`.
-- [ ] **8.3. Integration**
-    - [ ] `GuiWidget::update(dt: f32)` for animation tick.
-    - [ ] Widgets with active animations request continuous redraw.
+- [ ] **11.1. Transition Types** (`eu4game/src/gui/animation.rs`)
+    - [ ] `PositionTransition`: Animate from `show_position` to `position`
+    - [ ] `AlphaTransition`: Fade in/out
+    - [ ] `FrameAnimation`: Cycle through sprite frames
+- [ ] **11.2. Timing**
+    - [ ] `animation_time` property support (EU4 uses ~300ms for panel slides)
+    - [ ] Easing functions: `Linear`, `EaseIn`, `EaseOut`, `Decelerated` (EU4's default)
+- [ ] **11.3. Panel Transitions**
+    - [ ] Left panel slides from left (x animation)
+    - [ ] Top panel slides from top (y animation)
+    - [ ] Right panel slides from right (x animation)
+- [ ] **11.4. Integration**
+    - [ ] `GuiWidget::update(dt: f32)` for animation tick
+    - [ ] Widgets with active animations request continuous redraw
 
-### Phase 9: Code Health & Cleanup
+### Phase 12: Advanced Views
+*Objective: Additional complex widgets for game UI.*
+
+- [ ] **12.1. Pie Charts** (`gui/primitives/chart.rs`)
+    - [ ] *Note*: EU4 has no `pieChartType` widget. Ledger charts are engine-rendered.
+    - [ ] Implement `PieChartRenderer` that generates geometry for slices
+    - [ ] Either render to offscreen texture or draw directly in UI pass
+    - [ ] Add hover detection for individual slices
+- [ ] **12.2. Progress Bars**
+    - [ ] Parse progress bar widgets if used
+    - [ ] Animate fill based on bound value
+- [ ] **12.3. Tooltips**
+    - [ ] Hover detection with delay
+    - [ ] Tooltip panel positioning (avoid screen edges)
+    - [ ] Dynamic tooltip content binding
+
+### Phase 13: Code Health & Cleanup
 *Objective: Remove transitional debt and stabilize the UI engine.*
 
-- [ ] **9.1. Remove Dead Code Exceptions**
-    - [ ] Audit all `#![allow(dead_code)]` and `#[allow(dead_code)]` added during Phase 2.
-    - [ ] Ensure all primitives and binder methods are properly used in production code paths.
-    - [ ] Delete unused placeholder code that was replaced by real implementations.
-- [ ] **9.2. Performance Audit**
-    - [ ] Profile `Binder::find_node_iterative` in large UI files (e.g. `frontend.gui`).
-    - [ ] Verify `WindowDatabase` lookup costs are negligible.
-    - [ ] Check `StringInterner` lock contention under heavy parallel usage (if applicable).
-- [ ] **9.3. Documentation & Stabilization**
-    - [ ] Update `docs/design/ui_engine.md` to reflect final implementation details.
-    - [ ] Add rustdoc comments to all public traits and methods.
-    - [ ] Ensure 100% test coverage for all core binder and interner logic.
+- [ ] **13.1. Dead Code Audit**
+    - [ ] Audit all `#![allow(dead_code)]` and `#[allow(dead_code)]` added during Phase 2-4
+    - [ ] Ensure all primitives and binder methods are properly used
+    - [ ] Delete unused placeholder code
+- [ ] **13.2. Performance Audit**
+    - [ ] Profile `Binder::find_node_iterative` in large UI files (e.g. `frontend.gui`)
+    - [ ] Verify `WindowDatabase` lookup costs are negligible
+    - [ ] Profile listbox rendering with many items
+    - [ ] Ensure scissor rect doesn't cause excessive draw calls
+- [ ] **13.3. Documentation & Stabilization**
+    - [ ] Update this document to reflect final implementation
+    - [ ] Add rustdoc comments to all public traits and methods
+    - [ ] Ensure 100% test coverage for core binder and interner logic
+    - [ ] Create integration tests for complete frontend flow
 
 ---
 
