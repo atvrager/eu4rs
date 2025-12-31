@@ -4,8 +4,8 @@ This document tracks the implementation status of the eu4rs simulation engine an
 
 ## Overview
 
-**Current Focus**: Phase 7 - Advanced Economy
-**Recently Completed**: Phase 9 - Celestial Empire, Phase 8 - Holy Roman Empire
+**Current Focus**: Phase 10 - Generic UI Engine
+**Recently Completed**: Phase 10.1 - 9-Slice Rendering, Phase 9 - Celestial Empire, Phase 8 - Holy Roman Empire
 
 ---
 
@@ -283,6 +283,21 @@ Emperor of China mechanics with mandate and meritocracy.
 
 ---
 
+## Phase 10: Generic UI Engine 🔄 **IN PROGRESS**
+
+*Target: v0.4.1*
+
+Decoupled UI system for moddable interface management.
+
+- [x] **10.1: 9-Slice Rendering Foundation**: Scalable backgrounds and asset management (Phase 1)
+- [ ] **10.2: The Generic UI Binder**: Decoupling Rust code from .gui files (Phase 2)
+- [ ] **10.3: Macro & Data Binding**: Procedural macros for UI sync (Phase 3)
+- [ ] **10.4: Event Handling & Focus**: Interactive controls and focus management (Phase 5)
+
+**Key Files**: [mod.rs](../eu4game/src/gui/mod.rs), [nine_slice.rs](../eu4game/src/gui/nine_slice.rs), [sprite_cache.rs](../eu4game/src/gui/sprite_cache.rs)
+
+---
+
 ## Visualization & Tools
 
 Parallel development track for rendering and debugging.
@@ -455,4 +470,4 @@ Play EU4 in your terminal! A text-based interface using `ratatui` or similar:
 
 ---
 
-*Last updated: 2025-12-29*
+*Last updated: 2025-12-31*

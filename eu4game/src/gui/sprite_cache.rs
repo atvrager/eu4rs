@@ -9,6 +9,20 @@ use std::path::{Path, PathBuf};
 /// Maximum sprites to cache in GPU memory.
 const MAX_CACHED_SPRITES: usize = 128;
 
+/// Border size for 9-slice (cornered) sprites.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpriteBorder {
+    pub x: u32,
+    pub y: u32,
+}
+
+/// Type of cached sprite.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CachedSpriteType {
+    Standard,
+    Cornered(SpriteBorder),
+}
+
 /// Cached sprite texture data.
 struct CachedSprite {
     #[allow(dead_code)]
@@ -16,6 +30,8 @@ struct CachedSprite {
     view: wgpu::TextureView,
     width: u32,
     height: u32,
+    #[allow(dead_code)]
+    sprite_type: CachedSpriteType,
 }
 
 /// Sprite texture cache with LRU eviction.
@@ -40,19 +56,49 @@ impl SpriteCache {
 
     /// Gets a texture, loading and caching if needed.
     /// Returns (texture_view, width, height) or None if not found.
-    ///
-    /// EU4 .gfx files often specify .tga but actual files are .dds,
-    /// so we try alternative extensions if the specified one isn't found.
     pub fn get(
         &mut self,
         texture_path: &str,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Option<(&wgpu::TextureView, u32, u32)> {
+        self.get_with_type(texture_path, CachedSpriteType::Standard, device, queue)
+    }
+
+    /// Gets a cornered (9-slice) texture, loading and caching if needed.
+    pub fn get_cornered(
+        &mut self,
+        texture_path: &str,
+        border: SpriteBorder,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Option<(&wgpu::TextureView, u32, u32)> {
+        self.get_with_type(
+            texture_path,
+            CachedSpriteType::Cornered(border),
+            device,
+            queue,
+        )
+    }
+
+    /// Internal implementation for getting/loading sprites.
+    fn get_with_type(
+        &mut self,
+        texture_path: &str,
+        sprite_type: CachedSpriteType,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Option<(&wgpu::TextureView, u32, u32)> {
+        // Use a combined key of path + type for caching
+        let cache_key = match sprite_type {
+            CachedSpriteType::Standard => texture_path.to_string(),
+            CachedSpriteType::Cornered(b) => format!("{}:{}x{}", texture_path, b.x, b.y),
+        };
+
         // Check cache first
-        if self.cache.contains_key(texture_path) {
-            self.touch(texture_path);
-            let cached = self.cache.get(texture_path)?;
+        if self.cache.contains_key(&cache_key) {
+            self.touch(&cache_key);
+            let cached = self.cache.get(&cache_key)?;
             return Some((&cached.view, cached.width, cached.height));
         }
 
@@ -65,13 +111,13 @@ impl SpriteCache {
         }
 
         // Load texture
-        match self.load_texture(device, queue, &full_path, texture_path) {
+        match self.load_texture(device, queue, &full_path, texture_path, sprite_type) {
             Ok(cached) => {
                 let width = cached.width;
                 let height = cached.height;
-                self.cache.insert(texture_path.to_string(), cached);
-                self.access_order.push(texture_path.to_string());
-                let cached = self.cache.get(texture_path)?;
+                self.cache.insert(cache_key.clone(), cached);
+                self.access_order.push(cache_key.clone());
+                let cached = self.cache.get(&cache_key)?;
                 Some((&cached.view, width, height))
             }
             Err(e) => {
@@ -88,6 +134,7 @@ impl SpriteCache {
         queue: &wgpu::Queue,
         path: &Path,
         label: &str,
+        sprite_type: CachedSpriteType,
     ) -> Result<CachedSprite, String> {
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
@@ -111,11 +158,20 @@ impl SpriteCache {
             }
         };
 
+        log::debug!(
+            "Loaded sprite {}: {}x{} ({:?})",
+            label,
+            width,
+            height,
+            sprite_type
+        );
+
         Ok(CachedSprite {
             texture,
             view,
             width,
             height,
+            sprite_type,
         })
     }
 

@@ -4,6 +4,8 @@
 //! All map rendering happens on the GPU for maximum performance.
 
 use crate::camera::CameraUniform;
+use crate::gui::layout::rect_to_clip_space;
+use crate::gui::nine_slice::{NineSliceResult, generate_9_slice_quads};
 use std::collections::HashMap;
 use wgpu::util::DeviceExt;
 
@@ -1328,7 +1330,7 @@ impl SpriteRenderer {
         render_pass.draw(0..6, 0..1);
     }
 
-    /// Draw a 9-slice (cornered tile) sprite.
+    /// Draw a 9-slice (cornered tile) sprite in pixel coordinates.
     ///
     /// 9-slice divides a texture into 9 regions using border sizes:
     /// - 4 corners: fixed size, never stretched
@@ -1336,12 +1338,12 @@ impl SpriteRenderer {
     /// - 1 center: stretched along both axes
     ///
     /// # Arguments
-    /// * `x, y, width, height` - Target rectangle in clip space
-    /// * `border_x, border_y` - Border size in pixels (defines corner/edge regions)
+    /// * `x, y, width, height` - Target rectangle in PIXELS
+    /// * `border_x, border_y` - Border size in pixels
     /// * `tex_w, tex_h` - Actual texture dimensions in pixels
-    #[allow(dead_code)] // Used in tests
+    /// * `screen_size` - Current screen resolution
     #[allow(clippy::too_many_arguments)]
-    pub fn draw_nine_slice<'a>(
+    pub fn draw_cornered_tile<'a>(
         &'a self,
         render_pass: &mut wgpu::RenderPass<'a>,
         bind_group: &'a wgpu::BindGroup,
@@ -1350,189 +1352,103 @@ impl SpriteRenderer {
         y: f32,
         width: f32,
         height: f32,
+        border_x: f32,
+        border_y: f32,
+        tex_w: u32,
+        tex_h: u32,
+        screen_size: (u32, u32),
+    ) {
+        let result = generate_9_slice_quads(
+            (x, y),
+            (width, height),
+            (border_x, border_y),
+            (tex_w, tex_h),
+        );
+
+        match result {
+            NineSliceResult::Full(quads) => {
+                for quad in quads.iter() {
+                    let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
+                        (quad.pos[0], quad.pos[1]),
+                        (quad.size[0] as u32, quad.size[1] as u32),
+                        screen_size,
+                    );
+                    self.draw_uv(
+                        render_pass,
+                        bind_group,
+                        queue,
+                        clip_x,
+                        clip_y,
+                        clip_w,
+                        clip_h,
+                        quad.uv_pos[0],
+                        quad.uv_pos[1],
+                        quad.uv_pos[0] + quad.uv_size[0],
+                        quad.uv_pos[1] + quad.uv_size[1],
+                    );
+                }
+            }
+            NineSliceResult::Fallback(quad) => {
+                let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
+                    (quad.pos[0], quad.pos[1]),
+                    (quad.size[0] as u32, quad.size[1] as u32),
+                    screen_size,
+                );
+                self.draw_uv(
+                    render_pass,
+                    bind_group,
+                    queue,
+                    clip_x,
+                    clip_y,
+                    clip_w,
+                    clip_h,
+                    quad.uv_pos[0],
+                    quad.uv_pos[1],
+                    quad.uv_pos[0] + quad.uv_size[0],
+                    quad.uv_pos[1] + quad.uv_size[1],
+                );
+            }
+        }
+    }
+
+    /// Backwards compatibility wrapper for draw_nine_slice.
+    /// Deprecated: use draw_cornered_tile with pixel coordinates.
+    #[allow(dead_code)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_nine_slice<'a>(
+        &'a self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        bind_group: &'a wgpu::BindGroup,
+        queue: &wgpu::Queue,
+        clip_x: f32,
+        clip_y: f32,
+        clip_width: f32,
+        clip_height: f32,
         border_x: u32,
         border_y: u32,
         tex_w: u32,
         tex_h: u32,
         screen_size: (u32, u32),
     ) {
-        // Calculate UV boundaries (texture coordinates 0.0-1.0)
-        let u_left = border_x as f32 / tex_w as f32;
-        let u_right = 1.0 - u_left;
-        let v_top = border_y as f32 / tex_h as f32;
-        let v_bottom = 1.0 - v_top;
+        // Convert clip space back to pixels for draw_cornered_tile
+        let x = (clip_x + 1.0) / 2.0 * screen_size.0 as f32;
+        let y = (1.0 - clip_y) / 2.0 * screen_size.1 as f32;
+        let width = clip_width / 2.0 * screen_size.0 as f32;
+        let height = clip_height / 2.0 * screen_size.1 as f32;
 
-        // Calculate clip-space border sizes
-        // Clip space is -1..1, so multiply by 2 and divide by screen dimension
-        let bx_clip = (border_x as f32 * 2.0) / screen_size.0 as f32;
-        let by_clip = (border_y as f32 * 2.0) / screen_size.1 as f32;
-
-        // Calculate the stretched middle region sizes
-        let mid_width = width - 2.0 * bx_clip;
-        let mid_height = height - 2.0 * by_clip;
-
-        // Skip rendering if the target is smaller than the borders can handle
-        if mid_width < 0.0 || mid_height < 0.0 {
-            // Fall back to just drawing stretched (no 9-slice)
-            self.draw_uv(
-                render_pass,
-                bind_group,
-                queue,
-                x,
-                y,
-                width,
-                height,
-                0.0,
-                0.0,
-                1.0,
-                1.0,
-            );
-            return;
-        }
-
-        // Positions for the 3x3 grid (in clip space, Y increases upward)
-        // x: left edge, middle start, right edge start
-        let x0 = x;
-        let x1 = x + bx_clip;
-        let x2 = x + width - bx_clip;
-
-        // y: top edge (remember clip space Y is flipped from screen Y)
-        let y0 = y;
-        let y1 = y - by_clip; // Below top edge
-        let y2 = y - height + by_clip; // Above bottom edge
-
-        // Draw all 9 regions:
-
-        // Top row (y0 to y1)
-        // Top-left corner
-        self.draw_uv(
+        self.draw_cornered_tile(
             render_pass,
             bind_group,
             queue,
-            x0,
-            y0,
-            bx_clip,
-            by_clip,
-            0.0,
-            0.0,
-            u_left,
-            v_top,
-        );
-        // Top edge (stretched horizontally)
-        self.draw_uv(
-            render_pass,
-            bind_group,
-            queue,
-            x1,
-            y0,
-            mid_width,
-            by_clip,
-            u_left,
-            0.0,
-            u_right,
-            v_top,
-        );
-        // Top-right corner
-        self.draw_uv(
-            render_pass,
-            bind_group,
-            queue,
-            x2,
-            y0,
-            bx_clip,
-            by_clip,
-            u_right,
-            0.0,
-            1.0,
-            v_top,
-        );
-
-        // Middle row (y1 to y2)
-        // Left edge (stretched vertically)
-        self.draw_uv(
-            render_pass,
-            bind_group,
-            queue,
-            x0,
-            y1,
-            bx_clip,
-            mid_height,
-            0.0,
-            v_top,
-            u_left,
-            v_bottom,
-        );
-        // Center (stretched both ways)
-        self.draw_uv(
-            render_pass,
-            bind_group,
-            queue,
-            x1,
-            y1,
-            mid_width,
-            mid_height,
-            u_left,
-            v_top,
-            u_right,
-            v_bottom,
-        );
-        // Right edge (stretched vertically)
-        self.draw_uv(
-            render_pass,
-            bind_group,
-            queue,
-            x2,
-            y1,
-            bx_clip,
-            mid_height,
-            u_right,
-            v_top,
-            1.0,
-            v_bottom,
-        );
-
-        // Bottom row (y2 to bottom)
-        // Bottom-left corner
-        self.draw_uv(
-            render_pass,
-            bind_group,
-            queue,
-            x0,
-            y2,
-            bx_clip,
-            by_clip,
-            0.0,
-            v_bottom,
-            u_left,
-            1.0,
-        );
-        // Bottom edge (stretched horizontally)
-        self.draw_uv(
-            render_pass,
-            bind_group,
-            queue,
-            x1,
-            y2,
-            mid_width,
-            by_clip,
-            u_left,
-            v_bottom,
-            u_right,
-            1.0,
-        );
-        // Bottom-right corner
-        self.draw_uv(
-            render_pass,
-            bind_group,
-            queue,
-            x2,
-            y2,
-            bx_clip,
-            by_clip,
-            u_right,
-            v_bottom,
-            1.0,
-            1.0,
+            x,
+            y,
+            width,
+            height,
+            border_x as f32,
+            border_y as f32,
+            tex_w,
+            tex_h,
+            screen_size,
         );
     }
 }

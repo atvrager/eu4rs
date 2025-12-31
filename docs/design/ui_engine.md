@@ -274,18 +274,18 @@ Analysis of `parser.rs` reveals several other standard EU4 types we will need ev
 ### Phase 1: 9-Slice Rendering Foundation
 *Objective: Enable scalable UI backgrounds (CorneredTileSprite).*
 
-- [ ] **1.1. Refactor Sprite Cache** (`eu4game/src/gui/sprite_cache.rs`)
-    - [ ] Create `enum CachedSpriteType { Standard(Texture), Cornered(Texture, Border) }`.
-    - [ ] Implement `load_cornered_sprite(path, border_size)` method.
-    - [ ] Update `resolve_texture_path` to handle 9-slice naming conventions if unique.
-- [ ] **1.2. Implement Mesh Generator** (`eu4game/src/gui/nine_slice.rs`)
-    - [ ] Implement `generate_9_slice_quads(pos, size, border, texture_size) -> NineSliceResult`.
-    - [ ] Handle degenerate case: if `size < 2 * border`, return `NineSliceResult::Fallback(single_quad)`.
-    - [ ] *Detail*: Center quad stretches. Corner quads are fixed size. Edge quads stretch in one axis.
-    - [ ] Add unit tests for: normal case, degenerate case, zero border (should produce single quad).
-- [ ] **1.3. Update Renderer** (`eu4game/src/gui/mod.rs`)
-    - [ ] Add `draw_cornered_tile(&self, ...)` to `SpriteRenderer`.
-    - [ ] **Verification**: Render `GFX_country_selection_panel_bg` (the background) in `CountrySelectPanel` using the new renderer.
+- [x] **1.1. Refactor Sprite Cache** (`eu4game/src/gui/sprite_cache.rs`)
+    - [x] Create `enum CachedSpriteType { Standard(Texture), Cornered(Texture, Border) }`.
+    - [x] Implement `get_cornered_sprite(path, border_size)` method.
+    - [x] Update `resolve_texture_path` to handle 9-slice naming conventions if unique.
+- [x] **1.2. Implement Mesh Generator** (`eu4game/src/gui/nine_slice.rs`)
+    - [x] Implement `generate_9_slice_quads(pos, size, border, texture_size) -> NineSliceResult`.
+    - [x] Handle degenerate case: if `size < 2 * border`, return `NineSliceResult::Fallback(single_quad)`.
+    - [x] *Detail*: Center quad stretches. Corner quads are fixed size. Edge quads stretch in one axis.
+    - [x] Add unit tests for: normal case, degenerate case, zero border (should produce single quad).
+- [x] **1.3. Update Renderer** (`eu4game/src/gui/mod.rs`)
+    - [x] Add `draw_cornered_tile(&self, ...)` to `SpriteRenderer`.
+    - [x] **Verification**: Render `GFX_country_selection_panel_bg` (the background) in `CountrySelectPanel` using the new renderer.
 
 ### Phase 2: The Generic UI Binder
 *Objective: Decouple Rust code from specific .gui file content.*

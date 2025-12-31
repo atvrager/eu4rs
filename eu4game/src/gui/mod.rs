@@ -7,6 +7,7 @@
 pub mod country_select;
 #[allow(dead_code)]
 pub mod layout;
+pub mod nine_slice;
 pub mod parser;
 pub mod sprite_cache;
 #[allow(dead_code)]
@@ -18,7 +19,7 @@ pub use layout::{
     compute_masked_flag_rect, get_window_anchor, position_from_anchor, rect_to_clip_space,
 };
 pub use parser::{parse_gfx_file, parse_gui_file};
-pub use sprite_cache::SpriteCache;
+pub use sprite_cache::{SpriteBorder, SpriteCache};
 pub use types::{
     CountryResources, GfxDatabase, GuiAction, GuiElement, GuiState, HitBox, Orientation,
 };
@@ -501,7 +502,15 @@ impl GuiRenderer {
             && let Some(panel_bg) = self
                 .gfx_db
                 .get_cornered_tile("GFX_country_selection_panel_bg")
-            && let Some((view, w, h)) = self.sprite_cache.get(&panel_bg.texture_file, device, queue)
+            && let Some((view, w, h)) = self.sprite_cache.get_cornered(
+                &panel_bg.texture_file,
+                SpriteBorder {
+                    x: panel_bg.border_size.0,
+                    y: panel_bg.border_size.1,
+                },
+                device,
+                queue,
+            )
         {
             let bind_group = sprite_renderer.create_bind_group(device, view);
             self.panel_bg_bind_group = Some((bind_group, w, h));
@@ -1361,23 +1370,16 @@ impl GuiRenderer {
             .get_cornered_tile("GFX_country_selection_panel_bg")
             && let Some((ref bind_group, tex_w, tex_h)) = self.panel_bg_bind_group
         {
-            // Convert to clip space - use computed panel_size, not the gfx file size
-            let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
-                panel_top_left,
-                (panel_size.0 as u32, panel_size.1 as u32),
-                screen_size,
-            );
-
-            sprite_renderer.draw_nine_slice(
+            sprite_renderer.draw_cornered_tile(
                 render_pass,
                 bind_group,
                 queue,
-                clip_x,
-                clip_y,
-                clip_w,
-                clip_h,
-                panel_bg.border_size.0,
-                panel_bg.border_size.1,
+                panel_top_left.0,
+                panel_top_left.1,
+                panel_size.0,
+                panel_size.1,
+                panel_bg.border_size.0 as f32,
+                panel_bg.border_size.1 as f32,
                 tex_w,
                 tex_h,
                 screen_size,
