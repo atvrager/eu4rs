@@ -356,9 +356,42 @@ pub fn load_initial_state(
         }
     }
 
-    // Second pass: Set country religions and home trade nodes based on capital province
+    // Second pass: Set country religions, manpower, and home trade nodes
     // (Country history not yet loaded, so we use capital's religion as proxy)
     for (tag, country) in &mut countries {
+        // Calculate total development for this country
+        let total_dev: f32 = provinces
+            .values()
+            .filter(|p| p.owner.as_deref() == Some(tag))
+            .map(|p| (p.base_tax + p.base_production + p.base_manpower).to_f32())
+            .sum();
+
+        // Initialize manpower using EU4's actual formula:
+        // Max pool = sum(base_manpower * 250 * (1 - autonomy)) + 10,000 base
+        // We assume ~30% average autonomy since we don't parse autonomy yet
+        const AUTONOMY_FACTOR: f32 = 0.70; // (1 - 0.30 average autonomy)
+        const MEN_PER_BASE_MP: f32 = 250.0; // EU4's BASE_MP_TO_MANPOWER = 0.25 * 1000
+        const BASE_MANPOWER_POOL: f32 = 10_000.0;
+        const STARTING_MANPOWER_RATIO: f32 = 0.18; // ~18% of max at game start
+
+        if let Some(&total_base_mp) = country_total_manpower.get(tag) {
+            let province_contribution = total_base_mp * MEN_PER_BASE_MP * AUTONOMY_FACTOR;
+            let max_pool = province_contribution + BASE_MANPOWER_POOL;
+            let starting_pool = max_pool * STARTING_MANPOWER_RATIO;
+            country.manpower = Fixed::from_f32(starting_pool);
+            log::trace!(
+                "{}: max_manpower={:.0}, starting={:.0}",
+                tag,
+                max_pool,
+                starting_pool
+            );
+        }
+
+        // Initialize starting treasury: ~0.12 ducats per development
+        // Based on Ming having 146 ducats with 1220 dev at game start
+        const TREASURY_PER_DEV: f32 = 0.12;
+        country.treasury = Fixed::from_f32(total_dev * TREASURY_PER_DEV);
+
         if let Some(&capital_id) = country_capitals.get(tag) {
             if let Some(capital) = provinces.get(&capital_id) {
                 country.religion = capital.religion.clone();

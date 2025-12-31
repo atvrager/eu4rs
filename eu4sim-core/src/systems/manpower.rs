@@ -93,10 +93,10 @@ mod tests {
 
     #[test]
     fn test_manpower_recovery() {
-        // Setup: 1 province, base manpower 1.0 -> 1000 men
+        // Setup: 1 province, base manpower 1.0 -> 250 men (MEN_PER_DEV = 250)
         // Base Country = 10000
-        // Total Max = 11000
-        // Monthly Recovery = 11000 / 120 = 91.6666
+        // Total Max = 10250
+        // Monthly Recovery = 10250 / 120 = 85.4166
         let mut cores = std::collections::HashSet::new();
         cores.insert("SWE".to_string());
         let province = ProvinceState {
@@ -117,11 +117,9 @@ mod tests {
         run_manpower_tick(&mut state);
 
         let swe = state.countries.get("SWE").unwrap();
-        // 11000 / 120 = 91.6666 -> 91.6666
-        // Fixed: 916666
-        // Expected approx 91.6666
-        assert!(swe.manpower > Fixed::from_f32(91.6));
-        assert!(swe.manpower < Fixed::from_f32(91.7));
+        // 10250 / 120 = 85.4166
+        assert!(swe.manpower > Fixed::from_f32(85.4));
+        assert!(swe.manpower < Fixed::from_f32(85.5));
     }
 
     #[test]
@@ -137,7 +135,7 @@ mod tests {
             .with_province_state(1, province)
             .build();
 
-        // Max is 11000. Set current to 20000.
+        // Max is 10250 (10000 base + 250 from province). Set current to 20000.
         state.countries.get_mut("SWE").unwrap().manpower = Fixed::from_int(20000);
 
         run_manpower_tick(&mut state);

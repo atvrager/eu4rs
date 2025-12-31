@@ -5,10 +5,11 @@
 
 /// Manpower constants
 pub mod manpower {
-    /// Men per point of base manpower development (EU4: 1000)
-    pub const MEN_PER_DEV: i64 = 1000;
+    /// Men per point of base manpower development (EU4: 250)
+    /// From defines.lua: BASE_MP_TO_MANPOWER = 0.25 (meaning 0.25 * 1000 = 250 men)
+    pub const MEN_PER_DEV: i64 = 250;
 
-    /// Base manpower pool for all countries (EU4: ~10000)
+    /// Base manpower pool for all countries (EU4: 10000)
     pub const BASE_MANPOWER: i64 = 10000;
 
     /// Months to recover from 0 to max manpower (EU4: 120 = 10 years)

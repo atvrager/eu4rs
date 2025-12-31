@@ -13,11 +13,44 @@ pub mod types;
 pub use layout::{get_window_anchor, position_from_anchor, rect_to_clip_space};
 pub use parser::{parse_gfx_file, parse_gui_file};
 pub use sprite_cache::SpriteCache;
-pub use types::{GfxDatabase, GuiAction, GuiElement, GuiState, HitBox, Orientation};
+pub use types::{
+    CountryResources, GfxDatabase, GuiAction, GuiElement, GuiState, HitBox, Orientation,
+};
 
 use crate::bmfont::BitmapFontCache;
 use crate::render::SpriteRenderer;
 use std::path::Path;
+
+/// Format a number with smart suffixes.
+/// - Under 100K: show full number with commas (e.g., "25,000")
+/// - 100K to 1M: show with K suffix (e.g., "150K")
+/// - 1M+: show with M suffix (e.g., "1.5M")
+fn format_k(value: i32) -> String {
+    if value >= 1_000_000 {
+        let millions = value as f32 / 1_000_000.0;
+        if millions >= 10.0 {
+            format!("{:.0}M", millions)
+        } else {
+            format!("{:.1}M", millions)
+        }
+    } else if value >= 100_000 {
+        format!("{}K", value / 1000)
+    } else if value >= 1000 {
+        // Format with commas for values 1K-100K
+        let s = format!("{}", value);
+        let chars: Vec<char> = s.chars().collect();
+        let mut result = String::new();
+        for (i, c) in chars.iter().enumerate() {
+            if i > 0 && (chars.len() - i).is_multiple_of(3) {
+                result.push(',');
+            }
+            result.push(*c);
+        }
+        result
+    } else {
+        format!("{}", value)
+    }
+}
 
 /// Icon element from speed controls layout.
 #[derive(Debug, Clone)]
@@ -115,14 +148,17 @@ pub struct TopBarIcon {
 }
 
 /// Text element from topbar layout.
-#[allow(dead_code)] // Will be used for topbar text rendering
 #[derive(Debug, Clone)]
 pub struct TopBarText {
     pub name: String,
     pub position: (i32, i32),
+    #[allow(dead_code)] // Will be used for font selection
     pub font: String,
     pub max_width: u32,
+    pub max_height: u32,
     pub orientation: Orientation,
+    pub format: types::TextFormat,
+    pub border_size: (i32, i32),
 }
 
 /// Main topbar layout data.
@@ -439,6 +475,103 @@ impl GuiRenderer {
                 clip_w,
                 clip_h,
             );
+        }
+
+        // Draw topbar texts if country data is available
+        if let Some(ref country) = state.country
+            && let Some(ref font_bind_group) = self.font_bind_group
+        {
+            let topbar_anchor =
+                get_window_anchor(self.topbar.window_pos, self.topbar.orientation, screen_size);
+
+            // Get font for text rendering (reuse existing font from speed controls)
+            let font_name = &self.speed_controls.date_font; // vic_18
+            if let Some(loaded) = self.font_cache.get(font_name, device, queue) {
+                let font = &loaded.font;
+
+                for text in &self.topbar.texts {
+                    // Map text name to value
+                    let value = match text.name.as_str() {
+                        "text_gold" => format!("{:.0}", country.treasury),
+                        "text_manpower" => format_k(country.manpower),
+                        "text_sailors" => format_k(country.sailors),
+                        "text_stability" => format!("{:+}", country.stability),
+                        "text_prestige" => format!("{:.0}", country.prestige),
+                        "text_corruption" => format!("{:.1}", country.corruption),
+                        "text_ADM" => format!("{}", country.adm_power),
+                        "text_DIP" => format!("{}", country.dip_power),
+                        "text_MIL" => format!("{}", country.mil_power),
+                        "text_merchants" => {
+                            format!("{}/{}", country.merchants, country.max_merchants)
+                        }
+                        "text_settlers" => {
+                            format!("{}/{}", country.colonists, country.max_colonists)
+                        }
+                        "text_diplomats" => {
+                            format!("{}/{}", country.diplomats, country.max_diplomats)
+                        }
+                        "text_missionaries" => {
+                            format!("{}/{}", country.missionaries, country.max_missionaries)
+                        }
+                        _ => continue, // Skip unknown text fields
+                    };
+
+                    let text_screen_pos = position_from_anchor(
+                        topbar_anchor,
+                        text.position,
+                        text.orientation,
+                        (text.max_width, text.max_height),
+                    );
+
+                    // Measure text width for alignment
+                    let text_width = font.measure_width(&value);
+
+                    // Calculate starting X based on format (alignment)
+                    let start_x = match text.format {
+                        types::TextFormat::Left => text_screen_pos.0 + text.border_size.0 as f32,
+                        types::TextFormat::Center => {
+                            text_screen_pos.0 + (text.max_width as f32 - text_width) / 2.0
+                        }
+                        types::TextFormat::Right => {
+                            text_screen_pos.0 + text.max_width as f32
+                                - text_width
+                                - text.border_size.0 as f32
+                        }
+                    };
+
+                    let mut cursor_x = start_x;
+                    let cursor_y = text_screen_pos.1 + text.border_size.1 as f32;
+
+                    for c in value.chars() {
+                        if let Some(glyph) = font.get_glyph(c) {
+                            if glyph.width > 0 && glyph.height > 0 {
+                                let glyph_x = cursor_x + glyph.xoffset as f32;
+                                let glyph_y = cursor_y + glyph.yoffset as f32;
+                                let (u_min, v_min, u_max, v_max) = font.glyph_uv(glyph);
+                                let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
+                                    (glyph_x, glyph_y),
+                                    (glyph.width, glyph.height),
+                                    screen_size,
+                                );
+                                sprite_renderer.draw_uv(
+                                    render_pass,
+                                    font_bind_group,
+                                    queue,
+                                    clip_x,
+                                    clip_y,
+                                    clip_w,
+                                    clip_h,
+                                    u_min,
+                                    v_min,
+                                    u_max,
+                                    v_max,
+                                );
+                            }
+                            cursor_x += glyph.xadvance as f32;
+                        }
+                    }
+                }
+            }
         }
 
         // Get window anchor point - window is just an anchor, not a rectangle
@@ -887,9 +1020,11 @@ impl GuiRenderer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         sprite_renderer: &'a SpriteRenderer,
+        state: &GuiState,
         screen_size: (u32, u32),
     ) {
         self.ensure_topbar_textures(device, queue, sprite_renderer);
+        self.ensure_font(device, queue, sprite_renderer);
 
         // Use standard topbar anchor (UPPER_LEFT at position 0,0)
         let topbar_anchor =
@@ -942,6 +1077,98 @@ impl GuiRenderer {
                     clip_w,
                     clip_h,
                 );
+            }
+        }
+
+        // Draw texts if country data is available
+        if let Some(ref country) = state.country
+            && let Some(ref font_bind_group) = self.font_bind_group
+        {
+            let font_name = &self.speed_controls.date_font; // vic_18
+            if let Some(loaded) = self.font_cache.get(font_name, device, queue) {
+                let font = &loaded.font;
+
+                for text in &self.topbar.texts {
+                    let value = match text.name.as_str() {
+                        "text_gold" => format!("{:.0}", country.treasury),
+                        "text_manpower" => format_k(country.manpower),
+                        "text_sailors" => format_k(country.sailors),
+                        "text_stability" => format!("{:+}", country.stability),
+                        "text_prestige" => format!("{:.0}", country.prestige),
+                        "text_corruption" => format!("{:.1}", country.corruption),
+                        "text_ADM" => format!("{}", country.adm_power),
+                        "text_DIP" => format!("{}", country.dip_power),
+                        "text_MIL" => format!("{}", country.mil_power),
+                        "text_merchants" => {
+                            format!("{}/{}", country.merchants, country.max_merchants)
+                        }
+                        "text_settlers" => {
+                            format!("{}/{}", country.colonists, country.max_colonists)
+                        }
+                        "text_diplomats" => {
+                            format!("{}/{}", country.diplomats, country.max_diplomats)
+                        }
+                        "text_missionaries" => {
+                            format!("{}/{}", country.missionaries, country.max_missionaries)
+                        }
+                        _ => continue,
+                    };
+
+                    let text_screen_pos = position_from_anchor(
+                        topbar_anchor,
+                        text.position,
+                        text.orientation,
+                        (text.max_width, text.max_height),
+                    );
+
+                    // Measure text width for alignment
+                    let text_width = font.measure_width(&value);
+
+                    // Calculate starting X based on format (alignment)
+                    let start_x = match text.format {
+                        types::TextFormat::Left => text_screen_pos.0 + text.border_size.0 as f32,
+                        types::TextFormat::Center => {
+                            text_screen_pos.0 + (text.max_width as f32 - text_width) / 2.0
+                        }
+                        types::TextFormat::Right => {
+                            text_screen_pos.0 + text.max_width as f32
+                                - text_width
+                                - text.border_size.0 as f32
+                        }
+                    };
+
+                    let mut cursor_x = start_x;
+                    let cursor_y = text_screen_pos.1 + text.border_size.1 as f32;
+
+                    for c in value.chars() {
+                        if let Some(glyph) = font.get_glyph(c) {
+                            if glyph.width > 0 && glyph.height > 0 {
+                                let glyph_x = cursor_x + glyph.xoffset as f32;
+                                let glyph_y = cursor_y + glyph.yoffset as f32;
+                                let (u_min, v_min, u_max, v_max) = font.glyph_uv(glyph);
+                                let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
+                                    (glyph_x, glyph_y),
+                                    (glyph.width, glyph.height),
+                                    screen_size,
+                                );
+                                sprite_renderer.draw_uv(
+                                    render_pass,
+                                    font_bind_group,
+                                    queue,
+                                    clip_x,
+                                    clip_y,
+                                    clip_w,
+                                    clip_h,
+                                    u_min,
+                                    v_min,
+                                    u_max,
+                                    v_max,
+                                );
+                            }
+                            cursor_x += glyph.xadvance as f32;
+                        }
+                    }
+                }
             }
         }
     }
@@ -1169,18 +1396,29 @@ fn extract_topbar(
         "topbar_upper_left_bg2",
         "topbar_upper_left_bg4",
         "brown_bg",
+        "topbar_1",
+        "topbar_2",
+        "topbar_3",
     ];
 
     // Resource icon names we want to render
     let icon_names = [
+        // Core resources
         "icon_gold",
         "icon_manpower",
         "icon_sailors",
         "icon_stability",
         "icon_prestige",
+        "icon_corruption",
+        // Monarch power
         "icon_ADM",
         "icon_DIP",
         "icon_MIL",
+        // Envoys
+        "icon_merchant",
+        "icon_settler",
+        "icon_diplomat",
+        "icon_missionary",
     ];
 
     for child in children {
@@ -1245,23 +1483,30 @@ fn extract_topbar(
                 position,
                 font,
                 max_width,
+                max_height,
                 orientation,
+                format,
+                border_size,
                 ..
             } => {
                 // Text labels for resources
                 if name.starts_with("text_") {
                     log::debug!(
-                        "Parsed topbar text {}: pos={:?}, font={}",
+                        "Parsed topbar text {}: pos={:?}, font={}, format={:?}",
                         name,
                         position,
-                        font
+                        font,
+                        format
                     );
                     topbar.texts.push(TopBarText {
                         name: name.clone(),
                         position: *position,
                         font: font.clone(),
                         max_width: *max_width,
+                        max_height: *max_height,
                         orientation: *orientation,
+                        format: *format,
+                        border_size: *border_size,
                     });
                 }
             }
@@ -1391,6 +1636,7 @@ mod tests {
                         &gpu.device,
                         &gpu.queue,
                         &sprite_renderer,
+                        gui_state,
                         screen_size,
                     );
                 }
@@ -1463,6 +1709,7 @@ mod tests {
             date: "11 November 1444".to_string(),
             speed: 3,
             paused: false,
+            country: None, // Speed controls don't need country data
         };
 
         let image = render_component_to_image(
@@ -1488,6 +1735,29 @@ mod tests {
             date: "11 November 1444".to_string(),
             speed: 1,
             paused: true,
+            // Sample country data for Castile at game start
+            country: Some(CountryResources {
+                treasury: 150.0,
+                income: 8.5,
+                manpower: 25000,
+                max_manpower: 30000,
+                sailors: 5000,
+                max_sailors: 8000,
+                stability: 1,
+                prestige: 25.0,
+                corruption: 0.0,
+                adm_power: 50,
+                dip_power: 50,
+                mil_power: 50,
+                merchants: 2,
+                max_merchants: 3,
+                colonists: 0,
+                max_colonists: 1,
+                diplomats: 2,
+                max_diplomats: 3,
+                missionaries: 1,
+                max_missionaries: 2,
+            }),
         };
 
         let image = render_component_to_image(

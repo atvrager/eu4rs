@@ -18,6 +18,52 @@ mod text;
 use sim_thread::{SimEvent, SimHandle, SimSpeed};
 use std::sync::Arc;
 
+/// Extracts GUI-displayable country resources from the simulation state.
+fn extract_country_resources(
+    world_state: &eu4sim_core::WorldState,
+    tag: &str,
+) -> Option<gui::CountryResources> {
+    let country = world_state.countries.get(tag)?;
+
+    // Calculate max manpower from owned provinces (base_manpower * 250 per dev)
+    let max_manpower: i32 = world_state
+        .provinces
+        .values()
+        .filter(|p| p.owner.as_deref() == Some(tag))
+        .map(|p| (p.base_manpower.to_f32() * 250.0) as i32)
+        .sum();
+
+    // Calculate net monthly income
+    let income_breakdown = &country.income;
+    let net_income =
+        (income_breakdown.taxation + income_breakdown.trade + income_breakdown.production
+            - income_breakdown.expenses)
+            .to_f32();
+
+    Some(gui::CountryResources {
+        treasury: country.treasury.to_f32(),
+        income: net_income,
+        manpower: country.manpower.to_f32() as i32,
+        max_manpower,
+        sailors: 0,     // Not yet implemented in sim
+        max_sailors: 0, // Not yet implemented in sim
+        stability: country.stability.get(),
+        prestige: country.prestige.get().to_f32(),
+        corruption: 0.0, // Not yet implemented in sim
+        adm_power: country.adm_mana.to_int() as i32,
+        dip_power: country.dip_mana.to_int() as i32,
+        mil_power: country.mil_mana.to_int() as i32,
+        merchants: 0,        // Not yet implemented in sim
+        max_merchants: 0,    // Not yet implemented in sim
+        colonists: 0,        // Not yet implemented in sim
+        max_colonists: 0,    // Not yet implemented in sim
+        diplomats: 0,        // Not yet implemented in sim
+        max_diplomats: 0,    // Not yet implemented in sim
+        missionaries: 0,     // Not yet implemented in sim
+        max_missionaries: 0, // Not yet implemented in sim
+    })
+}
+
 /// Game state machine - tracks whether we're selecting a country or playing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum GamePhase {
@@ -615,6 +661,13 @@ impl App {
                 self.current_date.year
             );
 
+            // Extract country resources from simulation state if we have a player
+            let country_resources = self.player_tag.as_ref().and_then(|tag| {
+                self.world_state
+                    .as_ref()
+                    .and_then(|ws| extract_country_resources(ws, tag))
+            });
+
             let gui_state = gui::GuiState {
                 date: date_str.clone(),
                 speed: match self.sim_speed {
@@ -626,6 +679,7 @@ impl App {
                     SimSpeed::Speed5 => 5,
                 },
                 paused: self.sim_speed == SimSpeed::Paused,
+                country: country_resources,
             };
 
             // Render EU4 GUI overlay
@@ -1361,6 +1415,7 @@ impl App {
                                 SimSpeed::Speed5 => 5,
                             },
                             paused: self.sim_speed == SimSpeed::Paused,
+                            country: None, // Not needed for hit testing
                         };
 
                         if let Some(action) = gui_renderer.handle_click(

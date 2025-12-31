@@ -192,6 +192,53 @@ pub struct GuiState {
     pub speed: u32,
     /// Whether the simulation is paused.
     pub paused: bool,
+    /// Country resources for topbar display.
+    pub country: Option<CountryResources>,
+}
+
+/// Country resource values displayed in the topbar.
+#[derive(Debug, Clone, Default)]
+pub struct CountryResources {
+    /// Current treasury (gold).
+    pub treasury: f32,
+    /// Monthly income.
+    pub income: f32,
+    /// Current manpower.
+    pub manpower: i32,
+    /// Maximum manpower.
+    pub max_manpower: i32,
+    /// Current sailors.
+    pub sailors: i32,
+    /// Maximum sailors.
+    pub max_sailors: i32,
+    /// Stability (-3 to +3).
+    pub stability: i32,
+    /// Prestige (-100 to +100).
+    pub prestige: f32,
+    /// Corruption (0-100).
+    pub corruption: f32,
+    /// Administrative monarch points.
+    pub adm_power: i32,
+    /// Diplomatic monarch points.
+    pub dip_power: i32,
+    /// Military monarch points.
+    pub mil_power: i32,
+    /// Available merchants.
+    pub merchants: i32,
+    /// Maximum merchants.
+    pub max_merchants: i32,
+    /// Available colonists.
+    pub colonists: i32,
+    /// Maximum colonists.
+    pub max_colonists: i32,
+    /// Available diplomats.
+    pub diplomats: i32,
+    /// Maximum diplomats.
+    pub max_diplomats: i32,
+    /// Available missionaries.
+    pub missionaries: i32,
+    /// Maximum missionaries.
+    pub max_missionaries: i32,
 }
 
 impl Default for GuiState {
@@ -200,6 +247,7 @@ impl Default for GuiState {
             date: "11 November 1444".to_string(),
             speed: 3,
             paused: true,
+            country: None,
         }
     }
 }
