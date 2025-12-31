@@ -2,7 +2,9 @@
 //!
 //! Uses eu4txt for tokenization and parsing.
 
-use super::types::{GfxDatabase, GfxSprite, GuiElement, Orientation, TextFormat};
+use super::types::{
+    CorneredTileSprite, GfxDatabase, GfxSprite, GuiElement, Orientation, TextFormat,
+};
 use eu4txt::{DefaultEU4Txt, EU4Txt, EU4TxtAstItem, EU4TxtParseNode};
 use std::path::Path;
 
@@ -136,10 +138,28 @@ fn extract_sprite_types(node: &EU4TxtParseNode, db: &mut GfxDatabase) {
     for child in &node.children {
         if let EU4TxtAstItem::Assignment = &child.entry
             && let Some(key) = get_assignment_key(child)
-            && key == "spriteType"
-            && let Some(sprite) = parse_sprite_type(get_assignment_value(child))
         {
-            db.sprites.insert(sprite.name.clone(), sprite);
+            match key.as_str() {
+                "spriteType" | "textSpriteType" => {
+                    if let Some(sprite) = parse_sprite_type(get_assignment_value(child)) {
+                        db.sprites.insert(sprite.name.clone(), sprite);
+                    }
+                }
+                "corneredTileSpriteType" => {
+                    if let Some(tile) = parse_cornered_tile_sprite(get_assignment_value(child)) {
+                        log::debug!(
+                            "Parsed cornered tile sprite: {} ({}x{}, border {}x{})",
+                            tile.name,
+                            tile.size.0,
+                            tile.size.1,
+                            tile.border_size.0,
+                            tile.border_size.1
+                        );
+                        db.cornered_tiles.insert(tile.name.clone(), tile);
+                    }
+                }
+                _ => {}
+            }
         }
     }
 }
@@ -178,6 +198,50 @@ fn parse_sprite_type(node: Option<&EU4TxtParseNode>) -> Option<GfxSprite> {
         texture_file: texture_file?,
         num_frames,
         horizontal_frames: true, // EU4 uses horizontal strips by default
+    })
+}
+
+/// Parse a corneredTileSpriteType block (9-slice sprite).
+fn parse_cornered_tile_sprite(node: Option<&EU4TxtParseNode>) -> Option<CorneredTileSprite> {
+    let node = node?;
+
+    let mut name = None;
+    let mut texture_file = None;
+    let mut size = (0u32, 0u32);
+    let mut border_size = (0u32, 0u32);
+
+    for child in &node.children {
+        if let EU4TxtAstItem::Assignment = &child.entry
+            && let Some(key) = get_assignment_key(child)
+        {
+            match key.as_str() {
+                "name" => {
+                    name = get_string_value(get_assignment_value(child));
+                }
+                "texturefile" | "textureFile" => {
+                    texture_file = get_string_value(get_assignment_value(child));
+                }
+                "size" => {
+                    let (x, y) = parse_position(get_assignment_value(child));
+                    size = (x.max(0) as u32, y.max(0) as u32);
+                }
+                "borderSize" => {
+                    let (x, y) = parse_position(get_assignment_value(child));
+                    border_size = (x.max(0) as u32, y.max(0) as u32);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Texture file is required for cornered tiles
+    let texture_file = texture_file?;
+
+    Some(CorneredTileSprite {
+        name: name?,
+        texture_file,
+        size,
+        border_size,
     })
 }
 
@@ -670,5 +734,33 @@ guiTypes = {
         let (u_min, _, u_max, _) = sprite.frame_uv(2);
         assert!((u_min - 0.4).abs() < 0.001);
         assert!((u_max - 0.6).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_cornered_tile_sprite() {
+        let content = r#"
+spriteTypes = {
+    corneredTileSpriteType = {
+        name = "GFX_country_selection_panel_bg"
+        size = { x = 320 y = 704 }
+        texturefile = "gfx//interface//tiles_dialog.tga"
+        borderSize = { x = 32 y = 32 }
+    }
+}
+"#;
+
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        write!(file, "{}", content).unwrap();
+        let path = file.path();
+
+        let db = parse_gfx_file(path).unwrap();
+        assert_eq!(db.cornered_tiles.len(), 1);
+
+        let tile = db
+            .get_cornered_tile("GFX_country_selection_panel_bg")
+            .unwrap();
+        assert_eq!(tile.texture_file, "gfx//interface//tiles_dialog.tga");
+        assert_eq!(tile.size, (320, 704));
+        assert_eq!(tile.border_size, (32, 32));
     }
 }

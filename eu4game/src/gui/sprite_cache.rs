@@ -183,8 +183,11 @@ impl SpriteCache {
     ///
     /// EU4 .gfx files often specify .tga but actual files are .dds,
     /// so we try alternative extensions if the specified one isn't found.
+    /// Also normalizes paths (EU4 .gfx files use `//' double slashes).
     fn resolve_texture_path(&self, texture_path: &str) -> Option<PathBuf> {
-        let full_path = self.game_path.join(texture_path);
+        // Normalize double slashes (common in EU4 .gfx files)
+        let normalized = texture_path.replace("//", "/");
+        let full_path = self.game_path.join(&normalized);
 
         // Try original path first
         if full_path.exists() {
@@ -192,7 +195,7 @@ impl SpriteCache {
         }
 
         // Try alternative extensions
-        let path = Path::new(texture_path);
+        let path = Path::new(&normalized);
         let stem = path.file_stem()?.to_str()?;
         let parent = path.parent().unwrap_or(Path::new(""));
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");

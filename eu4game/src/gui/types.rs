@@ -17,6 +17,23 @@ pub struct GfxSprite {
     pub horizontal_frames: bool,
 }
 
+/// Cornered tile sprite (9-slice) for scalable UI elements like panels.
+/// The texture is divided into 9 regions using borderSize:
+/// - 4 corners (fixed size)
+/// - 4 edges (stretched in one direction)
+/// - 1 center (stretched in both directions)
+#[derive(Debug, Clone)]
+pub struct CorneredTileSprite {
+    /// Sprite name (e.g., "GFX_country_selection_panel_bg").
+    pub name: String,
+    /// Path to texture file.
+    pub texture_file: String,
+    /// Target size when rendered (x, y).
+    pub size: (u32, u32),
+    /// Border size defining the 9-slice regions (x, y).
+    pub border_size: (u32, u32),
+}
+
 impl GfxSprite {
     /// Calculate UV coordinates for a specific frame.
     /// Returns (u_min, v_min, u_max, v_max).
@@ -43,19 +60,27 @@ impl GfxSprite {
 /// Database of all loaded sprites.
 #[derive(Debug, Default)]
 pub struct GfxDatabase {
-    /// Sprites indexed by name (e.g., "GFX_speed_indicator").
+    /// Regular sprites indexed by name (e.g., "GFX_speed_indicator").
     pub sprites: HashMap<String, GfxSprite>,
+    /// Cornered tile (9-slice) sprites indexed by name.
+    pub cornered_tiles: HashMap<String, CorneredTileSprite>,
 }
 
 impl GfxDatabase {
-    /// Get a sprite by name.
+    /// Get a regular sprite by name.
     pub fn get(&self, name: &str) -> Option<&GfxSprite> {
         self.sprites.get(name)
+    }
+
+    /// Get a cornered tile sprite by name.
+    pub fn get_cornered_tile(&self, name: &str) -> Option<&CorneredTileSprite> {
+        self.cornered_tiles.get(name)
     }
 
     /// Merge another database into this one.
     pub fn merge(&mut self, other: GfxDatabase) {
         self.sprites.extend(other.sprites);
+        self.cornered_tiles.extend(other.cornered_tiles);
     }
 }
 
