@@ -290,30 +290,30 @@ Analysis of `parser.rs` reveals several other standard EU4 types we will need ev
 ### Phase 2: The Generic UI Binder
 *Objective: Decouple Rust code from specific .gui file content.*
 
-- [ ] **2.1. Define Core Traits** (`eu4game/src/gui/core.rs`)
-    - [ ] `trait GuiWidget`: Base trait for interactive widgets. Methods: `render(&self, ctx: &mut RenderContext)`, `handle_input(&mut self, event: &UiEvent) -> EventResult`.
-    - [ ] `struct UiContext`: Holds global state (mouse pos, time, localizer) passed to render calls.
-    - [ ] `enum EventResult { Consumed, Ignored }`: Return type for input handling.
-    - [ ] `struct WidgetId(u32, u32)`: Generational index for safe widget references.
-- [ ] **2.2. Implement Basic Primitives** (`eu4game/src/gui/primitives/`)
-    - [ ] `GuiText`: Wrapper around `TextBox`. Holds raw string, resolves localization at render.
-    - [ ] `GuiIcon`: Wrapper around `Icon`. Holds frame index, visibility, tint color.
-    - [ ] `GuiButton`: Wrapper around `Button`. Tracks `ButtonState { Normal, Hovered, Pressed, Disabled }`.
-    - [ ] `GuiContainer`: Wrapper for `windowType`. Holds children, handles recursive render/input.
-    - [ ] Each primitive implements `GuiWidget` trait and `placeholder()` constructor for CI fallback.
-- [ ] **2.3. The Binder System** (`eu4game/src/gui/binder.rs`)
-    - [ ] `struct Binder<'a>`: Holds reference to parsed `GuiNode` tree.
-    - [ ] `fn bind<T: Bindable>(&self, name: &str) -> T`: Generic binding with type inference.
-    - [ ] `fn bind_optional<T: Bindable>(&self, name: &str) -> Option<T>`: For optional widgets (no warning on miss).
-    - [ ] Iterative tree traversal (explicit stack) to handle deep nesting without stack overflow.
-- [ ] **2.4. String Interning** (`eu4game/src/gui/interner.rs`)
-    - [ ] Implement `StringInterner` with `intern(&str) -> Symbol` and `resolve(Symbol) -> &str`.
-    - [ ] Widget names stored as `Symbol` for O(1) comparison.
-    - [ ] Pre-intern common names ("icon", "text", "button") at startup.
-- [ ] **2.5. Template & Multi-Window Support**
-    - [ ] **Task**: Update `GuiParser` to produce a `WindowDatabase` (Map<Symbol, Window>) instead of a flat list.
-    - [ ] **Task**: Handle "Mixed-Mode" files (e.g., `frontend.gui`) where templates coexist alongside main panels.
-    - [ ] **Task**: Implement `instantiate_template(name) -> GuiContainer` for dynamic lists (clones template subtree).
+- [x] **2.1. Define Core Traits** (`eu4game/src/gui/core.rs`)
+    - [x] `trait GuiWidget`: Base trait for interactive widgets. Methods: `render(&self, ctx: &mut RenderContext)`, `handle_input(&mut self, event: &UiEvent) -> EventResult`.
+    - [x] `struct UiContext`: Holds global state (mouse pos, time, localizer) passed to render calls.
+    - [x] `enum EventResult { Consumed, Ignored }`: Return type for input handling.
+    - [x] `struct WidgetId(u32, u32)`: Generational index for safe widget references.
+- [x] **2.2. Implement Basic Primitives** (`eu4game/src/gui/primitives/`)
+    - [x] `GuiText`: Wrapper around `TextBox`. Holds raw string, resolves localization at render.
+    - [x] `GuiIcon`: Wrapper around `Icon`. Holds frame index, visibility, tint color.
+    - [x] `GuiButton`: Wrapper around `Button`. Tracks `ButtonState { Normal, Hovered, Pressed, Disabled }`.
+    - [x] `GuiContainer`: Wrapper for `windowType`. Holds children, handles recursive render/input.
+    - [x] Each primitive implements `GuiWidget` trait and `placeholder()` constructor for CI fallback.
+- [x] **2.3. The Binder System** (`eu4game/src/gui/binder.rs`)
+    - [x] `struct Binder<'a>`: Holds reference to parsed `GuiNode` tree.
+    - [x] `fn bind<T: Bindable>(&self, name: &str) -> T`: Generic binding with type inference.
+    - [x] `fn bind_optional<T: Bindable>(&self, name: &str) -> Option<T>`: For optional widgets (no warning on miss).
+    - [x] Iterative tree traversal (explicit stack) to handle deep nesting without stack overflow.
+- [x] **2.4. String Interning** (`eu4game/src/gui/interner.rs`)
+    - [x] Implement `StringInterner` with `intern(&str) -> Symbol` and `resolve(Symbol) -> &str`.
+    - [x] Widget names stored as `Symbol` for O(1) comparison.
+    - [x] Pre-intern common names ("icon", "text", "button") at startup.
+- [x] **2.5. Template & Multi-Window Support**
+    - [x] **Task**: Update `GuiParser` to produce a `WindowDatabase` (Map<Symbol, Window>) instead of a flat list.
+    - [x] **Task**: Handle "Mixed-Mode" files (e.g., `frontend.gui`) where templates coexist alongside main panels.
+    - [x] **Task**: Implement `instantiate_template(name) -> GuiContainer` for dynamic lists (clones template subtree).
 
 ### Phase 3: Macro & Data Binding
 *Objective: Remove boilerplate and enforce type safety.*
@@ -406,6 +406,22 @@ Analysis of `parser.rs` reveals several other standard EU4 types we will need ev
 - [ ] **8.3. Integration**
     - [ ] `GuiWidget::update(dt: f32)` for animation tick.
     - [ ] Widgets with active animations request continuous redraw.
+
+### Phase 9: Code Health & Cleanup
+*Objective: Remove transitional debt and stabilize the UI engine.*
+
+- [ ] **9.1. Remove Dead Code Exceptions**
+    - [ ] Audit all `#![allow(dead_code)]` and `#[allow(dead_code)]` added during Phase 2.
+    - [ ] Ensure all primitives and binder methods are properly used in production code paths.
+    - [ ] Delete unused placeholder code that was replaced by real implementations.
+- [ ] **9.2. Performance Audit**
+    - [ ] Profile `Binder::find_node_iterative` in large UI files (e.g. `frontend.gui`).
+    - [ ] Verify `WindowDatabase` lookup costs are negligible.
+    - [ ] Check `StringInterner` lock contention under heavy parallel usage (if applicable).
+- [ ] **9.3. Documentation & Stabilization**
+    - [ ] Update `docs/design/ui_engine.md` to reflect final implementation details.
+    - [ ] Add rustdoc comments to all public traits and methods.
+    - [ ] Ensure 100% test coverage for all core binder and interner logic.
 
 ---
 

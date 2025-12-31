@@ -3,8 +3,9 @@
 //! Uses eu4txt for tokenization and parsing.
 
 use super::types::{
-    CorneredTileSprite, GfxDatabase, GfxSprite, GuiElement, Orientation, TextFormat,
+    CorneredTileSprite, GfxDatabase, GfxSprite, GuiElement, Orientation, TextFormat, WindowDatabase,
 };
+use crate::gui::interner::StringInterner;
 use eu4txt::{DefaultEU4Txt, EU4Txt, EU4TxtAstItem, EU4TxtParseNode};
 use std::path::Path;
 
@@ -24,18 +25,18 @@ pub fn parse_gfx_file(path: &Path) -> Result<GfxDatabase, String> {
     Ok(db)
 }
 
-/// Parse a .gui file and extract GUI elements.
-pub fn parse_gui_file(path: &Path) -> Result<Vec<GuiElement>, String> {
+/// Parse a .gui file and extract GUI elements into a WindowDatabase.
+pub fn parse_gui_file(path: &Path, interner: &StringInterner) -> Result<WindowDatabase, String> {
     let tokens = DefaultEU4Txt::open_txt(path.to_str().unwrap_or(""))
         .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
 
     let ast = DefaultEU4Txt::parse(tokens)
         .map_err(|e| format!("Failed to parse {}: {}", path.display(), e))?;
 
-    let mut elements = Vec::new();
-    extract_gui_elements_from_node(&ast, &mut elements);
+    let mut db = WindowDatabase::new();
+    extract_gui_elements_from_node(&ast, &mut db, interner);
 
-    Ok(elements)
+    Ok(db)
 }
 
 /// Raw element counts from a GUI file (for gap detection).
@@ -246,7 +247,11 @@ fn parse_cornered_tile_sprite(node: Option<&EU4TxtParseNode>) -> Option<Cornered
 }
 
 /// Extract GUI elements from a parsed AST.
-fn extract_gui_elements_from_node(node: &EU4TxtParseNode, elements: &mut Vec<GuiElement>) {
+fn extract_gui_elements_from_node(
+    node: &EU4TxtParseNode,
+    db: &mut WindowDatabase,
+    interner: &StringInterner,
+) {
     match &node.entry {
         EU4TxtAstItem::AssignmentList => {
             for child in &node.children {
@@ -256,12 +261,13 @@ fn extract_gui_elements_from_node(node: &EU4TxtParseNode, elements: &mut Vec<Gui
                     match key.as_str() {
                         "guiTypes" => {
                             if let Some(list) = get_assignment_value(child) {
-                                extract_gui_types(list, elements);
+                                extract_gui_types(list, db, interner);
                             }
                         }
                         "windowType" => {
                             if let Some(window) = parse_window_type(get_assignment_value(child)) {
-                                elements.push(window);
+                                let symbol = interner.intern(window.name());
+                                db.insert(symbol, window);
                             }
                         }
                         _ => {}
@@ -271,14 +277,14 @@ fn extract_gui_elements_from_node(node: &EU4TxtParseNode, elements: &mut Vec<Gui
         }
         _ => {
             for child in &node.children {
-                extract_gui_elements_from_node(child, elements);
+                extract_gui_elements_from_node(child, db, interner);
             }
         }
     }
 }
 
 /// Extract elements from a guiTypes block.
-fn extract_gui_types(node: &EU4TxtParseNode, elements: &mut Vec<GuiElement>) {
+fn extract_gui_types(node: &EU4TxtParseNode, db: &mut WindowDatabase, interner: &StringInterner) {
     for child in &node.children {
         if let EU4TxtAstItem::Assignment = &child.entry
             && let Some(key) = get_assignment_key(child)
@@ -286,23 +292,14 @@ fn extract_gui_types(node: &EU4TxtParseNode, elements: &mut Vec<GuiElement>) {
             match key.as_str() {
                 "windowType" => {
                     if let Some(window) = parse_window_type(get_assignment_value(child)) {
-                        elements.push(window);
+                        let symbol = interner.intern(window.name());
+                        db.insert(symbol, window);
                     }
                 }
-                "iconType" => {
-                    if let Some(icon) = parse_icon_type(get_assignment_value(child)) {
-                        elements.push(icon);
-                    }
-                }
-                "instantTextBoxType" => {
-                    if let Some(text) = parse_textbox_type(get_assignment_value(child)) {
-                        elements.push(text);
-                    }
-                }
-                "guiButtonType" => {
-                    if let Some(button) = parse_button_type(get_assignment_value(child)) {
-                        elements.push(button);
-                    }
+                "iconType" | "instantTextBoxType" | "guiButtonType" => {
+                    // These are usually handled as children of windows,
+                    // but if they appear at the top level, we might want to track them?
+                    // For now, we only populate the WindowDatabase with actual windows/templates.
                 }
                 _ => {}
             }
@@ -695,8 +692,12 @@ guiTypes = {
         write!(file, "{}", content).unwrap();
         let path = file.path();
 
-        let elements = parse_gui_file(path).unwrap();
-        assert_eq!(elements.len(), 1);
+        let interner = StringInterner::new();
+        let db = parse_gui_file(path, &interner).unwrap();
+        assert_eq!(db.len(), 1);
+
+        let symbol = interner.get("test_window").unwrap();
+        let window = db.get(&symbol).unwrap();
 
         if let GuiElement::Window {
             name,
@@ -704,7 +705,7 @@ guiTypes = {
             size,
             orientation,
             children,
-        } = &elements[0]
+        } = window
         {
             assert_eq!(name, "test_window");
             assert_eq!(*position, (100, 50));
@@ -778,5 +779,44 @@ spriteTypes = {
         assert_eq!(tile.texture_file, "gfx//interface//tiles_dialog.tga");
         assert_eq!(tile.size, (320, 704));
         assert_eq!(tile.border_size, (32, 32));
+    }
+
+    #[test]
+    fn test_parse_mixed_mode_gui() {
+        // Mixed mode: Top-level windowType alongside guiTypes block (standard EU4 pattern)
+        let content = r#"
+windowType = {
+    name = "main_panel"
+    position = { x = 0 y = 0 }
+    size = { x = 100 y = 100 }
+}
+
+guiTypes = {
+    windowType = {
+        name = "list_item_template"
+        position = { x = 0 y = 0 }
+        size = { x = 50 y = 20 }
+        
+        iconType = {
+            name = "icon"
+            spriteType = "GFX_icon"
+        }
+    }
+}
+"#;
+
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        write!(file, "{}", content).unwrap();
+        let path = file.path();
+
+        let interner = StringInterner::new();
+        let db = parse_gui_file(path, &interner).unwrap();
+
+        assert_eq!(db.len(), 2);
+        assert!(db.contains_key(&interner.intern("main_panel")));
+        assert!(db.contains_key(&interner.intern("list_item_template")));
+
+        let template = db.get(&interner.intern("list_item_template")).unwrap();
+        assert_eq!(template.children().len(), 1);
     }
 }

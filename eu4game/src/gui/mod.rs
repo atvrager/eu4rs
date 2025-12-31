@@ -13,6 +13,12 @@ pub mod sprite_cache;
 #[allow(dead_code)]
 pub mod types;
 
+// Phase 2: Generic UI Binder system
+pub mod binder;
+pub mod core;
+pub mod interner;
+pub mod primitives;
+
 #[allow(unused_imports)] // SelectedCountryState used in tests
 pub use country_select::{CountrySelectLayout, SelectedCountryState};
 pub use layout::{
@@ -202,6 +208,9 @@ impl Default for TopBar {
 pub struct GuiRenderer {
     /// Sprite database from .gfx files.
     gfx_db: GfxDatabase,
+    /// String interner for efficient widget naming and lookups.
+    #[allow(dead_code)]
+    pub interner: interner::StringInterner,
     /// Sprite texture cache.
     sprite_cache: SpriteCache,
     /// Bitmap font cache.
@@ -275,17 +284,20 @@ impl GuiRenderer {
             }
         }
 
+        let interner = interner::StringInterner::new();
+
         // Load speed_controls.gui layout
-        let speed_controls = load_speed_controls(game_path);
+        let speed_controls = load_speed_controls(game_path, &interner);
 
         // Load topbar.gui layout
-        let topbar = load_topbar(game_path);
+        let topbar = load_topbar(game_path, &interner);
 
         // Load country select panel layout from frontend.gui
-        let country_select = load_country_select(game_path);
+        let country_select = load_country_select(game_path, &interner);
 
         Self {
             gfx_db,
+            interner,
             sprite_cache: SpriteCache::new(game_path.to_path_buf()),
             font_cache: BitmapFontCache::new(game_path),
             speed_controls,
@@ -1696,7 +1708,7 @@ impl GuiRenderer {
 }
 
 /// Load speed controls layout from game files.
-fn load_speed_controls(game_path: &Path) -> SpeedControls {
+fn load_speed_controls(game_path: &Path, interner: &interner::StringInterner) -> SpeedControls {
     let gui_path = game_path.join("interface/speed_controls.gui");
 
     if !gui_path.exists() {
@@ -1704,21 +1716,18 @@ fn load_speed_controls(game_path: &Path) -> SpeedControls {
         return SpeedControls::default();
     }
 
-    match parse_gui_file(&gui_path) {
-        Ok(elements) => {
+    match parse_gui_file(&gui_path, interner) {
+        Ok(db) => {
             // Find the speed_controls window
-            for element in &elements {
-                if let GuiElement::Window {
-                    name,
-                    position,
-                    orientation,
-                    children,
-                    ..
-                } = element
-                    && name == "speed_controls"
-                {
-                    return extract_speed_controls(position, orientation, children);
-                }
+            let symbol = interner.intern("speed_controls");
+            if let Some(GuiElement::Window {
+                position,
+                orientation,
+                children,
+                ..
+            }) = db.get(&symbol)
+            {
+                return extract_speed_controls(position, orientation, children);
             }
             log::warn!("speed_controls window not found in GUI file");
             SpeedControls::default()
@@ -1865,7 +1874,7 @@ fn extract_speed_controls(
 }
 
 /// Load topbar layout from game files.
-fn load_topbar(game_path: &Path) -> TopBar {
+fn load_topbar(game_path: &Path, interner: &interner::StringInterner) -> TopBar {
     let gui_path = game_path.join("interface/topbar.gui");
 
     if !gui_path.exists() {
@@ -1873,21 +1882,18 @@ fn load_topbar(game_path: &Path) -> TopBar {
         return TopBar::default();
     }
 
-    match parse_gui_file(&gui_path) {
-        Ok(elements) => {
+    match parse_gui_file(&gui_path, interner) {
+        Ok(db) => {
             // Find the topbar window
-            for element in &elements {
-                if let GuiElement::Window {
-                    name,
-                    position,
-                    orientation,
-                    children,
-                    ..
-                } = element
-                    && name == "topbar"
-                {
-                    return extract_topbar(position, orientation, children);
-                }
+            let symbol = interner.intern("topbar");
+            if let Some(GuiElement::Window {
+                position,
+                orientation,
+                children,
+                ..
+            }) = db.get(&symbol)
+            {
+                return extract_topbar(position, orientation, children);
             }
             log::warn!("topbar window not found in GUI file");
             TopBar::default()
@@ -2067,7 +2073,10 @@ fn extract_topbar(
 }
 
 /// Load country selection panel layout from frontend.gui.
-fn load_country_select(game_path: &Path) -> CountrySelectLayout {
+fn load_country_select(
+    game_path: &Path,
+    interner: &interner::StringInterner,
+) -> CountrySelectLayout {
     let gui_path = game_path.join("interface/frontend.gui");
 
     if !gui_path.exists() {
@@ -2075,16 +2084,17 @@ fn load_country_select(game_path: &Path) -> CountrySelectLayout {
         return CountrySelectLayout::default();
     }
 
-    match parse_gui_file(&gui_path) {
-        Ok(elements) => {
+    match parse_gui_file(&gui_path, interner) {
+        Ok(db) => {
             // The structure is: country_selection_panel > ... > singleplayer
-            // We need to recursively search for the singleplayer window
-            if let Some(layout) = find_singleplayer_window(&elements) {
-                layout
-            } else {
-                log::warn!("singleplayer window not found in frontend.gui");
-                CountrySelectLayout::default()
+            // We search all top-level windows in the database
+            for element in db.values() {
+                if let Some(layout) = find_singleplayer_window_in_node(element) {
+                    return layout;
+                }
             }
+            log::warn!("singleplayer window not found in frontend.gui");
+            CountrySelectLayout::default()
         }
         Err(e) => {
             log::warn!("Failed to parse frontend.gui: {}", e);
@@ -2093,27 +2103,27 @@ fn load_country_select(game_path: &Path) -> CountrySelectLayout {
     }
 }
 
-/// Recursively search for the singleplayer window in GUI elements.
-fn find_singleplayer_window(elements: &[GuiElement]) -> Option<CountrySelectLayout> {
-    for element in elements {
-        if let GuiElement::Window {
-            name,
-            position,
-            size,
-            orientation,
-            children,
-        } = element
-        {
-            if name == "singleplayer" {
-                return Some(extract_country_select(
-                    position,
-                    size,
-                    orientation,
-                    children,
-                ));
-            }
-            // Recurse into child windows
-            if let Some(layout) = find_singleplayer_window(children) {
+/// Recursively search for the singleplayer window starting from a GUI node.
+fn find_singleplayer_window_in_node(element: &GuiElement) -> Option<CountrySelectLayout> {
+    if let GuiElement::Window {
+        name,
+        position,
+        size,
+        orientation,
+        children,
+    } = element
+    {
+        if name == "singleplayer" {
+            return Some(extract_country_select(
+                position,
+                size,
+                orientation,
+                children,
+            ));
+        }
+        // Recurse into child windows
+        for child in children {
+            if let Some(layout) = find_singleplayer_window_in_node(child) {
                 return Some(layout);
             }
         }
@@ -2815,7 +2825,8 @@ mod tests {
             return;
         };
 
-        let layout = load_country_select(&game_path);
+        let interner = interner::StringInterner::new();
+        let layout = load_country_select(&game_path, &interner);
 
         // Verify loading succeeded
         assert!(layout.loaded, "Country select layout should be loaded");

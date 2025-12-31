@@ -2,7 +2,11 @@
 //!
 //! These types match EU4's .gfx and .gui file structures.
 
+use crate::gui::interner::Symbol;
 use std::collections::HashMap;
+
+/// A collection of named GUI windows, potentially including templates.
+pub type WindowDatabase = HashMap<Symbol, GuiElement>;
 
 /// Sprite definition from .gfx files.
 #[derive(Debug, Clone)]
@@ -208,6 +212,14 @@ impl GuiElement {
             GuiElement::Button { orientation, .. } => *orientation,
         }
     }
+
+    /// Get the element's children (only Windows have children).
+    pub fn children(&self) -> &[GuiElement] {
+        match self {
+            GuiElement::Window { children, .. } => children,
+            _ => &[],
+        }
+    }
 }
 
 /// Current state for GUI rendering.
@@ -294,6 +306,10 @@ impl HitBox {
         px >= self.x && px < self.x + self.width && py >= self.y && py < self.y + self.height
     }
 }
+
+/// Rectangle for bounding boxes and hit testing.
+/// Alias for HitBox with more semantic naming for the UI binder system.
+pub type Rect = HitBox;
 
 /// GUI interaction events.
 #[derive(Debug, Clone)]
