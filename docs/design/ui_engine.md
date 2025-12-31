@@ -331,12 +331,12 @@ Analysis of `parser.rs` reveals several other standard EU4 types we will need ev
 ### Phase 3.5: Production Migration
 *Objective: Replace all legacy UI implementations with macro-based versions.*
 
-- [ ] **3.5.1. TopBar Migration**
-    - [ ] Create `TopBar` struct with `#[derive(GuiWindow)]` binding to topbar widgets
-    - [ ] Implement `update(&mut self, resources: &CountryResources)` method
-    - [ ] Replace legacy `TopBar` struct in `gui/mod.rs`
-    - [ ] Update `render_topbar()` to use macro-based implementation
-    - [ ] Verify topbar snapshot test still passes
+- [x] **3.5.1. TopBar Migration**
+    - [x] Create `TopBar` struct with `#[derive(GuiWindow)]` binding to topbar widgets
+    - [x] Implement `update(&mut self, resources: &CountryResources)` method
+    - [x] Replace legacy `TopBar` struct in `gui/mod.rs`
+    - [x] Update `render_topbar()` to use macro-based implementation
+    - [x] Verify topbar snapshot test still passes
 - [ ] **3.5.2. SpeedControls Migration**
     - [ ] Create `SpeedControls` struct with `#[derive(GuiWindow)]` binding to speed panel widgets
     - [ ] Implement `update(&mut self, speed: SimSpeed, paused: bool)` method

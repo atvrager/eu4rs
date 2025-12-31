@@ -54,6 +54,43 @@ impl GuiText {
             .map(|d| d.name.as_str())
             .unwrap_or("<placeholder>")
     }
+
+    /// Get the position (for rendering).
+    pub fn position(&self) -> (i32, i32) {
+        self.element.as_ref().map(|d| d.position).unwrap_or((0, 0))
+    }
+
+    /// Get the orientation (for rendering).
+    pub fn orientation(&self) -> crate::gui::types::Orientation {
+        self.element
+            .as_ref()
+            .map(|d| d.orientation)
+            .unwrap_or(crate::gui::types::Orientation::UpperLeft)
+    }
+
+    /// Get the text format (for rendering).
+    pub fn format(&self) -> crate::gui::types::TextFormat {
+        self.element
+            .as_ref()
+            .map(|d| d.format)
+            .unwrap_or(crate::gui::types::TextFormat::Left)
+    }
+
+    /// Get the max dimensions (for rendering).
+    pub fn max_dimensions(&self) -> (u32, u32) {
+        self.element
+            .as_ref()
+            .map(|d| (d.max_width, d.max_height))
+            .unwrap_or((0, 0))
+    }
+
+    /// Get the border size (for rendering).
+    pub fn border_size(&self) -> (i32, i32) {
+        self.element
+            .as_ref()
+            .map(|d| d.border_size)
+            .unwrap_or((0, 0))
+    }
 }
 
 impl Bindable for GuiText {

@@ -23,6 +23,9 @@ pub mod primitives;
 #[cfg(test)]
 mod macro_test;
 
+// Phase 3.5: Macro-based UI panels
+pub mod topbar;
+
 #[allow(unused_imports)] // SelectedCountryState used in tests
 pub use country_select::{CountrySelectLayout, CountrySelectPanel, SelectedCountryState};
 pub use layout::{
@@ -38,37 +41,6 @@ use crate::bmfont::BitmapFontCache;
 use crate::render::SpriteRenderer;
 use country_select::{CountrySelectButton, CountrySelectIcon, CountrySelectText};
 use std::path::Path;
-
-/// Format a number with smart suffixes.
-/// - Under 100K: show full number with commas (e.g., "25,000")
-/// - 100K to 1M: show with K suffix (e.g., "150K")
-/// - 1M+: show with M suffix (e.g., "1.5M")
-fn format_k(value: i32) -> String {
-    if value >= 1_000_000 {
-        let millions = value as f32 / 1_000_000.0;
-        if millions >= 10.0 {
-            format!("{:.0}M", millions)
-        } else {
-            format!("{:.1}M", millions)
-        }
-    } else if value >= 100_000 {
-        format!("{}K", value / 1000)
-    } else if value >= 1000 {
-        // Format with commas for values 1K-100K
-        let s = format!("{}", value);
-        let chars: Vec<char> = s.chars().collect();
-        let mut result = String::new();
-        for (i, c) in chars.iter().enumerate() {
-            if i > 0 && (chars.len() - i).is_multiple_of(3) {
-                result.push(',');
-            }
-            result.push(*c);
-        }
-        result
-    } else {
-        format!("{}", value)
-    }
-}
 
 /// Icon element from speed controls layout.
 #[derive(Debug, Clone)]
@@ -167,6 +139,7 @@ pub struct TopBarIcon {
 
 /// Text element from topbar layout.
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Legacy - will be removed in Phase 3.5.4
 pub struct TopBarText {
     pub name: String,
     pub position: (i32, i32),
@@ -179,8 +152,11 @@ pub struct TopBarText {
     pub border_size: (i32, i32),
 }
 
-/// Main topbar layout data.
-pub struct TopBar {
+/// Legacy topbar layout data (Phase 3.5: Will be removed after migration).
+///
+/// Contains rendering metadata like icon positions and backgrounds.
+/// The actual text widgets are now managed by the macro-based `topbar::TopBar`.
+pub struct TopBarLayout {
     /// Window position.
     pub window_pos: (i32, i32),
     /// Window orientation.
@@ -189,20 +165,17 @@ pub struct TopBar {
     pub backgrounds: Vec<TopBarIcon>,
     /// Resource icons (gold, manpower, etc).
     pub icons: Vec<TopBarIcon>,
-    /// Text labels for resources.
-    pub texts: Vec<TopBarText>,
     /// Player shield position (for flag display).
     pub player_shield: Option<TopBarIcon>,
 }
 
-impl Default for TopBar {
+impl Default for TopBarLayout {
     fn default() -> Self {
         Self {
             window_pos: (0, -1),
             orientation: Orientation::UpperLeft,
             backgrounds: vec![],
             icons: vec![],
-            texts: vec![],
             player_shield: None,
         }
     }
@@ -221,8 +194,10 @@ pub struct GuiRenderer {
     font_cache: BitmapFontCache,
     /// Speed controls layout.
     speed_controls: SpeedControls,
-    /// Main topbar layout.
-    topbar: TopBar,
+    /// Legacy topbar layout (Phase 3.5: rendering metadata only).
+    topbar_layout: TopBarLayout,
+    /// Macro-based topbar text widgets (Phase 3.5).
+    topbar: Option<topbar::TopBar>,
     /// Country selection panel layout (WIP - used in tests).
     #[allow(dead_code)]
     country_select: CountrySelectLayout,
@@ -293,8 +268,9 @@ impl GuiRenderer {
         // Load speed_controls.gui layout
         let speed_controls = load_speed_controls(game_path, &interner);
 
-        // Load topbar.gui layout
-        let topbar = load_topbar(game_path, &interner);
+        // Load topbar.gui layout (Phase 3.5: split into layout + macro-based widgets)
+        let (topbar_layout, topbar_root) = load_topbar_split(game_path, &interner);
+        let topbar = topbar_root.map(|root| topbar::TopBar::bind(&root, &interner));
 
         // Load country select panel layout from frontend.gui
         let country_select = load_country_select(game_path, &interner);
@@ -305,6 +281,7 @@ impl GuiRenderer {
             sprite_cache: SpriteCache::new(game_path.to_path_buf()),
             font_cache: BitmapFontCache::new(game_path),
             speed_controls,
+            topbar_layout,
             topbar,
             country_select,
             bg_bind_group: None,
@@ -439,10 +416,10 @@ impl GuiRenderer {
 
         // Collect all sprites we need
         let all_icons: Vec<_> = self
-            .topbar
+            .topbar_layout
             .backgrounds
             .iter()
-            .chain(self.topbar.icons.iter())
+            .chain(self.topbar_layout.icons.iter())
             .collect();
 
         for icon in all_icons {
@@ -568,13 +545,16 @@ impl GuiRenderer {
 
         // Collect topbar draw commands first (to avoid borrowing self during draw)
         let topbar_draws: Vec<(usize, f32, f32, f32, f32)> = {
-            let topbar_anchor =
-                get_window_anchor(self.topbar.window_pos, self.topbar.orientation, screen_size);
+            let topbar_anchor = get_window_anchor(
+                self.topbar_layout.window_pos,
+                self.topbar_layout.orientation,
+                screen_size,
+            );
 
             let mut draws = Vec::new();
 
             // Backgrounds first
-            for bg in &self.topbar.backgrounds {
+            for bg in &self.topbar_layout.backgrounds {
                 if let Some(idx) = self
                     .topbar_icons
                     .iter()
@@ -590,7 +570,7 @@ impl GuiRenderer {
             }
 
             // Icons
-            for icon in &self.topbar.icons {
+            for icon in &self.topbar_layout.icons {
                 if let Some(idx) = self
                     .topbar_icons
                     .iter()
@@ -630,66 +610,56 @@ impl GuiRenderer {
         if let Some(ref country) = state.country
             && let Some(ref font_bind_group) = self.font_bind_group
         {
-            let topbar_anchor =
-                get_window_anchor(self.topbar.window_pos, self.topbar.orientation, screen_size);
+            let topbar_anchor = get_window_anchor(
+                self.topbar_layout.window_pos,
+                self.topbar_layout.orientation,
+                screen_size,
+            );
+
+            // Update topbar widgets with current country state
+            if let Some(ref mut topbar) = self.topbar {
+                topbar.update(country);
+            }
 
             // Get font for text rendering (reuse existing font from speed controls)
             let font_name = &self.speed_controls.date_font; // vic_18
-            if let Some(loaded) = self.font_cache.get(font_name, device, queue) {
+            if let Some(loaded) = self.font_cache.get(font_name, device, queue)
+                && let Some(ref topbar) = self.topbar
+            {
                 let font = &loaded.font;
 
-                for text in &self.topbar.texts {
-                    // Map text name to value
-                    let value = match text.name.as_str() {
-                        "text_gold" => format!("{:.0}", country.treasury),
-                        "text_manpower" => format_k(country.manpower),
-                        "text_sailors" => format_k(country.sailors),
-                        "text_stability" => format!("{:+}", country.stability),
-                        "text_prestige" => format!("{:.0}", country.prestige),
-                        "text_corruption" => format!("{:.1}", country.corruption),
-                        "text_ADM" => format!("{}", country.adm_power),
-                        "text_DIP" => format!("{}", country.dip_power),
-                        "text_MIL" => format!("{}", country.mil_power),
-                        "text_merchants" => {
-                            format!("{}/{}", country.merchants, country.max_merchants)
-                        }
-                        "text_settlers" => {
-                            format!("{}/{}", country.colonists, country.max_colonists)
-                        }
-                        "text_diplomats" => {
-                            format!("{}/{}", country.diplomats, country.max_diplomats)
-                        }
-                        "text_missionaries" => {
-                            format!("{}/{}", country.missionaries, country.max_missionaries)
-                        }
-                        _ => continue, // Skip unknown text fields
-                    };
+                // Helper closure to render a single text widget
+                let mut render_text = |widget: &primitives::GuiText| {
+                    let value = widget.text();
+                    if value.is_empty() {
+                        return; // Skip empty/placeholder widgets
+                    }
 
                     let text_screen_pos = position_from_anchor(
                         topbar_anchor,
-                        text.position,
-                        text.orientation,
-                        (text.max_width, text.max_height),
+                        widget.position(),
+                        widget.orientation(),
+                        widget.max_dimensions(),
                     );
 
                     // Measure text width for alignment
-                    let text_width = font.measure_width(&value);
+                    let text_width = font.measure_width(value);
 
                     // Calculate starting X based on format (alignment)
-                    let start_x = match text.format {
-                        types::TextFormat::Left => text_screen_pos.0 + text.border_size.0 as f32,
+                    let border_size = widget.border_size();
+                    let (max_width, _max_height) = widget.max_dimensions();
+                    let start_x = match widget.format() {
+                        types::TextFormat::Left => text_screen_pos.0 + border_size.0 as f32,
                         types::TextFormat::Center => {
-                            text_screen_pos.0 + (text.max_width as f32 - text_width) / 2.0
+                            text_screen_pos.0 + (max_width as f32 - text_width) / 2.0
                         }
                         types::TextFormat::Right => {
-                            text_screen_pos.0 + text.max_width as f32
-                                - text_width
-                                - text.border_size.0 as f32
+                            text_screen_pos.0 + max_width as f32 - text_width - border_size.0 as f32
                         }
                     };
 
                     let mut cursor_x = start_x;
-                    let cursor_y = text_screen_pos.1 + text.border_size.1 as f32;
+                    let cursor_y = text_screen_pos.1 + border_size.1 as f32;
 
                     for c in value.chars() {
                         if let Some(glyph) = font.get_glyph(c) {
@@ -719,7 +689,22 @@ impl GuiRenderer {
                             cursor_x += glyph.xadvance as f32;
                         }
                     }
-                }
+                };
+
+                // Render all topbar text widgets
+                render_text(&topbar.text_gold);
+                render_text(&topbar.text_manpower);
+                render_text(&topbar.text_sailors);
+                render_text(&topbar.text_stability);
+                render_text(&topbar.text_prestige);
+                render_text(&topbar.text_corruption);
+                render_text(&topbar.text_ADM);
+                render_text(&topbar.text_DIP);
+                render_text(&topbar.text_MIL);
+                render_text(&topbar.text_merchants);
+                render_text(&topbar.text_settlers);
+                render_text(&topbar.text_diplomats);
+                render_text(&topbar.text_missionaries);
             }
         }
 
@@ -1176,11 +1161,14 @@ impl GuiRenderer {
         self.ensure_font(device, queue, sprite_renderer);
 
         // Use standard topbar anchor (UPPER_LEFT at position 0,0)
-        let topbar_anchor =
-            get_window_anchor(self.topbar.window_pos, self.topbar.orientation, screen_size);
+        let topbar_anchor = get_window_anchor(
+            self.topbar_layout.window_pos,
+            self.topbar_layout.orientation,
+            screen_size,
+        );
 
         // Draw backgrounds
-        for icon in &self.topbar.backgrounds {
+        for icon in &self.topbar_layout.backgrounds {
             if let Some(idx) = self
                 .topbar_icons
                 .iter()
@@ -1205,7 +1193,7 @@ impl GuiRenderer {
         }
 
         // Draw icons
-        for icon in &self.topbar.icons {
+        for icon in &self.topbar_layout.icons {
             if let Some(idx) = self
                 .topbar_icons
                 .iter()
@@ -1233,61 +1221,49 @@ impl GuiRenderer {
         if let Some(ref country) = state.country
             && let Some(ref font_bind_group) = self.font_bind_group
         {
+            // Update topbar widgets with current country state
+            if let Some(ref mut topbar) = self.topbar {
+                topbar.update(country);
+            }
+
             let font_name = &self.speed_controls.date_font; // vic_18
-            if let Some(loaded) = self.font_cache.get(font_name, device, queue) {
+            if let Some(loaded) = self.font_cache.get(font_name, device, queue)
+                && let Some(ref topbar) = self.topbar
+            {
                 let font = &loaded.font;
 
-                for text in &self.topbar.texts {
-                    let value = match text.name.as_str() {
-                        "text_gold" => format!("{:.0}", country.treasury),
-                        "text_manpower" => format_k(country.manpower),
-                        "text_sailors" => format_k(country.sailors),
-                        "text_stability" => format!("{:+}", country.stability),
-                        "text_prestige" => format!("{:.0}", country.prestige),
-                        "text_corruption" => format!("{:.1}", country.corruption),
-                        "text_ADM" => format!("{}", country.adm_power),
-                        "text_DIP" => format!("{}", country.dip_power),
-                        "text_MIL" => format!("{}", country.mil_power),
-                        "text_merchants" => {
-                            format!("{}/{}", country.merchants, country.max_merchants)
-                        }
-                        "text_settlers" => {
-                            format!("{}/{}", country.colonists, country.max_colonists)
-                        }
-                        "text_diplomats" => {
-                            format!("{}/{}", country.diplomats, country.max_diplomats)
-                        }
-                        "text_missionaries" => {
-                            format!("{}/{}", country.missionaries, country.max_missionaries)
-                        }
-                        _ => continue,
-                    };
+                // Helper closure to render a single text widget
+                let mut render_text = |widget: &primitives::GuiText| {
+                    let value = widget.text();
+                    if value.is_empty() {
+                        return; // Skip empty/placeholder widgets
+                    }
 
                     let text_screen_pos = position_from_anchor(
                         topbar_anchor,
-                        text.position,
-                        text.orientation,
-                        (text.max_width, text.max_height),
+                        widget.position(),
+                        widget.orientation(),
+                        widget.max_dimensions(),
                     );
 
                     // Measure text width for alignment
-                    let text_width = font.measure_width(&value);
+                    let text_width = font.measure_width(value);
 
                     // Calculate starting X based on format (alignment)
-                    let start_x = match text.format {
-                        types::TextFormat::Left => text_screen_pos.0 + text.border_size.0 as f32,
+                    let border_size = widget.border_size();
+                    let (max_width, _max_height) = widget.max_dimensions();
+                    let start_x = match widget.format() {
+                        types::TextFormat::Left => text_screen_pos.0 + border_size.0 as f32,
                         types::TextFormat::Center => {
-                            text_screen_pos.0 + (text.max_width as f32 - text_width) / 2.0
+                            text_screen_pos.0 + (max_width as f32 - text_width) / 2.0
                         }
                         types::TextFormat::Right => {
-                            text_screen_pos.0 + text.max_width as f32
-                                - text_width
-                                - text.border_size.0 as f32
+                            text_screen_pos.0 + max_width as f32 - text_width - border_size.0 as f32
                         }
                     };
 
                     let mut cursor_x = start_x;
-                    let cursor_y = text_screen_pos.1 + text.border_size.1 as f32;
+                    let cursor_y = text_screen_pos.1 + border_size.1 as f32;
 
                     for c in value.chars() {
                         if let Some(glyph) = font.get_glyph(c) {
@@ -1317,7 +1293,22 @@ impl GuiRenderer {
                             cursor_x += glyph.xadvance as f32;
                         }
                     }
-                }
+                };
+
+                // Render all topbar text widgets
+                render_text(&topbar.text_gold);
+                render_text(&topbar.text_manpower);
+                render_text(&topbar.text_sailors);
+                render_text(&topbar.text_stability);
+                render_text(&topbar.text_prestige);
+                render_text(&topbar.text_corruption);
+                render_text(&topbar.text_ADM);
+                render_text(&topbar.text_DIP);
+                render_text(&topbar.text_MIL);
+                render_text(&topbar.text_merchants);
+                render_text(&topbar.text_settlers);
+                render_text(&topbar.text_diplomats);
+                render_text(&topbar.text_missionaries);
             }
         }
     }
@@ -1610,10 +1601,13 @@ impl GuiRenderer {
         screen_size: (u32, u32),
         flag_size: (u32, u32),
     ) -> Option<(f32, f32, f32, f32)> {
-        let shield = self.topbar.player_shield.as_ref()?;
+        let shield = self.topbar_layout.player_shield.as_ref()?;
 
-        let topbar_anchor =
-            get_window_anchor(self.topbar.window_pos, self.topbar.orientation, screen_size);
+        let topbar_anchor = get_window_anchor(
+            self.topbar_layout.window_pos,
+            self.topbar_layout.orientation,
+            screen_size,
+        );
 
         let screen_pos = position_from_anchor(
             topbar_anchor,
@@ -1877,45 +1871,57 @@ fn extract_speed_controls(
     controls
 }
 
-/// Load topbar layout from game files.
-fn load_topbar(game_path: &Path, interner: &interner::StringInterner) -> TopBar {
+/// Load topbar layout from game files (Phase 3.5: returns layout + root element).
+///
+/// Returns a tuple of (TopBarLayout, Option<GuiElement>) where:
+/// - TopBarLayout contains rendering metadata (icons, backgrounds, positions)
+/// - GuiElement is the root window for macro-based text widget binding
+fn load_topbar_split(
+    game_path: &Path,
+    interner: &interner::StringInterner,
+) -> (TopBarLayout, Option<GuiElement>) {
     let gui_path = game_path.join("interface/topbar.gui");
 
     if !gui_path.exists() {
         log::warn!("topbar.gui not found, using defaults");
-        return TopBar::default();
+        return (TopBarLayout::default(), None);
     }
 
     match parse_gui_file(&gui_path, interner) {
         Ok(db) => {
             // Find the topbar window
             let symbol = interner.intern("topbar");
-            if let Some(GuiElement::Window {
-                position,
-                orientation,
-                children,
-                ..
-            }) = db.get(&symbol)
+            if let Some(root) = db.get(&symbol)
+                && let GuiElement::Window {
+                    position,
+                    orientation,
+                    children,
+                    ..
+                } = root
             {
-                return extract_topbar(position, orientation, children);
+                let layout = extract_topbar_layout(position, orientation, children);
+                return (layout, Some(root.clone()));
             }
             log::warn!("topbar window not found in GUI file");
-            TopBar::default()
+            (TopBarLayout::default(), None)
         }
         Err(e) => {
             log::warn!("Failed to parse topbar.gui: {}", e);
-            TopBar::default()
+            (TopBarLayout::default(), None)
         }
     }
 }
 
-/// Extract topbar data from parsed GUI elements.
-fn extract_topbar(
+/// Extract topbar layout data from parsed GUI elements (Phase 3.5).
+///
+/// This extracts only rendering metadata (icon positions, backgrounds).
+/// Text widgets are handled by the macro-based topbar::TopBar.
+fn extract_topbar_layout(
     window_pos: &(i32, i32),
     orientation: &Orientation,
     children: &[GuiElement],
-) -> TopBar {
-    let mut topbar = TopBar {
+) -> TopBarLayout {
+    let mut layout = TopBarLayout {
         window_pos: *window_pos,
         orientation: *orientation,
         ..Default::default()
@@ -1974,7 +1980,7 @@ fn extract_topbar(
                         position,
                         sprite_type
                     );
-                    topbar.player_shield = Some(icon);
+                    layout.player_shield = Some(icon);
                 } else if bg_names.contains(&name.as_str()) {
                     log::debug!(
                         "Parsed topbar bg {}: pos={:?}, sprite={}",
@@ -1982,7 +1988,7 @@ fn extract_topbar(
                         position,
                         sprite_type
                     );
-                    topbar.backgrounds.push(icon);
+                    layout.backgrounds.push(icon);
                 } else if icon_names.contains(&name.as_str()) {
                     log::debug!(
                         "Parsed topbar icon {}: pos={:?}, sprite={}",
@@ -1990,7 +1996,7 @@ fn extract_topbar(
                         position,
                         sprite_type
                     );
-                    topbar.icons.push(icon);
+                    layout.icons.push(icon);
                 }
             }
             GuiElement::Button {
@@ -2007,7 +2013,7 @@ fn extract_topbar(
                         position,
                         sprite_type
                     );
-                    topbar.player_shield = Some(TopBarIcon {
+                    layout.player_shield = Some(TopBarIcon {
                         name: name.clone(),
                         sprite: sprite_type.clone(),
                         position: *position,
@@ -2021,7 +2027,7 @@ fn extract_topbar(
                         position,
                         sprite_type
                     );
-                    topbar.icons.push(TopBarIcon {
+                    layout.icons.push(TopBarIcon {
                         name: name.clone(),
                         sprite: sprite_type.clone(),
                         position: *position,
@@ -2029,51 +2035,19 @@ fn extract_topbar(
                     });
                 }
             }
-            GuiElement::TextBox {
-                name,
-                position,
-                font,
-                max_width,
-                max_height,
-                orientation,
-                format,
-                border_size,
-                ..
-            } => {
-                // Text labels for resources
-                if name.starts_with("text_") {
-                    log::debug!(
-                        "Parsed topbar text {}: pos={:?}, font={}, format={:?}",
-                        name,
-                        position,
-                        font,
-                        format
-                    );
-                    topbar.texts.push(TopBarText {
-                        name: name.clone(),
-                        position: *position,
-                        font: font.clone(),
-                        max_width: *max_width,
-                        max_height: *max_height,
-                        orientation: *orientation,
-                        format: *format,
-                        border_size: *border_size,
-                    });
-                }
-            }
+            // Phase 3.5: Text widgets now handled by macro-based topbar::TopBar
             _ => {}
         }
     }
 
     log::info!(
-        "Loaded topbar: {} backgrounds, {} icons, {} texts, player_shield={}",
-        topbar.backgrounds.len(),
-        topbar.icons.len(),
-        topbar.texts.len(),
-        topbar.player_shield.is_some()
+        "Loaded topbar layout: {} backgrounds, {} icons, player_shield={}",
+        layout.backgrounds.len(),
+        layout.icons.len(),
+        layout.player_shield.is_some()
     );
 
-    topbar
+    layout
 }
 
 /// Load country selection panel layout from frontend.gui.
@@ -2684,7 +2658,7 @@ mod tests {
         }
 
         // Check topbar coverage
-        let tb = &gui_renderer.topbar;
+        let tb = &gui_renderer.topbar_layout;
         println!("\nTopbar layout coverage:");
         println!(
             "  Window pos: {:?}, orientation: {:?}",
@@ -2701,13 +2675,8 @@ mod tests {
                 icon.name, icon.position, icon.sprite
             );
         }
-        println!("  Texts: {}", tb.texts.len());
-        for text in &tb.texts {
-            println!(
-                "    - {} at {:?} (font: {})",
-                text.name, text.position, text.font
-            );
-        }
+        // Note: Text widgets now managed by macro-based TopBar struct (13 widgets)
+        println!("  Texts: managed by TopBar (13 widgets)");
 
         // Assert minimum expected elements
         assert!(
@@ -2780,11 +2749,11 @@ mod tests {
                 count_raw_gui_elements(&topbar_path).expect("Failed to count topbar.gui elements");
 
             let gui_renderer = GuiRenderer::new(&game_path);
-            let tb = &gui_renderer.topbar;
+            let tb = &gui_renderer.topbar_layout;
 
             // Count what we actually use (backgrounds are icons in the raw file)
             let used_icons = tb.backgrounds.len() + tb.icons.len();
-            let used_texts = tb.texts.len();
+            let used_texts = 13; // Macro-based TopBar has 13 text widgets
 
             println!("\ntopbar.gui:");
             println!(
@@ -2792,7 +2761,7 @@ mod tests {
                 raw_counts.windows, raw_counts.icons, raw_counts.buttons, raw_counts.textboxes
             );
             println!(
-                "  Used: {} icons (incl. backgrounds), {} texts",
+                "  Used: {} icons (incl. backgrounds), {} texts (macro-based)",
                 used_icons, used_texts
             );
 
