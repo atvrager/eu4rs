@@ -6,8 +6,8 @@
 
 use crate::gui::binder::{Bindable, GuiNode};
 use crate::gui::core::{
-    ButtonState as InputButtonState, EventResult, GuiRenderer, GuiWidget, MouseButton, UiContext,
-    UiEvent,
+    ButtonState as InputButtonState, EventResult, GuiRenderer, GuiWidget, MouseButton, UiAction,
+    UiContext, UiEvent,
 };
 use crate::gui::types::{GuiElement, Orientation, Rect};
 
@@ -33,6 +33,8 @@ pub struct GuiButton {
     /// Callback to invoke on click (stored as a function ID or similar).
     /// For now, we track click state and let the parent panel poll it.
     was_clicked: bool,
+    /// Action to perform when clicked.
+    action: UiAction,
 }
 
 #[derive(Debug, Clone)]
@@ -79,6 +81,28 @@ impl GuiButton {
         self.was_clicked = false;
     }
 
+    /// Set the action to perform when clicked.
+    pub fn set_action(&mut self, action: UiAction) {
+        self.action = action;
+    }
+
+    /// Get the action that will be performed when clicked.
+    pub fn action(&self) -> UiAction {
+        self.action
+    }
+
+    /// Check if the button was clicked and return the action.
+    ///
+    /// Resets the click flag if a click was detected.
+    pub fn poll_click(&mut self) -> Option<UiAction> {
+        if self.was_clicked {
+            self.was_clicked = false;
+            Some(self.action)
+        } else {
+            None
+        }
+    }
+
     /// Get the element name (for debugging).
     pub fn name(&self) -> &str {
         self.element
@@ -107,6 +131,7 @@ impl Bindable for GuiButton {
                 }),
                 state: ButtonState::Normal,
                 was_clicked: false,
+                action: UiAction::None, // Default to no action, set by panel after binding
             }),
             _ => None,
         }
@@ -117,6 +142,7 @@ impl Bindable for GuiButton {
             element: None,
             state: ButtonState::Disabled,
             was_clicked: false,
+            action: UiAction::None,
         }
     }
 }

@@ -180,6 +180,13 @@ pub enum GuiElement {
         /// Optional shortcut key.
         shortcut: Option<String>,
     },
+    /// Toggle checkbox.
+    Checkbox {
+        name: String,
+        position: (i32, i32),
+        sprite_type: String,
+        orientation: Orientation,
+    },
 }
 
 impl GuiElement {
@@ -190,6 +197,7 @@ impl GuiElement {
             GuiElement::Icon { name, .. } => name,
             GuiElement::TextBox { name, .. } => name,
             GuiElement::Button { name, .. } => name,
+            GuiElement::Checkbox { name, .. } => name,
         }
     }
 
@@ -200,6 +208,7 @@ impl GuiElement {
             GuiElement::Icon { position, .. } => *position,
             GuiElement::TextBox { position, .. } => *position,
             GuiElement::Button { position, .. } => *position,
+            GuiElement::Checkbox { position, .. } => *position,
         }
     }
 
@@ -210,6 +219,7 @@ impl GuiElement {
             GuiElement::Icon { orientation, .. } => *orientation,
             GuiElement::TextBox { orientation, .. } => *orientation,
             GuiElement::Button { orientation, .. } => *orientation,
+            GuiElement::Checkbox { orientation, .. } => *orientation,
         }
     }
 

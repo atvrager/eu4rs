@@ -27,6 +27,9 @@ mod macro_test;
 pub mod speed_controls;
 pub mod topbar;
 
+// Phase 4: Interactive UI panels with button support
+pub mod main_menu;
+
 #[allow(unused_imports)] // SelectedCountryState used in tests
 pub use country_select::{CountrySelectLayout, CountrySelectPanel, SelectedCountryState};
 pub use layout::{
@@ -2285,6 +2288,9 @@ fn extract_country_select(
             }
             GuiElement::Window { .. } => {
                 // Skip nested windows (like listboxes) for now
+            }
+            GuiElement::Checkbox { .. } => {
+                // Skip checkboxes for now (not used in country select)
             }
         }
     }

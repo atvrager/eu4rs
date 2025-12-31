@@ -11,12 +11,15 @@
 //! - **GuiContainer**: ⚠️ Available but not yet used in production panels (Phase 4+)
 
 mod button;
+mod checkbox;
 mod container;
 mod icon;
 mod text;
 
 #[allow(unused_imports)] // Reserved for future interactive UI panels (Phase 4)
 pub use button::{ButtonState, GuiButton};
+#[allow(unused_imports)] // Reserved for future interactive UI panels (Phase 4.2)
+pub use checkbox::GuiCheckbox;
 #[allow(unused_imports)] // Reserved for future nested UI panel layouts
 pub use container::GuiContainer;
 pub use icon::GuiIcon;

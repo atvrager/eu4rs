@@ -47,6 +47,7 @@ pub struct RawGuiCounts {
     pub icons: usize,
     pub textboxes: usize,
     pub buttons: usize,
+    pub checkboxes: usize,
     /// Element type names we saw but don't parse yet
     pub unknown_types: Vec<String>,
 }
@@ -54,7 +55,7 @@ pub struct RawGuiCounts {
 impl RawGuiCounts {
     #[allow(dead_code)]
     pub fn total(&self) -> usize {
-        self.windows + self.icons + self.textboxes + self.buttons
+        self.windows + self.icons + self.textboxes + self.buttons + self.checkboxes
     }
 }
 
@@ -85,9 +86,9 @@ fn count_elements_recursive(node: &EU4TxtParseNode, counts: &mut RawGuiCounts) {
             "iconType" => counts.icons += 1,
             "instantTextBoxType" => counts.textboxes += 1,
             "guiButtonType" => counts.buttons += 1,
+            "checkboxType" => counts.checkboxes += 1,
             // Track element types we don't parse yet
-            "checkboxType"
-            | "editBoxType"
+            "editBoxType"
             | "listboxType"
             | "scrollbarType"
             | "OverlappingElementsBoxType"
@@ -353,6 +354,11 @@ fn parse_window_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
                         children.push(button);
                     }
                 }
+                "checkboxType" => {
+                    if let Some(checkbox) = parse_checkbox_type(get_assignment_value(child)) {
+                        children.push(checkbox);
+                    }
+                }
                 "windowType" => {
                     if let Some(window) = parse_window_type(get_assignment_value(child)) {
                         children.push(window);
@@ -558,6 +564,51 @@ fn parse_button_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
         sprite_type,
         orientation,
         shortcut,
+    })
+}
+
+/// Parse a checkboxType block.
+fn parse_checkbox_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
+    let node = node?;
+
+    let mut name = String::new();
+    let mut position = (0i32, 0i32);
+    let mut sprite_type = String::new();
+    let mut orientation = Orientation::UpperLeft;
+
+    for child in &node.children {
+        if let EU4TxtAstItem::Assignment = &child.entry
+            && let Some(key) = get_assignment_key(child)
+        {
+            match key.as_str() {
+                "name" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        name = s;
+                    }
+                }
+                "position" => {
+                    position = parse_position(get_assignment_value(child));
+                }
+                "spriteType" | "quadTextureSprite" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        sprite_type = s;
+                    }
+                }
+                "Orientation" | "orientation" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        orientation = Orientation::from_str(&s);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Some(GuiElement::Checkbox {
+        name,
+        position,
+        sprite_type,
+        orientation,
     })
 }
 

@@ -189,6 +189,32 @@ pub struct Modifiers {
 /// The actual implementation is GuiElement from the types module.
 pub use crate::gui::binder::GuiNode;
 
+/// Actions that can result from UI interactions.
+///
+/// Buttons and other interactive widgets return these actions to indicate
+/// what should happen (screen transitions, game state changes, etc.).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UiAction {
+    /// Transition to single player screen (country selection).
+    ShowSinglePlayer,
+    /// Transition to multiplayer screen.
+    ShowMultiplayer,
+    /// Show tutorial screen.
+    ShowTutorial,
+    /// Show credits screen.
+    ShowCredits,
+    /// Show settings screen.
+    ShowSettings,
+    /// Exit the application.
+    Exit,
+    /// Start the game with selected country.
+    StartGame,
+    /// Return to previous screen.
+    Back,
+    /// No action (button not yet wired up).
+    None,
+}
+
 /// No-op localizer for CI environments.
 ///
 /// Returns all text unchanged, allowing the UI system to function

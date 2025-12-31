@@ -395,12 +395,15 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Current State (after Phase 3.5)**:
+**Current State (after Phase 4.2)**:
 - ✅ CountrySelectPanel (right panel) - fully macro-based
 - ✅ TopBar, SpeedControls - production integrated
-- ✅ GuiButton primitive - exists, needs production wiring
+- ✅ GuiButton primitive - with UiAction support
+- ✅ GuiCheckbox primitive - with toggle state
+- ✅ MainMenuPanel - button bindings for frontend navigation
+- ✅ UiAction enum - button click results
 - ✅ Basic hit testing - works for speed buttons
-- ❌ Main menu panel
+- ❌ EditBox widget
 - ❌ Left panel (bookmarks, save list, date picker)
 - ❌ Top panel (map modes, labels)
 - ❌ Listbox widget
@@ -412,16 +415,16 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
 ### Phase 4: Button Integration & Interactive Primitives
 *Objective: Make buttons work and add checkbox/editbox support.*
 
-- [ ] **4.1. GuiButton Production Integration**
-    - [ ] Create `MainMenuPanel` struct with button bindings (single_player, multiplayer, exit, etc.)
-    - [ ] Integrate button hit boxes into unified input dispatch
-    - [ ] Define `UiAction` enum for button click results (`ShowSinglePlayer`, `Exit`, etc.)
-    - [ ] Wire button clicks to action handlers
-- [ ] **4.2. Checkbox Support** (`gui/primitives/checkbox.rs`)
-    - [ ] Parse `checkboxType` in GUI parser
-    - [ ] Implement `GuiCheckbox` struct with `checked: bool` state
-    - [ ] Handle click events to toggle state
-    - [ ] Support checkbox in macro binder (for Ironman toggle, etc.)
+- [x] **4.1. GuiButton Production Integration**
+    - [x] Create `MainMenuPanel` struct with button bindings (single_player, multiplayer, exit, etc.)
+    - [x] Define `UiAction` enum for button click results (`ShowSinglePlayer`, `Exit`, etc.)
+    - [x] Wire button clicks to action handlers via `poll_click()` method
+    - [ ] Integrate button hit boxes into unified input dispatch (deferred to Phase 5)
+- [x] **4.2. Checkbox Support** (`gui/primitives/checkbox.rs`)
+    - [x] Parse `checkboxType` in GUI parser
+    - [x] Implement `GuiCheckbox` struct with `checked: bool` state
+    - [x] Handle click events to toggle state
+    - [x] Support checkbox in macro binder (bindable via `GuiNode`)
 - [ ] **4.3. EditBox Support** (`gui/primitives/editbox.rs`)
     - [ ] Parse `editBoxType` (used for date input, player name)
     - [ ] Implement `GuiEditBox` with `String` buffer
