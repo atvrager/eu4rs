@@ -205,9 +205,11 @@ pub struct GuiRenderer {
     topbar_layout: TopBarLayout,
     /// Macro-based topbar text widgets (Phase 3.5).
     topbar: Option<topbar::TopBar>,
-    /// Country selection panel layout (WIP - used in tests).
-    #[allow(dead_code)]
-    country_select: CountrySelectLayout,
+    /// Legacy country selection panel layout (Phase 3.5: rendering metadata only).
+    country_select_layout: CountrySelectLayout,
+    /// Macro-based country select panel widgets (Phase 3.5).
+    #[allow(dead_code)] // Used in render_country_select_only (test-only)
+    country_select_panel: Option<CountrySelectPanel>,
     /// Cached bind groups for frequently used sprites.
     bg_bind_group: Option<wgpu::BindGroup>,
     speed_bind_group: Option<wgpu::BindGroup>,
@@ -281,8 +283,11 @@ impl GuiRenderer {
         let (topbar_layout, topbar_root) = load_topbar_split(game_path, &interner);
         let topbar = topbar_root.map(|root| topbar::TopBar::bind(&root, &interner));
 
-        // Load country select panel layout from frontend.gui
-        let country_select = load_country_select(game_path, &interner);
+        // Load country select panel layout from frontend.gui (Phase 3.5: split into layout + macro-based widgets)
+        let (country_select_layout, country_select_root) =
+            load_country_select_split(game_path, &interner);
+        let country_select_panel =
+            country_select_root.map(|root| CountrySelectPanel::bind(&root, &interner));
 
         Self {
             gfx_db,
@@ -293,7 +298,8 @@ impl GuiRenderer {
             speed_controls,
             topbar_layout,
             topbar,
-            country_select,
+            country_select_layout,
+            country_select_panel,
             bg_bind_group: None,
             speed_bind_group: None,
             font_bind_group: None,
@@ -461,13 +467,13 @@ impl GuiRenderer {
         // Collect all unique sprite names
         let mut sprites_to_load: Vec<&str> = Vec::new();
 
-        for icon in &self.country_select.icons {
+        for icon in &self.country_select_layout.icons {
             if !sprites_to_load.contains(&icon.sprite.as_str()) {
                 sprites_to_load.push(&icon.sprite);
             }
         }
 
-        for button in &self.country_select.buttons {
+        for button in &self.country_select_layout.buttons {
             if !sprites_to_load.contains(&button.sprite.as_str()) {
                 sprites_to_load.push(&button.sprite);
             }
@@ -1342,10 +1348,15 @@ impl GuiRenderer {
         self.ensure_country_select_textures(device, queue, sprite_renderer);
         self.ensure_font(device, queue, sprite_renderer);
 
+        // Update panel widgets with current country state (Phase 3.5)
+        if let Some(ref mut panel) = self.country_select_panel {
+            panel.update(country_state);
+        }
+
         // Window content area
         let window_size = (
-            self.country_select.window_size.0 as f32,
-            self.country_select.window_size.1 as f32,
+            self.country_select_layout.window_size.0 as f32,
+            self.country_select_layout.window_size.1 as f32,
         );
 
         // Get border size from panel definition
@@ -1357,16 +1368,21 @@ impl GuiRenderer {
 
         // Calculate panel size to fit content: window + border padding
         // The y_offset (40) positions content within the panel
-        let y_offset = self.country_select.window_pos.1 as f32;
+        let y_offset = self.country_select_layout.window_pos.1 as f32;
 
         // Content extends beyond declared window_size (e.g., diplomacy label at y=402)
         // Calculate actual content height from element positions
         let max_content_y = self
-            .country_select
+            .country_select_layout
             .icons
             .iter()
             .map(|i| i.position.1)
-            .chain(self.country_select.texts.iter().map(|t| t.position.1))
+            .chain(
+                self.country_select_layout
+                    .texts
+                    .iter()
+                    .map(|t| t.position.1),
+            )
             .max()
             .unwrap_or(340) as f32
             + 30.0; // Add padding for element height
@@ -1414,7 +1430,7 @@ impl GuiRenderer {
         );
 
         // Draw icons (with proper frame selection)
-        for icon in &self.country_select.icons {
+        for icon in &self.country_select_layout.icons {
             if let Some(idx) = self
                 .country_select_icons
                 .iter()
@@ -1426,17 +1442,28 @@ impl GuiRenderer {
                 let sprite = self.gfx_db.get(sprite_name);
                 let num_frames = sprite.map(|s| s.num_frames).unwrap_or(1);
 
-                // Determine frame based on icon name and country state
-                let frame = match icon.name.as_str() {
-                    "government_rank" => {
-                        // 0=Duchy, 1=Kingdom, 2=Empire (internal: 1, 2, 3)
-                        (country_state.government_rank.saturating_sub(1) as u32).min(num_frames - 1)
+                // Determine frame: use panel widget for dynamic icons (Phase 3.5), else use layout
+                let frame = if let Some(ref panel) = self.country_select_panel {
+                    match icon.name.as_str() {
+                        "government_rank" => panel.government_rank.frame().min(num_frames - 1),
+                        "religion_icon" | "secondary_religion_icon" => {
+                            panel.religion_icon.frame().min(num_frames - 1)
+                        }
+                        "techgroup_icon" => panel.techgroup_icon.frame().min(num_frames - 1),
+                        _ => icon.frame.min(num_frames - 1),
                     }
-                    "religion_icon" | "secondary_religion_icon" => {
-                        country_state.religion_frame.min(num_frames - 1)
+                } else {
+                    // Fallback to old logic if panel not loaded (CI mode)
+                    match icon.name.as_str() {
+                        "government_rank" => (country_state.government_rank.saturating_sub(1)
+                            as u32)
+                            .min(num_frames - 1),
+                        "religion_icon" | "secondary_religion_icon" => {
+                            country_state.religion_frame.min(num_frames - 1)
+                        }
+                        "techgroup_icon" => country_state.tech_group_frame.min(num_frames - 1),
+                        _ => icon.frame.min(num_frames - 1),
                     }
-                    "techgroup_icon" => country_state.tech_group_frame.min(num_frames - 1),
-                    _ => icon.frame.min(num_frames - 1),
                 };
 
                 // Calculate per-frame dimensions
@@ -1490,25 +1517,57 @@ impl GuiRenderer {
             if let Some(loaded) = self.font_cache.get(font_name, device, queue) {
                 let font = &loaded.font;
 
-                for text_elem in &self.country_select.texts {
-                    let value = match text_elem.name.as_str() {
-                        "selected_nation_label" => country_state.name.clone(),
-                        "selected_nation_status_label" => country_state.government_type.clone(),
-                        "selected_fog" => country_state.fog_status.clone(),
-                        "selected_ruler" => country_state.ruler_name.clone(),
-                        "ruler_adm_value" => format!("{}", country_state.ruler_adm),
-                        "ruler_dip_value" => format!("{}", country_state.ruler_dip),
-                        "ruler_mil_value" => format!("{}", country_state.ruler_mil),
-                        "admtech_value" => format!("{}", country_state.adm_tech),
-                        "diptech_value" => format!("{}", country_state.dip_tech),
-                        "miltech_value" => format!("{}", country_state.mil_tech),
-                        "national_ideagroup_name" => country_state.ideas_name.clone(),
-                        "ideas_value" => format!("{}", country_state.ideas_unlocked),
-                        "provinces_value" => format!("{}", country_state.province_count),
-                        "economy_value" => format!("{}", country_state.total_development),
-                        "fort_value" => format!("{}", country_state.fort_level),
-                        "diplomacy_banner_label" => country_state.diplomacy_header.clone(),
-                        _ => continue,
+                for text_elem in &self.country_select_layout.texts {
+                    // Get text value from panel widget (Phase 3.5), else use old logic
+                    let value = if let Some(ref panel) = self.country_select_panel {
+                        match text_elem.name.as_str() {
+                            "selected_nation_label" => {
+                                panel.selected_nation_label.text().to_string()
+                            }
+                            "selected_nation_status_label" => {
+                                panel.selected_nation_status_label.text().to_string()
+                            }
+                            "selected_fog" => panel.selected_fog.text().to_string(),
+                            "selected_ruler" => panel.selected_ruler.text().to_string(),
+                            "ruler_adm_value" => panel.ruler_adm_value.text().to_string(),
+                            "ruler_dip_value" => panel.ruler_dip_value.text().to_string(),
+                            "ruler_mil_value" => panel.ruler_mil_value.text().to_string(),
+                            "admtech_value" => panel.admtech_value.text().to_string(),
+                            "diptech_value" => panel.diptech_value.text().to_string(),
+                            "miltech_value" => panel.miltech_value.text().to_string(),
+                            "national_ideagroup_name" => {
+                                panel.national_ideagroup_name.text().to_string()
+                            }
+                            "ideas_value" => panel.ideas_value.text().to_string(),
+                            "provinces_value" => panel.provinces_value.text().to_string(),
+                            "economy_value" => panel.economy_value.text().to_string(),
+                            "fort_value" => panel.fort_value.text().to_string(),
+                            "diplomacy_banner_label" => {
+                                panel.diplomacy_banner_label.text().to_string()
+                            }
+                            _ => continue,
+                        }
+                    } else {
+                        // Fallback to old logic if panel not loaded (CI mode)
+                        match text_elem.name.as_str() {
+                            "selected_nation_label" => country_state.name.clone(),
+                            "selected_nation_status_label" => country_state.government_type.clone(),
+                            "selected_fog" => country_state.fog_status.clone(),
+                            "selected_ruler" => country_state.ruler_name.clone(),
+                            "ruler_adm_value" => format!("{}", country_state.ruler_adm),
+                            "ruler_dip_value" => format!("{}", country_state.ruler_dip),
+                            "ruler_mil_value" => format!("{}", country_state.ruler_mil),
+                            "admtech_value" => format!("{}", country_state.adm_tech),
+                            "diptech_value" => format!("{}", country_state.dip_tech),
+                            "miltech_value" => format!("{}", country_state.mil_tech),
+                            "national_ideagroup_name" => country_state.ideas_name.clone(),
+                            "ideas_value" => format!("{}", country_state.ideas_unlocked),
+                            "provinces_value" => format!("{}", country_state.province_count),
+                            "economy_value" => format!("{}", country_state.total_development),
+                            "fort_value" => format!("{}", country_state.fort_level),
+                            "diplomacy_banner_label" => country_state.diplomacy_header.clone(),
+                            _ => continue,
+                        }
                     };
 
                     // Skip empty strings
@@ -1578,7 +1637,7 @@ impl GuiRenderer {
         // This shows the shield positioning for isolated testing
         if let Some((ref shield_bind_group, overlay_w, overlay_h)) = self.shield_frame_bind_group
             && let Some(shield) = self
-                .country_select
+                .country_select_layout
                 .buttons
                 .iter()
                 .find(|b| b.name == "player_shield")
@@ -1697,7 +1756,7 @@ impl GuiRenderer {
     ) -> Option<(f32, f32, f32, f32)> {
         // Find player_shield button
         let shield = self
-            .country_select
+            .country_select_layout
             .buttons
             .iter()
             .find(|b| b.name == "player_shield")?;
@@ -2073,16 +2132,20 @@ fn extract_topbar_layout(
     layout
 }
 
-/// Load country selection panel layout from frontend.gui.
-fn load_country_select(
+/// Load country selection panel layout from frontend.gui (Phase 3.5: returns layout + root element).
+///
+/// Returns a tuple of (CountrySelectLayout, Option<GuiElement>) where:
+/// - CountrySelectLayout contains rendering metadata (window size, icon vectors, text vectors, etc.)
+/// - GuiElement is the root window for macro-based widget binding (CountrySelectPanel)
+fn load_country_select_split(
     game_path: &Path,
     interner: &interner::StringInterner,
-) -> CountrySelectLayout {
+) -> (CountrySelectLayout, Option<GuiElement>) {
     let gui_path = game_path.join("interface/frontend.gui");
 
     if !gui_path.exists() {
         log::warn!("frontend.gui not found, using defaults");
-        return CountrySelectLayout::default();
+        return (CountrySelectLayout::default(), None);
     }
 
     match parse_gui_file(&gui_path, interner) {
@@ -2090,22 +2153,24 @@ fn load_country_select(
             // The structure is: country_selection_panel > ... > singleplayer
             // We search all top-level windows in the database
             for element in db.values() {
-                if let Some(layout) = find_singleplayer_window_in_node(element) {
-                    return layout;
+                if let Some((layout, root)) = find_singleplayer_window_in_node_split(element) {
+                    return (layout, Some(root));
                 }
             }
             log::warn!("singleplayer window not found in frontend.gui");
-            CountrySelectLayout::default()
+            (CountrySelectLayout::default(), None)
         }
         Err(e) => {
             log::warn!("Failed to parse frontend.gui: {}", e);
-            CountrySelectLayout::default()
+            (CountrySelectLayout::default(), None)
         }
     }
 }
 
-/// Recursively search for the singleplayer window starting from a GUI node.
-fn find_singleplayer_window_in_node(element: &GuiElement) -> Option<CountrySelectLayout> {
+/// Recursively search for the singleplayer window and return both layout and root (Phase 3.5).
+fn find_singleplayer_window_in_node_split(
+    element: &GuiElement,
+) -> Option<(CountrySelectLayout, GuiElement)> {
     if let GuiElement::Window {
         name,
         position,
@@ -2115,17 +2180,13 @@ fn find_singleplayer_window_in_node(element: &GuiElement) -> Option<CountrySelec
     } = element
     {
         if name == "singleplayer" {
-            return Some(extract_country_select(
-                position,
-                size,
-                orientation,
-                children,
-            ));
+            let layout = extract_country_select(position, size, orientation, children);
+            return Some((layout, element.clone()));
         }
         // Recurse into child windows
         for child in children {
-            if let Some(layout) = find_singleplayer_window_in_node(child) {
-                return Some(layout);
+            if let Some(result) = find_singleplayer_window_in_node_split(child) {
+                return Some(result);
             }
         }
     }
@@ -2822,7 +2883,7 @@ mod tests {
         };
 
         let interner = interner::StringInterner::new();
-        let layout = load_country_select(&game_path, &interner);
+        let (layout, _) = load_country_select_split(&game_path, &interner);
 
         // Verify loading succeeded
         assert!(layout.loaded, "Country select layout should be loaded");

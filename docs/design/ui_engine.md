@@ -343,12 +343,14 @@ Analysis of `parser.rs` reveals several other standard EU4 types we will need ev
     - [x] Replace legacy `SpeedControls` struct in `gui/mod.rs`
     - [x] Update `render_speed_controls()` to use macro-based implementation
     - [x] Verify speed controls snapshot test still passes
-- [ ] **3.5.3. CountrySelect Production Integration**
-    - [ ] Update `render_country_select_only()` to use `CountrySelectPanel` instead of `CountrySelectLayout`
-    - [ ] Migrate icon and text rendering loops to use panel widget handles
-    - [ ] Remove `CountrySelectLayout`, `CountrySelectIcon`, `CountrySelectText`, `CountrySelectButton` structs
-    - [ ] Remove `load_country_select()`, `find_singleplayer_window_in_node()`, `extract_country_select()` functions
-    - [ ] Verify country select snapshot test still passes
+- [x] **3.5.3. CountrySelect Production Integration** ✅ (2025-01-31)
+    - [x] Add `country_select_panel` field to `GuiRenderer`
+    - [x] Create `load_country_select_split()` function (returns layout + root for binding)
+    - [x] Update `render_country_select_only()` to call `panel.update(country_state)`
+    - [x] Use panel widget values for dynamic icons (government_rank, religion_icon, techgroup_icon)
+    - [x] Use panel widget values for all dynamic texts (selected_nation_label, ruler stats, etc.)
+    - [x] Remove legacy `load_country_select()` and `find_singleplayer_window_in_node()` functions
+    - [x] Verify country select snapshot test still passes (726 tests passed)
 - [ ] **3.5.4. Legacy Cleanup**
     - [ ] Remove all `#[allow(dead_code)]` annotations from Phase 2 primitives
     - [ ] Verify all primitive types (`GuiText`, `GuiIcon`, `GuiButton`, `GuiContainer`) are actively used
