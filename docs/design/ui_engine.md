@@ -486,10 +486,12 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] Integrate `ScreenManager` to control screen transitions
     - [x] Implement action handling for button clicks
     - [x] Add navigation history support (go_back, can_go_back)
-- [ ] **6.1.2. Screen Integration in Main Loop**
-    - [ ] Add `ScreenManager` to main game state
-    - [ ] Route rendering based on current screen (show/hide panels based on Screen)
-    - [ ] Route input events through `UiRoot` based on current screen
+- [x] **6.1.2. Screen Integration in Main Loop** ✅ (2025-12-31)
+    - [x] Replace `GamePhase` enum with `Screen` enum and `ScreenManager`
+    - [x] Update App initialization to use ScreenManager (starts at SinglePlayer or Playing)
+    - [x] Route input handling based on current screen (SinglePlayer vs Playing)
+    - [x] Route rendering based on current screen (show/hide UI elements)
+    - [x] Update window title to reflect current screen state
 - [ ] **6.1.3. Button Action to Screen Transition** (completes Phase 4.1 deferred task)
     - [ ] Wire `MainMenuPanel` button clicks to `ScreenManager.transition_to()`
     - [ ] `single_player` button → `Screen::SinglePlayer`

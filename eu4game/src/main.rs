@@ -65,15 +65,6 @@ fn extract_country_resources(
     })
 }
 
-/// Game state machine - tracks whether we're selecting a country or playing.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum GamePhase {
-    /// Selecting a country to play as.
-    CountrySelection,
-    /// Playing the game.
-    Playing,
-}
-
 use winit::{
     dpi::PhysicalSize,
     event::{ElementState, Event, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
@@ -122,8 +113,8 @@ struct App {
     province_map: image::RgbaImage,
     /// Currently selected province.
     selected_province: Option<u32>,
-    /// Current game phase.
-    game_phase: GamePhase,
+    /// Screen state manager with navigation history.
+    screen_manager: screen::ScreenManager,
     /// Player's country tag (set after selection).
     player_tag: Option<String>,
     /// List of playable countries (sorted by development).
@@ -321,10 +312,17 @@ impl App {
             province_lookup,
             province_map,
             selected_province: None,
-            game_phase: if playable_countries.is_empty() {
-                GamePhase::Playing // No countries to select, just play
+            screen_manager: if playable_countries.is_empty() {
+                // No countries to select, go straight to playing
+                let mut sm = screen::ScreenManager::new();
+                sm.transition_to(screen::Screen::Playing);
+                sm.clear_history(); // Can't go back if no country selection
+                sm
             } else {
-                GamePhase::CountrySelection
+                // Start at country selection (Single Player screen)
+                let mut sm = screen::ScreenManager::new();
+                sm.transition_to(screen::Screen::SinglePlayer);
+                sm
             },
             player_tag: None,
             playable_countries,
@@ -738,7 +736,7 @@ impl App {
             }
 
             // Draw input mode indicator (left side, below flag area)
-            if self.game_phase == GamePhase::Playing
+            if self.screen_manager.current() == screen::Screen::Playing
                 && let Some(ref text_renderer) = self.text_renderer
             {
                 let mode_str = self.input_mode.description();
@@ -803,8 +801,8 @@ impl App {
             return false;
         }
 
-        // Handle country selection mode
-        if self.game_phase == GamePhase::CountrySelection {
+        // Handle country selection mode (Single Player screen)
+        if self.screen_manager.current() == screen::Screen::SinglePlayer {
             match key {
                 KeyCode::Escape => {
                     log::info!("Escape pressed, exiting");
@@ -850,7 +848,8 @@ impl App {
                             dev
                         );
                         self.player_tag = Some(tag.clone());
-                        self.game_phase = GamePhase::Playing;
+                        self.screen_manager.transition_to(screen::Screen::Playing);
+                        self.screen_manager.clear_history(); // Can't go back from gameplay
                         self.lookup_dirty = true; // Update GPU lookup texture
                         self.update_window_title();
 
@@ -1157,8 +1156,10 @@ impl App {
 
     /// Updates the window title with current date and speed.
     fn update_window_title(&self) {
-        let title = match self.game_phase {
-            GamePhase::CountrySelection => {
+        let title = match self.screen_manager.current() {
+            screen::Screen::MainMenu => "EU4 Source Port - Main Menu".to_string(),
+            screen::Screen::Multiplayer => "EU4 Source Port - Multiplayer Setup".to_string(),
+            screen::Screen::SinglePlayer => {
                 if let Some((tag, name, dev)) =
                     self.playable_countries.get(self.country_selection_index)
                 {
@@ -1174,7 +1175,7 @@ impl App {
                     "EU4 Source Port - No countries available".to_string()
                 }
             }
-            GamePhase::Playing => {
+            screen::Screen::Playing => {
                 let province_info = if let Some(id) = self.selected_province {
                     if let Some(lookup) = &self.province_lookup {
                         if let Some(def) = lookup.by_id.get(&id) {
@@ -1491,7 +1492,7 @@ impl App {
             MouseButton::Left => {
                 if state == ElementState::Pressed {
                     // Check GUI clicks first
-                    if self.game_phase == GamePhase::Playing
+                    if self.screen_manager.current() == screen::Screen::Playing
                         && let Some(ref gui_renderer) = self.gui_renderer
                     {
                         // Create current GUI state for hit testing
@@ -1611,7 +1612,7 @@ fn main() {
 
     // Set initial window title and show country selection prompt
     app.update_window_title();
-    if app.game_phase == GamePhase::CountrySelection {
+    if app.screen_manager.current() == screen::Screen::SinglePlayer {
         app.log_country_selection();
     }
 
