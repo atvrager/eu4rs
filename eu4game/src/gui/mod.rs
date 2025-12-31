@@ -25,6 +25,9 @@ pub mod input;
 // Phase 6: Screen & panel management
 pub mod ui_root;
 
+// Phase 6.1: Frontend integration
+pub mod frontend;
+
 // Phase 3: Macro system tests
 #[cfg(test)]
 mod macro_test;

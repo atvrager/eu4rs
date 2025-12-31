@@ -395,7 +395,7 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Current State (after Phase 6 core)**:
+**Current State (after Phase 6.1.1)**:
 - ✅ CountrySelectPanel (right panel) - fully macro-based
 - ✅ TopBar, SpeedControls - production integrated
 - ✅ GuiButton primitive - with UiAction support
@@ -407,8 +407,8 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
 - ✅ Screen state machine (Screen enum, ScreenManager with navigation history)
 - ✅ Panel visibility (GuiContainer with show/hide methods)
 - ✅ UiRoot for input dispatch and focus management
-- ❌ Frontend container (FrontendUI struct)
-- ❌ Screen/panel integration
+- ✅ Frontend container (FrontendUI struct with screen management)
+- ❌ Main loop integration (route rendering and input by screen)
 - ❌ Left panel (bookmarks, save list, date picker)
 - ❌ Top panel (map modes, labels)
 - ❌ Listbox widget
@@ -481,10 +481,12 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
 *Objective: Wire up Phase 6 infrastructure with actual panels and navigation.*
 
 - [ ] **6.1.1. Frontend Container**
-    - [ ] Create `FrontendUI` struct containing all menu panels
-    - [ ] Add `MainMenuPanel` field (already exists)
+    - [x] Create `FrontendUI` struct containing all menu panels ✅ (2025-12-31)
+    - [x] Add `MainMenuPanel` field (already exists) ✅ (2025-12-31)
+    - [x] Integrate `ScreenManager` to control screen transitions ✅ (2025-12-31)
+    - [x] Implement action handling for button clicks ✅ (2025-12-31)
+    - [x] Add navigation history support (go_back, can_go_back) ✅ (2025-12-31)
     - [ ] Add `SinglePlayerPanel` placeholder (for future left/top/right panels)
-    - [ ] Integrate `ScreenManager` to control which panels are visible
     - [ ] Handle panel visibility based on current screen
 - [ ] **6.1.2. Screen Integration in Main Loop**
     - [ ] Add `ScreenManager` to main game state

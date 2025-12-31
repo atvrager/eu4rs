@@ -11,7 +11,7 @@ use eu4_macros::GuiWindow;
 ///
 /// This panel binds to the `mainmenu` window in `frontend.gui`
 /// and provides interactive buttons for navigating the game frontend.
-#[derive(GuiWindow)]
+#[derive(Debug, GuiWindow)]
 #[gui(window_name = "mainmenu")]
 #[allow(dead_code)] // Reserved for Phase 4+ frontend implementation
 pub struct MainMenuPanel {
