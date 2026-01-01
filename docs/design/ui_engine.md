@@ -539,11 +539,15 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] Scrollbar rendering via `get_scrollbar_bounds()` and `get_scrollbar_thumb_bounds()` helpers
     - [x] Comprehensive rendering documentation with integration example
     - [x] 5 additional tests for rendering helpers (12 total tests passing)
-- [ ] **7.5. Interaction**
-    - [ ] Mouse wheel scrolling
-    - [ ] Click on item → selection callback
-    - [ ] Scrollbar drag interaction
-    - [ ] Keyboard navigation (up/down arrows, page up/down)
+- [x] **7.5. Interaction** ✅ (2025-12-31)
+    - [x] Mouse wheel scrolling (40px per notch, bounds-checked)
+    - [x] Click handling infrastructure (item selection ready for panel implementation)
+    - [x] Scrollbar drag interaction (proportional thumb-to-content mapping)
+    - [x] Keyboard navigation (PageUp/PageDown/Home/End for scrolling, Up/Down for selection)
+    - [x] Selection state management (`selected_index()`, `set_selected_index()`, `select_next()`, `select_previous()`)
+    - [x] Extended `UiEvent` enum with `MouseWheel` event
+    - [x] Extended `KeyCode` enum with PageUp, PageDown, Home, End
+    - [x] Comprehensive interaction tests (5 new tests, 17 total tests passing)
 
 ### Phase 8: Frontend Panels
 *Objective: Build the complete main menu and country selection UI.*

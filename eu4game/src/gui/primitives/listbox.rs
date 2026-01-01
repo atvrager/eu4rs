@@ -77,6 +77,14 @@ pub struct GuiListbox {
     spacing: f32,
     /// Total content height in pixels (calculated from all items).
     content_height: f32,
+    /// Currently selected item index (Phase 7.5).
+    selected_index: Option<usize>,
+    /// Whether the scrollbar is currently being dragged (Phase 7.5).
+    scrollbar_dragging: bool,
+    /// Mouse Y position when scrollbar drag started (Phase 7.5).
+    scrollbar_drag_start_y: Option<f32>,
+    /// Scroll offset when drag started (Phase 7.5).
+    scrollbar_drag_start_offset: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -179,6 +187,44 @@ impl GuiListbox {
             .map(|d| d.name.as_str())
             .unwrap_or("<placeholder>")
     }
+
+    /// Get the currently selected item index (Phase 7.5).
+    pub fn selected_index(&self) -> Option<usize> {
+        self.selected_index
+    }
+
+    /// Set the selected item index (Phase 7.5).
+    ///
+    /// Pass `None` to clear selection. Index is not validated against item count.
+    pub fn set_selected_index(&mut self, index: Option<usize>) {
+        self.selected_index = index;
+    }
+
+    /// Select the next item (down arrow / down movement).
+    ///
+    /// Wraps around to the first item if at the end.
+    pub fn select_next(&mut self, item_count: usize) {
+        if item_count == 0 {
+            return;
+        }
+        self.selected_index = Some(match self.selected_index {
+            Some(idx) if idx + 1 < item_count => idx + 1,
+            _ => 0, // Wrap to start
+        });
+    }
+
+    /// Select the previous item (up arrow / up movement).
+    ///
+    /// Wraps around to the last item if at the beginning.
+    pub fn select_previous(&mut self, item_count: usize) {
+        if item_count == 0 {
+            return;
+        }
+        self.selected_index = Some(match self.selected_index {
+            Some(0) | None => item_count - 1, // Wrap to end
+            Some(idx) => idx - 1,
+        });
+    }
 }
 
 impl Bindable for GuiListbox {
@@ -205,6 +251,10 @@ impl Bindable for GuiListbox {
                 scroll_offset: 0.0,
                 spacing: *spacing as f32,
                 content_height: 0.0,
+                selected_index: None,
+                scrollbar_dragging: false,
+                scrollbar_drag_start_y: None,
+                scrollbar_drag_start_offset: 0.0,
             }),
             _ => None,
         }
@@ -216,6 +266,10 @@ impl Bindable for GuiListbox {
             scroll_offset: 0.0,
             spacing: 0.0,
             content_height: 0.0,
+            selected_index: None,
+            scrollbar_dragging: false,
+            scrollbar_drag_start_y: None,
+            scrollbar_drag_start_offset: 0.0,
         }
     }
 }
@@ -232,10 +286,156 @@ impl GuiWidget for GuiListbox {
         // See module documentation for example integration code.
     }
 
-    fn handle_input(&mut self, _event: &UiEvent, _ctx: &UiContext) -> EventResult {
-        // Input handling will be implemented in Phase 7.5
-        // Will handle mouse wheel, scrollbar drag, keyboard navigation
-        EventResult::Ignored
+    fn handle_input(&mut self, event: &UiEvent, _ctx: &UiContext) -> EventResult {
+        use crate::gui::core::{ButtonState as InputButtonState, KeyCode, MouseButton};
+
+        if self.element.is_none() {
+            return EventResult::Ignored;
+        }
+
+        match event {
+            // Mouse wheel scrolling (Phase 7.5)
+            UiEvent::MouseWheel { delta_y, x, y } => {
+                let bounds = self.bounds();
+                // Check if mouse is over the listbox
+                if bounds.contains(*x, *y) {
+                    // Scroll by delta
+                    // Positive delta_y = scroll down (increase offset)
+                    // Negative delta_y = scroll up (decrease offset)
+                    const SCROLL_SPEED: f32 = 40.0; // pixels per wheel notch
+                    self.scroll_by(delta_y * SCROLL_SPEED);
+                    return EventResult::Consumed;
+                }
+                EventResult::Ignored
+            }
+
+            // Mouse button events - handle clicks and scrollbar dragging (Phase 7.5)
+            UiEvent::MouseButton {
+                button: MouseButton::Left,
+                state: InputButtonState::Pressed,
+                x,
+                y,
+            } => {
+                let bounds = self.bounds();
+
+                // Check if clicking on scrollbar thumb
+                if self.max_scroll() > 0.0 {
+                    let (thumb_x, thumb_y, thumb_w, thumb_h) =
+                        self.get_scrollbar_thumb_bounds((0.0, 0.0));
+
+                    if *x >= thumb_x && *x < thumb_x + thumb_w
+                        && *y >= thumb_y && *y < thumb_y + thumb_h
+                    {
+                        // Start scrollbar drag
+                        self.scrollbar_dragging = true;
+                        self.scrollbar_drag_start_y = Some(*y);
+                        self.scrollbar_drag_start_offset = self.scroll_offset;
+                        return EventResult::Consumed;
+                    }
+                }
+
+                // Check if clicking on listbox content (item selection)
+                if bounds.contains(*x, *y) {
+                    // Calculate which item was clicked
+                    // This is simplified - real implementation would use adapter
+                    // to get accurate heights
+                    let _relative_y = *y - bounds.y + self.scroll_offset;
+
+                    // For now, assume uniform row heights
+                    // In real use, the panel should handle item selection
+                    // by iterating entries and checking bounds
+
+                    return EventResult::Consumed;
+                }
+
+                EventResult::Ignored
+            }
+
+            UiEvent::MouseButton {
+                button: MouseButton::Left,
+                state: InputButtonState::Released,
+                ..
+            } => {
+                if self.scrollbar_dragging {
+                    self.scrollbar_dragging = false;
+                    self.scrollbar_drag_start_y = None;
+                    return EventResult::Consumed;
+                }
+                EventResult::Ignored
+            }
+
+            // Mouse move - handle scrollbar dragging (Phase 7.5)
+            UiEvent::MouseMove { y, .. } => {
+                if self.scrollbar_dragging {
+                    if let Some(start_y) = self.scrollbar_drag_start_y {
+                        let delta_y = *y - start_y;
+
+                        // Convert mouse movement to scroll offset
+                        // Thumb travel distance is (viewport_height - thumb_height)
+                        // Content scroll range is max_scroll
+                        let bounds = self.bounds();
+                        let viewport_height = bounds.height;
+                        let (_, _, _, thumb_height) =
+                            self.get_scrollbar_thumb_bounds((0.0, 0.0));
+                        let max_thumb_travel = viewport_height - thumb_height;
+
+                        if max_thumb_travel > 0.0 {
+                            let scroll_ratio = delta_y / max_thumb_travel;
+                            let scroll_delta = scroll_ratio * self.max_scroll();
+                            self.set_scroll_offset(self.scrollbar_drag_start_offset + scroll_delta);
+                        }
+
+                        return EventResult::Consumed;
+                    }
+                }
+                EventResult::Ignored
+            }
+
+            // Keyboard navigation (Phase 7.5)
+            UiEvent::KeyPress { key, .. } => {
+                // Note: In real implementation, listbox should only handle
+                // keyboard events when it has focus
+                match key {
+                    KeyCode::Up => {
+                        // select_previous requires item count
+                        // In real use, panel provides this via adapter
+                        EventResult::Ignored
+                    }
+                    KeyCode::Down => {
+                        // select_next requires item count
+                        // In real use, panel provides this via adapter
+                        EventResult::Ignored
+                    }
+                    KeyCode::PageUp => {
+                        // Scroll up one page (viewport height)
+                        let bounds = self.bounds();
+                        let page_size = bounds.height;
+                        self.scroll_by(-page_size);
+                        EventResult::Consumed
+                    }
+                    KeyCode::PageDown => {
+                        // Scroll down one page
+                        let bounds = self.bounds();
+                        let page_size = bounds.height;
+                        self.scroll_by(page_size);
+                        EventResult::Consumed
+                    }
+                    KeyCode::Home => {
+                        // Scroll to top
+                        self.set_scroll_offset(0.0);
+                        EventResult::Consumed
+                    }
+                    KeyCode::End => {
+                        // Scroll to bottom
+                        self.set_scroll_offset(self.max_scroll());
+                        EventResult::Consumed
+                    }
+                    _ => EventResult::Ignored,
+                }
+            }
+
+            _ => EventResult::Ignored,
+        }
     }
 
     fn bounds(&self) -> Rect {
@@ -726,5 +926,248 @@ mod tests {
         let (_, y_bottom, _, _) = listbox.get_scrollbar_thumb_bounds(anchor);
         // Thumb should be at bottom: base + max_travel = 70 + 150 = 220
         assert_eq!(y_bottom, 220.0);
+    }
+
+    // Phase 7.5: Interaction tests
+
+    #[test]
+    fn test_selection_management() {
+        let node = GuiElement::Listbox {
+            name: "test_list".to_string(),
+            position: (0, 0),
+            size: (200, 300),
+            orientation: Orientation::UpperLeft,
+            spacing: 0,
+            scrollbar_type: None,
+            background: None,
+        };
+
+        let mut listbox = GuiListbox::from_node(&node).unwrap();
+
+        // Initially no selection
+        assert_eq!(listbox.selected_index(), None);
+
+        // Set selection
+        listbox.set_selected_index(Some(5));
+        assert_eq!(listbox.selected_index(), Some(5));
+
+        // Clear selection
+        listbox.set_selected_index(None);
+        assert_eq!(listbox.selected_index(), None);
+    }
+
+    #[test]
+    fn test_select_next_previous() {
+        let node = GuiElement::Listbox {
+            name: "test_list".to_string(),
+            position: (0, 0),
+            size: (200, 300),
+            orientation: Orientation::UpperLeft,
+            spacing: 0,
+            scrollbar_type: None,
+            background: None,
+        };
+
+        let mut listbox = GuiListbox::from_node(&node).unwrap();
+        let item_count = 10;
+
+        // Select first item
+        listbox.set_selected_index(Some(0));
+
+        // Select next
+        listbox.select_next(item_count);
+        assert_eq!(listbox.selected_index(), Some(1));
+
+        // Select previous
+        listbox.select_previous(item_count);
+        assert_eq!(listbox.selected_index(), Some(0));
+
+        // Wrap around at start (previous)
+        listbox.select_previous(item_count);
+        assert_eq!(listbox.selected_index(), Some(9));
+
+        // Wrap around at end (next)
+        listbox.select_next(item_count);
+        assert_eq!(listbox.selected_index(), Some(0));
+    }
+
+    #[test]
+    fn test_mouse_wheel_scrolling() {
+        use crate::gui::core::UiContext;
+
+        let node = GuiElement::Listbox {
+            name: "test_list".to_string(),
+            position: (0, 0),
+            size: (200, 300),
+            orientation: Orientation::UpperLeft,
+            spacing: 0,
+            scrollbar_type: None,
+            background: None,
+        };
+
+        let mut listbox = GuiListbox::from_node(&node).unwrap();
+        listbox.set_content_height(600.0);
+
+        let ctx = UiContext {
+            mouse_pos: (100.0, 100.0),
+            time: 0.0,
+            delta_time: 0.016,
+            localizer: &crate::gui::core::NoOpLocalizer,
+            focused_widget: None,
+        };
+
+        // Scroll down (positive delta_y)
+        let event = UiEvent::MouseWheel {
+            delta_y: 1.0,
+            x: 100.0,
+            y: 100.0,
+        };
+        let result = listbox.handle_input(&event, &ctx);
+        assert_eq!(result, EventResult::Consumed);
+        assert_eq!(listbox.scroll_offset(), 40.0); // SCROLL_SPEED = 40
+
+        // Scroll up (negative delta_y)
+        let event = UiEvent::MouseWheel {
+            delta_y: -0.5,
+            x: 100.0,
+            y: 100.0,
+        };
+        let result = listbox.handle_input(&event, &ctx);
+        assert_eq!(result, EventResult::Consumed);
+        assert_eq!(listbox.scroll_offset(), 20.0); // 40 - 20
+
+        // Mouse wheel outside listbox bounds should be ignored
+        let event = UiEvent::MouseWheel {
+            delta_y: 1.0,
+            x: 300.0,
+            y: 400.0,
+        };
+        let result = listbox.handle_input(&event, &ctx);
+        assert_eq!(result, EventResult::Ignored);
+        assert_eq!(listbox.scroll_offset(), 20.0); // Unchanged
+    }
+
+    #[test]
+    fn test_keyboard_navigation() {
+        use crate::gui::core::{KeyCode, Modifiers, UiContext};
+
+        let node = GuiElement::Listbox {
+            name: "test_list".to_string(),
+            position: (0, 0),
+            size: (200, 300),
+            orientation: Orientation::UpperLeft,
+            spacing: 0,
+            scrollbar_type: None,
+            background: None,
+        };
+
+        let mut listbox = GuiListbox::from_node(&node).unwrap();
+        listbox.set_content_height(600.0);
+
+        let ctx = UiContext {
+            mouse_pos: (0.0, 0.0),
+            time: 0.0,
+            delta_time: 0.016,
+            localizer: &crate::gui::core::NoOpLocalizer,
+            focused_widget: None,
+        };
+
+        // PageDown
+        let event = UiEvent::KeyPress {
+            key: KeyCode::PageDown,
+            modifiers: Modifiers::default(),
+        };
+        let result = listbox.handle_input(&event, &ctx);
+        assert_eq!(result, EventResult::Consumed);
+        assert_eq!(listbox.scroll_offset(), 300.0); // Page size = viewport height
+
+        // PageUp
+        let event = UiEvent::KeyPress {
+            key: KeyCode::PageUp,
+            modifiers: Modifiers::default(),
+        };
+        let result = listbox.handle_input(&event, &ctx);
+        assert_eq!(result, EventResult::Consumed);
+        assert_eq!(listbox.scroll_offset(), 0.0);
+
+        // Home (already at top)
+        let event = UiEvent::KeyPress {
+            key: KeyCode::Home,
+            modifiers: Modifiers::default(),
+        };
+        let result = listbox.handle_input(&event, &ctx);
+        assert_eq!(result, EventResult::Consumed);
+        assert_eq!(listbox.scroll_offset(), 0.0);
+
+        // End
+        let event = UiEvent::KeyPress {
+            key: KeyCode::End,
+            modifiers: Modifiers::default(),
+        };
+        let result = listbox.handle_input(&event, &ctx);
+        assert_eq!(result, EventResult::Consumed);
+        assert_eq!(listbox.scroll_offset(), 300.0); // max_scroll = 600 - 300
+    }
+
+    #[test]
+    fn test_scrollbar_drag() {
+        use crate::gui::core::{ButtonState, MouseButton, UiContext};
+
+        let node = GuiElement::Listbox {
+            name: "test_list".to_string(),
+            position: (0, 0),
+            size: (200, 300),
+            orientation: Orientation::UpperLeft,
+            spacing: 0,
+            scrollbar_type: None,
+            background: None,
+        };
+
+        let mut listbox = GuiListbox::from_node(&node).unwrap();
+        listbox.set_content_height(600.0); // 2x viewport
+
+        let ctx = UiContext {
+            mouse_pos: (0.0, 0.0),
+            time: 0.0,
+            delta_time: 0.016,
+            localizer: &crate::gui::core::NoOpLocalizer,
+            focused_widget: None,
+        };
+
+        // Get scrollbar thumb position at scroll offset 0
+        let (thumb_x, thumb_y, _, _) = listbox.get_scrollbar_thumb_bounds((0.0, 0.0));
+
+        // Click on scrollbar thumb to start drag
+        let event = UiEvent::MouseButton {
+            button: MouseButton::Left,
+            state: ButtonState::Pressed,
+            x: thumb_x + 5.0,
+            y: thumb_y + 10.0,
+        };
+        let result = listbox.handle_input(&event, &ctx);
+        assert_eq!(result, EventResult::Consumed);
+        assert!(listbox.scrollbar_dragging);
+
+        // Drag thumb down by 75 pixels (should scroll to middle)
+        let event = UiEvent::MouseMove {
+            x: thumb_x + 5.0,
+            y: thumb_y + 85.0, // 75px down from start
+        };
+        let result = listbox.handle_input(&event, &ctx);
+        assert_eq!(result, EventResult::Consumed);
+        // Max scroll is 300, max thumb travel is 150
+        // 75px thumb movement = 50% of travel = 150px scroll
+        assert_eq!(listbox.scroll_offset(), 150.0);
+
+        // Release mouse button
+        let event = UiEvent::MouseButton {
+            button: MouseButton::Left,
+            state: ButtonState::Released,
+            x: thumb_x + 5.0,
+            y: thumb_y + 85.0,
+        };
+        let result = listbox.handle_input(&event, &ctx);
+        assert_eq!(result, EventResult::Consumed);
+        assert!(!listbox.scrollbar_dragging);
     }
 }

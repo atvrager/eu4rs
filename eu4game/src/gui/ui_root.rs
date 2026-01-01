@@ -97,6 +97,15 @@ impl UiRoot {
                 // Mouse move events don't typically generate actions
                 None
             }
+            UiEvent::MouseWheel {
+                delta_y: _,
+                x: _,
+                y: _,
+            } => {
+                // Mouse wheel events (Phase 7.5) - dispatch to widget under cursor
+                // In production, this would find the widget and call handle_input()
+                None
+            }
             UiEvent::KeyPress {
                 key: _,
                 modifiers: _,

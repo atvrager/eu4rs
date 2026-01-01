@@ -136,6 +136,11 @@ pub enum UiEvent {
         x: f32,
         y: f32,
     },
+    MouseWheel {
+        delta_y: f32,
+        x: f32,
+        y: f32,
+    },
     KeyPress {
         key: KeyCode,
         modifiers: Modifiers,
@@ -172,6 +177,10 @@ pub enum KeyCode {
     Right,
     Up,
     Down,
+    PageUp,
+    PageDown,
+    Home,
+    End,
     // Extend as needed
 }
 
