@@ -264,6 +264,16 @@ pub enum UiAction {
     SelectSaveGame(usize),
     /// Change map rendering mode.
     SetMapMode(MapMode),
+    /// Select a random playable country.
+    RandomCountry,
+    /// Open the nation designer screen.
+    OpenNationDesigner,
+    /// Toggle Random New World mode.
+    ToggleRandomNewWorld,
+    /// Toggle observer mode (play without a country).
+    ToggleObserveMode,
+    /// Toggle custom nation creation.
+    ToggleCustomNation,
     /// No action (button not yet wired up).
     None,
 }

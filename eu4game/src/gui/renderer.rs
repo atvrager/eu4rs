@@ -1658,6 +1658,12 @@ impl GuiRenderer {
                     "day_down" => Some(GuiAction::DateAdjust(types::DatePart::Day, -1)),
                     // Country selection: lobby controls
                     "play_button" => Some(GuiAction::StartGame),
+                    "random_country_button" => Some(GuiAction::RandomCountry),
+                    "nation_designer_button" => Some(GuiAction::OpenNationDesigner),
+                    "random_new_world_button" => Some(GuiAction::ToggleRandomNewWorld),
+                    "enable_custom_nation_button" => Some(GuiAction::ToggleCustomNation),
+                    // Country selection: left panel
+                    "observe_mode_button" => Some(GuiAction::ToggleObserveMode),
                     // Country selection: top panel map modes
                     s if s.starts_with("mapmode_") => Some(GuiAction::SetMapMode(s.to_string())),
                     _ => None,

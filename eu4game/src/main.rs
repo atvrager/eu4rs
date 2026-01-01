@@ -1164,6 +1164,36 @@ impl App {
                 // TODO: Implement map mode switching when rendering supports multiple modes
                 false
             }
+            UiAction::RandomCountry => {
+                // Select a random country from playable countries
+                if !self.playable_countries.is_empty() {
+                    use rand::Rng;
+                    let idx = rand::thread_rng().gen_range(0..self.playable_countries.len());
+                    self.country_selection_index = idx;
+                    self.log_country_selection();
+                }
+                false
+            }
+            UiAction::OpenNationDesigner => {
+                log::info!("Open nation designer - not yet implemented");
+                // TODO: Implement nation designer screen (Phase 10+)
+                false
+            }
+            UiAction::ToggleRandomNewWorld => {
+                log::info!("Toggle Random New World - not yet implemented");
+                // TODO: Implement RNW toggle when game setup state is added
+                false
+            }
+            UiAction::ToggleObserveMode => {
+                log::info!("Toggle Observe Mode - not yet implemented");
+                // TODO: Implement observer mode toggle when game setup state is added
+                false
+            }
+            UiAction::ToggleCustomNation => {
+                log::info!("Toggle Custom Nation - not yet implemented");
+                // TODO: Implement custom nation toggle when game setup state is added
+                false
+            }
             UiAction::None => false,
         }
     }
@@ -1726,6 +1756,27 @@ impl App {
             gui::GuiAction::SetMapMode(mode) => {
                 // TODO: Implement map mode switching (Phase 9)
                 log::info!("Set map mode: {}", mode);
+            }
+            gui::GuiAction::RandomCountry => {
+                // Select a random country from playable countries
+                if !self.playable_countries.is_empty() {
+                    use rand::Rng;
+                    let idx = rand::thread_rng().gen_range(0..self.playable_countries.len());
+                    self.country_selection_index = idx;
+                    self.log_country_selection();
+                }
+            }
+            gui::GuiAction::OpenNationDesigner => {
+                log::info!("Open nation designer - not yet implemented");
+            }
+            gui::GuiAction::ToggleRandomNewWorld => {
+                log::info!("Toggle Random New World - not yet implemented");
+            }
+            gui::GuiAction::ToggleObserveMode => {
+                log::info!("Toggle Observe Mode - not yet implemented");
+            }
+            gui::GuiAction::ToggleCustomNation => {
+                log::info!("Toggle Custom Nation - not yet implemented");
             }
         }
         self.window.request_redraw();

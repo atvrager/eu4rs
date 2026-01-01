@@ -1,7 +1,7 @@
 //! Lobby control panel for game start options.
 //!
-//! Contains the play button and related controls (observe mode, random country, etc.)
-//! in the lower-right section of the country selection screen.
+//! Contains the play button and related controls in the lower-right section
+//! of the country selection screen.
 
 #![allow(dead_code)] // WIP - not yet integrated into rendering pipeline
 
@@ -13,19 +13,29 @@ use eu4_macros::GuiWindow;
 ///
 /// Binds to the `right` window in `frontend.gui`, which contains:
 /// - Play button (starts the game)
-/// - Random country button
-/// - Nation designer button
-/// - Random new world button
+/// - Random country button (selects a random nation)
+/// - Nation designer button (opens custom nation creator)
+/// - Random new world button (toggles RNW mode)
+/// - Enable custom nation button (checkbox for custom nation toggle)
+///
+/// Note: observe_mode_button is in the `left` panel, not here.
 #[derive(Debug, GuiWindow)]
 #[gui(window_name = "right")]
 pub struct LobbyControlsPanel {
     /// Main play button - starts the game with selected country
     pub play_button: GuiButton,
-    // Future controls (not yet implemented):
-    // pub observe_mode_button: GuiCheckbox,
-    // pub random_country_button: GuiButton,
-    // pub nation_designer_button: GuiButton,
-    // pub random_new_world_button: GuiButton,
+
+    /// Random country button - selects a random playable nation
+    pub random_country_button: GuiButton,
+
+    /// Nation designer button - opens the custom nation designer
+    pub nation_designer_button: GuiButton,
+
+    /// Random New World button - toggles random new world mode
+    pub random_new_world_button: GuiButton,
+
+    /// Enable custom nation checkbox (uses button with checkbox sprite)
+    pub enable_custom_nation_button: GuiButton,
 }
 
 impl LobbyControlsPanel {

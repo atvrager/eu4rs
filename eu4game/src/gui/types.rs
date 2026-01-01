@@ -393,4 +393,14 @@ pub enum GuiAction {
     DateAdjust(DatePart, i32),
     /// Change map rendering mode by name.
     SetMapMode(String),
+    /// Select a random playable country.
+    RandomCountry,
+    /// Open the nation designer screen.
+    OpenNationDesigner,
+    /// Toggle Random New World mode.
+    ToggleRandomNewWorld,
+    /// Toggle observer mode (play without a country).
+    ToggleObserveMode,
+    /// Toggle custom nation creation.
+    ToggleCustomNation,
 }

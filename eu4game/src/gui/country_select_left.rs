@@ -73,6 +73,11 @@ pub struct CountrySelectLeftPanel {
     /// Back button (returns to main menu).
     #[gui(name = "back_button")]
     pub back_button: GuiButton,
+
+    /// Observe mode toggle button (checkbox-style button).
+    /// When enabled, starts the game in observer mode without a player country.
+    #[gui(name = "observe_mode_button")]
+    pub observe_mode_button: GuiButton,
 }
 
 impl CountrySelectLeftPanel {
@@ -172,6 +177,7 @@ mod tests {
             day_up: GuiButton::placeholder(),
             day_down: GuiButton::placeholder(),
             back_button: GuiButton::placeholder(),
+            observe_mode_button: GuiButton::placeholder(),
         };
 
         assert_eq!(panel.back_button.name(), "<placeholder>");
@@ -196,6 +202,7 @@ mod tests {
             day_up: GuiButton::placeholder(),
             day_down: GuiButton::placeholder(),
             back_button: GuiButton::placeholder(),
+            observe_mode_button: GuiButton::placeholder(),
         };
 
         panel.init_actions();
@@ -234,6 +241,7 @@ mod tests {
             day_up: GuiButton::placeholder(),
             day_down: GuiButton::placeholder(),
             back_button: GuiButton::placeholder(),
+            observe_mode_button: GuiButton::placeholder(),
         };
 
         // No clicks, should return None

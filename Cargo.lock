@@ -1862,6 +1862,7 @@ dependencies = [
  "image_dds",
  "log",
  "pollster",
+ "rand 0.8.5",
  "tempfile",
  "wgpu 0.20.1",
  "winit 0.29.15",
