@@ -159,6 +159,8 @@ struct App {
     text_renderer: Option<text::TextRenderer>,
     /// EU4-authentic GUI renderer.
     gui_renderer: Option<gui::GuiRenderer>,
+    /// Country selection left panel (Phase 8.2).
+    country_select_left: Option<gui::CountrySelectLeftPanel>,
 }
 
 impl App {
@@ -354,6 +356,7 @@ impl App {
             text_renderer,
             gui_renderer,
             frontend_ui,
+            country_select_left: None,
         }
     }
 
@@ -652,7 +655,8 @@ impl App {
                     if self.renderer.army_count > 0 {
                         render_pass.set_pipeline(&self.renderer.army_pipeline);
                         render_pass.set_bind_group(0, &self.renderer.army_bind_group, &[]);
-                        render_pass.set_vertex_buffer(0, self.renderer.army_instance_buffer.slice(..));
+                        render_pass
+                            .set_vertex_buffer(0, self.renderer.army_instance_buffer.slice(..));
                         // 6 vertices per square, army_count instances
                         render_pass.draw(0..6, 0..self.renderer.army_count);
                     }
@@ -661,7 +665,8 @@ impl App {
                     if self.renderer.fleet_count > 0 {
                         render_pass.set_pipeline(&self.renderer.fleet_pipeline);
                         render_pass.set_bind_group(0, &self.renderer.fleet_bind_group, &[]);
-                        render_pass.set_vertex_buffer(0, self.renderer.fleet_instance_buffer.slice(..));
+                        render_pass
+                            .set_vertex_buffer(0, self.renderer.fleet_instance_buffer.slice(..));
                         // 6 vertices per diamond, fleet_count instances
                         render_pass.draw(0..6, 0..self.renderer.fleet_count);
                     }
@@ -732,10 +737,34 @@ impl App {
 
                         // Collect ALL quads first, then draw once (avoids buffer sync issues)
                         let mut all_quads = Vec::new();
-                        all_quads.extend(text_renderer.layout_text("EUROPA UNIVERSALIS IV", 400.0, 200.0, white, screen_f32));
-                        all_quads.extend(text_renderer.layout_text("Main Menu", 400.0, 250.0, white, screen_f32));
-                        all_quads.extend(text_renderer.layout_text("Press 'S' for Single Player", 400.0, 350.0, white, screen_f32));
-                        all_quads.extend(text_renderer.layout_text("Press ESC to Exit", 400.0, 400.0, white, screen_f32));
+                        all_quads.extend(text_renderer.layout_text(
+                            "EUROPA UNIVERSALIS IV",
+                            400.0,
+                            200.0,
+                            white,
+                            screen_f32,
+                        ));
+                        all_quads.extend(text_renderer.layout_text(
+                            "Main Menu",
+                            400.0,
+                            250.0,
+                            white,
+                            screen_f32,
+                        ));
+                        all_quads.extend(text_renderer.layout_text(
+                            "Press 'S' for Single Player",
+                            400.0,
+                            350.0,
+                            white,
+                            screen_f32,
+                        ));
+                        all_quads.extend(text_renderer.layout_text(
+                            "Press ESC to Exit",
+                            400.0,
+                            400.0,
+                            white,
+                            screen_f32,
+                        ));
 
                         text_renderer.draw(&mut render_pass, &self.queue, &all_quads);
                     } else {
@@ -873,8 +902,8 @@ impl App {
                 KeyCode::KeyS => {
                     // Single Player - transition to country selection
                     log::info!("Starting Single Player mode");
-                    self.screen_manager.transition_to(screen::Screen::SinglePlayer);
-
+                    self.screen_manager
+                        .transition_to(screen::Screen::SinglePlayer);
 
                     self.update_window_title();
                     return false;
@@ -1123,26 +1152,41 @@ impl App {
     /// Poll frontend UI for button actions.
     /// Returns true if the game should exit.
     fn poll_frontend_ui(&mut self) -> bool {
-        use crate::gui::core::UiAction;
-
         let Some(ref mut frontend_ui) = self.frontend_ui else {
             return false;
         };
 
-        // Poll for button click actions
-        let Some(action) = frontend_ui.poll_main_menu() else {
-            return false;
-        };
+        // Poll for button click actions from main menu
+        if let Some(action) = frontend_ui.poll_main_menu() {
+            return self.handle_ui_action(action);
+        }
+
+        // Poll for actions from country select left panel (Phase 8.2)
+        if let Some(ref mut left_panel) = self.country_select_left
+            && let Some(action) = left_panel.poll_actions()
+        {
+            return self.handle_ui_action(action);
+        }
+
+        false
+    }
+
+    /// Handle a UI action from any panel.
+    /// Returns true if the game should exit.
+    fn handle_ui_action(&mut self, action: gui::core::UiAction) -> bool {
+        use gui::core::UiAction;
 
         // Handle the action - App is the single source of truth for screen state
         match action {
             UiAction::ShowSinglePlayer => {
-                self.screen_manager.transition_to(screen::Screen::SinglePlayer);
+                self.screen_manager
+                    .transition_to(screen::Screen::SinglePlayer);
                 self.update_window_title();
                 false
             }
             UiAction::ShowMultiplayer => {
-                self.screen_manager.transition_to(screen::Screen::Multiplayer);
+                self.screen_manager
+                    .transition_to(screen::Screen::Multiplayer);
                 self.update_window_title();
                 false
             }
@@ -1162,6 +1206,21 @@ impl App {
             }
             UiAction::ShowTutorial | UiAction::ShowCredits | UiAction::ShowSettings => {
                 // Not implemented yet
+                false
+            }
+            UiAction::DateAdjust(part, delta) => {
+                log::info!("Date adjust: {:?} by {}", part, delta);
+                // TODO: Implement date adjustment when we have game start date state
+                false
+            }
+            UiAction::SelectBookmark(idx) => {
+                log::info!("Select bookmark: {}", idx);
+                // TODO: Implement bookmark selection when we have bookmarks loaded
+                false
+            }
+            UiAction::SelectSaveGame(idx) => {
+                log::info!("Select save game: {}", idx);
+                // TODO: Implement save game selection when we have saves list
                 false
             }
             UiAction::None => false,

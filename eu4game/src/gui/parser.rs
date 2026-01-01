@@ -1140,8 +1140,12 @@ guiTypes = {
             let has_button = children
                 .iter()
                 .any(|c| matches!(c, GuiElement::Button { .. }));
-            let has_text = children.iter().any(|c| matches!(c, GuiElement::TextBox { .. }));
-            let has_icon = children.iter().any(|c| matches!(c, GuiElement::Icon { .. }));
+            let has_text = children
+                .iter()
+                .any(|c| matches!(c, GuiElement::TextBox { .. }));
+            let has_icon = children
+                .iter()
+                .any(|c| matches!(c, GuiElement::Icon { .. }));
 
             assert!(has_checkbox, "Entry should have checkbox widget");
             assert!(has_button, "Entry should have button widget");

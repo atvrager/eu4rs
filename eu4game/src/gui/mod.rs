@@ -39,8 +39,13 @@ pub mod topbar;
 // Phase 4: Interactive UI panels with button support
 pub mod main_menu;
 
+// Phase 8.2: Country selection left panel
+pub mod bookmarks;
+pub mod country_select_left;
+
 #[allow(unused_imports)] // SelectedCountryState used in tests
 pub use country_select::{CountrySelectLayout, CountrySelectPanel, SelectedCountryState};
+pub use country_select_left::CountrySelectLeftPanel;
 pub use layout::{
     compute_masked_flag_rect, get_window_anchor, position_from_anchor, rect_to_clip_space,
 };

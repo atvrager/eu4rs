@@ -559,12 +559,15 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] Keyboard input handling (S for Single Player, ESC to exit)
     - [x] Screen transition from MainMenu to SinglePlayer working
     - Note: Full GUI panel implementation pending (currently text-based placeholder)
-- [ ] **8.2. Country Selection Left Panel** (`gui/frontend/country_select_left.rs`)
-    - [ ] `CountrySelectLeftPanel` struct
-    - [ ] Bookmarks listbox (historical start dates)
-    - [ ] Save games listbox (if save support added)
-    - [ ] Date widget (year/month/day editors)
-    - [ ] Back button
+- [x] **8.2. Country Selection Left Panel** ✅ (2025-12-31)
+    - [x] `CountrySelectLeftPanel` struct with `GuiWindow` derive
+    - [x] Bookmarks listbox binding (`bookmarks_list`)
+    - [x] Save games listbox binding (`save_games_list`)
+    - [x] Date widget (year editor, day/month label, up/down buttons)
+    - [x] Back button (returns to main menu)
+    - [x] `DatePart` enum and `UiAction` variants for date adjustment
+    - [x] Bookmark parsing in `eu4data` crate (re-exported by `eu4game`)
+    - Note: Rendering integration pending (Phase 8.5+)
 - [ ] **8.3. Country Selection Top Panel** (`gui/frontend/country_select_top.rs`)
     - [ ] `CountrySelectTopPanel` struct
     - [ ] Map mode buttons (terrain, political, religion, etc.)

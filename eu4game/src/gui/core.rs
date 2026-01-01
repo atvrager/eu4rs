@@ -198,6 +198,14 @@ pub struct Modifiers {
 /// The actual implementation is GuiElement from the types module.
 pub use crate::gui::binder::GuiNode;
 
+/// Which part of the date to adjust.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DatePart {
+    Year,
+    Month,
+    Day,
+}
+
 /// Actions that can result from UI interactions.
 ///
 /// Buttons and other interactive widgets return these actions to indicate
@@ -220,6 +228,12 @@ pub enum UiAction {
     StartGame,
     /// Return to previous screen.
     Back,
+    /// Adjust date by delta (positive = forward, negative = backward).
+    DateAdjust(DatePart, i32),
+    /// Select a bookmark by index.
+    SelectBookmark(usize),
+    /// Select a save game by index.
+    SelectSaveGame(usize),
     /// No action (button not yet wired up).
     None,
 }

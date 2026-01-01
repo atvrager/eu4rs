@@ -34,6 +34,7 @@
 //! schemas. See `cargo xtask coverage --generate` for regeneration.
 
 pub mod adjacency;
+pub mod bookmarks;
 pub mod cache;
 pub mod climate;
 pub mod countries;

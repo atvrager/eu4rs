@@ -323,8 +323,10 @@ impl GuiWidget for GuiListbox {
                     let (thumb_x, thumb_y, thumb_w, thumb_h) =
                         self.get_scrollbar_thumb_bounds((0.0, 0.0));
 
-                    if *x >= thumb_x && *x < thumb_x + thumb_w
-                        && *y >= thumb_y && *y < thumb_y + thumb_h
+                    if *x >= thumb_x
+                        && *x < thumb_x + thumb_w
+                        && *y >= thumb_y
+                        && *y < thumb_y + thumb_h
                     {
                         // Start scrollbar drag
                         self.scrollbar_dragging = true;
@@ -367,26 +369,26 @@ impl GuiWidget for GuiListbox {
             // Mouse move - handle scrollbar dragging (Phase 7.5)
             UiEvent::MouseMove { y, .. } => {
                 if self.scrollbar_dragging
-                    && let Some(start_y) = self.scrollbar_drag_start_y {
-                        let delta_y = *y - start_y;
+                    && let Some(start_y) = self.scrollbar_drag_start_y
+                {
+                    let delta_y = *y - start_y;
 
-                        // Convert mouse movement to scroll offset
-                        // Thumb travel distance is (viewport_height - thumb_height)
-                        // Content scroll range is max_scroll
-                        let bounds = self.bounds();
-                        let viewport_height = bounds.height;
-                        let (_, _, _, thumb_height) =
-                            self.get_scrollbar_thumb_bounds((0.0, 0.0));
-                        let max_thumb_travel = viewport_height - thumb_height;
+                    // Convert mouse movement to scroll offset
+                    // Thumb travel distance is (viewport_height - thumb_height)
+                    // Content scroll range is max_scroll
+                    let bounds = self.bounds();
+                    let viewport_height = bounds.height;
+                    let (_, _, _, thumb_height) = self.get_scrollbar_thumb_bounds((0.0, 0.0));
+                    let max_thumb_travel = viewport_height - thumb_height;
 
-                        if max_thumb_travel > 0.0 {
-                            let scroll_ratio = delta_y / max_thumb_travel;
-                            let scroll_delta = scroll_ratio * self.max_scroll();
-                            self.set_scroll_offset(self.scrollbar_drag_start_offset + scroll_delta);
-                        }
-
-                        return EventResult::Consumed;
+                    if max_thumb_travel > 0.0 {
+                        let scroll_ratio = delta_y / max_thumb_travel;
+                        let scroll_delta = scroll_ratio * self.max_scroll();
+                        self.set_scroll_offset(self.scrollbar_drag_start_offset + scroll_delta);
                     }
+
+                    return EventResult::Consumed;
+                }
                 EventResult::Ignored
             }
 
@@ -711,13 +713,13 @@ mod tests {
         // At scroll offset 0, should show first ~7.5 items (300px / 40px = 7.5)
         let (start, end) = listbox.visible_range(&adapter);
         assert_eq!(start, 0);
-        assert!(end >= 7 && end <= 9); // Allow some margin for partial rows
+        assert!((7..=9).contains(&end)); // Allow some margin for partial rows
 
         // Scroll down to middle
         listbox.set_scroll_offset(200.0); // Skip 5 items (200 / 40 = 5)
         let (start, end) = listbox.visible_range(&adapter);
         assert_eq!(start, 5);
-        assert!(end >= 12 && end <= 14);
+        assert!((12..=14).contains(&end));
 
         // Scroll to bottom
         listbox.set_scroll_offset(500.0); // Max scroll (800 - 300 = 500)

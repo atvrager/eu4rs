@@ -46,7 +46,10 @@ pub struct GlyphCache {
 impl GlyphCache {
     /// Creates a new glyph cache from font data.
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, font_data: &[u8]) -> Option<Self> {
-        log::info!("Creating glyph cache from {} bytes of font data", font_data.len());
+        log::info!(
+            "Creating glyph cache from {} bytes of font data",
+            font_data.len()
+        );
         let font = FontRef::try_from_slice(font_data).ok()?;
         let scale = PxScale::from(DEFAULT_FONT_SIZE);
         let scaled_font = font.as_scaled(scale);
