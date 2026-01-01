@@ -594,11 +594,9 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] Added `take_*` methods to transfer ownership to `FrontendUI`
     - [x] Updated `main.rs` to populate `FrontendUI` with loaded panels
 - [x] **8.5.2. Rendering Implementation** (✅ 2026-01-01)
-    - [ ] Render left panel widgets:
-        - [ ] Bookmarks listbox
-        - [ ] Save games listbox
-        - [ ] Date widget (year editor, day/month label, up/down buttons)
+    - [x] Render left panel widgets:
         - [x] Back button
+        - *Remaining widgets moved to Phase 8.6*
     - [x] Render top panel widgets:
         - [x] 10 map mode buttons
         - [x] Year label ("The World in 1444")
@@ -629,6 +627,34 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
 - [ ] **8.5.5. Data Population**
     - [ ] Populate bookmarks listbox with data from `eu4data` (deferred from Phase 8.2)
     - [ ] Populate save games listbox (placeholder for now, full implementation in Phase 9.1)
+
+### Phase 8.6: Left Panel Widget Polish
+*Objective: Complete the left panel with complex interactive widgets. Trial by fire for listbox and editable text.*
+
+- [ ] **8.6.1. Bookmarks Listbox**
+    - [ ] Render bookmarks listbox container with scrollable area
+    - [ ] Implement listbox item rendering (bookmark name, date)
+    - [ ] Scroll behavior (mouse wheel, drag scrollbar)
+    - [ ] Selection highlight on click
+    - [ ] Wire selection to `UiAction::SelectBookmark(id)`
+- [ ] **8.6.2. Save Games Listbox**
+    - [ ] Render save games listbox container
+    - [ ] Implement save file discovery (scan save directory)
+    - [ ] Display save name, date, country
+    - [ ] Selection and scroll behavior (reuse from 8.6.1)
+    - [ ] Wire selection to `UiAction::SelectSave(path)`
+- [ ] **8.6.3. Date Widget**
+    - [ ] Render year editor (editable text field)
+    - [ ] Render day/month label (read-only display)
+    - [ ] Render up/down adjustment buttons
+    - [ ] Implement year validation (1444-1821 range)
+    - [ ] Handle text input for year editing
+    - [ ] Wire adjustment buttons to increment/decrement year
+    - [ ] Update date display when bookmark selected
+- [ ] **8.6.4. Integration Testing**
+    - [ ] Add listbox rendering to state machine tests
+    - [ ] Verify scroll behavior with synthetic input
+    - [ ] Test date widget validation edge cases
 
 ### Phase 9: Game Integration
 *Objective: Connect UI to game systems for complete start flow.*
