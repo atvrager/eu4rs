@@ -5,6 +5,16 @@
 
 use super::types::{Orientation, TextFormat};
 
+/// Window layout metadata for frontend panels (Phase 8.5.2).
+///
+/// Stores just the window position and orientation, since widget metadata
+/// is stored in the widget fields themselves (via GuiWindow binding).
+#[derive(Debug, Clone, Default)]
+pub struct FrontendPanelLayout {
+    pub window_pos: (i32, i32),
+    pub orientation: Orientation,
+}
+
 /// Icon element from speed controls layout.
 #[derive(Debug, Clone)]
 pub struct SpeedControlsIcon {

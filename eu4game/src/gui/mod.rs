@@ -81,7 +81,8 @@ pub use layout::{
 // Layout types
 #[allow(unused_imports)] // Public API
 pub use layout_types::{
-    SpeedControlsIcon, SpeedControlsLayout, SpeedControlsText, TopBarIcon, TopBarLayout, TopBarText,
+    FrontendPanelLayout, SpeedControlsIcon, SpeedControlsLayout, SpeedControlsText, TopBarIcon,
+    TopBarLayout, TopBarText,
 };
 
 // Parser

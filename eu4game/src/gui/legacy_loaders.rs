@@ -399,14 +399,17 @@ pub(super) fn load_country_select_split(
     }
 }
 
+/// Panel data: GuiElement root and layout metadata.
+type PanelData = (GuiElement, super::layout_types::FrontendPanelLayout);
+
 /// Load frontend panels from frontend.gui for Phase 8.5 integration.
 ///
-/// Returns (left_window, top_window, right_window) as Option<GuiElement>.
+/// Returns tuples of (GuiElement, FrontendPanelLayout) for left, top, right windows.
 /// Returns None for any window not found (CI-safe).
 pub(super) fn load_frontend_panels(
     game_path: &Path,
     interner: &interner::StringInterner,
-) -> (Option<GuiElement>, Option<GuiElement>, Option<GuiElement>) {
+) -> (Option<PanelData>, Option<PanelData>, Option<PanelData>) {
     let gui_path = game_path.join("interface/frontend.gui");
 
     if !gui_path.exists() {
@@ -452,18 +455,33 @@ pub(super) fn load_frontend_panels(
 /// Recursively search for left, top, and right windows in the GUI element tree.
 fn find_panels_recursive(
     element: &GuiElement,
-    left: &mut Option<GuiElement>,
-    top: &mut Option<GuiElement>,
-    right: &mut Option<GuiElement>,
+    left: &mut Option<PanelData>,
+    top: &mut Option<PanelData>,
+    right: &mut Option<PanelData>,
 ) {
-    if let GuiElement::Window { name, children, .. } = element {
+    use super::layout_types::FrontendPanelLayout;
+
+    if let GuiElement::Window {
+        name,
+        position,
+        orientation,
+        children,
+        ..
+    } = element
+    {
+        // Create layout metadata for this window
+        let layout = FrontendPanelLayout {
+            window_pos: *position,
+            orientation: *orientation,
+        };
+
         // Check if this is one of the panels we're looking for
         if name == "left" && left.is_none() {
-            *left = Some(element.clone());
+            *left = Some((element.clone(), layout));
         } else if name == "top" && top.is_none() {
-            *top = Some(element.clone());
+            *top = Some((element.clone(), layout));
         } else if name == "right" && right.is_none() {
-            *right = Some(element.clone());
+            *right = Some((element.clone(), layout));
         }
 
         // Recurse into children

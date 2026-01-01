@@ -52,12 +52,20 @@ pub struct GuiRenderer {
     /// Country selection left panel (Phase 8.5.1).
     #[allow(dead_code)] // Phase 8.5.2 rendering integration
     left_panel: Option<CountrySelectLeftPanel>,
+    /// Left panel window layout (Phase 8.5.2).
+    #[allow(dead_code)] // Will be used for rendering in Part 2
+    left_panel_layout: super::layout_types::FrontendPanelLayout,
     /// Country selection top panel (Phase 8.5.1).
     #[allow(dead_code)] // Phase 8.5.2 rendering integration
     top_panel: Option<CountrySelectTopPanel>,
+    /// Top panel window layout (Phase 8.5.2).
+    #[allow(dead_code)] // Will be used for rendering in Part 2
+    top_panel_layout: super::layout_types::FrontendPanelLayout,
     /// Lobby controls panel (Phase 8.5.1).
     #[allow(dead_code)] // Phase 8.5.2 rendering integration
     lobby_controls: Option<LobbyControlsPanel>,
+    /// Lobby controls window layout (Phase 8.5.2).
+    lobby_controls_layout: super::layout_types::FrontendPanelLayout,
     /// Cached bind groups for frequently used sprites.
     bg_bind_group: Option<wgpu::BindGroup>,
     speed_bind_group: Option<wgpu::BindGroup>,
@@ -138,10 +146,19 @@ impl GuiRenderer {
             country_select_root.map(|root| CountrySelectPanel::bind(&root, &interner));
 
         // Load frontend panels (Phase 8.5.1)
-        let (left_root, top_root, right_root) = load_frontend_panels(game_path, &interner);
-        let left_panel = left_root.map(|root| CountrySelectLeftPanel::bind(&root, &interner));
-        let top_panel = top_root.map(|root| CountrySelectTopPanel::bind(&root, &interner));
-        let lobby_controls = right_root.map(|root| LobbyControlsPanel::bind(&root, &interner));
+        let (left_data, top_data, right_data) = load_frontend_panels(game_path, &interner);
+
+        let (left_panel, left_panel_layout) = left_data
+            .map(|(root, layout)| (Some(CountrySelectLeftPanel::bind(&root, &interner)), layout))
+            .unwrap_or((None, Default::default()));
+
+        let (top_panel, top_panel_layout) = top_data
+            .map(|(root, layout)| (Some(CountrySelectTopPanel::bind(&root, &interner)), layout))
+            .unwrap_or((None, Default::default()));
+
+        let (lobby_controls, lobby_controls_layout) = right_data
+            .map(|(root, layout)| (Some(LobbyControlsPanel::bind(&root, &interner)), layout))
+            .unwrap_or((None, Default::default()));
 
         Self {
             gfx_db,
@@ -155,8 +172,11 @@ impl GuiRenderer {
             country_select_layout,
             country_select_panel,
             left_panel,
+            left_panel_layout,
             top_panel,
+            top_panel_layout,
             lobby_controls,
+            lobby_controls_layout,
             bg_bind_group: None,
             speed_bind_group: None,
             font_bind_group: None,
@@ -842,6 +862,57 @@ impl GuiRenderer {
             };
 
             self.hit_boxes.push((action_name.to_string(), hit_box));
+        }
+
+        // Phase 8.5.2: Render country selection panels when not in-game
+        // (No country selected = country selection screen)
+        if state.country.is_none() {
+            log::debug!("Rendering country selection panels");
+
+            // TODO: Render left panel (bookmarks, saves, date, back button)
+            // TODO: Render top panel (map mode buttons, year label)
+
+            // Render lobby controls (play button)
+            if let Some(ref lobby_panel) = self.lobby_controls {
+                let lobby_anchor = get_window_anchor(
+                    self.lobby_controls_layout.window_pos,
+                    self.lobby_controls_layout.orientation,
+                    screen_size,
+                );
+
+                // Render play button
+                // Button rendering will be fully implemented in Part 2
+                // For now, just register hit box for the button
+                if let Some(pos) = lobby_panel.play_button.position()
+                    && let Some(orientation) = lobby_panel.play_button.orientation()
+                {
+                    // Use default button size for now (will get from sprite in Part 2)
+                    let button_size = (100, 40);
+                    let button_screen_pos = position_from_anchor(
+                        lobby_anchor,
+                        pos,
+                        orientation,
+                        (button_size.0 as u32, button_size.1 as u32),
+                    );
+
+                    // Register hit box for play button
+                    self.hit_boxes.push((
+                        "play_button".to_string(),
+                        HitBox {
+                            x: button_screen_pos.0,
+                            y: button_screen_pos.1,
+                            width: button_size.0 as f32,
+                            height: button_size.1 as f32,
+                        },
+                    ));
+
+                    log::debug!(
+                        "Registered play button hit box at ({}, {})",
+                        button_screen_pos.0,
+                        button_screen_pos.1
+                    );
+                }
+            }
         }
     }
 

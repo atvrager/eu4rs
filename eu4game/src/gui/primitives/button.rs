@@ -110,6 +110,24 @@ impl GuiButton {
             .map(|d| d.name.as_str())
             .unwrap_or("<placeholder>")
     }
+
+    /// Get the button's position (for rendering - Phase 8.5.2).
+    #[allow(dead_code)]
+    pub fn position(&self) -> Option<(i32, i32)> {
+        self.element.as_ref().map(|e| e.position)
+    }
+
+    /// Get the button's orientation (for rendering - Phase 8.5.2).
+    #[allow(dead_code)]
+    pub fn orientation(&self) -> Option<Orientation> {
+        self.element.as_ref().map(|e| e.orientation)
+    }
+
+    /// Get the button's sprite type (for rendering - Phase 8.5.2).
+    #[allow(dead_code)]
+    pub fn sprite_type(&self) -> Option<&str> {
+        self.element.as_ref().map(|e| e.sprite_type.as_str())
+    }
 }
 
 impl Bindable for GuiButton {
