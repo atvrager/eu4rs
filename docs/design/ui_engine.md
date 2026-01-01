@@ -524,11 +524,14 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] Entry templates define row height and layout (via size field)
     - [x] Entry templates are regular windowType blocks stored in WindowDatabase
     - [x] Added `test_parse_entry_template()` to verify parsing of all widget types
-- [ ] **7.3. GuiListbox Primitive** (`gui/primitives/listbox.rs`)
-    - [ ] `struct GuiListbox<T>` with item data binding
-    - [ ] Adapter pattern: `trait ListAdapter { fn item_count(); fn bind_entry(idx, entry); }`
-    - [ ] Scroll offset tracking (0.0 to max_scroll)
-    - [ ] Visible item range calculation
+- [x] **7.3. GuiListbox Primitive** (`gui/primitives/listbox.rs`) ✅ (2025-12-31)
+    - [x] `struct GuiListbox` with scroll state and bounds tracking
+    - [x] Adapter pattern: `trait ListAdapter { fn item_count(); fn bind_entry(idx, entry); }`
+    - [x] Scroll offset tracking (0.0 to max_scroll) with clamping
+    - [x] Visible item range calculation based on viewport and scroll offset
+    - [x] Methods: `scroll_offset()`, `max_scroll()`, `set_scroll_offset()`, `scroll_by()`, `visible_range()`
+    - [x] Implements `Bindable` (binds to `GuiElement::Listbox`) and `GuiWidget` traits
+    - [x] Comprehensive tests (7 tests covering scroll clamping, visible range, empty lists)
 - [ ] **7.4. Rendering**
     - [ ] Implement scissor rect clipping (wgpu::RenderPass::set_scissor_rect)
     - [ ] Only render items in visible range
