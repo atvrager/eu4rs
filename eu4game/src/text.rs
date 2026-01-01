@@ -46,6 +46,7 @@ pub struct GlyphCache {
 impl GlyphCache {
     /// Creates a new glyph cache from font data.
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, font_data: &[u8]) -> Option<Self> {
+        log::info!("Creating glyph cache from {} bytes of font data", font_data.len());
         let font = FontRef::try_from_slice(font_data).ok()?;
         let scale = PxScale::from(DEFAULT_FONT_SIZE);
         let scaled_font = font.as_scaled(scale);
@@ -88,16 +89,21 @@ impl GlyphCache {
                 }
 
                 // Rasterize glyph into atlas
+                // outlined.draw() gives coordinates relative to glyph's origin.
+                // The bounds tell us the bounding box, which might have negative min values.
+                // We draw pixels directly without offset - the origin is at cursor position.
                 outlined.draw(|x, y, coverage| {
-                    let px = cursor_x + x;
-                    let py = cursor_y + y;
-                    if px < ATLAS_SIZE && py < ATLAS_SIZE {
-                        let idx = ((py * ATLAS_SIZE + px) * 4) as usize;
-                        let alpha = (coverage * 255.0) as u8;
-                        atlas_data[idx] = 255; // R
-                        atlas_data[idx + 1] = 255; // G
-                        atlas_data[idx + 2] = 255; // B
-                        atlas_data[idx + 3] = alpha; // A
+                    if coverage > 0.0 {
+                        let px = cursor_x + x;
+                        let py = cursor_y + y;
+                        if px < ATLAS_SIZE && py < ATLAS_SIZE {
+                            let idx = ((py * ATLAS_SIZE + px) * 4) as usize;
+                            let alpha = (coverage * 255.0) as u8;
+                            atlas_data[idx] = 255; // R
+                            atlas_data[idx + 1] = 255; // G
+                            atlas_data[idx + 2] = 255; // B
+                            atlas_data[idx + 3] = alpha; // A
+                        }
                     }
                 });
 
@@ -114,6 +120,9 @@ impl GlyphCache {
                         ],
                         size: [width as f32, height as f32],
                         advance: h_metrics,
+                        // outlined.draw() gives pixels starting from (0,0), but the font's
+                        // logical bounds say where those pixels SHOULD be positioned.
+                        // We need to apply this offset during rendering.
                         bearing_y: bounds.min.y,
                         bearing_x: bounds.min.x,
                     },
@@ -400,12 +409,14 @@ impl TextRenderer {
     ) -> Vec<TextQuad> {
         let mut quads = Vec::new();
         let mut cursor_x = x;
+        // Position baseline relative to y coordinate
+        // y is the TOP of the text area, so baseline = y + ascent
         let baseline_y = y + self.glyph_cache.ascent;
 
         for c in text.chars() {
             if let Some(glyph) = self.glyph_cache.get(c) {
                 if glyph.size[0] > 0.0 && glyph.size[1] > 0.0 {
-                    // Convert pixel position to clip space (-1 to 1)
+                    // Position glyph relative to baseline
                     let px = cursor_x + glyph.bearing_x;
                     let py = baseline_y + glyph.bearing_y;
 
@@ -423,6 +434,8 @@ impl TextRenderer {
                     });
                 }
                 cursor_x += glyph.advance;
+            } else {
+                log::warn!("Missing glyph for character '{}'", c);
             }
         }
 
@@ -441,6 +454,7 @@ impl TextRenderer {
         }
 
         let count = quads.len().min(MAX_TEXT_QUADS);
+
         queue.write_buffer(
             &self.instance_buffer,
             0,

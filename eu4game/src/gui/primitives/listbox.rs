@@ -366,8 +366,8 @@ impl GuiWidget for GuiListbox {
 
             // Mouse move - handle scrollbar dragging (Phase 7.5)
             UiEvent::MouseMove { y, .. } => {
-                if self.scrollbar_dragging {
-                    if let Some(start_y) = self.scrollbar_drag_start_y {
+                if self.scrollbar_dragging
+                    && let Some(start_y) = self.scrollbar_drag_start_y {
                         let delta_y = *y - start_y;
 
                         // Convert mouse movement to scroll offset
@@ -387,7 +387,6 @@ impl GuiWidget for GuiListbox {
 
                         return EventResult::Consumed;
                     }
-                }
                 EventResult::Ignored
             }
 

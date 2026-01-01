@@ -2,7 +2,7 @@
 
 **Status**: Draft
 **Date**: 2025-12-31
-**Last Updated**: 2025-12-31
+**Last Updated**: 2026-01-01
 **Objective**: Create a scalable, type-safe, and mod-friendly system for rendering EU4-style UI panels.
 
 ## 1. Problem Statement
@@ -552,11 +552,13 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
 ### Phase 8: Frontend Panels
 *Objective: Build the complete main menu and country selection UI.*
 
-- [ ] **8.1. Main Menu Panel** (`gui/frontend/main_menu.rs`)
-    - [ ] Create `MainMenuPanel` with macro binding to `mainmenu` window
-    - [ ] Bind buttons: single_player, multi_player, tutorial, credits, settings, exit
-    - [ ] Logo and version text display
-    - [ ] Button click → screen transition actions
+- [x] **8.1. Main Menu Panel** ✅ (2025-12-31)
+    - [x] Initial screen changed from SinglePlayer to MainMenu
+    - [x] Screen-based rendering implemented (map only on game screens)
+    - [x] Simple text-based main menu rendering
+    - [x] Keyboard input handling (S for Single Player, ESC to exit)
+    - [x] Screen transition from MainMenu to SinglePlayer working
+    - Note: Full GUI panel implementation pending (currently text-based placeholder)
 - [ ] **8.2. Country Selection Left Panel** (`gui/frontend/country_select_left.rs`)
     - [ ] `CountrySelectLeftPanel` struct
     - [ ] Bookmarks listbox (historical start dates)
@@ -1094,5 +1096,50 @@ impl GuiWidget for TopBar {
         self.cached_bounds
     }
 }
+```
+
+
+
+## 9. Common Pitfalls & Lessons Learned
+
+### 9.1 Single Source of Truth for State
+
+**Problem**: Having multiple components own the same state (e.g., screen state in both `App.screen_manager` and `FrontendUI.screen_manager`) leads to synchronization bugs. One component updates, the other doesn't, causing flickering or incorrect behavior.
+
+**Solution**: Designate ONE owner for each piece of state. Other components should query it, not duplicate it.
+
+**Example**: `FrontendUI` was refactored to be a simple panel container. `App.screen_manager` is the single source of truth for screen state.
+
+### 9.2 GPU Buffer Write Synchronization
+
+**Problem**: Writing to the same GPU buffer multiple times during an active render pass causes undefined behavior. The GPU may still be reading from the buffer when you write to it.
+
+**Symptom**: Parts of rendered content disappear or render as the clear color. Moving elements makes the "black box" change size.
+
+**Solution**: Batch all data first, then write to the buffer once before drawing.
+
+```rust
+// BAD: Multiple writes during render pass
+for text in texts {
+    text_renderer.draw_text(&mut render_pass, ...); // Writes buffer each call!
+}
+
+// GOOD: Batch first, draw once
+let mut all_quads = Vec::new();
+for text in texts {
+    all_quads.extend(text_renderer.layout_text(...));
+}
+text_renderer.draw(&mut render_pass, &all_quads); // Single write
+```
+
+### 9.3 Font Metrics and Baseline Positioning
+
+**Problem**: Font bearings are relative to the baseline, not the top of the glyph. Applying them incorrectly positions text off-screen.
+
+**Solution**: Calculate baseline position as `y + ascent`, then apply glyph bearings relative to that baseline.
+
+```rust
+let baseline_y = y + font.ascent;
+let glyph_y = baseline_y + glyph.bearing_y; // bearing_y is typically negative
 ```
 

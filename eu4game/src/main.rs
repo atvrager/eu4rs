@@ -329,17 +329,9 @@ impl App {
             province_lookup,
             province_map,
             selected_province: None,
-            screen_manager: if playable_countries.is_empty() {
-                // No countries to select, go straight to playing
-                let mut sm = screen::ScreenManager::new();
-                sm.transition_to(screen::Screen::Playing);
-                sm.clear_history(); // Can't go back if no country selection
-                sm
-            } else {
-                // Start at country selection (Single Player screen)
-                let mut sm = screen::ScreenManager::new();
-                sm.transition_to(screen::Screen::SinglePlayer);
-                sm
+            screen_manager: {
+                // Phase 8.1: Start at main menu
+                screen::ScreenManager::new() // Starts at MainMenu by default
             },
             player_tag: None,
             playable_countries,
@@ -619,12 +611,7 @@ impl App {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.0,
-                            g: 0.0,
-                            b: 0.0,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -636,31 +623,53 @@ impl App {
             // Reset sprite slot counter for this frame
             self.sprite_renderer.begin_frame();
 
-            // Draw map (big triangle)
-            render_pass.set_pipeline(&self.renderer.pipeline);
-            render_pass.set_bind_group(0, &self.renderer.bind_group, &[]);
-            render_pass.draw(0..3, 0..1);
-
-            // Draw army markers (instanced squares)
-            if self.renderer.army_count > 0 {
-                render_pass.set_pipeline(&self.renderer.army_pipeline);
-                render_pass.set_bind_group(0, &self.renderer.army_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, self.renderer.army_instance_buffer.slice(..));
-                // 6 vertices per square, army_count instances
-                render_pass.draw(0..6, 0..self.renderer.army_count);
-            }
-
-            // Draw fleet markers (instanced diamonds)
-            if self.renderer.fleet_count > 0 {
-                render_pass.set_pipeline(&self.renderer.fleet_pipeline);
-                render_pass.set_bind_group(0, &self.renderer.fleet_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, self.renderer.fleet_instance_buffer.slice(..));
-                // 6 vertices per diamond, fleet_count instances
-                render_pass.draw(0..6, 0..self.renderer.fleet_count);
-            }
-
-            // Draw top bar with EU4 authentic GUI
             let screen_size = (self.config.width, self.config.height);
+            let current_screen = self.screen_manager.current();
+
+            // Phase 8.1: Render different content based on current screen
+            log::debug!("=== RENDERING PHASE: {:?} ===", current_screen);
+            match current_screen {
+                screen::Screen::MainMenu => {
+                    // Main menu: Just render the menu UI, no map
+                    log::debug!("MainMenu: Skipping all map/sprite rendering");
+
+                    // DIAGNOSTIC: Draw a bright green test rectangle to verify rendering works
+                    // If you see a green box at (500,100), the pipeline works and something
+                    // else is drawing black over our text
+                    log::debug!("Drawing diagnostic green rectangle");
+                    // TODO: Actually draw a test rectangle here if needed
+
+                    // TODO: Render main menu panel
+                }
+                screen::Screen::SinglePlayer | screen::Screen::Playing => {
+                    // Game screens: Render map and game elements
+                    // Draw map (big triangle)
+                    render_pass.set_pipeline(&self.renderer.pipeline);
+                    render_pass.set_bind_group(0, &self.renderer.bind_group, &[]);
+                    render_pass.draw(0..3, 0..1);
+
+                    // Draw army markers (instanced squares)
+                    if self.renderer.army_count > 0 {
+                        render_pass.set_pipeline(&self.renderer.army_pipeline);
+                        render_pass.set_bind_group(0, &self.renderer.army_bind_group, &[]);
+                        render_pass.set_vertex_buffer(0, self.renderer.army_instance_buffer.slice(..));
+                        // 6 vertices per square, army_count instances
+                        render_pass.draw(0..6, 0..self.renderer.army_count);
+                    }
+
+                    // Draw fleet markers (instanced diamonds)
+                    if self.renderer.fleet_count > 0 {
+                        render_pass.set_pipeline(&self.renderer.fleet_pipeline);
+                        render_pass.set_bind_group(0, &self.renderer.fleet_bind_group, &[]);
+                        render_pass.set_vertex_buffer(0, self.renderer.fleet_instance_buffer.slice(..));
+                        // 6 vertices per diamond, fleet_count instances
+                        render_pass.draw(0..6, 0..self.renderer.fleet_count);
+                    }
+                }
+                _ => {
+                    // Other screens: no rendering yet
+                }
+            }
 
             // Prepare GUI state
             let date_str = format!(
@@ -704,21 +713,60 @@ impl App {
                 country: country_resources,
             };
 
-            // Render EU4 GUI overlay
-            if let Some(gui_renderer) = &mut self.gui_renderer {
-                gui_renderer.render(
-                    &mut render_pass,
-                    &self.device,
-                    &self.queue,
-                    &self.sprite_renderer,
-                    &gui_state,
-                    screen_size,
-                );
+            // Render screen-specific GUI
+            log::debug!("Current screen for rendering: {:?}", current_screen);
+            match current_screen {
+                screen::Screen::MainMenu => {
+                    // Phase 8.1: Main menu rendering
+                    // Show simple text instructions
+                    log::debug!("Rendering MainMenu screen");
+                    if let Some(text_renderer) = &self.text_renderer {
+                        log::debug!(
+                            "Rendering main menu text (screen size: {}x{})",
+                            screen_size.0,
+                            screen_size.1
+                        );
+                        // Phase 8.1: Main menu text
+                        let white = [1.0, 1.0, 1.0, 1.0];
+                        let screen_f32 = (screen_size.0 as f32, screen_size.1 as f32);
+
+                        // Collect ALL quads first, then draw once (avoids buffer sync issues)
+                        let mut all_quads = Vec::new();
+                        all_quads.extend(text_renderer.layout_text("EUROPA UNIVERSALIS IV", 400.0, 200.0, white, screen_f32));
+                        all_quads.extend(text_renderer.layout_text("Main Menu", 400.0, 250.0, white, screen_f32));
+                        all_quads.extend(text_renderer.layout_text("Press 'S' for Single Player", 400.0, 350.0, white, screen_f32));
+                        all_quads.extend(text_renderer.layout_text("Press ESC to Exit", 400.0, 400.0, white, screen_f32));
+
+                        text_renderer.draw(&mut render_pass, &self.queue, &all_quads);
+                    } else {
+                        log::warn!("text_renderer is None - cannot render main menu text");
+                    }
+                }
+                screen::Screen::SinglePlayer | screen::Screen::Playing => {
+                    log::debug!("Rendering SinglePlayer/Playing screen");
+                    // Render EU4 GUI overlay (topbar, speed controls, country select)
+                    if let Some(gui_renderer) = &mut self.gui_renderer {
+                        log::debug!("Calling gui_renderer.render()");
+                        gui_renderer.render(
+                            &mut render_pass,
+                            &self.device,
+                            &self.queue,
+                            &self.sprite_renderer,
+                            &gui_state,
+                            screen_size,
+                        );
+                    } else {
+                        log::warn!("gui_renderer is None");
+                    }
+                }
+                _ => {}
             }
 
-            // Draw player flag with shield mask and overlay
+            // Draw player flag with shield mask and overlay (only on game screens)
             // (uses App-owned bind groups to avoid borrow issues with gui_renderer)
-            if let Some(overlay_rect) = self.shield_clip_rect {
+            if current_screen == screen::Screen::Playing
+                && let Some(overlay_rect) = self.shield_clip_rect
+            {
                 // Compute flag rect scaled and centered to match mask within overlay
                 let flag_rect = gui::compute_masked_flag_rect(
                     overlay_rect,
@@ -819,18 +867,34 @@ impl App {
             return false;
         }
 
+        // Phase 8.1: Handle main menu input
+        if self.screen_manager.current() == screen::Screen::MainMenu {
+            match key {
+                KeyCode::KeyS => {
+                    // Single Player - transition to country selection
+                    log::info!("Starting Single Player mode");
+                    self.screen_manager.transition_to(screen::Screen::SinglePlayer);
+
+
+                    self.update_window_title();
+                    return false;
+                }
+                KeyCode::Escape => {
+                    // Exit from main menu
+                    log::info!("Exiting from main menu");
+                    self.sim_handle.shutdown();
+                    return true;
+                }
+                _ => return false,
+            }
+        }
+
         // Handle Escape key for back navigation (Phase 6.1.4)
         if key == KeyCode::Escape {
             // Try to go back in navigation history
-            if let Some(ref mut frontend_ui) = self.frontend_ui
-                && frontend_ui.can_go_back()
-            {
+            if self.screen_manager.can_go_back() {
                 log::info!("Escape pressed - going back");
-                frontend_ui.go_back();
-
-                // Sync screen state to app
-                let new_screen = frontend_ui.current_screen();
-                self.screen_manager.transition_to(new_screen);
+                self.screen_manager.go_back();
                 self.update_window_title();
                 return false;
             }
@@ -1056,31 +1120,52 @@ impl App {
         }
     }
 
-    /// Polls frontend UI for button clicks and screen transitions.
+    /// Poll frontend UI for button actions.
     /// Returns true if the game should exit.
     fn poll_frontend_ui(&mut self) -> bool {
+        use crate::gui::core::UiAction;
+
         let Some(ref mut frontend_ui) = self.frontend_ui else {
             return false;
         };
 
-        // Update frontend UI (polls button clicks)
-        let should_exit = frontend_ui.update();
+        // Poll for button click actions
+        let Some(action) = frontend_ui.poll_main_menu() else {
+            return false;
+        };
 
-        // Sync screen state from frontend to app's screen manager
-        let frontend_screen = frontend_ui.current_screen();
-        if frontend_screen != self.screen_manager.current() {
-            log::info!(
-                "Screen transition: {:?} -> {:?}",
-                self.screen_manager.current(),
-                frontend_screen
-            );
-            // Frontend screen changed - update our manager to match
-            // (Frontend owns the authoritative screen state)
-            self.screen_manager.transition_to(frontend_screen);
-            self.update_window_title();
+        // Handle the action - App is the single source of truth for screen state
+        match action {
+            UiAction::ShowSinglePlayer => {
+                self.screen_manager.transition_to(screen::Screen::SinglePlayer);
+                self.update_window_title();
+                false
+            }
+            UiAction::ShowMultiplayer => {
+                self.screen_manager.transition_to(screen::Screen::Multiplayer);
+                self.update_window_title();
+                false
+            }
+            UiAction::Exit => true,
+            UiAction::Back => {
+                if self.screen_manager.can_go_back() {
+                    self.screen_manager.go_back();
+                    self.update_window_title();
+                }
+                false
+            }
+            UiAction::StartGame => {
+                self.screen_manager.transition_to(screen::Screen::Playing);
+                self.screen_manager.clear_history();
+                self.update_window_title();
+                false
+            }
+            UiAction::ShowTutorial | UiAction::ShowCredits | UiAction::ShowSettings => {
+                // Not implemented yet
+                false
+            }
+            UiAction::None => false,
         }
-
-        should_exit
     }
 
     /// Updates the GPU lookup texture and army markers if needed.
