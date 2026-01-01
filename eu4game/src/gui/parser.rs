@@ -1071,4 +1071,84 @@ guiTypes = {
         let template = db.get(&interner.intern("list_item_template")).unwrap();
         assert_eq!(template.children().len(), 1);
     }
+
+    #[test]
+    fn test_parse_entry_template() {
+        // Entry template: windowType used as a listbox row template (Phase 7.2)
+        let content = r#"
+guiTypes = {
+    windowType = {
+        name = "savegameentry"
+        position = { x = 0 y = 0 }
+        size = { x = 320 y = 41 }
+
+        checkboxType = {
+            name = "save_game"
+            position = { x = 14 y = 0 }
+        }
+
+        guiButtonType = {
+            name = "save_game_shield"
+            position = { x = 17 y = 5 }
+            quadTextureSprite = "GFX_shield_small"
+        }
+
+        instantTextBoxType = {
+            name = "save_game_title"
+            position = { x = 52 y = 5 }
+            font = "vic_18"
+            maxWidth = 132
+            maxHeight = 20
+        }
+
+        iconType = {
+            name = "ironman_icon"
+            spriteType = "GFX_ironman_icon"
+            position = { x = 200 y = 7 }
+            scale = 0.8
+        }
+    }
+}
+"#;
+
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        write!(file, "{}", content).unwrap();
+        let path = file.path();
+
+        let interner = StringInterner::new();
+        let db = parse_gui_file(path, &interner).unwrap();
+        assert_eq!(db.len(), 1);
+
+        let symbol = interner.get("savegameentry").unwrap();
+        let entry = db.get(&symbol).unwrap();
+
+        if let GuiElement::Window {
+            name,
+            size,
+            children,
+            ..
+        } = entry
+        {
+            assert_eq!(name, "savegameentry");
+            assert_eq!(*size, (320, 41)); // Row height defined by entry template
+            assert_eq!(children.len(), 4); // checkbox, button, text, icon
+
+            // Verify all widget types are parsed
+            let has_checkbox = children
+                .iter()
+                .any(|c| matches!(c, GuiElement::Checkbox { .. }));
+            let has_button = children
+                .iter()
+                .any(|c| matches!(c, GuiElement::Button { .. }));
+            let has_text = children.iter().any(|c| matches!(c, GuiElement::TextBox { .. }));
+            let has_icon = children.iter().any(|c| matches!(c, GuiElement::Icon { .. }));
+
+            assert!(has_checkbox, "Entry should have checkbox widget");
+            assert!(has_button, "Entry should have button widget");
+            assert!(has_text, "Entry should have text widget");
+            assert!(has_icon, "Entry should have icon widget");
+        } else {
+            panic!("Expected Window");
+        }
+    }
 }

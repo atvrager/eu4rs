@@ -518,10 +518,12 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] Parse fields: name, position, size, orientation, spacing, scrollbartype, background
     - [x] Parse scrollbar fields: name, position, size, max_value, track_sprite, slider_sprite
     - [x] Listbox and scrollbar definitions stored in WindowDatabase via GuiElement enum
-- [ ] **7.2. Entry Templates**
-    - [ ] Parse entry template windows (e.g., `savegameentry`, `interesting_country`)
-    - [ ] Support multiple widget types in entry: icon, text, button, checkbox
-    - [ ] Entry templates define row height and layout
+- [x] **7.2. Entry Templates** ✅ (2025-12-31)
+    - [x] Parse entry template windows (e.g., `savegameentry`)
+    - [x] Support multiple widget types in entry: icon, text, button, checkbox
+    - [x] Entry templates define row height and layout (via size field)
+    - [x] Entry templates are regular windowType blocks stored in WindowDatabase
+    - [x] Added `test_parse_entry_template()` to verify parsing of all widget types
 - [ ] **7.3. GuiListbox Primitive** (`gui/primitives/listbox.rs`)
     - [ ] `struct GuiListbox<T>` with item data binding
     - [ ] Adapter pattern: `trait ListAdapter { fn item_count(); fn bind_entry(idx, entry); }`
