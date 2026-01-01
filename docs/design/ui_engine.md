@@ -559,53 +559,116 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] Keyboard input handling (S for Single Player, ESC to exit)
     - [x] Screen transition from MainMenu to SinglePlayer working
     - Note: Full GUI panel implementation pending (currently text-based placeholder)
-- [x] **8.2. Country Selection Left Panel** ✅ (2025-12-31)
-    - [x] `CountrySelectLeftPanel` struct with `GuiWindow` derive
-    - [x] Bookmarks listbox binding (`bookmarks_list`)
-    - [x] Save games listbox binding (`save_games_list`)
-    - [x] Date widget (year editor, day/month label, up/down buttons)
-    - [x] Back button (returns to main menu)
-    - [x] `DatePart` enum and `UiAction` variants for date adjustment
-    - [x] Bookmark parsing in `eu4data` crate (re-exported by `eu4game`)
-    - Note: Rendering integration pending (Phase 8.5+)
+- [x] **8.2. Country Selection Left Panel** (`gui/country_select_left.rs`) ✅ (2025-12-31)
+    - [x] Created `CountrySelectLeftPanel` struct with `GuiWindow` derive
+    - [x] Defined listbox fields (`bookmarks_list`, `save_games_list`)
+    - [x] Defined date widget fields (year editor, day/month label, up/down buttons)
+    - [x] Defined back button field
+    - [x] Added `DatePart` enum and `UiAction` variants for date adjustment
+    - [x] Implemented bookmark parsing in `eu4data` crate (re-exported by `eu4game`)
 - [x] **8.3. Country Selection Top Panel** (`gui/country_select_top.rs`) ✅ (2026-01-01)
-    - [x] `CountrySelectTopPanel` struct with `GuiWindow` derive
-    - [x] Map mode buttons (terrain, political, religion, empire, diplomacy, economy, region, culture, players)
-    - [x] Start date label (`year_label` - "The World in 1444")
-    - [x] Nation selection prompt label (`select_label`)
-    - [x] `MapMode` enum added to `gui/core.rs`
-    - [x] `UiAction::SetMapMode` variant for button clicks
-    - [x] `update()` method with button polling and year label update
-    - Note: Rendering integration pending (Phase 8.5+)
-- [ ] **8.4. Play Button & Game Start**
-    - [ ] Bind play_button from lobby/singleplayer area
-    - [ ] Click → validate country selected → start game
-    - [ ] Transition to Playing screen
+    - [x] Created `CountrySelectTopPanel` struct with `GuiWindow` derive
+    - [x] Defined 10 map mode button fields (terrain, political, religion, empire, diplomacy, economy, region, culture, players)
+    - [x] Defined text label fields (`year_label`, `select_label`)
+    - [x] Added `MapMode` enum to `gui/core.rs`
+    - [x] Added `UiAction::SetMapMode` variant for button clicks
+    - [x] Implemented `update()` method with button polling and year label formatting
+    - [x] Added match arm in main.rs to handle SetMapMode actions (logs only)
+- [x] **8.4. Play Button & Game Start** (`gui/lobby_controls.rs`) ✅ (2026-01-01)
+    - [x] Created `LobbyControlsPanel` struct with `GuiWindow` derive
+    - [x] Defined `play_button` field binding to `right` window (lobby controls)
+    - [x] Implemented `update()` method that polls play button and returns `StartGame` action
+    - [x] Implemented `set_play_enabled()` method for enabling/disabling play button
+
+### Phase 8.5: Frontend Panel Rendering Integration
+*Objective: Wire all Phase 8 panels into the rendering pipeline.*
+
+- [ ] **8.5.1. Panel Loading & Binding**
+    - [ ] Load `CountrySelectLeftPanel` from frontend.gui (`left` window)
+    - [ ] Load `CountrySelectTopPanel` from frontend.gui (`top` window)
+    - [ ] Load `LobbyControlsPanel` from frontend.gui (`right` window)
+    - [ ] Store panels in `FrontendUI` or appropriate container
+    - [ ] Bind all panels during initialization (with CI-safe fallbacks)
+- [ ] **8.5.2. Rendering Implementation**
+    - [ ] Render left panel widgets:
+        - [ ] Bookmarks listbox
+        - [ ] Save games listbox
+        - [ ] Date widget (year editor, day/month label, up/down buttons)
+        - [ ] Back button
+    - [ ] Render top panel widgets:
+        - [ ] 10 map mode buttons
+        - [ ] Year label ("The World in 1444")
+        - [ ] Nation selection prompt label
+    - [ ] Render lobby controls widgets:
+        - [ ] Play button
+    - [ ] Handle panel visibility based on screen state
+    - [ ] Ensure proper z-ordering (top/left/right/lobby controls)
+- [ ] **8.5.3. Input Routing & Action Handling**
+    - [ ] Route input events to left panel:
+        - [ ] Listbox clicks (bookmarks, saves)
+        - [ ] Date adjustment buttons
+        - [ ] Back button click → `UiAction::Back`
+    - [ ] Route input events to top panel:
+        - [ ] Map mode button clicks → `UiAction::SetMapMode(mode)`
+    - [ ] Route input events to lobby controls:
+        - [ ] Play button click → `UiAction::StartGame`
+    - [ ] Poll all panel `update()` methods in main event loop
+    - [ ] Handle returned `UiAction` variants (already have handlers in main.rs)
+- [ ] **8.5.4. Additional Lobby Controls**
+    - [ ] Bind observe_mode_button (GuiCheckbox)
+    - [ ] Bind random_country_button (GuiButton)
+    - [ ] Bind nation_designer_button (GuiButton) - opens designer screen
+    - [ ] Bind random_new_world_button (GuiButton) - toggles RNW
+- [ ] **8.5.5. Data Population**
+    - [ ] Populate bookmarks listbox with data from `eu4data` (deferred from Phase 8.2)
+    - [ ] Populate save games listbox (placeholder for now, full implementation in Phase 9.1)
 
 ### Phase 9: Game Integration
 *Objective: Connect UI to game systems for complete start flow.*
 
 - [ ] **9.1. Bookmark System**
-    - [ ] Parse bookmarks from game data (historical start dates)
-    - [ ] Populate bookmarks listbox
+    - [ ] Load bookmarks from game data (already parsed in `eu4data`)
+    - [ ] Populate bookmarks listbox with bookmark entries
     - [ ] Bookmark selection updates start date
     - [ ] Bookmark selection may suggest default country
 - [ ] **9.2. Country Selection Data Flow**
-    - [ ] Map click → country selection (extend existing province click)
-    - [ ] Listbox click → country selection
-    - [ ] Selection updates `CountrySelectPanel` (already working)
-    - [ ] Track `selected_country: Option<CountryTag>`
-- [ ] **9.3. Game Initialization**
-    - [ ] On Play click: validate selection (country selected, valid date)
+    - [ ] Add `selected_country: Option<CountryTag>` to game state
+    - [ ] Map click → country selection (extend existing province click handler)
+    - [ ] Track selection and update `CountrySelectPanel` state
+    - [ ] Handle deselection (click on same country or ocean)
+- [ ] **9.3. Game Start Validation**
+    - [ ] Validate country selected before allowing play
+    - [ ] Enable/disable play button via `set_play_enabled()`
     - [ ] Load world state for selected date
     - [ ] Set player country
-    - [ ] Transition to Playing screen
     - [ ] Initialize simulation thread with selected state
-- [ ] **9.4. Screen State Integration**
-    - [ ] Replace current `GamePhase` enum with `Screen` system
-    - [ ] Update main loop to use screen-based input routing
-    - [ ] Menu screens don't advance simulation
-    - [ ] Playing screen runs simulation normally
+
+### Phase 9.5: Map Mode Rendering
+*Objective: Implement additional map rendering modes beyond Political.*
+
+- [ ] **9.5.1. Terrain Mode**
+    - [ ] Render heightmap-based terrain coloring
+    - [ ] Display elevation differences visually
+- [ ] **9.5.2. Trade Mode**
+    - [ ] Render trade nodes and connections
+    - [ ] Display trade flow arrows
+    - [ ] Color provinces by trade node membership
+- [ ] **9.5.3. Religion Mode**
+    - [ ] Color provinces by religion
+    - [ ] Use religion colors from game data
+- [ ] **9.5.4. Culture Mode**
+    - [ ] Color provinces by culture group
+    - [ ] Use culture colors from game data
+- [ ] **9.5.5. Additional Modes**
+    - [ ] Empire mode (HRE borders)
+    - [ ] Diplomacy mode (relations)
+    - [ ] Economy mode (development)
+    - [ ] Region mode (geographic regions)
+    - [ ] Players mode (multiplayer - highlight player nations)
+- [ ] **9.5.6. Mode Switching**
+    - [ ] Connect `SetMapMode` action to rendering state
+    - [ ] Update map renderer based on active mode
+    - [ ] Preserve mode selection across screens
 
 ### Phase 10: Localization System
 *Objective: Support EU4's $KEY$ localization tokens.*
@@ -663,7 +726,7 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
 *Objective: Remove transitional debt and stabilize the UI engine.*
 
 - [ ] **13.1. Dead Code Audit**
-    - [ ] Audit all `#![allow(dead_code)]` and `#[allow(dead_code)]` added during Phase 2-4
+    - [ ] Audit all `#![allow(dead_code)]` and `#[allow(dead_code)]` added during Phase 2-8
     - [ ] Ensure all primitives and binder methods are properly used
     - [ ] Delete unused placeholder code
 - [ ] **13.2. Performance Audit**

@@ -51,6 +51,9 @@ pub mod country_select_left;
 // Phase 8.3: Country selection top panel
 pub mod country_select_top;
 
+// Phase 8.4: Lobby controls (play button)
+pub mod lobby_controls;
+
 // Refactored modules (moved from mod.rs to reduce file size)
 mod layout_types;
 mod legacy_loaders;
@@ -66,6 +69,8 @@ pub use country_select::{CountrySelectLayout, CountrySelectPanel, SelectedCountr
 pub use country_select_left::CountrySelectLeftPanel;
 #[allow(unused_imports)] // WIP - not yet integrated
 pub use country_select_top::CountrySelectTopPanel;
+#[allow(unused_imports)] // WIP - not yet integrated
+pub use lobby_controls::LobbyControlsPanel;
 
 // Layout utilities
 #[allow(unused_imports)] // Public API
