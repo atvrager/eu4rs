@@ -1181,6 +1181,50 @@ impl GuiRenderer {
                 }
             }
 
+            // Phase 1c: Load fonts for button text (left panel and lobby controls)
+            // Collect all button fonts needed
+            let mut button_fonts_to_load: Vec<String> = Vec::new();
+            if let Some(ref panel) = self.left_panel {
+                for button in [
+                    &panel.back_button,
+                    &panel.year_up_1,
+                    &panel.year_down_1,
+                    &panel.year_up_2,
+                    &panel.year_down_2,
+                    &panel.year_up_3,
+                    &panel.year_down_3,
+                    &panel.month_up,
+                    &panel.month_down,
+                    &panel.day_up,
+                    &panel.day_down,
+                ] {
+                    if let Some(font_name) = button.button_font()
+                        && !button_fonts_to_load.contains(&font_name.to_string())
+                    {
+                        button_fonts_to_load.push(font_name.to_string());
+                    }
+                }
+            }
+            if let Some(ref panel) = self.lobby_controls
+                && let Some(font_name) = panel.play_button.button_font()
+                && !button_fonts_to_load.contains(&font_name.to_string())
+            {
+                button_fonts_to_load.push(font_name.to_string());
+            }
+            // Load collected button fonts
+            for font_name in button_fonts_to_load {
+                if !self
+                    .font_bind_groups
+                    .iter()
+                    .any(|(name, _)| name == &font_name)
+                    && let Some(loaded) = self.font_cache.get(&font_name, device, queue)
+                {
+                    let bind_group = sprite_renderer.create_bind_group(device, &loaded.view);
+                    self.font_bind_groups.push((font_name.clone(), bind_group));
+                    log::debug!("Loaded button font: {}", font_name);
+                }
+            }
+
             // Phase 2b: Render text labels
             for text_widget in &[year_label, select_label] {
                 let font_name = text_widget.font();
@@ -1304,7 +1348,7 @@ impl GuiRenderer {
             ];
             let _ = panel;
 
-            // Extract render data for all buttons (idx, pos, orientation, w, h, action_name, button_text)
+            // Extract render data for all buttons (idx, pos, orientation, w, h, action_name, button_text, button_font)
             type LeftButtonRenderData = (
                 usize,
                 (i32, i32),
@@ -1312,6 +1356,7 @@ impl GuiRenderer {
                 u32,
                 u32,
                 String,
+                Option<String>,
                 Option<String>,
             );
             let mut button_render_data: Vec<LeftButtonRenderData> = Vec::new();
@@ -1338,13 +1383,16 @@ impl GuiRenderer {
                             h,
                             action_name.to_string(),
                             button.button_text().map(|s| s.to_string()),
+                            button.button_font().map(|s| s.to_string()),
                         ));
                     }
                 }
             }
 
             // Render all buttons using extracted data
-            for (idx, pos, orientation, w, h, action_name, _button_text) in button_render_data {
+            for (idx, pos, orientation, w, h, action_name, button_text, button_font) in
+                button_render_data
+            {
                 // For LOWER_* orientations in fullscreen windows, use screen-relative positioning
                 let button_screen_pos = match orientation {
                     Orientation::LowerLeft | Orientation::LowerRight => {
@@ -1355,8 +1403,7 @@ impl GuiRenderer {
                 let (clip_x, clip_y, clip_w, clip_h) =
                     rect_to_clip_space(button_screen_pos, (w, h), screen_size);
 
-                // TODO: Render button_text centered on button using text renderer
-
+                // Draw button sprite
                 let bind_group = &self.frontend_button_bind_groups[idx].1;
                 sprite_renderer.draw(
                     render_pass,
@@ -1367,6 +1414,70 @@ impl GuiRenderer {
                     clip_w,
                     clip_h,
                 );
+
+                // Render button text centered on button
+                if let Some(text) = button_text
+                    && let Some(font_name) = button_font
+                    && let Some(font_idx) = self
+                        .font_bind_groups
+                        .iter()
+                        .position(|(name, _)| name == &font_name)
+                    && let Some(loaded) = self.font_cache.get(&font_name, device, queue)
+                {
+                    let font = &loaded.font;
+                    // Resolve localization key if needed (FE_BACK -> Back)
+                    let display_text = match text.as_str() {
+                        "FE_BACK" => "Back",
+                        other => other,
+                    };
+                    let text_width = font.measure_width(display_text);
+                    let text_height = font.line_height as f32;
+
+                    // Center text horizontally and vertically on button
+                    let text_x = button_screen_pos.0 + (w as f32 - text_width) / 2.0;
+                    let text_y = button_screen_pos.1 + (h as f32 - text_height) / 2.0;
+
+                    let mut cursor_x = text_x;
+                    for c in display_text.chars() {
+                        if let Some(glyph) = font.get_glyph(c) {
+                            if glyph.width == 0 || glyph.height == 0 {
+                                cursor_x += glyph.xadvance as f32;
+                                continue;
+                            }
+
+                            let glyph_x = cursor_x + glyph.xoffset as f32;
+                            let glyph_y = text_y + glyph.yoffset as f32;
+                            let glyph_screen_pos = (glyph_x, glyph_y);
+                            let glyph_size = (glyph.width, glyph.height);
+                            let (glyph_clip_x, glyph_clip_y, glyph_clip_w, glyph_clip_h) =
+                                rect_to_clip_space(glyph_screen_pos, glyph_size, screen_size);
+
+                            let atlas_width = font.scale_w as f32;
+                            let atlas_height = font.scale_h as f32;
+                            let u_min = glyph.x as f32 / atlas_width;
+                            let v_min = glyph.y as f32 / atlas_height;
+                            let u_max = (glyph.x + glyph.width) as f32 / atlas_width;
+                            let v_max = (glyph.y + glyph.height) as f32 / atlas_height;
+
+                            let font_bind_group = &self.font_bind_groups[font_idx].1;
+                            sprite_renderer.draw_uv(
+                                render_pass,
+                                font_bind_group,
+                                queue,
+                                glyph_clip_x,
+                                glyph_clip_y,
+                                glyph_clip_w,
+                                glyph_clip_h,
+                                u_min,
+                                v_min,
+                                u_max,
+                                v_max,
+                            );
+
+                            cursor_x += glyph.xadvance as f32;
+                        }
+                    }
+                }
 
                 self.hit_boxes.push((
                     action_name,
@@ -1394,7 +1505,7 @@ impl GuiRenderer {
             let play_button = panel.play_button.clone();
             let _ = panel;
 
-            // Extract render data
+            // Extract render data including text and font
             let button_data = if let Some(pos) = play_button.position()
                 && let Some(orientation) = play_button.orientation()
             {
@@ -1407,14 +1518,22 @@ impl GuiRenderer {
                             self.frontend_button_bind_groups[idx].2,
                             self.frontend_button_bind_groups[idx].3,
                         );
-                        (idx, pos, orientation, w, h)
+                        (
+                            idx,
+                            pos,
+                            orientation,
+                            w,
+                            h,
+                            play_button.button_text().map(|s| s.to_string()),
+                            play_button.button_font().map(|s| s.to_string()),
+                        )
                     })
             } else {
                 None
             };
 
             // Render using extracted data
-            if let Some((idx, pos, orientation, w, h)) = button_data {
+            if let Some((idx, pos, orientation, w, h, button_text, button_font)) = button_data {
                 // Play button has LOWER_RIGHT orientation in fullscreen window
                 let button_screen_pos = match orientation {
                     Orientation::LowerLeft | Orientation::LowerRight => {
@@ -1425,8 +1544,7 @@ impl GuiRenderer {
                 let (clip_x, clip_y, clip_w, clip_h) =
                     rect_to_clip_space(button_screen_pos, (w, h), screen_size);
 
-                // TODO: Render play_button.button_text() centered on button
-
+                // Draw button sprite
                 let bind_group = &self.frontend_button_bind_groups[idx].1;
                 sprite_renderer.draw(
                     render_pass,
@@ -1437,6 +1555,65 @@ impl GuiRenderer {
                     clip_w,
                     clip_h,
                 );
+
+                // Render button text centered on button
+                if let Some(text) = button_text
+                    && let Some(font_name) = button_font
+                    && let Some(font_idx) = self
+                        .font_bind_groups
+                        .iter()
+                        .position(|(name, _)| name == &font_name)
+                    && let Some(loaded) = self.font_cache.get(&font_name, device, queue)
+                {
+                    let font = &loaded.font;
+                    let text_width = font.measure_width(&text);
+                    let text_height = font.line_height as f32;
+
+                    // Center text horizontally and vertically on button
+                    let text_x = button_screen_pos.0 + (w as f32 - text_width) / 2.0;
+                    let text_y = button_screen_pos.1 + (h as f32 - text_height) / 2.0;
+
+                    let mut cursor_x = text_x;
+                    for c in text.chars() {
+                        if let Some(glyph) = font.get_glyph(c) {
+                            if glyph.width == 0 || glyph.height == 0 {
+                                cursor_x += glyph.xadvance as f32;
+                                continue;
+                            }
+
+                            let glyph_x = cursor_x + glyph.xoffset as f32;
+                            let glyph_y = text_y + glyph.yoffset as f32;
+                            let glyph_screen_pos = (glyph_x, glyph_y);
+                            let glyph_size = (glyph.width, glyph.height);
+                            let (glyph_clip_x, glyph_clip_y, glyph_clip_w, glyph_clip_h) =
+                                rect_to_clip_space(glyph_screen_pos, glyph_size, screen_size);
+
+                            let atlas_width = font.scale_w as f32;
+                            let atlas_height = font.scale_h as f32;
+                            let u_min = glyph.x as f32 / atlas_width;
+                            let v_min = glyph.y as f32 / atlas_height;
+                            let u_max = (glyph.x + glyph.width) as f32 / atlas_width;
+                            let v_max = (glyph.y + glyph.height) as f32 / atlas_height;
+
+                            let font_bind_group = &self.font_bind_groups[font_idx].1;
+                            sprite_renderer.draw_uv(
+                                render_pass,
+                                font_bind_group,
+                                queue,
+                                glyph_clip_x,
+                                glyph_clip_y,
+                                glyph_clip_w,
+                                glyph_clip_h,
+                                u_min,
+                                v_min,
+                                u_max,
+                                v_max,
+                            );
+
+                            cursor_x += glyph.xadvance as f32;
+                        }
+                    }
+                }
 
                 self.hit_boxes.push((
                     "play_button".to_string(),
