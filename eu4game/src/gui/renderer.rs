@@ -1016,7 +1016,7 @@ impl GuiRenderer {
             }
         }
 
-        // Load left panel textures (back button + date widget buttons)
+        // Load left panel textures (back button + date widget buttons + observe mode)
         if let Some(ref panel) = self.left_panel {
             // Collect all buttons to load
             let buttons_to_load = [
@@ -1031,6 +1031,7 @@ impl GuiRenderer {
                 &panel.month_down,
                 &panel.day_up,
                 &panel.day_down,
+                &panel.observe_mode_button,
             ];
 
             for button in buttons_to_load {
@@ -1062,23 +1063,44 @@ impl GuiRenderer {
             }
         }
 
-        // Load lobby panel textures
-        if let Some(ref panel) = self.lobby_controls
-            && let Some(sprite_type) = panel.play_button.sprite_type()
-        {
-            let button_name = panel.play_button.name();
-            if !self
-                .frontend_button_bind_groups
-                .iter()
-                .any(|(name, _, _, _)| name == button_name)
-                && let Some(sprite) = self.gfx_db.get(sprite_type)
-                && let Some((view, w, h)) =
-                    self.sprite_cache.get(&sprite.texture_file, device, queue)
-            {
-                log::debug!("Loaded lobby play_button: {} ({}x{})", sprite_type, w, h);
-                let bind_group = sprite_renderer.create_bind_group(device, view);
-                self.frontend_button_bind_groups
-                    .push((button_name.to_string(), bind_group, w, h));
+        // Load lobby panel textures (all buttons)
+        if let Some(ref panel) = self.lobby_controls {
+            // Collect all lobby buttons to load
+            let lobby_buttons: Vec<&super::primitives::GuiButton> = vec![
+                &panel.play_button,
+                &panel.random_country_button,
+                &panel.nation_designer_button,
+                &panel.random_new_world_button,
+                &panel.enable_custom_nation_button,
+            ];
+
+            for button in lobby_buttons {
+                if let Some(sprite_type) = button.sprite_type() {
+                    let button_name = button.name();
+                    if !self
+                        .frontend_button_bind_groups
+                        .iter()
+                        .any(|(name, _, _, _)| name == button_name)
+                        && let Some(sprite) = self.gfx_db.get(sprite_type)
+                        && let Some((view, w, h)) =
+                            self.sprite_cache.get(&sprite.texture_file, device, queue)
+                    {
+                        log::debug!(
+                            "Loaded lobby button {}: {} ({}x{})",
+                            button_name,
+                            sprite_type,
+                            w,
+                            h
+                        );
+                        let bind_group = sprite_renderer.create_bind_group(device, view);
+                        self.frontend_button_bind_groups.push((
+                            button_name.to_string(),
+                            bind_group,
+                            w,
+                            h,
+                        ));
+                    }
+                }
             }
         }
 
@@ -1197,6 +1219,7 @@ impl GuiRenderer {
                     &panel.month_down,
                     &panel.day_up,
                     &panel.day_down,
+                    &panel.observe_mode_button,
                 ] {
                     if let Some(font_name) = button.button_font()
                         && !button_fonts_to_load.contains(&font_name.to_string())
@@ -1205,11 +1228,20 @@ impl GuiRenderer {
                     }
                 }
             }
-            if let Some(ref panel) = self.lobby_controls
-                && let Some(font_name) = panel.play_button.button_font()
-                && !button_fonts_to_load.contains(&font_name.to_string())
-            {
-                button_fonts_to_load.push(font_name.to_string());
+            if let Some(ref panel) = self.lobby_controls {
+                for button in [
+                    &panel.play_button,
+                    &panel.random_country_button,
+                    &panel.nation_designer_button,
+                    &panel.random_new_world_button,
+                    &panel.enable_custom_nation_button,
+                ] {
+                    if let Some(font_name) = button.button_font()
+                        && !button_fonts_to_load.contains(&font_name.to_string())
+                    {
+                        button_fonts_to_load.push(font_name.to_string());
+                    }
+                }
             }
             // Load collected button fonts
             for font_name in button_fonts_to_load {
@@ -1345,6 +1377,7 @@ impl GuiRenderer {
                 (panel.month_down.clone(), "month_down"),
                 (panel.day_up.clone(), "day_up"),
                 (panel.day_down.clone(), "day_down"),
+                (panel.observe_mode_button.clone(), "observe_mode_button"),
             ];
             let _ = panel;
 
@@ -1494,47 +1527,70 @@ impl GuiRenderer {
             // TODO Part 3: Render year editor textbox, day/month label
         }
 
-        // Render lobby controls (play button)
+        // Render lobby controls (all buttons)
         if let Some(ref panel) = self.lobby_controls {
             let lobby_anchor = get_window_anchor(
                 self.lobby_controls_layout.window_pos,
                 self.lobby_controls_layout.orientation,
                 screen_size,
             );
-            // Clone play button to avoid borrow conflict
-            let play_button = panel.play_button.clone();
-            let _ = panel;
 
-            // Extract render data including text and font
-            let button_data = if let Some(pos) = play_button.position()
-                && let Some(orientation) = play_button.orientation()
-            {
-                let button_name = play_button.name();
-                self.frontend_button_bind_groups
-                    .iter()
-                    .position(|(name, _, _, _)| name == button_name)
-                    .map(|idx| {
+            // Clone all buttons to avoid borrow conflicts
+            let lobby_buttons = vec![
+                panel.play_button.clone(),
+                panel.random_country_button.clone(),
+                panel.nation_designer_button.clone(),
+                panel.random_new_world_button.clone(),
+                panel.enable_custom_nation_button.clone(),
+            ];
+            let _ = panel; // Release borrow
+
+            // Extract render data for all buttons
+            type LobbyButtonRenderData = (
+                usize,
+                (i32, i32),
+                Orientation,
+                u32,
+                u32,
+                String,
+                Option<String>,
+                Option<String>,
+            );
+            let mut button_render_data: Vec<LobbyButtonRenderData> = Vec::new();
+
+            for button in &lobby_buttons {
+                if let Some(pos) = button.position()
+                    && let Some(orientation) = button.orientation()
+                {
+                    let button_name = button.name();
+                    if let Some(idx) = self
+                        .frontend_button_bind_groups
+                        .iter()
+                        .position(|(name, _, _, _)| name == button_name)
+                    {
                         let (w, h) = (
                             self.frontend_button_bind_groups[idx].2,
                             self.frontend_button_bind_groups[idx].3,
                         );
-                        (
+                        button_render_data.push((
                             idx,
                             pos,
                             orientation,
                             w,
                             h,
-                            play_button.button_text().map(|s| s.to_string()),
-                            play_button.button_font().map(|s| s.to_string()),
-                        )
-                    })
-            } else {
-                None
-            };
+                            button_name.to_string(),
+                            button.button_text().map(|s| s.to_string()),
+                            button.button_font().map(|s| s.to_string()),
+                        ));
+                    }
+                }
+            }
 
-            // Render using extracted data
-            if let Some((idx, pos, orientation, w, h, button_text, button_font)) = button_data {
-                // Play button has LOWER_RIGHT orientation in fullscreen window
+            // Render all buttons
+            for (idx, pos, orientation, w, h, button_name, button_text, button_font) in
+                button_render_data
+            {
+                // All lobby buttons use LOWER_RIGHT orientation
                 let button_screen_pos = match orientation {
                     Orientation::LowerLeft | Orientation::LowerRight => {
                         resolve_position(pos, orientation, (w, h), screen_size)
@@ -1566,7 +1622,16 @@ impl GuiRenderer {
                     && let Some(loaded) = self.font_cache.get(&font_name, device, queue)
                 {
                     let font = &loaded.font;
-                    let text_width = font.measure_width(&text);
+                    // Localize text
+                    let display_text = match text.as_str() {
+                        "FE_BACK" => "Back",
+                        "PLAY" => "PLAY",
+                        "RANDOM_COUNTRY" => "Random",
+                        "CUSTOM_NATION" => "Custom",
+                        "RANDOM_WORLD_START" => "Random World",
+                        other => other,
+                    };
+                    let text_width = font.measure_width(display_text);
                     let text_height = font.line_height as f32;
 
                     // Center text horizontally and vertically on button
@@ -1574,7 +1639,7 @@ impl GuiRenderer {
                     let text_y = button_screen_pos.1 + (h as f32 - text_height) / 2.0;
 
                     let mut cursor_x = text_x;
-                    for c in text.chars() {
+                    for c in display_text.chars() {
                         if let Some(glyph) = font.get_glyph(c) {
                             if glyph.width == 0 || glyph.height == 0 {
                                 cursor_x += glyph.xadvance as f32;
@@ -1615,8 +1680,9 @@ impl GuiRenderer {
                     }
                 }
 
+                // Register hit box for this button
                 self.hit_boxes.push((
-                    "play_button".to_string(),
+                    button_name,
                     HitBox {
                         x: button_screen_pos.0,
                         y: button_screen_pos.1,
