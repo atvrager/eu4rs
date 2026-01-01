@@ -499,11 +499,13 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] Handle exit flag from FrontendUI button clicks
     - [x] Log screen transitions for debugging
     - Note: Button hit boxes integrated via FrontendUI (completes Phase 4.1 deferred task)
-- [ ] **6.1.4. Back Navigation**
-    - [ ] Add back button to panels that need it
-    - [ ] Wire back button to `ScreenManager.go_back()`
-    - [ ] Escape key triggers back action (when not in text input)
-    - [ ] Disable back navigation when in `Screen::Playing` (clear history)
+- [x] **6.1.4. Back Navigation** ✅ (2025-12-31)
+    - [x] Escape key triggers back navigation via `FrontendUI.go_back()`
+    - [x] Escape exits game if no navigation history available
+    - [x] Sync screen state after back navigation
+    - [x] Update window title after going back
+    - [x] Clear history when entering Playing mode (already implemented in 6.1.2)
+    - Note: Back button UI widgets deferred to Phase 8 (visual rendering)
 
 ### Phase 7: Listbox Support
 *Objective: Enable scrollable lists for country/save selection.*

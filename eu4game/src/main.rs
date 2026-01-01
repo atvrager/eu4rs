@@ -819,14 +819,31 @@ impl App {
             return false;
         }
 
+        // Handle Escape key for back navigation (Phase 6.1.4)
+        if key == KeyCode::Escape {
+            // Try to go back in navigation history
+            if let Some(ref mut frontend_ui) = self.frontend_ui
+                && frontend_ui.can_go_back()
+            {
+                log::info!("Escape pressed - going back");
+                frontend_ui.go_back();
+
+                // Sync screen state to app
+                let new_screen = frontend_ui.current_screen();
+                self.screen_manager.transition_to(new_screen);
+                self.update_window_title();
+                return false;
+            }
+
+            // No history - exit the game
+            log::info!("Escape pressed with no history - exiting");
+            self.sim_handle.shutdown();
+            return true;
+        }
+
         // Handle country selection mode (Single Player screen)
         if self.screen_manager.current() == screen::Screen::SinglePlayer {
             match key {
-                KeyCode::Escape => {
-                    log::info!("Escape pressed, exiting");
-                    self.sim_handle.shutdown();
-                    return true;
-                }
                 KeyCode::ArrowUp => {
                     if self.country_selection_index > 0 {
                         self.country_selection_index -= 1;
