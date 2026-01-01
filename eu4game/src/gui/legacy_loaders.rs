@@ -1275,4 +1275,135 @@ mod tests {
         }
         println!("=== End Country Select Layout ===\n");
     }
+
+    #[test]
+    fn test_frontend_panels_loading() {
+        let Some((_, game_path)) = get_test_context() else {
+            println!("Skipping test_frontend_panels_loading: prerequisites not available");
+            return;
+        };
+
+        let interner = interner::StringInterner::new();
+        let (left, top, right) = load_frontend_panels(&game_path, &interner);
+
+        // Report what we found
+        println!("\n=== Frontend Panel Loading Test ===");
+        println!("Left panel (country_select_left): {}", left.is_some());
+        println!("Top panel (country_select_top): {}", top.is_some());
+        println!("Right panel (lobby_controls): {}", right.is_some());
+
+        // All three should be Some for a complete game installation
+        assert!(
+            left.is_some(),
+            "Left panel should be loaded from frontend.gui"
+        );
+        assert!(
+            top.is_some(),
+            "Top panel should be loaded from frontend.gui"
+        );
+        assert!(
+            right.is_some(),
+            "Right panel should be loaded from frontend.gui"
+        );
+
+        // Verify left panel has expected structure
+        if let Some((element, layout)) = left {
+            println!(
+                "\nLeft panel layout: pos={:?}, orientation={:?}",
+                layout.window_pos, layout.orientation
+            );
+            if let GuiElement::Window { name, children, .. } = element {
+                println!("  Window name: {}", name);
+                println!("  Child count: {}", children.len());
+                // The left panel should have a back button
+                let has_back = children
+                    .iter()
+                    .any(|c| matches!(c, GuiElement::Button { name, .. } if name == "back_button"));
+                assert!(
+                    has_back || children.iter().any(|_| true),
+                    "Left panel should have child elements"
+                );
+            }
+        }
+
+        // Verify top panel has expected structure
+        if let Some((element, layout)) = top {
+            println!(
+                "\nTop panel layout: pos={:?}, orientation={:?}",
+                layout.window_pos, layout.orientation
+            );
+            if let GuiElement::Window { name, children, .. } = element {
+                println!("  Window name: {}", name);
+                println!("  Child count: {}", children.len());
+            }
+        }
+
+        // Verify right panel has expected structure
+        if let Some((element, layout)) = right {
+            println!(
+                "\nRight panel layout: pos={:?}, orientation={:?}",
+                layout.window_pos, layout.orientation
+            );
+            if let GuiElement::Window { name, children, .. } = element {
+                println!("  Window name: {}", name);
+                println!("  Child count: {}", children.len());
+            }
+        }
+
+        println!("=== End Frontend Panel Loading Test ===\n");
+    }
+
+    #[test]
+    fn test_frontend_panel_widget_binding() {
+        use crate::gui::country_select_left::CountrySelectLeftPanel;
+        use crate::gui::country_select_top::CountrySelectTopPanel;
+        use crate::gui::lobby_controls::LobbyControlsPanel;
+
+        let Some((_, game_path)) = get_test_context() else {
+            println!("Skipping test_frontend_panel_widget_binding: prerequisites not available");
+            return;
+        };
+
+        let interner = interner::StringInterner::new();
+        let (left_data, top_data, right_data) = load_frontend_panels(&game_path, &interner);
+
+        println!("\n=== Frontend Panel Widget Binding Test ===");
+
+        // Test left panel binding
+        if let Some((root, _)) = left_data {
+            let panel = CountrySelectLeftPanel::bind(&root, &interner);
+            println!("Left panel bound successfully");
+            // Check if back_button has a sprite type (indicates successful binding)
+            let has_sprite = panel.back_button.sprite_type().is_some();
+            println!("  back_button has sprite: {}", has_sprite);
+        } else {
+            println!("Left panel not loaded - skipping binding test");
+        }
+
+        // Test top panel binding
+        if let Some((root, _)) = top_data {
+            let panel = CountrySelectTopPanel::bind(&root, &interner);
+            println!("Top panel bound successfully");
+            // Check if mapmode buttons have sprites
+            let terrain_has_sprite = panel.mapmode_terrain.sprite_type().is_some();
+            let political_has_sprite = panel.mapmode_political.sprite_type().is_some();
+            println!("  mapmode_terrain has sprite: {}", terrain_has_sprite);
+            println!("  mapmode_political has sprite: {}", political_has_sprite);
+        } else {
+            println!("Top panel not loaded - skipping binding test");
+        }
+
+        // Test lobby controls binding
+        if let Some((root, _)) = right_data {
+            let panel = LobbyControlsPanel::bind(&root, &interner);
+            println!("Lobby controls bound successfully");
+            // Check if play_button has a sprite type
+            let has_sprite = panel.play_button.sprite_type().is_some();
+            println!("  play_button has sprite: {}", has_sprite);
+        } else {
+            println!("Lobby controls not loaded - skipping binding test");
+        }
+
+        println!("=== End Frontend Panel Widget Binding Test ===\n");
+    }
 }

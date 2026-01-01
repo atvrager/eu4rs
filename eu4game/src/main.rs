@@ -287,7 +287,7 @@ impl App {
         }
 
         // Create EU4 GUI renderer
-        let mut gui_renderer = eu4data::path::detect_game_path().map(|game_path| {
+        let gui_renderer = eu4data::path::detect_game_path().map(|game_path| {
             log::info!("Initializing GUI renderer from: {}", game_path.display());
             gui::GuiRenderer::new(&game_path)
         });
@@ -312,18 +312,10 @@ impl App {
                 exit: gui::primitives::GuiButton::placeholder(),
             };
 
-            // Take panels from GuiRenderer (if available)
-            let (left, top, lobby) = if let Some(ref mut renderer) = gui_renderer {
-                (
-                    renderer.take_left_panel(),
-                    renderer.take_top_panel(),
-                    renderer.take_lobby_controls(),
-                )
-            } else {
-                (None, None, None)
-            };
-
-            Some(gui::frontend::FrontendUI::new(panel, left, top, lobby))
+            // Phase 8.5.2: Panels are rendered by GuiRenderer, not FrontendUI
+            // FrontendUI uses placeholders for now - rendering is handled separately
+            // TODO: Consolidate panel ownership when interactive button handling is added
+            Some(gui::frontend::FrontendUI::new(panel, None, None, None))
         };
 
         Self {
