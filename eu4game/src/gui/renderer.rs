@@ -1,0 +1,1615 @@
+//! GUI renderer implementation.
+//!
+//! This module contains the `GuiRenderer` struct which handles rendering
+//! EU4's authentic layout and sprites using WGPU.
+
+#[cfg(test)]
+use super::country_select::SelectedCountryState;
+use super::country_select::{CountrySelectLayout, CountrySelectPanel};
+use super::layout::{get_window_anchor, position_from_anchor, rect_to_clip_space};
+use super::layout_types::{SpeedControlsLayout, TopBarLayout};
+use super::legacy_loaders::{
+    load_country_select_split, load_speed_controls_split, load_topbar_split,
+};
+use super::primitives;
+use super::speed_controls;
+use super::sprite_cache::{SpriteBorder, SpriteCache};
+use super::topbar;
+use super::types::{self, GfxDatabase, GuiAction, GuiState, HitBox};
+use super::{interner, parse_gfx_file};
+use crate::bmfont::BitmapFontCache;
+use crate::render::SpriteRenderer;
+use std::path::Path;
+
+/// GUI renderer that uses EU4's authentic layout and sprites.
+pub struct GuiRenderer {
+    /// Sprite database from .gfx files.
+    gfx_db: GfxDatabase,
+    /// String interner for efficient widget naming and lookups.
+    #[allow(dead_code)]
+    pub interner: interner::StringInterner,
+    /// Sprite texture cache.
+    sprite_cache: SpriteCache,
+    /// Bitmap font cache.
+    font_cache: BitmapFontCache,
+    /// Legacy speed controls layout (Phase 3.5: rendering metadata only).
+    pub(crate) speed_controls_layout: SpeedControlsLayout,
+    /// Macro-based speed controls widgets (Phase 3.5).
+    #[allow(dead_code)] // Used in render_speed_controls_only
+    speed_controls: Option<speed_controls::SpeedControls>,
+    /// Legacy topbar layout (Phase 3.5: rendering metadata only).
+    pub(crate) topbar_layout: TopBarLayout,
+    /// Macro-based topbar text widgets (Phase 3.5).
+    topbar: Option<topbar::TopBar>,
+    /// Legacy country selection panel layout (Phase 3.5: rendering metadata only).
+    country_select_layout: CountrySelectLayout,
+    /// Macro-based country select panel widgets (Phase 3.5).
+    #[allow(dead_code)] // Used in render_country_select_only (test-only)
+    country_select_panel: Option<CountrySelectPanel>,
+    /// Cached bind groups for frequently used sprites.
+    bg_bind_group: Option<wgpu::BindGroup>,
+    speed_bind_group: Option<wgpu::BindGroup>,
+    /// Font texture bind group.
+    font_bind_group: Option<wgpu::BindGroup>,
+    /// Cached topbar icon bind groups: (sprite_name, bind_group, width, height).
+    topbar_icons: Vec<(String, wgpu::BindGroup, u32, u32)>,
+    /// Cached button bind groups: (button_name, bind_group, width, height).
+    button_bind_groups: Vec<(String, wgpu::BindGroup, u32, u32)>,
+    /// Cached speed controls icon bind groups: (sprite_name, bind_group, width, height).
+    speed_icon_bind_groups: Vec<(String, wgpu::BindGroup, u32, u32)>,
+    /// Cached country select icon bind groups: (sprite_name, bind_group, width, height, WIP - used in tests).
+    #[allow(dead_code)]
+    country_select_icons: Vec<(String, wgpu::BindGroup, u32, u32)>,
+    /// Cached panel background bind group: (bind_group, tex_width, tex_height).
+    #[allow(dead_code)]
+    panel_bg_bind_group: Option<(wgpu::BindGroup, u32, u32)>,
+    /// Cached shield frame bind group for country select.
+    shield_frame_bind_group: Option<(wgpu::BindGroup, u32, u32)>,
+    /// Hit boxes for interactive elements (screen pixel coords).
+    hit_boxes: Vec<(String, HitBox)>,
+    /// Background sprite dimensions.
+    bg_size: (u32, u32),
+    /// Speed indicator dimensions (per frame).
+    speed_size: (u32, u32),
+}
+
+impl GuiRenderer {
+    /// Create a new GUI renderer.
+    pub fn new(game_path: &Path) -> Self {
+        let mut gfx_db = GfxDatabase::default();
+
+        // Load relevant .gfx files
+        let gfx_files = [
+            "interface/speed_controls.gfx",
+            "interface/topbar.gfx",
+            // Country select panel sprites
+            "interface/general_stuff.gfx", // shield_thin, tech icons, ideas icon
+            "interface/countrydiplomacyview.gfx", // government_rank_strip
+            "interface/countrygovernmentview.gfx", // tech_group_strip
+            "interface/countryview.gfx",   // icon_religion
+            "interface/endgamedialog.gfx", // province_icon
+            "interface/provinceview.gfx",  // development_icon, fort_defense_icon
+            "interface/ideas.gfx",         // GFX_idea_empty, national idea sprites
+            "interface/frontend.gfx",      // GFX_country_selection_panel_bg (9-slice)
+        ];
+
+        for gfx_file in &gfx_files {
+            let path = game_path.join(gfx_file);
+            if path.exists() {
+                match parse_gfx_file(&path) {
+                    Ok(db) => {
+                        log::info!("Loaded {} sprites from {}", db.sprites.len(), gfx_file);
+                        gfx_db.merge(db);
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to parse {}: {}", gfx_file, e);
+                    }
+                }
+            }
+        }
+
+        let interner = interner::StringInterner::new();
+
+        // Load speed_controls.gui layout (Phase 3.5: split into layout + macro-based widgets)
+        let (speed_controls_layout, speed_root) = load_speed_controls_split(game_path, &interner);
+        let speed_controls =
+            speed_root.map(|root| speed_controls::SpeedControls::bind(&root, &interner));
+
+        // Load topbar.gui layout (Phase 3.5: split into layout + macro-based widgets)
+        let (topbar_layout, topbar_root) = load_topbar_split(game_path, &interner);
+        let topbar = topbar_root.map(|root| topbar::TopBar::bind(&root, &interner));
+
+        // Load country select panel layout from frontend.gui (Phase 3.5: split into layout + macro-based widgets)
+        let (country_select_layout, country_select_root) =
+            load_country_select_split(game_path, &interner);
+        let country_select_panel =
+            country_select_root.map(|root| CountrySelectPanel::bind(&root, &interner));
+
+        Self {
+            gfx_db,
+            interner,
+            sprite_cache: SpriteCache::new(game_path.to_path_buf()),
+            font_cache: BitmapFontCache::new(game_path),
+            speed_controls_layout,
+            speed_controls,
+            topbar_layout,
+            topbar,
+            country_select_layout,
+            country_select_panel,
+            bg_bind_group: None,
+            speed_bind_group: None,
+            font_bind_group: None,
+            topbar_icons: Vec::new(),
+            button_bind_groups: Vec::new(),
+            speed_icon_bind_groups: Vec::new(),
+            country_select_icons: Vec::new(),
+            panel_bg_bind_group: None,
+            shield_frame_bind_group: None,
+            hit_boxes: Vec::new(),
+            bg_size: (1, 1),    // Updated from texture in ensure_textures()
+            speed_size: (1, 1), // Updated from texture in ensure_textures()
+        }
+    }
+
+    /// Ensure textures are loaded and bind groups created.
+    fn ensure_textures(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        sprite_renderer: &SpriteRenderer,
+    ) {
+        // Load background texture
+        if self.bg_bind_group.is_none()
+            && let Some(sprite) = self.gfx_db.get(&self.speed_controls_layout.bg_sprite)
+            && let Some((view, w, h)) = self.sprite_cache.get(&sprite.texture_file, device, queue)
+        {
+            log::debug!(
+                "Loaded bg texture: {} -> {}x{} (window_pos={:?}, orientation={:?})",
+                sprite.texture_file,
+                w,
+                h,
+                self.speed_controls_layout.window_pos,
+                self.speed_controls_layout.orientation
+            );
+            self.bg_size = (w, h);
+            self.bg_bind_group = Some(sprite_renderer.create_bind_group(device, view));
+        }
+
+        // Load speed indicator texture
+        if self.speed_bind_group.is_none()
+            && let Some(sprite) = self.gfx_db.get(&self.speed_controls_layout.speed_sprite)
+            && let Some((view, w, h)) = self.sprite_cache.get(&sprite.texture_file, device, queue)
+        {
+            // Speed indicator is a horizontal strip - frame height = total / frames
+            let num_frames = sprite.num_frames.max(1);
+            log::debug!(
+                "Loaded speed indicator: {} -> {}x{}, {} frames, frame_size={}x{}",
+                sprite.texture_file,
+                w,
+                h,
+                num_frames,
+                w / num_frames,
+                h
+            );
+            self.speed_size = (w / num_frames, h);
+            self.speed_bind_group = Some(sprite_renderer.create_bind_group(device, view));
+        }
+
+        // Load button textures
+        if self.button_bind_groups.is_empty() {
+            for (name, _, _, sprite_name) in &self.speed_controls_layout.buttons {
+                if let Some(sprite) = self.gfx_db.get(sprite_name)
+                    && let Some((view, w, h)) =
+                        self.sprite_cache.get(&sprite.texture_file, device, queue)
+                {
+                    let bind_group = sprite_renderer.create_bind_group(device, view);
+                    log::debug!(
+                        "Loaded button texture {}: {} -> {}x{}",
+                        name,
+                        sprite.texture_file,
+                        w,
+                        h
+                    );
+                    self.button_bind_groups
+                        .push((name.clone(), bind_group, w, h));
+                }
+            }
+        }
+
+        // Load additional icon textures (e.g., score icon)
+        if self.speed_icon_bind_groups.is_empty() {
+            for icon in &self.speed_controls_layout.icons {
+                if let Some(sprite) = self.gfx_db.get(&icon.sprite)
+                    && let Some((view, w, h)) =
+                        self.sprite_cache.get(&sprite.texture_file, device, queue)
+                {
+                    let bind_group = sprite_renderer.create_bind_group(device, view);
+                    log::debug!(
+                        "Loaded speed controls icon {}: {} -> {}x{}",
+                        icon.name,
+                        sprite.texture_file,
+                        w,
+                        h
+                    );
+                    self.speed_icon_bind_groups
+                        .push((icon.sprite.clone(), bind_group, w, h));
+                }
+            }
+        }
+    }
+
+    /// Ensure the font texture is loaded.
+    fn ensure_font(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        sprite_renderer: &SpriteRenderer,
+    ) {
+        if self.font_bind_group.is_none() {
+            let font_name = &self.speed_controls_layout.date_font;
+            if let Some(loaded) = self.font_cache.get(font_name, device, queue) {
+                self.font_bind_group =
+                    Some(sprite_renderer.create_bind_group(device, &loaded.view));
+            }
+        }
+    }
+
+    /// Ensure topbar icon textures are loaded.
+    fn ensure_topbar_textures(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        sprite_renderer: &SpriteRenderer,
+    ) {
+        // Only load once
+        if !self.topbar_icons.is_empty() {
+            return;
+        }
+
+        // Collect all sprites we need
+        let all_icons: Vec<_> = self
+            .topbar_layout
+            .backgrounds
+            .iter()
+            .chain(self.topbar_layout.icons.iter())
+            .collect();
+
+        for icon in all_icons {
+            if let Some(sprite) = self.gfx_db.get(&icon.sprite)
+                && let Some((view, w, h)) =
+                    self.sprite_cache.get(&sprite.texture_file, device, queue)
+            {
+                let bind_group = sprite_renderer.create_bind_group(device, view);
+                self.topbar_icons
+                    .push((icon.sprite.clone(), bind_group, w, h));
+                log::debug!("Loaded topbar texture: {} -> {}x{}", icon.sprite, w, h);
+            }
+        }
+    }
+
+    /// Ensure country select icon textures are loaded (WIP - used in tests).
+    #[allow(dead_code)]
+    fn ensure_country_select_textures(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        sprite_renderer: &SpriteRenderer,
+    ) {
+        // Only load once
+        if !self.country_select_icons.is_empty() {
+            return;
+        }
+
+        // Collect all unique sprite names
+        let mut sprites_to_load: Vec<&str> = Vec::new();
+
+        for icon in &self.country_select_layout.icons {
+            if !sprites_to_load.contains(&icon.sprite.as_str()) {
+                sprites_to_load.push(&icon.sprite);
+            }
+        }
+
+        for button in &self.country_select_layout.buttons {
+            if !sprites_to_load.contains(&button.sprite.as_str()) {
+                sprites_to_load.push(&button.sprite);
+            }
+        }
+
+        for sprite_name in sprites_to_load {
+            if let Some(sprite) = self.gfx_db.get(sprite_name) {
+                if let Some((view, w, h)) =
+                    self.sprite_cache.get(&sprite.texture_file, device, queue)
+                {
+                    let bind_group = sprite_renderer.create_bind_group(device, view);
+                    self.country_select_icons
+                        .push((sprite_name.to_string(), bind_group, w, h));
+                    log::debug!(
+                        "Loaded country select texture: {} -> {}x{} ({} frames)",
+                        sprite_name,
+                        w,
+                        h,
+                        sprite.num_frames
+                    );
+                } else {
+                    log::warn!(
+                        "Country select: texture not found for {} -> {}",
+                        sprite_name,
+                        sprite.texture_file
+                    );
+                }
+            } else {
+                log::warn!("Country select: sprite not in gfx_db: {}", sprite_name);
+            }
+        }
+
+        // Load panel background (9-slice sprite)
+        if self.panel_bg_bind_group.is_none()
+            && let Some(panel_bg) = self
+                .gfx_db
+                .get_cornered_tile("GFX_country_selection_panel_bg")
+            && let Some((view, w, h)) = self.sprite_cache.get_cornered(
+                &panel_bg.texture_file,
+                SpriteBorder {
+                    x: panel_bg.border_size.0,
+                    y: panel_bg.border_size.1,
+                },
+                device,
+                queue,
+            )
+        {
+            let bind_group = sprite_renderer.create_bind_group(device, view);
+            self.panel_bg_bind_group = Some((bind_group, w, h));
+            log::debug!(
+                "Loaded panel background: {} -> {}x{}",
+                panel_bg.texture_file,
+                w,
+                h
+            );
+        }
+
+        // Load shield frame texture for country select
+        if self.shield_frame_bind_group.is_none()
+            && let Some((view, w, h)) =
+                self.sprite_cache
+                    .get("gfx/interface/shield_frame.dds", device, queue)
+        {
+            let bind_group = sprite_renderer.create_bind_group(device, view);
+            self.shield_frame_bind_group = Some((bind_group, w, h));
+            log::debug!("Loaded shield frame texture: {}x{}", w, h);
+        }
+    }
+
+    /// Render the GUI overlay.
+    #[allow(clippy::too_many_arguments)]
+    pub fn render<'a>(
+        &'a mut self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        sprite_renderer: &'a SpriteRenderer,
+        state: &GuiState,
+        screen_size: (u32, u32),
+    ) {
+        self.ensure_textures(device, queue, sprite_renderer);
+        self.ensure_font(device, queue, sprite_renderer);
+        self.ensure_topbar_textures(device, queue, sprite_renderer);
+        self.hit_boxes.clear();
+
+        // Collect topbar draw commands first (to avoid borrowing self during draw)
+        let topbar_draws: Vec<(usize, f32, f32, f32, f32)> = {
+            let topbar_anchor = get_window_anchor(
+                self.topbar_layout.window_pos,
+                self.topbar_layout.orientation,
+                screen_size,
+            );
+
+            let mut draws = Vec::new();
+
+            // Backgrounds first
+            for bg in &self.topbar_layout.backgrounds {
+                if let Some(idx) = self
+                    .topbar_icons
+                    .iter()
+                    .position(|(name, _, _, _)| name == &bg.sprite)
+                {
+                    let (_, _, w, h) = &self.topbar_icons[idx];
+                    let screen_pos =
+                        position_from_anchor(topbar_anchor, bg.position, bg.orientation, (*w, *h));
+                    let (clip_x, clip_y, clip_w, clip_h) =
+                        rect_to_clip_space(screen_pos, (*w, *h), screen_size);
+                    draws.push((idx, clip_x, clip_y, clip_w, clip_h));
+                }
+            }
+
+            // Icons
+            for icon in &self.topbar_layout.icons {
+                if let Some(idx) = self
+                    .topbar_icons
+                    .iter()
+                    .position(|(name, _, _, _)| name == &icon.sprite)
+                {
+                    let (_, _, w, h) = &self.topbar_icons[idx];
+                    let screen_pos = position_from_anchor(
+                        topbar_anchor,
+                        icon.position,
+                        icon.orientation,
+                        (*w, *h),
+                    );
+                    let (clip_x, clip_y, clip_w, clip_h) =
+                        rect_to_clip_space(screen_pos, (*w, *h), screen_size);
+                    draws.push((idx, clip_x, clip_y, clip_w, clip_h));
+                }
+            }
+
+            draws
+        };
+
+        // Execute topbar draws
+        for (idx, clip_x, clip_y, clip_w, clip_h) in topbar_draws {
+            let bind_group = &self.topbar_icons[idx].1;
+            sprite_renderer.draw(
+                render_pass,
+                bind_group,
+                queue,
+                clip_x,
+                clip_y,
+                clip_w,
+                clip_h,
+            );
+        }
+
+        // Draw topbar texts if country data is available
+        if let Some(ref country) = state.country
+            && let Some(ref font_bind_group) = self.font_bind_group
+        {
+            let topbar_anchor = get_window_anchor(
+                self.topbar_layout.window_pos,
+                self.topbar_layout.orientation,
+                screen_size,
+            );
+
+            // Update topbar widgets with current country state
+            if let Some(ref mut topbar) = self.topbar {
+                topbar.update(country);
+            }
+
+            // Get font for text rendering (reuse existing font from speed controls)
+            let font_name = &self.speed_controls_layout.date_font; // vic_18
+            if let Some(loaded) = self.font_cache.get(font_name, device, queue)
+                && let Some(ref topbar) = self.topbar
+            {
+                let font = &loaded.font;
+
+                // Helper closure to render a single text widget
+                let mut render_text = |widget: &primitives::GuiText| {
+                    let value = widget.text();
+                    if value.is_empty() {
+                        return; // Skip empty/placeholder widgets
+                    }
+
+                    let text_screen_pos = position_from_anchor(
+                        topbar_anchor,
+                        widget.position(),
+                        widget.orientation(),
+                        widget.max_dimensions(),
+                    );
+
+                    // Measure text width for alignment
+                    let text_width = font.measure_width(value);
+
+                    // Calculate starting X based on format (alignment)
+                    let border_size = widget.border_size();
+                    let (max_width, _max_height) = widget.max_dimensions();
+                    let start_x = match widget.format() {
+                        types::TextFormat::Left => text_screen_pos.0 + border_size.0 as f32,
+                        types::TextFormat::Center => {
+                            text_screen_pos.0 + (max_width as f32 - text_width) / 2.0
+                        }
+                        types::TextFormat::Right => {
+                            text_screen_pos.0 + max_width as f32 - text_width - border_size.0 as f32
+                        }
+                    };
+
+                    let mut cursor_x = start_x;
+                    let cursor_y = text_screen_pos.1 + border_size.1 as f32;
+
+                    for c in value.chars() {
+                        if let Some(glyph) = font.get_glyph(c) {
+                            if glyph.width > 0 && glyph.height > 0 {
+                                let glyph_x = cursor_x + glyph.xoffset as f32;
+                                let glyph_y = cursor_y + glyph.yoffset as f32;
+                                let (u_min, v_min, u_max, v_max) = font.glyph_uv(glyph);
+                                let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
+                                    (glyph_x, glyph_y),
+                                    (glyph.width, glyph.height),
+                                    screen_size,
+                                );
+                                sprite_renderer.draw_uv(
+                                    render_pass,
+                                    font_bind_group,
+                                    queue,
+                                    clip_x,
+                                    clip_y,
+                                    clip_w,
+                                    clip_h,
+                                    u_min,
+                                    v_min,
+                                    u_max,
+                                    v_max,
+                                );
+                            }
+                            cursor_x += glyph.xadvance as f32;
+                        }
+                    }
+                };
+
+                // Render all topbar text widgets
+                render_text(&topbar.text_gold);
+                render_text(&topbar.text_manpower);
+                render_text(&topbar.text_sailors);
+                render_text(&topbar.text_stability);
+                render_text(&topbar.text_prestige);
+                render_text(&topbar.text_corruption);
+                render_text(&topbar.text_ADM);
+                render_text(&topbar.text_DIP);
+                render_text(&topbar.text_MIL);
+                render_text(&topbar.text_merchants);
+                render_text(&topbar.text_settlers);
+                render_text(&topbar.text_diplomats);
+                render_text(&topbar.text_missionaries);
+            }
+        }
+
+        // Get window anchor point - window is just an anchor, not a rectangle
+        let window_anchor = get_window_anchor(
+            self.speed_controls_layout.window_pos,
+            self.speed_controls_layout.orientation,
+            screen_size,
+        );
+
+        // Draw background at its own position relative to window anchor
+        if let Some(ref bind_group) = self.bg_bind_group {
+            let bg_screen_pos = position_from_anchor(
+                window_anchor,
+                self.speed_controls_layout.bg_pos,
+                self.speed_controls_layout.bg_orientation,
+                self.bg_size,
+            );
+
+            let (clip_x, clip_y, clip_w, clip_h) =
+                rect_to_clip_space(bg_screen_pos, self.bg_size, screen_size);
+
+            sprite_renderer.draw(
+                render_pass,
+                bind_group,
+                queue,
+                clip_x,
+                clip_y,
+                clip_w,
+                clip_h,
+            );
+        }
+
+        // Draw button backgrounds/chrome BEFORE speed indicator and text
+        // (button_pause is a background element that goes behind the date)
+        let button_draws: Vec<(usize, f32, f32, f32, f32)> = {
+            let mut draws = Vec::new();
+            for (name, pos, orientation, _) in &self.speed_controls_layout.buttons {
+                // Find the bind group index for this button
+                if let Some(idx) = self
+                    .button_bind_groups
+                    .iter()
+                    .position(|(n, _, _, _)| n == name)
+                {
+                    let (_, _, w, h) = &self.button_bind_groups[idx];
+                    let screen_pos =
+                        position_from_anchor(window_anchor, *pos, *orientation, (*w, *h));
+                    let (clip_x, clip_y, clip_w, clip_h) =
+                        rect_to_clip_space(screen_pos, (*w, *h), screen_size);
+                    draws.push((idx, clip_x, clip_y, clip_w, clip_h));
+                }
+            }
+            draws
+        };
+
+        for (idx, clip_x, clip_y, clip_w, clip_h) in button_draws {
+            let bind_group = &self.button_bind_groups[idx].1;
+            sprite_renderer.draw(
+                render_pass,
+                bind_group,
+                queue,
+                clip_x,
+                clip_y,
+                clip_w,
+                clip_h,
+            );
+        }
+
+        // Draw additional icons (score icon, etc.)
+        for icon in &self.speed_controls_layout.icons {
+            if let Some(idx) = self
+                .speed_icon_bind_groups
+                .iter()
+                .position(|(sprite, _, _, _)| sprite == &icon.sprite)
+            {
+                let (_, _, w, h) = &self.speed_icon_bind_groups[idx];
+                let screen_pos =
+                    position_from_anchor(window_anchor, icon.position, icon.orientation, (*w, *h));
+                let (clip_x, clip_y, clip_w, clip_h) =
+                    rect_to_clip_space(screen_pos, (*w, *h), screen_size);
+                let bind_group = &self.speed_icon_bind_groups[idx].1;
+                sprite_renderer.draw(
+                    render_pass,
+                    bind_group,
+                    queue,
+                    clip_x,
+                    clip_y,
+                    clip_w,
+                    clip_h,
+                );
+            }
+        }
+
+        // Draw speed indicator
+        if let Some(ref bind_group) = self.speed_bind_group {
+            // Select frame based on state
+            // EU4 speed_indicator.dds: frames 0-4 = speeds 1-5, frame 5 = paused
+            let frame = if state.paused {
+                5
+            } else {
+                (state.speed.saturating_sub(1)).min(4)
+            };
+
+            // Speed indicator position relative to window anchor
+            let speed_screen_pos = position_from_anchor(
+                window_anchor,
+                self.speed_controls_layout.speed_pos,
+                self.speed_controls_layout.speed_orientation,
+                self.speed_size,
+            );
+
+            // Get UVs for this frame
+            if let Some(sprite) = self.gfx_db.get(&self.speed_controls_layout.speed_sprite) {
+                let (u_min, v_min, u_max, v_max) = sprite.frame_uv(frame);
+
+                let (clip_x, clip_y, clip_w, clip_h) =
+                    rect_to_clip_space(speed_screen_pos, self.speed_size, screen_size);
+
+                sprite_renderer.draw_uv(
+                    render_pass,
+                    bind_group,
+                    queue,
+                    clip_x,
+                    clip_y,
+                    clip_w,
+                    clip_h,
+                    u_min,
+                    v_min,
+                    u_max,
+                    v_max,
+                );
+            }
+        }
+
+        // Draw date text using bitmap font (on top of buttons)
+        // Text position relative to window anchor
+        let text_box_size = (
+            self.speed_controls_layout.date_max_width,
+            self.speed_controls_layout.date_max_height,
+        );
+        let date_screen_pos = position_from_anchor(
+            window_anchor,
+            self.speed_controls_layout.date_pos,
+            self.speed_controls_layout.date_orientation,
+            text_box_size,
+        );
+
+        // Render text using bitmap font
+        if let Some(ref font_bind_group) = self.font_bind_group {
+            let font_name = &self.speed_controls_layout.date_font;
+            if let Some(loaded) = self.font_cache.get(font_name, device, queue) {
+                let font = &loaded.font;
+
+                // Measure text width for centering
+                let text_width = font.measure_width(&state.date);
+
+                // Apply border/padding
+                // In EU4, borderSize.y is top offset, format=centre is horizontal only
+                let border = self.speed_controls_layout.date_border_size;
+
+                // Center horizontally within text box
+                let start_x = date_screen_pos.0 + (text_box_size.0 as f32 - text_width) / 2.0;
+                // Vertical: use borderSize.y as top offset (not centering)
+                let start_y = date_screen_pos.1 + border.1 as f32;
+
+                let mut cursor_x = start_x;
+
+                for c in state.date.chars() {
+                    if let Some(glyph) = font.get_glyph(c) {
+                        if glyph.width > 0 && glyph.height > 0 {
+                            let glyph_x = cursor_x + glyph.xoffset as f32;
+                            let glyph_y = start_y + glyph.yoffset as f32;
+
+                            let (u_min, v_min, u_max, v_max) = font.glyph_uv(glyph);
+
+                            let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
+                                (glyph_x, glyph_y),
+                                (glyph.width, glyph.height),
+                                screen_size,
+                            );
+
+                            sprite_renderer.draw_uv(
+                                render_pass,
+                                font_bind_group,
+                                queue,
+                                clip_x,
+                                clip_y,
+                                clip_w,
+                                clip_h,
+                                u_min,
+                                v_min,
+                                u_max,
+                                v_max,
+                            );
+                        }
+                        cursor_x += glyph.xadvance as f32;
+                    }
+                }
+            }
+        }
+
+        // Register hit boxes for speed controls from parsed button positions
+        for (name, pos, orientation, sprite_name) in &self.speed_controls_layout.buttons {
+            // Get button size from sprite dimensions if available
+            let button_size = self
+                .gfx_db
+                .get(sprite_name)
+                .and_then(|sprite| {
+                    self.sprite_cache
+                        .get_dimensions(&sprite.texture_file)
+                        .map(|(w, h)| (w as f32, h as f32))
+                })
+                .unwrap_or((32.0, 32.0)); // Fallback if sprite not found
+
+            let button_screen_pos = position_from_anchor(
+                window_anchor,
+                *pos,
+                *orientation,
+                (button_size.0 as u32, button_size.1 as u32),
+            );
+
+            let hit_box = HitBox {
+                x: button_screen_pos.0,
+                y: button_screen_pos.1,
+                width: button_size.0,
+                height: button_size.1,
+            };
+
+            // Map button names to action names
+            let action_name = match name.as_str() {
+                "button_speedup" => "speed_up",
+                "button_speeddown" => "speed_down",
+                "button_pause" => "pause",
+                _ => name.as_str(),
+            };
+
+            self.hit_boxes.push((action_name.to_string(), hit_box));
+        }
+    }
+
+    /// Handle a click at screen coordinates.
+    /// Returns an action if a GUI element was clicked.
+    pub fn handle_click(&self, x: f32, y: f32, current_state: &GuiState) -> Option<GuiAction> {
+        for (name, hit_box) in &self.hit_boxes {
+            if hit_box.contains(x, y) {
+                return match name.as_str() {
+                    "speed_up" => {
+                        let new_speed = (current_state.speed + 1).min(5);
+                        Some(GuiAction::SetSpeed(new_speed))
+                    }
+                    "speed_down" => {
+                        let new_speed = current_state.speed.saturating_sub(1).max(1);
+                        Some(GuiAction::SetSpeed(new_speed))
+                    }
+                    "pause" => Some(GuiAction::TogglePause),
+                    _ => None,
+                };
+            }
+        }
+        None
+    }
+
+    /// Render only the speed controls component (for isolated testing).
+    #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_speed_controls_only<'a>(
+        &'a mut self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        sprite_renderer: &'a SpriteRenderer,
+        state: &GuiState,
+        screen_size: (u32, u32),
+    ) {
+        self.ensure_textures(device, queue, sprite_renderer);
+        self.ensure_font(device, queue, sprite_renderer);
+
+        // Place speed controls in center of screen for testing
+        let window_anchor = (screen_size.0 as f32 / 2.0, screen_size.1 as f32 / 2.0);
+
+        // Draw background
+        if let Some(ref bind_group) = self.bg_bind_group {
+            let bg_screen_pos = position_from_anchor(
+                window_anchor,
+                self.speed_controls_layout.bg_pos,
+                self.speed_controls_layout.bg_orientation,
+                self.bg_size,
+            );
+            let (clip_x, clip_y, clip_w, clip_h) =
+                rect_to_clip_space(bg_screen_pos, self.bg_size, screen_size);
+            sprite_renderer.draw(
+                render_pass,
+                bind_group,
+                queue,
+                clip_x,
+                clip_y,
+                clip_w,
+                clip_h,
+            );
+        }
+
+        // Draw buttons
+        for (name, pos, orientation, _) in &self.speed_controls_layout.buttons {
+            if let Some(idx) = self
+                .button_bind_groups
+                .iter()
+                .position(|(n, _, _, _)| n == name)
+            {
+                let (_, _, w, h) = &self.button_bind_groups[idx];
+                let screen_pos = position_from_anchor(window_anchor, *pos, *orientation, (*w, *h));
+                let (clip_x, clip_y, clip_w, clip_h) =
+                    rect_to_clip_space(screen_pos, (*w, *h), screen_size);
+                let bind_group = &self.button_bind_groups[idx].1;
+                sprite_renderer.draw(
+                    render_pass,
+                    bind_group,
+                    queue,
+                    clip_x,
+                    clip_y,
+                    clip_w,
+                    clip_h,
+                );
+            }
+        }
+
+        // Draw additional icons (score icon, etc.)
+        for icon in &self.speed_controls_layout.icons {
+            if let Some(idx) = self
+                .speed_icon_bind_groups
+                .iter()
+                .position(|(sprite, _, _, _)| sprite == &icon.sprite)
+            {
+                let (_, _, w, h) = &self.speed_icon_bind_groups[idx];
+                let screen_pos =
+                    position_from_anchor(window_anchor, icon.position, icon.orientation, (*w, *h));
+                let (clip_x, clip_y, clip_w, clip_h) =
+                    rect_to_clip_space(screen_pos, (*w, *h), screen_size);
+                let bind_group = &self.speed_icon_bind_groups[idx].1;
+                sprite_renderer.draw(
+                    render_pass,
+                    bind_group,
+                    queue,
+                    clip_x,
+                    clip_y,
+                    clip_w,
+                    clip_h,
+                );
+            }
+        }
+
+        // Update speed controls widgets with current state
+        if let Some(ref mut speed_controls) = self.speed_controls {
+            speed_controls.update(&state.date, state.speed as u8, state.paused);
+        }
+
+        // Draw speed indicator
+        if let Some(ref bind_group) = self.speed_bind_group
+            && let Some(ref speed_controls) = self.speed_controls
+        {
+            let speed_screen_pos = position_from_anchor(
+                window_anchor,
+                speed_controls.speed_indicator.position(),
+                speed_controls.speed_indicator.orientation(),
+                self.speed_size,
+            );
+
+            if let Some(sprite) = self.gfx_db.get(&self.speed_controls_layout.speed_sprite) {
+                let frame = speed_controls.speed_indicator.frame();
+                let (u_min, v_min, u_max, v_max) = sprite.frame_uv(frame);
+                let (clip_x, clip_y, clip_w, clip_h) =
+                    rect_to_clip_space(speed_screen_pos, self.speed_size, screen_size);
+                sprite_renderer.draw_uv(
+                    render_pass,
+                    bind_group,
+                    queue,
+                    clip_x,
+                    clip_y,
+                    clip_w,
+                    clip_h,
+                    u_min,
+                    v_min,
+                    u_max,
+                    v_max,
+                );
+            }
+        }
+
+        // Draw date text
+        if let Some(ref font_bind_group) = self.font_bind_group
+            && let Some(ref speed_controls) = self.speed_controls
+        {
+            let font_name = &self.speed_controls_layout.date_font;
+            if let Some(loaded) = self.font_cache.get(font_name, device, queue) {
+                let font = &loaded.font;
+                let text = speed_controls.date_text.text();
+                if !text.is_empty() {
+                    let text_box_size = speed_controls.date_text.max_dimensions();
+                    let text_screen_pos = position_from_anchor(
+                        window_anchor,
+                        speed_controls.date_text.position(),
+                        speed_controls.date_text.orientation(),
+                        text_box_size,
+                    );
+
+                    // Measure text width for centering
+                    let text_width = font.measure_width(text);
+                    let border = speed_controls.date_text.border_size();
+                    let start_x = text_screen_pos.0 + (text_box_size.0 as f32 - text_width) / 2.0;
+                    let start_y = text_screen_pos.1 + border.1 as f32;
+                    let mut cursor_x = start_x;
+
+                    for c in text.chars() {
+                        if let Some(glyph) = font.get_glyph(c) {
+                            if glyph.width > 0 && glyph.height > 0 {
+                                let glyph_x = cursor_x + glyph.xoffset as f32;
+                                let glyph_y = start_y + glyph.yoffset as f32;
+                                let (u_min, v_min, u_max, v_max) = font.glyph_uv(glyph);
+                                let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
+                                    (glyph_x, glyph_y),
+                                    (glyph.width, glyph.height),
+                                    screen_size,
+                                );
+                                sprite_renderer.draw_uv(
+                                    render_pass,
+                                    font_bind_group,
+                                    queue,
+                                    clip_x,
+                                    clip_y,
+                                    clip_w,
+                                    clip_h,
+                                    u_min,
+                                    v_min,
+                                    u_max,
+                                    v_max,
+                                );
+                            }
+                            cursor_x += glyph.xadvance as f32;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Render only the topbar component (for isolated testing).
+    #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_topbar_only<'a>(
+        &'a mut self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        sprite_renderer: &'a SpriteRenderer,
+        state: &GuiState,
+        screen_size: (u32, u32),
+    ) {
+        self.ensure_topbar_textures(device, queue, sprite_renderer);
+        self.ensure_font(device, queue, sprite_renderer);
+
+        // Use standard topbar anchor (UPPER_LEFT at position 0,0)
+        let topbar_anchor = get_window_anchor(
+            self.topbar_layout.window_pos,
+            self.topbar_layout.orientation,
+            screen_size,
+        );
+
+        // Draw backgrounds
+        for icon in &self.topbar_layout.backgrounds {
+            if let Some(idx) = self
+                .topbar_icons
+                .iter()
+                .position(|(name, _, _, _)| name == &icon.sprite)
+            {
+                let (_, _, w, h) = &self.topbar_icons[idx];
+                let screen_pos =
+                    position_from_anchor(topbar_anchor, icon.position, icon.orientation, (*w, *h));
+                let (clip_x, clip_y, clip_w, clip_h) =
+                    rect_to_clip_space(screen_pos, (*w, *h), screen_size);
+                let bind_group = &self.topbar_icons[idx].1;
+                sprite_renderer.draw(
+                    render_pass,
+                    bind_group,
+                    queue,
+                    clip_x,
+                    clip_y,
+                    clip_w,
+                    clip_h,
+                );
+            }
+        }
+
+        // Draw icons
+        for icon in &self.topbar_layout.icons {
+            if let Some(idx) = self
+                .topbar_icons
+                .iter()
+                .position(|(name, _, _, _)| name == &icon.sprite)
+            {
+                let (_, _, w, h) = &self.topbar_icons[idx];
+                let screen_pos =
+                    position_from_anchor(topbar_anchor, icon.position, icon.orientation, (*w, *h));
+                let (clip_x, clip_y, clip_w, clip_h) =
+                    rect_to_clip_space(screen_pos, (*w, *h), screen_size);
+                let bind_group = &self.topbar_icons[idx].1;
+                sprite_renderer.draw(
+                    render_pass,
+                    bind_group,
+                    queue,
+                    clip_x,
+                    clip_y,
+                    clip_w,
+                    clip_h,
+                );
+            }
+        }
+
+        // Draw texts if country data is available
+        if let Some(ref country) = state.country
+            && let Some(ref font_bind_group) = self.font_bind_group
+        {
+            // Update topbar widgets with current country state
+            if let Some(ref mut topbar) = self.topbar {
+                topbar.update(country);
+            }
+
+            let font_name = &self.speed_controls_layout.date_font; // vic_18
+            if let Some(loaded) = self.font_cache.get(font_name, device, queue)
+                && let Some(ref topbar) = self.topbar
+            {
+                let font = &loaded.font;
+
+                // Helper closure to render a single text widget
+                let mut render_text = |widget: &primitives::GuiText| {
+                    let value = widget.text();
+                    if value.is_empty() {
+                        return; // Skip empty/placeholder widgets
+                    }
+
+                    let text_screen_pos = position_from_anchor(
+                        topbar_anchor,
+                        widget.position(),
+                        widget.orientation(),
+                        widget.max_dimensions(),
+                    );
+
+                    // Measure text width for alignment
+                    let text_width = font.measure_width(value);
+
+                    // Calculate starting X based on format (alignment)
+                    let border_size = widget.border_size();
+                    let (max_width, _max_height) = widget.max_dimensions();
+                    let start_x = match widget.format() {
+                        types::TextFormat::Left => text_screen_pos.0 + border_size.0 as f32,
+                        types::TextFormat::Center => {
+                            text_screen_pos.0 + (max_width as f32 - text_width) / 2.0
+                        }
+                        types::TextFormat::Right => {
+                            text_screen_pos.0 + max_width as f32 - text_width - border_size.0 as f32
+                        }
+                    };
+
+                    let mut cursor_x = start_x;
+                    let cursor_y = text_screen_pos.1 + border_size.1 as f32;
+
+                    for c in value.chars() {
+                        if let Some(glyph) = font.get_glyph(c) {
+                            if glyph.width > 0 && glyph.height > 0 {
+                                let glyph_x = cursor_x + glyph.xoffset as f32;
+                                let glyph_y = cursor_y + glyph.yoffset as f32;
+                                let (u_min, v_min, u_max, v_max) = font.glyph_uv(glyph);
+                                let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
+                                    (glyph_x, glyph_y),
+                                    (glyph.width, glyph.height),
+                                    screen_size,
+                                );
+                                sprite_renderer.draw_uv(
+                                    render_pass,
+                                    font_bind_group,
+                                    queue,
+                                    clip_x,
+                                    clip_y,
+                                    clip_w,
+                                    clip_h,
+                                    u_min,
+                                    v_min,
+                                    u_max,
+                                    v_max,
+                                );
+                            }
+                            cursor_x += glyph.xadvance as f32;
+                        }
+                    }
+                };
+
+                // Render all topbar text widgets
+                render_text(&topbar.text_gold);
+                render_text(&topbar.text_manpower);
+                render_text(&topbar.text_sailors);
+                render_text(&topbar.text_stability);
+                render_text(&topbar.text_prestige);
+                render_text(&topbar.text_corruption);
+                render_text(&topbar.text_ADM);
+                render_text(&topbar.text_DIP);
+                render_text(&topbar.text_MIL);
+                render_text(&topbar.text_merchants);
+                render_text(&topbar.text_settlers);
+                render_text(&topbar.text_diplomats);
+                render_text(&topbar.text_missionaries);
+            }
+        }
+    }
+
+    /// Render only the country select panel (for isolated testing).
+    #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_country_select_only<'a>(
+        &'a mut self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        sprite_renderer: &'a SpriteRenderer,
+        country_state: &SelectedCountryState,
+        screen_size: (u32, u32),
+    ) {
+        self.ensure_country_select_textures(device, queue, sprite_renderer);
+        self.ensure_font(device, queue, sprite_renderer);
+
+        // Update panel widgets with current country state (Phase 3.5)
+        if let Some(ref mut panel) = self.country_select_panel {
+            panel.update(country_state);
+        }
+
+        // Window content area
+        let window_size = (
+            self.country_select_layout.window_size.0 as f32,
+            self.country_select_layout.window_size.1 as f32,
+        );
+
+        // Get border size from panel definition
+        let border_size = self
+            .gfx_db
+            .get_cornered_tile("GFX_country_selection_panel_bg")
+            .map(|p| (p.border_size.0 as f32, p.border_size.1 as f32))
+            .unwrap_or((32.0, 32.0));
+
+        // Calculate panel size to fit content: window + border padding
+        // The y_offset (40) positions content within the panel
+        let y_offset = self.country_select_layout.window_pos.1 as f32;
+
+        // Content extends beyond declared window_size (e.g., diplomacy label at y=402)
+        // Calculate actual content height from element positions
+        let max_content_y = self
+            .country_select_layout
+            .icons
+            .iter()
+            .map(|i| i.position.1)
+            .chain(
+                self.country_select_layout
+                    .texts
+                    .iter()
+                    .map(|t| t.position.1),
+            )
+            .max()
+            .unwrap_or(340) as f32
+            + 30.0; // Add padding for element height
+
+        let panel_size = (
+            window_size.0 + border_size.0 * 2.0, // content + left/right borders
+            y_offset + max_content_y + border_size.1, // y_offset + content + bottom border
+        );
+
+        // For isolated testing, center the panel on screen
+        let panel_top_left = (
+            (screen_size.0 as f32 - panel_size.0) / 2.0,
+            (screen_size.1 as f32 - panel_size.1) / 2.0,
+        );
+
+        // Content offset: border padding left, y_offset from top
+        let content_offset = (border_size.0, y_offset);
+
+        // Draw 9-slice panel background first (behind everything else)
+        if let Some(panel_bg) = self
+            .gfx_db
+            .get_cornered_tile("GFX_country_selection_panel_bg")
+            && let Some((ref bind_group, tex_w, tex_h)) = self.panel_bg_bind_group
+        {
+            sprite_renderer.draw_cornered_tile(
+                render_pass,
+                bind_group,
+                queue,
+                panel_top_left.0,
+                panel_top_left.1,
+                panel_size.0,
+                panel_size.1,
+                panel_bg.border_size.0 as f32,
+                panel_bg.border_size.1 as f32,
+                tex_w,
+                tex_h,
+                screen_size,
+            );
+        }
+
+        // Content anchor is panel top-left plus centering offset
+        let window_anchor = (
+            panel_top_left.0 + content_offset.0,
+            panel_top_left.1 + content_offset.1,
+        );
+
+        // Draw icons (with proper frame selection)
+        for icon in &self.country_select_layout.icons {
+            if let Some(idx) = self
+                .country_select_icons
+                .iter()
+                .position(|(name, _, _, _)| name == &icon.sprite)
+            {
+                let (sprite_name, bind_group, tex_w, tex_h) = &self.country_select_icons[idx];
+
+                // Get sprite info for frame count
+                let sprite = self.gfx_db.get(sprite_name);
+                let num_frames = sprite.map(|s| s.num_frames).unwrap_or(1);
+
+                // Determine frame: use panel widget for dynamic icons (Phase 3.5), else use layout
+                let frame = if let Some(ref panel) = self.country_select_panel {
+                    match icon.name.as_str() {
+                        "government_rank" => panel.government_rank.frame().min(num_frames - 1),
+                        "religion_icon" | "secondary_religion_icon" => {
+                            panel.religion_icon.frame().min(num_frames - 1)
+                        }
+                        "techgroup_icon" => panel.techgroup_icon.frame().min(num_frames - 1),
+                        _ => icon.frame.min(num_frames - 1),
+                    }
+                } else {
+                    // Fallback to old logic if panel not loaded (CI mode)
+                    match icon.name.as_str() {
+                        "government_rank" => (country_state.government_rank.saturating_sub(1)
+                            as u32)
+                            .min(num_frames - 1),
+                        "religion_icon" | "secondary_religion_icon" => {
+                            country_state.religion_frame.min(num_frames - 1)
+                        }
+                        "techgroup_icon" => country_state.tech_group_frame.min(num_frames - 1),
+                        _ => icon.frame.min(num_frames - 1),
+                    }
+                };
+
+                // Calculate per-frame dimensions
+                let (frame_w, frame_h) = if num_frames > 1 {
+                    // Horizontal strip
+                    (*tex_w / num_frames, *tex_h)
+                } else {
+                    (*tex_w, *tex_h)
+                };
+
+                // Apply scale factor
+                let scaled_w = (frame_w as f32 * icon.scale) as u32;
+                let scaled_h = (frame_h as f32 * icon.scale) as u32;
+
+                let screen_pos = position_from_anchor(
+                    window_anchor,
+                    icon.position,
+                    icon.orientation,
+                    (scaled_w, scaled_h),
+                );
+                let (clip_x, clip_y, clip_w, clip_h) =
+                    rect_to_clip_space(screen_pos, (scaled_w, scaled_h), screen_size);
+
+                // Calculate UVs for frame
+                let (u_min, v_min, u_max, v_max) = if let Some(s) = sprite {
+                    s.frame_uv(frame)
+                } else {
+                    (0.0, 0.0, 1.0, 1.0)
+                };
+
+                sprite_renderer.draw_uv(
+                    render_pass,
+                    bind_group,
+                    queue,
+                    clip_x,
+                    clip_y,
+                    clip_w,
+                    clip_h,
+                    u_min,
+                    v_min,
+                    u_max,
+                    v_max,
+                );
+            }
+        }
+
+        // Draw text labels
+        if let Some(ref font_bind_group) = self.font_bind_group {
+            // Try vic_18 font first, fall back to vic_22
+            let font_name = "vic_18";
+            if let Some(loaded) = self.font_cache.get(font_name, device, queue) {
+                let font = &loaded.font;
+
+                for text_elem in &self.country_select_layout.texts {
+                    // Get text value from panel widget (Phase 3.5), else use old logic
+                    let value = if let Some(ref panel) = self.country_select_panel {
+                        match text_elem.name.as_str() {
+                            "selected_nation_label" => {
+                                panel.selected_nation_label.text().to_string()
+                            }
+                            "selected_nation_status_label" => {
+                                panel.selected_nation_status_label.text().to_string()
+                            }
+                            "selected_fog" => panel.selected_fog.text().to_string(),
+                            "selected_ruler" => panel.selected_ruler.text().to_string(),
+                            "ruler_adm_value" => panel.ruler_adm_value.text().to_string(),
+                            "ruler_dip_value" => panel.ruler_dip_value.text().to_string(),
+                            "ruler_mil_value" => panel.ruler_mil_value.text().to_string(),
+                            "admtech_value" => panel.admtech_value.text().to_string(),
+                            "diptech_value" => panel.diptech_value.text().to_string(),
+                            "miltech_value" => panel.miltech_value.text().to_string(),
+                            "national_ideagroup_name" => {
+                                panel.national_ideagroup_name.text().to_string()
+                            }
+                            "ideas_value" => panel.ideas_value.text().to_string(),
+                            "provinces_value" => panel.provinces_value.text().to_string(),
+                            "economy_value" => panel.economy_value.text().to_string(),
+                            "fort_value" => panel.fort_value.text().to_string(),
+                            "diplomacy_banner_label" => {
+                                panel.diplomacy_banner_label.text().to_string()
+                            }
+                            _ => continue,
+                        }
+                    } else {
+                        // Fallback to old logic if panel not loaded (CI mode)
+                        match text_elem.name.as_str() {
+                            "selected_nation_label" => country_state.name.clone(),
+                            "selected_nation_status_label" => country_state.government_type.clone(),
+                            "selected_fog" => country_state.fog_status.clone(),
+                            "selected_ruler" => country_state.ruler_name.clone(),
+                            "ruler_adm_value" => format!("{}", country_state.ruler_adm),
+                            "ruler_dip_value" => format!("{}", country_state.ruler_dip),
+                            "ruler_mil_value" => format!("{}", country_state.ruler_mil),
+                            "admtech_value" => format!("{}", country_state.adm_tech),
+                            "diptech_value" => format!("{}", country_state.dip_tech),
+                            "miltech_value" => format!("{}", country_state.mil_tech),
+                            "national_ideagroup_name" => country_state.ideas_name.clone(),
+                            "ideas_value" => format!("{}", country_state.ideas_unlocked),
+                            "provinces_value" => format!("{}", country_state.province_count),
+                            "economy_value" => format!("{}", country_state.total_development),
+                            "fort_value" => format!("{}", country_state.fort_level),
+                            "diplomacy_banner_label" => country_state.diplomacy_header.clone(),
+                            _ => continue,
+                        }
+                    };
+
+                    // Skip empty strings
+                    if value.is_empty() {
+                        continue;
+                    }
+
+                    let text_screen_pos = position_from_anchor(
+                        window_anchor,
+                        text_elem.position,
+                        text_elem.orientation,
+                        (text_elem.max_width, text_elem.max_height),
+                    );
+
+                    let text_width = font.measure_width(&value);
+
+                    let start_x = match text_elem.format {
+                        types::TextFormat::Left => {
+                            text_screen_pos.0 + text_elem.border_size.0 as f32
+                        }
+                        types::TextFormat::Center => {
+                            text_screen_pos.0 + (text_elem.max_width as f32 - text_width) / 2.0
+                        }
+                        types::TextFormat::Right => {
+                            text_screen_pos.0 + text_elem.max_width as f32
+                                - text_width
+                                - text_elem.border_size.0 as f32
+                        }
+                    };
+
+                    let mut cursor_x = start_x;
+                    let cursor_y = text_screen_pos.1 + text_elem.border_size.1 as f32;
+
+                    for c in value.chars() {
+                        if let Some(glyph) = font.get_glyph(c) {
+                            if glyph.width > 0 && glyph.height > 0 {
+                                let glyph_x = cursor_x + glyph.xoffset as f32;
+                                let glyph_y = cursor_y + glyph.yoffset as f32;
+                                let (u_min, v_min, u_max, v_max) = font.glyph_uv(glyph);
+                                let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
+                                    (glyph_x, glyph_y),
+                                    (glyph.width, glyph.height),
+                                    screen_size,
+                                );
+                                sprite_renderer.draw_uv(
+                                    render_pass,
+                                    font_bind_group,
+                                    queue,
+                                    clip_x,
+                                    clip_y,
+                                    clip_w,
+                                    clip_h,
+                                    u_min,
+                                    v_min,
+                                    u_max,
+                                    v_max,
+                                );
+                            }
+                            cursor_x += glyph.xadvance as f32;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Render shield frame (without the actual masked flag which requires MaskedFlagRenderer)
+        // This shows the shield positioning for isolated testing
+        if let Some((ref shield_bind_group, overlay_w, overlay_h)) = self.shield_frame_bind_group
+            && let Some(shield) = self
+                .country_select_layout
+                .buttons
+                .iter()
+                .find(|b| b.name == "player_shield")
+        {
+            let shield_size = (overlay_w, overlay_h);
+            let screen_pos = position_from_anchor(
+                window_anchor,
+                shield.position,
+                shield.orientation,
+                shield_size,
+            );
+
+            let (clip_x, clip_y, clip_w, clip_h) =
+                rect_to_clip_space(screen_pos, shield_size, screen_size);
+
+            sprite_renderer.draw(
+                render_pass,
+                shield_bind_group,
+                queue,
+                clip_x,
+                clip_y,
+                clip_w,
+                clip_h,
+            );
+        }
+    }
+
+    /// Get the clip space rectangle for the player shield (flag position).
+    ///
+    /// Returns (x, y, width, height) in clip space if player_shield is defined,
+    /// or None if not found in the topbar layout.
+    pub fn get_player_shield_clip_rect(
+        &self,
+        screen_size: (u32, u32),
+        flag_size: (u32, u32),
+    ) -> Option<(f32, f32, f32, f32)> {
+        let shield = self.topbar_layout.player_shield.as_ref()?;
+
+        let topbar_anchor = get_window_anchor(
+            self.topbar_layout.window_pos,
+            self.topbar_layout.orientation,
+            screen_size,
+        );
+
+        let screen_pos = position_from_anchor(
+            topbar_anchor,
+            shield.position,
+            shield.orientation,
+            flag_size,
+        );
+
+        Some(rect_to_clip_space(screen_pos, flag_size, screen_size))
+    }
+
+    /// Get the shield mask texture view and dimensions for masked flag rendering.
+    /// Returns None if the mask hasn't been loaded yet.
+    pub fn get_shield_mask(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Option<(&wgpu::TextureView, u32, u32)> {
+        let mask_path = "gfx/interface/shield_fancy_mask.tga";
+        let result = self.sprite_cache.get(mask_path, device, queue);
+        if result.is_none() {
+            log::warn!("Failed to load shield mask from {}", mask_path);
+        }
+        result
+    }
+
+    /// Get the shield overlay texture view and dimensions for drawing frame on top of flag.
+    /// Returns None if the overlay hasn't been loaded yet.
+    pub fn get_shield_overlay(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Option<(&wgpu::TextureView, u32, u32)> {
+        let overlay_path = "gfx/interface/shield_fancy_overlay.dds";
+        self.sprite_cache.get(overlay_path, device, queue)
+    }
+
+    /// Get the thin shield mask texture view and dimensions for country select.
+    /// Returns None if the mask hasn't been loaded yet.
+    #[allow(dead_code)] // API for future masked flag rendering
+    pub fn get_thin_shield_mask(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Option<(&wgpu::TextureView, u32, u32)> {
+        let mask_path = "gfx/interface/shield_mask.tga";
+        self.sprite_cache.get(mask_path, device, queue)
+    }
+
+    /// Get the thin shield overlay (frame) texture view and dimensions.
+    /// Returns None if the overlay hasn't been loaded yet.
+    #[allow(dead_code)] // API for future masked flag rendering
+    pub fn get_thin_shield_overlay(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Option<(&wgpu::TextureView, u32, u32)> {
+        let overlay_path = "gfx/interface/shield_frame.dds";
+        self.sprite_cache.get(overlay_path, device, queue)
+    }
+
+    /// Get the clip space rectangle for the country select player shield.
+    ///
+    /// The panel_top_left is the screen position of the country select panel.
+    /// Returns (x, y, width, height) in clip space if player_shield button is defined.
+    #[allow(dead_code)] // API for future masked flag rendering
+    pub fn get_country_select_shield_clip_rect(
+        &self,
+        panel_top_left: (f32, f32),
+        content_offset: (f32, f32),
+        shield_size: (u32, u32),
+        screen_size: (u32, u32),
+    ) -> Option<(f32, f32, f32, f32)> {
+        // Find player_shield button
+        let shield = self
+            .country_select_layout
+            .buttons
+            .iter()
+            .find(|b| b.name == "player_shield")?;
+
+        // Window anchor is panel top-left plus content offset
+        let window_anchor = (
+            panel_top_left.0 + content_offset.0,
+            panel_top_left.1 + content_offset.1,
+        );
+
+        let screen_pos = position_from_anchor(
+            window_anchor,
+            shield.position,
+            shield.orientation,
+            shield_size,
+        );
+
+        Some(rect_to_clip_space(screen_pos, shield_size, screen_size))
+    }
+}
