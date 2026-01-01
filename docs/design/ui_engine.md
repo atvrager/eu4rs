@@ -583,12 +583,16 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
 ### Phase 8.5: Frontend Panel Rendering Integration
 *Objective: Wire all Phase 8 panels into the rendering pipeline.*
 
-- [ ] **8.5.1. Panel Loading & Binding**
-    - [ ] Load `CountrySelectLeftPanel` from frontend.gui (`left` window)
-    - [ ] Load `CountrySelectTopPanel` from frontend.gui (`top` window)
-    - [ ] Load `LobbyControlsPanel` from frontend.gui (`right` window)
-    - [ ] Store panels in `FrontendUI` or appropriate container
-    - [ ] Bind all panels during initialization (with CI-safe fallbacks)
+- [x] **8.5.1. Panel Loading & Binding** (✅ 2026-01-01)
+    - [x] Load `CountrySelectLeftPanel` from frontend.gui (`left` window)
+    - [x] Load `CountrySelectTopPanel` from frontend.gui (`top` window)
+    - [x] Load `LobbyControlsPanel` from frontend.gui (`right` window)
+    - [x] Store panels in `FrontendUI` container
+    - [x] Bind all panels during initialization (with CI-safe fallbacks)
+    - [x] Added `load_frontend_panels()` to `legacy_loaders.rs`
+    - [x] Added panel fields to `GuiRenderer` struct
+    - [x] Added `take_*` methods to transfer ownership to `FrontendUI`
+    - [x] Updated `main.rs` to populate `FrontendUI` with loaded panels
 - [ ] **8.5.2. Rendering Implementation**
     - [ ] Render left panel widgets:
         - [ ] Bookmarks listbox

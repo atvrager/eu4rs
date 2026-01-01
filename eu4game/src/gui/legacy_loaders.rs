@@ -399,6 +399,80 @@ pub(super) fn load_country_select_split(
     }
 }
 
+/// Load frontend panels from frontend.gui for Phase 8.5 integration.
+///
+/// Returns (left_window, top_window, right_window) as Option<GuiElement>.
+/// Returns None for any window not found (CI-safe).
+pub(super) fn load_frontend_panels(
+    game_path: &Path,
+    interner: &interner::StringInterner,
+) -> (Option<GuiElement>, Option<GuiElement>, Option<GuiElement>) {
+    let gui_path = game_path.join("interface/frontend.gui");
+
+    if !gui_path.exists() {
+        log::warn!("frontend.gui not found for panel loading");
+        return (None, None, None);
+    }
+
+    match parse_gui_file(&gui_path, interner) {
+        Ok(db) => {
+            // The left, top, right windows are nested inside country_selection_panel
+            // Search recursively through all top-level windows
+            let mut left = None;
+            let mut top = None;
+            let mut right = None;
+
+            for element in db.values() {
+                find_panels_recursive(element, &mut left, &mut top, &mut right);
+                // Early exit if we found all three
+                if left.is_some() && top.is_some() && right.is_some() {
+                    break;
+                }
+            }
+
+            if left.is_none() {
+                log::warn!("'left' window not found in frontend.gui");
+            }
+            if top.is_none() {
+                log::warn!("'top' window not found in frontend.gui");
+            }
+            if right.is_none() {
+                log::warn!("'right' window not found in frontend.gui");
+            }
+
+            (left, top, right)
+        }
+        Err(e) => {
+            log::warn!("Failed to parse frontend.gui for panels: {}", e);
+            (None, None, None)
+        }
+    }
+}
+
+/// Recursively search for left, top, and right windows in the GUI element tree.
+fn find_panels_recursive(
+    element: &GuiElement,
+    left: &mut Option<GuiElement>,
+    top: &mut Option<GuiElement>,
+    right: &mut Option<GuiElement>,
+) {
+    if let GuiElement::Window { name, children, .. } = element {
+        // Check if this is one of the panels we're looking for
+        if name == "left" && left.is_none() {
+            *left = Some(element.clone());
+        } else if name == "top" && top.is_none() {
+            *top = Some(element.clone());
+        } else if name == "right" && right.is_none() {
+            *right = Some(element.clone());
+        }
+
+        // Recurse into children
+        for child in children {
+            find_panels_recursive(child, left, top, right);
+        }
+    }
+}
+
 /// Recursively search for the singleplayer window and return both layout and root (Phase 3.5).
 fn find_singleplayer_window_in_node_split(
     element: &GuiElement,

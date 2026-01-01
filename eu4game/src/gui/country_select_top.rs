@@ -17,7 +17,7 @@ use eu4_macros::GuiWindow;
 /// - 10 map mode buttons arranged horizontally
 /// - Start date label (e.g., "The World in 1444")
 /// - Nation selection prompt label
-#[derive(GuiWindow)]
+#[derive(Debug, GuiWindow)]
 #[gui(window_name = "top")]
 pub struct CountrySelectTopPanel {
     // Map mode buttons (left to right)

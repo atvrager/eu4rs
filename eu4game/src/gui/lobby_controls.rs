@@ -17,7 +17,7 @@ use eu4_macros::GuiWindow;
 /// - Random country selection
 /// - Nation designer
 /// - Random new world toggle
-#[derive(GuiWindow)]
+#[derive(Debug, GuiWindow)]
 #[gui(window_name = "right")]
 pub struct LobbyControlsPanel {
     /// Main play button - starts the game with selected country

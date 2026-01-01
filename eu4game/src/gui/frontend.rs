@@ -4,6 +4,9 @@
 //! is handled by App's ScreenManager (single source of truth).
 
 use crate::gui::core::UiAction;
+use crate::gui::country_select_left::CountrySelectLeftPanel;
+use crate::gui::country_select_top::CountrySelectTopPanel;
+use crate::gui::lobby_controls::LobbyControlsPanel;
 use crate::gui::main_menu::MainMenuPanel;
 use crate::gui::ui_root::UiRoot;
 
@@ -15,19 +18,35 @@ use crate::gui::ui_root::UiRoot;
 pub struct FrontendUI {
     /// Main menu panel with navigation buttons.
     main_menu: MainMenuPanel,
+    /// Country selection left panel (bookmarks, saves, date, back button).
+    left_panel: Option<CountrySelectLeftPanel>,
+    /// Country selection top panel (map modes, year label, select prompt).
+    top_panel: Option<CountrySelectTopPanel>,
+    /// Lobby controls panel (play button, observe mode, etc.).
+    lobby_controls: Option<LobbyControlsPanel>,
     /// Input dispatcher and focus manager.
     ui_root: UiRoot,
 }
 
 impl FrontendUI {
-    /// Create a new frontend UI with the given main menu panel.
+    /// Create a new frontend UI with all panels.
+    ///
+    /// Phase 8.5.1: Now includes left, top, and lobby control panels.
     #[allow(dead_code)] // Reserved for Phase 6.1+ main loop integration
-    pub fn new(main_menu: MainMenuPanel) -> Self {
+    pub fn new(
+        main_menu: MainMenuPanel,
+        left_panel: Option<CountrySelectLeftPanel>,
+        top_panel: Option<CountrySelectTopPanel>,
+        lobby_controls: Option<LobbyControlsPanel>,
+    ) -> Self {
         let mut panel = main_menu;
         panel.init_actions();
 
         Self {
             main_menu: panel,
+            left_panel,
+            top_panel,
+            lobby_controls,
             ui_root: UiRoot::new(),
         }
     }
@@ -65,6 +84,42 @@ impl FrontendUI {
     pub fn ui_root_mut(&mut self) -> &mut UiRoot {
         &mut self.ui_root
     }
+
+    /// Access the left panel (for rendering).
+    #[allow(dead_code)] // Phase 8.5.2
+    pub fn left_panel(&self) -> Option<&CountrySelectLeftPanel> {
+        self.left_panel.as_ref()
+    }
+
+    /// Access the left panel mutably (for input/updates).
+    #[allow(dead_code)] // Phase 8.5.3
+    pub fn left_panel_mut(&mut self) -> Option<&mut CountrySelectLeftPanel> {
+        self.left_panel.as_mut()
+    }
+
+    /// Access the top panel (for rendering).
+    #[allow(dead_code)] // Phase 8.5.2
+    pub fn top_panel(&self) -> Option<&CountrySelectTopPanel> {
+        self.top_panel.as_ref()
+    }
+
+    /// Access the top panel mutably (for input/updates).
+    #[allow(dead_code)] // Phase 8.5.3
+    pub fn top_panel_mut(&mut self) -> Option<&mut CountrySelectTopPanel> {
+        self.top_panel.as_mut()
+    }
+
+    /// Access the lobby controls (for rendering).
+    #[allow(dead_code)] // Phase 8.5.2
+    pub fn lobby_controls(&self) -> Option<&LobbyControlsPanel> {
+        self.lobby_controls.as_ref()
+    }
+
+    /// Access the lobby controls mutably (for input/updates).
+    #[allow(dead_code)] // Phase 8.5.3
+    pub fn lobby_controls_mut(&mut self) -> Option<&mut LobbyControlsPanel> {
+        self.lobby_controls.as_mut()
+    }
 }
 
 #[cfg(test)]
@@ -87,7 +142,7 @@ mod tests {
     #[test]
     fn test_frontend_ui_initializes_actions() {
         let panel = create_test_panel();
-        let frontend = FrontendUI::new(panel);
+        let frontend = FrontendUI::new(panel, None, None, None);
 
         // Actions should be initialized
         assert_eq!(
@@ -100,7 +155,7 @@ mod tests {
     #[test]
     fn test_poll_main_menu_returns_none_without_clicks() {
         let panel = create_test_panel();
-        let mut frontend = FrontendUI::new(panel);
+        let mut frontend = FrontendUI::new(panel, None, None, None);
 
         // No clicks, should return None
         assert!(frontend.poll_main_menu().is_none());

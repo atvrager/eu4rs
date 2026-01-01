@@ -6,11 +6,14 @@
 #[cfg(test)]
 use super::country_select::SelectedCountryState;
 use super::country_select::{CountrySelectLayout, CountrySelectPanel};
+use super::country_select_left::CountrySelectLeftPanel;
+use super::country_select_top::CountrySelectTopPanel;
 use super::layout::{get_window_anchor, position_from_anchor, rect_to_clip_space};
 use super::layout_types::{SpeedControlsLayout, TopBarLayout};
 use super::legacy_loaders::{
-    load_country_select_split, load_speed_controls_split, load_topbar_split,
+    load_country_select_split, load_frontend_panels, load_speed_controls_split, load_topbar_split,
 };
+use super::lobby_controls::LobbyControlsPanel;
 use super::primitives;
 use super::speed_controls;
 use super::sprite_cache::{SpriteBorder, SpriteCache};
@@ -46,6 +49,15 @@ pub struct GuiRenderer {
     /// Macro-based country select panel widgets (Phase 3.5).
     #[allow(dead_code)] // Used in render_country_select_only (test-only)
     country_select_panel: Option<CountrySelectPanel>,
+    /// Country selection left panel (Phase 8.5.1).
+    #[allow(dead_code)] // Phase 8.5.2 rendering integration
+    left_panel: Option<CountrySelectLeftPanel>,
+    /// Country selection top panel (Phase 8.5.1).
+    #[allow(dead_code)] // Phase 8.5.2 rendering integration
+    top_panel: Option<CountrySelectTopPanel>,
+    /// Lobby controls panel (Phase 8.5.1).
+    #[allow(dead_code)] // Phase 8.5.2 rendering integration
+    lobby_controls: Option<LobbyControlsPanel>,
     /// Cached bind groups for frequently used sprites.
     bg_bind_group: Option<wgpu::BindGroup>,
     speed_bind_group: Option<wgpu::BindGroup>,
@@ -125,6 +137,12 @@ impl GuiRenderer {
         let country_select_panel =
             country_select_root.map(|root| CountrySelectPanel::bind(&root, &interner));
 
+        // Load frontend panels (Phase 8.5.1)
+        let (left_root, top_root, right_root) = load_frontend_panels(game_path, &interner);
+        let left_panel = left_root.map(|root| CountrySelectLeftPanel::bind(&root, &interner));
+        let top_panel = top_root.map(|root| CountrySelectTopPanel::bind(&root, &interner));
+        let lobby_controls = right_root.map(|root| LobbyControlsPanel::bind(&root, &interner));
+
         Self {
             gfx_db,
             interner,
@@ -136,6 +154,9 @@ impl GuiRenderer {
             topbar,
             country_select_layout,
             country_select_panel,
+            left_panel,
+            top_panel,
+            lobby_controls,
             bg_bind_group: None,
             speed_bind_group: None,
             font_bind_group: None,
@@ -149,6 +170,33 @@ impl GuiRenderer {
             bg_size: (1, 1),    // Updated from texture in ensure_textures()
             speed_size: (1, 1), // Updated from texture in ensure_textures()
         }
+    }
+
+    /// Take ownership of the country selection left panel (Phase 8.5.1).
+    ///
+    /// This is typically called once during FrontendUI initialization.
+    /// Returns None if already taken or not loaded.
+    #[allow(dead_code)] // Phase 8.5+ main.rs integration
+    pub fn take_left_panel(&mut self) -> Option<CountrySelectLeftPanel> {
+        self.left_panel.take()
+    }
+
+    /// Take ownership of the country selection top panel (Phase 8.5.1).
+    ///
+    /// This is typically called once during FrontendUI initialization.
+    /// Returns None if already taken or not loaded.
+    #[allow(dead_code)] // Phase 8.5+ main.rs integration
+    pub fn take_top_panel(&mut self) -> Option<CountrySelectTopPanel> {
+        self.top_panel.take()
+    }
+
+    /// Take ownership of the lobby controls panel (Phase 8.5.1).
+    ///
+    /// This is typically called once during FrontendUI initialization.
+    /// Returns None if already taken or not loaded.
+    #[allow(dead_code)] // Phase 8.5+ main.rs integration
+    pub fn take_lobby_controls(&mut self) -> Option<LobbyControlsPanel> {
+        self.lobby_controls.take()
     }
 
     /// Ensure textures are loaded and bind groups created.

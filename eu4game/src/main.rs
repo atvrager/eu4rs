@@ -287,7 +287,7 @@ impl App {
         }
 
         // Create EU4 GUI renderer
-        let gui_renderer = eu4data::path::detect_game_path().map(|game_path| {
+        let mut gui_renderer = eu4data::path::detect_game_path().map(|game_path| {
             log::info!("Initializing GUI renderer from: {}", game_path.display());
             gui::GuiRenderer::new(&game_path)
         });
@@ -298,8 +298,9 @@ impl App {
             log::warn!("GUI rendering unavailable (game path not found)");
         }
 
-        // Create FrontendUI with placeholder MainMenuPanel (Phase 6.1.3)
-        // In CI or without game assets, this creates a no-op placeholder panel
+        // Create FrontendUI with panels from GuiRenderer (Phase 8.5.1)
+        // Main menu remains a placeholder until Phase 8.5.4
+        // Left/top/lobby panels are loaded from frontend.gui when available
         let frontend_ui = {
             use gui::binder::Bindable;
             let panel = gui::main_menu::MainMenuPanel {
@@ -310,7 +311,19 @@ impl App {
                 settings: None,
                 exit: gui::primitives::GuiButton::placeholder(),
             };
-            Some(gui::frontend::FrontendUI::new(panel))
+
+            // Take panels from GuiRenderer (if available)
+            let (left, top, lobby) = if let Some(ref mut renderer) = gui_renderer {
+                (
+                    renderer.take_left_panel(),
+                    renderer.take_top_panel(),
+                    renderer.take_lobby_controls(),
+                )
+            } else {
+                (None, None, None)
+            };
+
+            Some(gui::frontend::FrontendUI::new(panel, left, top, lobby))
         };
 
         Self {
