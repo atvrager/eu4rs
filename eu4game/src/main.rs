@@ -974,78 +974,7 @@ impl App {
                     self.log_country_selection();
                 }
                 KeyCode::Enter => {
-                    if let Some((tag, _name, dev)) =
-                        self.playable_countries.get(self.country_selection_index)
-                    {
-                        log::info!(
-                            ">>> SELECTED: {} with {} development - GAME STARTING <<<",
-                            tag,
-                            dev
-                        );
-                        self.player_tag = Some(tag.clone());
-                        self.screen_manager.transition_to(screen::Screen::Playing);
-                        self.screen_manager.clear_history(); // Can't go back from gameplay
-                        self.lookup_dirty = true; // Update GPU lookup texture
-                        self.update_window_title();
-
-                        // Load the player's flag and create bind groups
-                        if let Some(flag_view) = self.flag_cache.get(tag, &self.device, &self.queue)
-                        {
-                            // Regular flag bind group (for fallback)
-                            self.player_flag_bind_group = Some(
-                                self.sprite_renderer
-                                    .create_bind_group(&self.device, flag_view),
-                            );
-
-                            // Also create masked flag bind group and overlay if available
-                            if let Some(gui_renderer) = &mut self.gui_renderer {
-                                // Masked flag bind group (flag + shield mask)
-                                if let Some((mask_view, mask_w, mask_h)) =
-                                    gui_renderer.get_shield_mask(&self.device, &self.queue)
-                                {
-                                    self.shield_mask_size = (mask_w, mask_h);
-                                    self.masked_flag_bind_group =
-                                        Some(self.sprite_renderer.create_masked_bind_group(
-                                            &self.device,
-                                            flag_view,
-                                            mask_view,
-                                        ));
-                                    log::info!(
-                                        "Created masked flag bind group for {} (mask {}x{})",
-                                        tag,
-                                        mask_w,
-                                        mask_h
-                                    );
-                                }
-
-                                // Shield overlay bind group
-                                if let Some((overlay_view, overlay_w, overlay_h)) =
-                                    gui_renderer.get_shield_overlay(&self.device, &self.queue)
-                                {
-                                    self.shield_overlay_size = (overlay_w, overlay_h);
-                                    self.shield_overlay_bind_group = Some(
-                                        self.sprite_renderer
-                                            .create_bind_group(&self.device, overlay_view),
-                                    );
-                                    log::info!(
-                                        "Created shield overlay bind group ({}x{})",
-                                        overlay_w,
-                                        overlay_h
-                                    );
-                                }
-
-                                // Cache the shield clip rect (position in topbar)
-                                // Use overlay size for positioning since that's the full frame
-                                let screen_size = (self.size.width, self.size.height);
-                                self.shield_clip_rect = gui_renderer.get_player_shield_clip_rect(
-                                    screen_size,
-                                    self.shield_overlay_size,
-                                );
-                            }
-
-                            log::info!("Loaded flag for {}", tag);
-                        }
-                    }
+                    self.start_game_with_selected_country();
                 }
                 _ => {}
             }
@@ -1709,9 +1638,13 @@ impl App {
             }
             MouseButton::Left => {
                 if state == ElementState::Pressed {
-                    // Check GUI clicks first
-                    if self.screen_manager.current() == screen::Screen::Playing
-                        && let Some(ref gui_renderer) = self.gui_renderer
+                    let current_screen = self.screen_manager.current();
+
+                    // Check GUI clicks for screens with UI panels
+                    if matches!(
+                        current_screen,
+                        screen::Screen::Playing | screen::Screen::SinglePlayer
+                    ) && let Some(ref gui_renderer) = self.gui_renderer
                     {
                         // Create current GUI state for hit testing
                         let gui_state = gui::GuiState {
@@ -1738,14 +1671,16 @@ impl App {
                         }
                     }
 
-                    // Regular province click
-                    let world_pos = self.camera.screen_to_world(
-                        self.cursor_pos.0,
-                        self.cursor_pos.1,
-                        self.config.width as f64,
-                        self.config.height as f64,
-                    );
-                    self.select_province_at(world_pos.0, world_pos.1);
+                    // Regular province click (only in Playing mode)
+                    if current_screen == screen::Screen::Playing {
+                        let world_pos = self.camera.screen_to_world(
+                            self.cursor_pos.0,
+                            self.cursor_pos.1,
+                            self.config.width as f64,
+                            self.config.height as f64,
+                        );
+                        self.select_province_at(world_pos.0, world_pos.1);
+                    }
                 }
             }
             _ => {}
@@ -1782,10 +1717,7 @@ impl App {
                 log::info!("Returning to main menu via Back button");
             }
             gui::GuiAction::StartGame => {
-                // Start game with selected country
-                // TODO: Validate country is selected
-                self.screen_manager.transition_to(Screen::Playing);
-                log::info!("Starting game via Play button");
+                self.start_game_with_selected_country();
             }
             gui::GuiAction::DateAdjust(part, delta) => {
                 // TODO: Implement date adjustment (Phase 9)
@@ -1797,6 +1729,81 @@ impl App {
             }
         }
         self.window.request_redraw();
+    }
+
+    /// Starts the game with the currently selected country.
+    ///
+    /// Called from both Enter key handler and Play button click.
+    fn start_game_with_selected_country(&mut self) {
+        if let Some((tag, _name, dev)) = self.playable_countries.get(self.country_selection_index) {
+            log::info!(
+                ">>> SELECTED: {} with {} development - GAME STARTING <<<",
+                tag,
+                dev
+            );
+            self.player_tag = Some(tag.clone());
+            self.screen_manager.transition_to(screen::Screen::Playing);
+            self.screen_manager.clear_history(); // Can't go back from gameplay
+            self.lookup_dirty = true; // Update GPU lookup texture
+            self.update_window_title();
+
+            // Load the player's flag and create bind groups
+            if let Some(flag_view) = self.flag_cache.get(tag, &self.device, &self.queue) {
+                // Regular flag bind group (for fallback)
+                self.player_flag_bind_group = Some(
+                    self.sprite_renderer
+                        .create_bind_group(&self.device, flag_view),
+                );
+
+                // Also create masked flag bind group and overlay if available
+                if let Some(gui_renderer) = &mut self.gui_renderer {
+                    // Masked flag bind group (flag + shield mask)
+                    if let Some((mask_view, mask_w, mask_h)) =
+                        gui_renderer.get_shield_mask(&self.device, &self.queue)
+                    {
+                        self.shield_mask_size = (mask_w, mask_h);
+                        self.masked_flag_bind_group =
+                            Some(self.sprite_renderer.create_masked_bind_group(
+                                &self.device,
+                                flag_view,
+                                mask_view,
+                            ));
+                        log::info!(
+                            "Created masked flag bind group for {} (mask {}x{})",
+                            tag,
+                            mask_w,
+                            mask_h
+                        );
+                    }
+
+                    // Shield overlay bind group
+                    if let Some((overlay_view, overlay_w, overlay_h)) =
+                        gui_renderer.get_shield_overlay(&self.device, &self.queue)
+                    {
+                        self.shield_overlay_size = (overlay_w, overlay_h);
+                        self.shield_overlay_bind_group = Some(
+                            self.sprite_renderer
+                                .create_bind_group(&self.device, overlay_view),
+                        );
+                        log::info!(
+                            "Created shield overlay bind group ({}x{})",
+                            overlay_w,
+                            overlay_h
+                        );
+                    }
+
+                    // Cache the shield clip rect (position in topbar)
+                    // Use overlay size for positioning since that's the full frame
+                    let screen_size = (self.size.width, self.size.height);
+                    self.shield_clip_rect = gui_renderer
+                        .get_player_shield_clip_rect(screen_size, self.shield_overlay_size);
+                }
+
+                log::info!("Loaded flag for {}", tag);
+            }
+        } else {
+            log::warn!("No country selected - cannot start game");
+        }
     }
 
     /// Handles cursor movement. Returns true if a redraw is needed.

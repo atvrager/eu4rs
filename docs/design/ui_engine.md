@@ -2,7 +2,7 @@
 
 **Status**: Draft
 **Date**: 2025-12-31
-**Last Updated**: 2026-01-01 (Phase 8.5.2 button text rendering complete)
+**Last Updated**: 2026-01-01 (Phase 8.5.3 input routing for Back/Play buttons)
 **Objective**: Create a scalable, type-safe, and mod-friendly system for rendering EU4-style UI panels.
 
 ## 1. Problem Statement
@@ -608,17 +608,17 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] Fix UI overlap bug: separate render paths for SinglePlayer vs Playing screens
     - [x] Add `GuiTestHarness` for headless testing with direct state manipulation
     - [x] Add state machine unit tests with 1920x1080 golden images
-- [ ] **8.5.3. Input Routing & Action Handling**
-    - [ ] Route input events to left panel:
-        - [ ] Listbox clicks (bookmarks, saves)
-        - [ ] Date adjustment buttons
-        - [ ] Back button click → `UiAction::Back`
-    - [ ] Route input events to top panel:
-        - [ ] Map mode button clicks → `UiAction::SetMapMode(mode)`
-    - [ ] Route input events to lobby controls:
-        - [ ] Play button click → `UiAction::StartGame`
-    - [ ] Poll all panel `update()` methods in main event loop
-    - [ ] Handle returned `UiAction` variants (already have handlers in main.rs)
+- [~] **8.5.3. Input Routing & Action Handling** (🚧 2026-01-01)
+    - [~] Route input events to left panel:
+        - [x] Date adjustment buttons - hit boxes registered (Phase 9 for action logic)
+        - [x] Back button click → `UiAction::Back` ✅
+        - *Listbox clicks moved to Phase 8.6.1/8.6.2 (after listboxes are rendered)*
+    - [x] Route input events to top panel:
+        - [x] Map mode button clicks → `UiAction::SetMapMode(mode)` - hit boxes registered
+    - [x] Route input events to lobby controls:
+        - [x] Play button click → `UiAction::StartGame` ✅
+    - [x] Enable GUI click handling for SinglePlayer screen
+    - [x] Refactored `start_game_with_selected_country()` for code reuse
 - [ ] **8.5.4. Additional Lobby Controls**
     - [ ] Bind observe_mode_button (GuiCheckbox)
     - [ ] Bind random_country_button (GuiButton)
