@@ -510,11 +510,14 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
 ### Phase 7: Listbox Support
 *Objective: Enable scrollable lists for country/save selection.*
 
-- [ ] **7.1. Parser Support**
-    - [ ] Parse `listboxType` element in GUI parser
-    - [ ] Extract: name, position, size, orientation, spacing, scrollbartype
-    - [ ] Parse `scrollbarType` definitions from core.gui
-    - [ ] Store listbox definitions in WindowDatabase
+- [x] **7.1. Parser Support** ✅ (2025-12-31)
+    - [x] Added `Listbox` variant to GuiElement enum
+    - [x] Added `Scrollbar` variant to GuiElement enum
+    - [x] Implemented `parse_listbox_type()` function
+    - [x] Implemented `parse_scrollbar_type()` function
+    - [x] Parse fields: name, position, size, orientation, spacing, scrollbartype, background
+    - [x] Parse scrollbar fields: name, position, size, max_value, track_sprite, slider_sprite
+    - [x] Listbox and scrollbar definitions stored in WindowDatabase via GuiElement enum
 - [ ] **7.2. Entry Templates**
     - [ ] Parse entry template windows (e.g., `savegameentry`, `interesting_country`)
     - [ ] Support multiple widget types in entry: icon, text, button, checkbox

@@ -2304,6 +2304,12 @@ fn extract_country_select(
             GuiElement::EditBox { .. } => {
                 // Skip editboxes for now (not used in country select)
             }
+            GuiElement::Listbox { .. } => {
+                // Skip listboxes for now (Phase 7 - not yet implemented in country select)
+            }
+            GuiElement::Scrollbar { .. } => {
+                // Skip scrollbars for now (Phase 7 - not yet implemented in country select)
+            }
         }
     }
 

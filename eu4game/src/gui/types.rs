@@ -197,6 +197,32 @@ pub enum GuiElement {
         /// Maximum text length.
         max_characters: u32,
     },
+    /// Scrollable list (Phase 7).
+    Listbox {
+        name: String,
+        position: (i32, i32),
+        size: (u32, u32),
+        orientation: Orientation,
+        /// Spacing between list items.
+        spacing: i32,
+        /// Name of the scrollbar to use.
+        scrollbar_type: Option<String>,
+        /// Background sprite (optional).
+        background: Option<String>,
+    },
+    /// Scrollbar widget (Phase 7).
+    Scrollbar {
+        name: String,
+        position: (i32, i32),
+        size: (u32, u32),
+        orientation: Orientation,
+        /// Maximum scroll range.
+        max_value: i32,
+        /// Sprite for track background.
+        track_sprite: Option<String>,
+        /// Sprite for slider handle.
+        slider_sprite: Option<String>,
+    },
 }
 
 impl GuiElement {
@@ -209,6 +235,8 @@ impl GuiElement {
             GuiElement::Button { name, .. } => name,
             GuiElement::Checkbox { name, .. } => name,
             GuiElement::EditBox { name, .. } => name,
+            GuiElement::Listbox { name, .. } => name,
+            GuiElement::Scrollbar { name, .. } => name,
         }
     }
 
@@ -221,6 +249,8 @@ impl GuiElement {
             GuiElement::Button { position, .. } => *position,
             GuiElement::Checkbox { position, .. } => *position,
             GuiElement::EditBox { position, .. } => *position,
+            GuiElement::Listbox { position, .. } => *position,
+            GuiElement::Scrollbar { position, .. } => *position,
         }
     }
 
@@ -233,6 +263,8 @@ impl GuiElement {
             GuiElement::Button { orientation, .. } => *orientation,
             GuiElement::Checkbox { orientation, .. } => *orientation,
             GuiElement::EditBox { orientation, .. } => *orientation,
+            GuiElement::Listbox { orientation, .. } => *orientation,
+            GuiElement::Scrollbar { orientation, .. } => *orientation,
         }
     }
 

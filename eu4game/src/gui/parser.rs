@@ -365,6 +365,16 @@ fn parse_window_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
                         children.push(editbox);
                     }
                 }
+                "listboxType" => {
+                    if let Some(listbox) = parse_listbox_type(get_assignment_value(child)) {
+                        children.push(listbox);
+                    }
+                }
+                "scrollbarType" => {
+                    if let Some(scrollbar) = parse_scrollbar_type(get_assignment_value(child)) {
+                        children.push(scrollbar);
+                    }
+                }
                 "windowType" => {
                     if let Some(window) = parse_window_type(get_assignment_value(child)) {
                         children.push(window);
@@ -672,6 +682,134 @@ fn parse_editbox_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
         font,
         orientation,
         max_characters,
+    })
+}
+
+/// Parse a listboxType block (Phase 7).
+fn parse_listbox_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
+    let node = node?;
+
+    let mut name = String::new();
+    let mut position = (0i32, 0i32);
+    let mut size = (100u32, 100u32);
+    let mut orientation = Orientation::UpperLeft;
+    let mut spacing = 0i32;
+    let mut scrollbar_type = None;
+    let mut background = None;
+
+    for child in &node.children {
+        if let EU4TxtAstItem::Assignment = &child.entry
+            && let Some(key) = get_assignment_key(child)
+        {
+            match key.as_str() {
+                "name" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        name = s;
+                    }
+                }
+                "position" => {
+                    position = parse_position(get_assignment_value(child));
+                }
+                "size" => {
+                    size = parse_size(get_assignment_value(child));
+                }
+                "Orientation" | "orientation" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        orientation = Orientation::from_str(&s);
+                    }
+                }
+                "spacing" => {
+                    if let Some(n) = get_int_value(get_assignment_value(child)) {
+                        spacing = n;
+                    }
+                }
+                "scrollbartype" | "scrollbarType" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        scrollbar_type = Some(s);
+                    }
+                }
+                "background" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        background = Some(s);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Some(GuiElement::Listbox {
+        name,
+        position,
+        size,
+        orientation,
+        spacing,
+        scrollbar_type,
+        background,
+    })
+}
+
+/// Parse a scrollbarType block (Phase 7).
+fn parse_scrollbar_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
+    let node = node?;
+
+    let mut name = String::new();
+    let mut position = (0i32, 0i32);
+    let mut size = (20u32, 100u32); // Default scrollbar dimensions
+    let mut orientation = Orientation::UpperLeft;
+    let mut max_value = 100i32;
+    let mut track_sprite = None;
+    let mut slider_sprite = None;
+
+    for child in &node.children {
+        if let EU4TxtAstItem::Assignment = &child.entry
+            && let Some(key) = get_assignment_key(child)
+        {
+            match key.as_str() {
+                "name" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        name = s;
+                    }
+                }
+                "position" => {
+                    position = parse_position(get_assignment_value(child));
+                }
+                "size" => {
+                    size = parse_size(get_assignment_value(child));
+                }
+                "Orientation" | "orientation" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        orientation = Orientation::from_str(&s);
+                    }
+                }
+                "maxValue" | "maxvalue" => {
+                    if let Some(n) = get_int_value(get_assignment_value(child)) {
+                        max_value = n;
+                    }
+                }
+                "track" | "trackSprite" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        track_sprite = Some(s);
+                    }
+                }
+                "slider" | "sliderSprite" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        slider_sprite = Some(s);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Some(GuiElement::Scrollbar {
+        name,
+        position,
+        size,
+        orientation,
+        max_value,
+        track_sprite,
+        slider_sprite,
     })
 }
 
