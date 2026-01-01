@@ -48,6 +48,9 @@ pub mod main_menu;
 pub mod bookmarks;
 pub mod country_select_left;
 
+// Phase 8.3: Country selection top panel
+pub mod country_select_top;
+
 // Refactored modules (moved from mod.rs to reduce file size)
 mod layout_types;
 mod legacy_loaders;
@@ -61,6 +64,8 @@ mod renderer;
 #[allow(unused_imports)] // SelectedCountryState used in tests
 pub use country_select::{CountrySelectLayout, CountrySelectPanel, SelectedCountryState};
 pub use country_select_left::CountrySelectLeftPanel;
+#[allow(unused_imports)] // WIP - not yet integrated
+pub use country_select_top::CountrySelectTopPanel;
 
 // Layout utilities
 #[allow(unused_imports)] // Public API
@@ -85,7 +90,11 @@ pub use renderer::GuiRenderer;
 #[allow(unused_imports)] // Public API
 pub use sprite_cache::{SpriteBorder, SpriteCache};
 
-// Core types
+// Core GUI types
+#[allow(unused_imports)] // Public API
+pub use core::{MapMode, UiAction};
+
+// Legacy types
 #[allow(unused_imports)] // Public API
 pub use types::{
     CountryResources, GfxDatabase, GuiAction, GuiElement, GuiState, HitBox, Orientation,

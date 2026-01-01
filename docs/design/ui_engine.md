@@ -568,11 +568,15 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] `DatePart` enum and `UiAction` variants for date adjustment
     - [x] Bookmark parsing in `eu4data` crate (re-exported by `eu4game`)
     - Note: Rendering integration pending (Phase 8.5+)
-- [ ] **8.3. Country Selection Top Panel** (`gui/frontend/country_select_top.rs`)
-    - [ ] `CountrySelectTopPanel` struct
-    - [ ] Map mode buttons (terrain, political, religion, etc.)
-    - [ ] Start date label ("The World in 1444")
-    - [ ] Nation selection prompt label
+- [x] **8.3. Country Selection Top Panel** (`gui/country_select_top.rs`) ✅ (2026-01-01)
+    - [x] `CountrySelectTopPanel` struct with `GuiWindow` derive
+    - [x] Map mode buttons (terrain, political, religion, empire, diplomacy, economy, region, culture, players)
+    - [x] Start date label (`year_label` - "The World in 1444")
+    - [x] Nation selection prompt label (`select_label`)
+    - [x] `MapMode` enum added to `gui/core.rs`
+    - [x] `UiAction::SetMapMode` variant for button clicks
+    - [x] `update()` method with button polling and year label update
+    - Note: Rendering integration pending (Phase 8.5+)
 - [ ] **8.4. Play Button & Game Start**
     - [ ] Bind play_button from lobby/singleplayer area
     - [ ] Click → validate country selected → start game

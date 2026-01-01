@@ -1223,6 +1223,11 @@ impl App {
                 // TODO: Implement save game selection when we have saves list
                 false
             }
+            UiAction::SetMapMode(mode) => {
+                log::info!("Set map mode: {:?}", mode);
+                // TODO: Implement map mode switching when rendering supports multiple modes
+                false
+            }
             UiAction::None => false,
         }
     }

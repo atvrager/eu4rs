@@ -208,6 +208,34 @@ pub enum DatePart {
 
 /// Actions that can result from UI interactions.
 ///
+/// Map mode selection options.
+///
+/// Each mode changes how the map is rendered (political borders, terrain, religion, etc.).
+/// Currently only Political mode is fully implemented in the rendering engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MapMode {
+    /// Terrain heightmap view
+    Terrain,
+    /// Political borders (default)
+    Political,
+    /// Trade nodes and routes
+    Trade,
+    /// Religious map
+    Religion,
+    /// HRE borders
+    Empire,
+    /// Diplomatic relations
+    Diplomacy,
+    /// Economic development
+    Economy,
+    /// Geographic regions
+    Region,
+    /// Culture groups
+    Culture,
+    /// Multiplayer player nations
+    Players,
+}
+
 /// Buttons and other interactive widgets return these actions to indicate
 /// what should happen (screen transitions, game state changes, etc.).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -234,6 +262,8 @@ pub enum UiAction {
     SelectBookmark(usize),
     /// Select a save game by index.
     SelectSaveGame(usize),
+    /// Change map rendering mode.
+    SetMapMode(MapMode),
     /// No action (button not yet wired up).
     None,
 }
