@@ -2,7 +2,7 @@
 
 **Status**: Draft
 **Date**: 2025-12-31
-**Last Updated**: 2026-01-01
+**Last Updated**: 2026-01-01 (Phase 8.5.2 rendering, input injection tests blocker)
 **Objective**: Create a scalable, type-safe, and mod-friendly system for rendering EU4-style UI panels.
 
 ## 1. Problem Statement
@@ -593,20 +593,23 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] Added panel fields to `GuiRenderer` struct
     - [x] Added `take_*` methods to transfer ownership to `FrontendUI`
     - [x] Updated `main.rs` to populate `FrontendUI` with loaded panels
-- [ ] **8.5.2. Rendering Implementation**
+- [x] **8.5.2. Rendering Implementation** (✅ 2026-01-01)
     - [ ] Render left panel widgets:
         - [ ] Bookmarks listbox
         - [ ] Save games listbox
         - [ ] Date widget (year editor, day/month label, up/down buttons)
-        - [ ] Back button
-    - [ ] Render top panel widgets:
-        - [ ] 10 map mode buttons
-        - [ ] Year label ("The World in 1444")
-        - [ ] Nation selection prompt label
-    - [ ] Render lobby controls widgets:
-        - [ ] Play button
-    - [ ] Handle panel visibility based on screen state
-    - [ ] Ensure proper z-ordering (top/left/right/lobby controls)
+        - [x] Back button
+    - [x] Render top panel widgets:
+        - [x] 10 map mode buttons
+        - [x] Year label ("The World in 1444")
+        - [x] Nation selection prompt label
+    - [x] Render lobby controls widgets:
+        - [x] Play button
+    - [x] Handle panel visibility based on screen state (screen-aware rendering)
+    - [x] Ensure proper z-ordering (top/left/right/lobby controls)
+    - [x] Fix UI overlap bug: separate render paths for SinglePlayer vs Playing screens
+    - [x] Add `GuiTestHarness` for headless testing with direct state manipulation
+    - [x] Add state machine unit tests with 1920x1080 golden images
 - [ ] **8.5.3. Input Routing & Action Handling**
     - [ ] Route input events to left panel:
         - [ ] Listbox clicks (bookmarks, saves)
@@ -726,7 +729,7 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [ ] Tooltip panel positioning (avoid screen edges)
     - [ ] Dynamic tooltip content binding
 
-### Phase 13: Code Health & Cleanup
+### Phase 13: Code Health & Cleanup ⛔ **BLOCKER FOR UI COMPLETION**
 *Objective: Remove transitional debt and stabilize the UI engine.*
 
 - [ ] **13.1. Dead Code Audit**
@@ -743,6 +746,20 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [ ] Add rustdoc comments to all public traits and methods
     - [ ] Ensure 100% test coverage for core binder and interner logic
     - [ ] Create integration tests for complete frontend flow
+- [ ] **13.4. Input Injection Testing** ⛔ **REQUIRED BEFORE UI WORKSTREAM COMPLETE**
+    - [ ] Extend `GuiTestHarness` with input injection methods:
+        - [ ] `inject_key(key: KeyCode, state: ElementState)` - simulate key press/release
+        - [ ] `inject_key_press(key: KeyCode)` - convenience for press+release
+        - [ ] `inject_mouse_click(pos: (f32, f32), button: MouseButton)` - simulate click
+        - [ ] `tick()` - process one frame (handle input, update state)
+    - [ ] Add integration tests that verify full input→state flows:
+        - [ ] Press 'S' at MainMenu → transition to SinglePlayer
+        - [ ] Press Escape at SinglePlayer → transition back to MainMenu
+        - [ ] Click Play button at SinglePlayer → transition to Playing
+        - [ ] Click map mode buttons → verify `SetMapMode` action emitted
+    - [ ] Generate golden images at key interaction points
+    - [ ] *Rationale*: Manual testing is impractical with timeouts; synthetic input
+          allows automated verification of the complete UI state machine
 
 ---
 
