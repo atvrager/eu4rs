@@ -64,9 +64,11 @@ impl CountrySelectTopPanel {
     ///
     /// Returns an action if any button was clicked.
     pub fn update(&mut self, _current_mode: MapMode, start_year: i32) -> Option<UiAction> {
-        // Update start date label
+        // Update text labels
         self.year_label
             .set_text(&format!("The World in {}", start_year));
+        self.select_label
+            .set_text("Click on the map to select a nation...");
 
         // Poll all map mode buttons and return action if clicked
         // Each button represents a specific map mode

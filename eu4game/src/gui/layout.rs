@@ -31,6 +31,11 @@ pub fn get_window_anchor(
 ///
 /// The element's orientation determines how its position offset is interpreted.
 /// Returns the top-left corner of the element in screen coordinates.
+///
+/// NOTE: For elements in fullscreen windows (like country_selection_panel) that have
+/// CENTER_UP orientation, use `position_from_anchor_with_screen` instead. This function
+/// doesn't handle the case where CENTER_UP elements should be relative to screen center
+/// rather than window anchor.
 pub fn position_from_anchor(
     anchor: (f32, f32),
     element_pos: (i32, i32),
@@ -57,6 +62,34 @@ pub fn position_from_anchor(
         Orientation::Center => (anchor.0 + px - ew / 2.0, anchor.1 + py),
         Orientation::CenterUp => (anchor.0 + px - ew / 2.0, anchor.1 + py),
         Orientation::CenterDown => (anchor.0 + px - ew / 2.0, anchor.1 + py),
+    }
+}
+
+/// Position an element relative to a window anchor, with screen size for CENTER_* orientations.
+///
+/// For elements with CENTER, CENTER_UP, or CENTER_DOWN orientations in fullscreen windows,
+/// the X coordinate should be relative to screen center, not the window anchor.
+/// This function handles that case correctly.
+pub fn position_from_anchor_with_screen(
+    anchor: (f32, f32),
+    element_pos: (i32, i32),
+    element_orientation: Orientation,
+    element_size: (u32, u32),
+    screen_size: (u32, u32),
+) -> (f32, f32) {
+    let (px, py) = (element_pos.0 as f32, element_pos.1 as f32);
+    let (ew, _eh) = (element_size.0 as f32, element_size.1 as f32);
+    let screen_center_x = screen_size.0 as f32 / 2.0;
+
+    match element_orientation {
+        Orientation::UpperLeft => (anchor.0 + px, anchor.1 + py),
+        Orientation::UpperRight => (anchor.0 + px, anchor.1 + py),
+        Orientation::LowerLeft => (anchor.0 + px, anchor.1 + py),
+        Orientation::LowerRight => (anchor.0 + px, anchor.1 + py),
+        // For CENTER_* orientations, use screen center for X coordinate
+        Orientation::Center => (screen_center_x + px - ew / 2.0, anchor.1 + py),
+        Orientation::CenterUp => (screen_center_x + px - ew / 2.0, anchor.1 + py),
+        Orientation::CenterDown => (screen_center_x + px - ew / 2.0, anchor.1 + py),
     }
 }
 

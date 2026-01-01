@@ -95,6 +95,14 @@ impl GuiText {
             .map(|d| d.border_size)
             .unwrap_or((0, 0))
     }
+
+    /// Get the font name (for rendering).
+    pub fn font(&self) -> &str {
+        self.element
+            .as_ref()
+            .map(|d| d.font.as_str())
+            .unwrap_or("vic_18")
+    }
 }
 
 impl Bindable for GuiText {

@@ -8,7 +8,9 @@ use super::country_select::SelectedCountryState;
 use super::country_select::{CountrySelectLayout, CountrySelectPanel};
 use super::country_select_left::CountrySelectLeftPanel;
 use super::country_select_top::CountrySelectTopPanel;
-use super::layout::{get_window_anchor, position_from_anchor, rect_to_clip_space};
+use super::layout::{
+    get_window_anchor, position_from_anchor, position_from_anchor_with_screen, rect_to_clip_space,
+};
 use super::layout_types::{SpeedControlsLayout, TopBarLayout};
 use super::legacy_loaders::{
     load_country_select_split, load_frontend_panels, load_speed_controls_split, load_topbar_split,
@@ -89,6 +91,8 @@ pub struct GuiRenderer {
     panel_bg_bind_group: Option<(wgpu::BindGroup, u32, u32)>,
     /// Cached shield frame bind group for country select.
     shield_frame_bind_group: Option<(wgpu::BindGroup, u32, u32)>,
+    /// Cached font bind groups by font name.
+    font_bind_groups: Vec<(String, wgpu::BindGroup)>,
     /// Hit boxes for interactive elements (screen pixel coords).
     hit_boxes: Vec<(String, HitBox)>,
     /// Background sprite dimensions.
@@ -198,6 +202,7 @@ impl GuiRenderer {
             country_select_icons: Vec::new(),
             panel_bg_bind_group: None,
             shield_frame_bind_group: None,
+            font_bind_groups: Vec::new(),
             hit_boxes: Vec::new(),
             bg_size: (1, 1),    // Updated from texture in ensure_textures()
             speed_size: (1, 1), // Updated from texture in ensure_textures()
@@ -944,6 +949,13 @@ impl GuiRenderer {
             self.lobby_controls.is_some()
         );
 
+        // Update panel text labels before rendering
+        // TODO: Pass actual start_year from game state (Phase 9)
+        let start_year = 1444;
+        if let Some(ref mut panel) = self.top_panel {
+            let _ = panel.update(crate::gui::core::MapMode::Political, start_year);
+        }
+
         // Phase 1: Load ALL textures for ALL panels (must be done before any rendering)
         // This avoids borrow checker issues from sprite_renderer.draw() extending borrows to lifetime 'a
 
@@ -1123,10 +1135,32 @@ impl GuiRenderer {
                 ));
             }
 
-            // Render text labels (inline to avoid lifetime issues)
+            // Phase 1b: Load fonts for text labels
+            for text_widget in &[&year_label, &select_label] {
+                let font_name = text_widget.font();
+                if !self
+                    .font_bind_groups
+                    .iter()
+                    .any(|(name, _)| name == font_name)
+                    && let Some(loaded) = self.font_cache.get(font_name, device, queue)
+                {
+                    let bind_group = sprite_renderer.create_bind_group(device, &loaded.view);
+                    self.font_bind_groups
+                        .push((font_name.to_string(), bind_group));
+                    log::info!("Loaded font: {}", font_name);
+                }
+            }
+
+            // Phase 2b: Render text labels
             for text_widget in &[year_label, select_label] {
-                if let Some(ref font_bind_group) = self.font_bind_group
-                    && let Some(loaded) = self.font_cache.get("vic_18", device, queue)
+                let font_name = text_widget.font();
+                let font_bind_group_idx = self
+                    .font_bind_groups
+                    .iter()
+                    .position(|(name, _)| name == font_name);
+
+                if let Some(idx) = font_bind_group_idx
+                    && let Some(loaded) = self.font_cache.get(font_name, device, queue)
                 {
                     let font = &loaded.font;
                     let value = text_widget.text();
@@ -1138,17 +1172,33 @@ impl GuiRenderer {
                         let max_dimensions = text_widget.max_dimensions();
                         let border_size = text_widget.border_size();
 
-                        let text_screen_pos =
-                            position_from_anchor(top_anchor, pos, orientation, max_dimensions);
+                        // Use screen-aware positioning for CENTER_UP elements
+                        let text_screen_pos = position_from_anchor_with_screen(
+                            top_anchor,
+                            pos,
+                            orientation,
+                            max_dimensions,
+                            screen_size,
+                        );
                         let text_width = font.measure_width(value);
                         let max_width = max_dimensions.0 as f32;
+                        let screen_width = screen_size.0 as f32;
 
-                        let start_x = match format {
-                            types::TextFormat::Left => text_screen_pos.0 + border_size.0 as f32,
-                            types::TextFormat::Center => {
+                        // For CENTER_UP orientation with format=centre, center on screen
+                        // EU4 seems to center these text elements on screen rather than
+                        // positioning relative to the textbox bounds
+                        let start_x = match (format, orientation) {
+                            (types::TextFormat::Center, types::Orientation::CenterUp) => {
+                                // Center the text on screen
+                                (screen_width - text_width) / 2.0
+                            }
+                            (types::TextFormat::Left, _) => {
+                                text_screen_pos.0 + border_size.0 as f32
+                            }
+                            (types::TextFormat::Center, _) => {
                                 text_screen_pos.0 + (max_width - text_width) / 2.0
                             }
-                            types::TextFormat::Right => {
+                            (types::TextFormat::Right, _) => {
                                 text_screen_pos.0 + max_width - text_width - border_size.0 as f32
                             }
                         };
@@ -1177,6 +1227,7 @@ impl GuiRenderer {
                                 let u_max = (glyph.x + glyph.width) as f32 / atlas_width;
                                 let v_max = (glyph.y + glyph.height) as f32 / atlas_height;
 
+                                let font_bind_group = &self.font_bind_groups[idx].1;
                                 sprite_renderer.draw_uv(
                                     render_pass,
                                     font_bind_group,
