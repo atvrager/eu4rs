@@ -22,6 +22,7 @@ use super::types::{self, GfxDatabase, GuiAction, GuiState, HitBox, Orientation};
 use super::{interner, parse_gfx_file};
 use crate::bmfont::BitmapFontCache;
 use crate::render::SpriteRenderer;
+use crate::screen::Screen;
 use std::path::Path;
 
 /// GUI renderer that uses EU4's authentic layout and sprites.
@@ -459,8 +460,56 @@ impl GuiRenderer {
     }
 
     /// Render the GUI overlay.
+    ///
+    /// The `screen` parameter controls which UI elements are rendered:
+    /// - `Screen::MainMenu`: No GUI elements rendered
+    /// - `Screen::SinglePlayer`: Country selection panels only
+    /// - `Screen::Playing`: Topbar + speed controls only
     #[allow(clippy::too_many_arguments)]
     pub fn render<'a>(
+        &'a mut self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        sprite_renderer: &'a SpriteRenderer,
+        state: &GuiState,
+        screen: Screen,
+        screen_size: (u32, u32),
+    ) {
+        self.hit_boxes.clear();
+
+        match screen {
+            Screen::MainMenu | Screen::Multiplayer => {
+                // No GUI elements rendered for main menu or multiplayer lobby
+            }
+            Screen::SinglePlayer => {
+                // Country selection panels only
+                self.render_country_selection(
+                    render_pass,
+                    device,
+                    queue,
+                    sprite_renderer,
+                    screen_size,
+                );
+            }
+            Screen::Playing => {
+                // Topbar + speed controls only
+                self.render_gameplay_ui(
+                    render_pass,
+                    device,
+                    queue,
+                    sprite_renderer,
+                    state,
+                    screen_size,
+                );
+            }
+        }
+    }
+
+    /// Render the gameplay UI (topbar + speed controls).
+    /// Called when screen is `Screen::Playing`.
+    #[allow(clippy::too_many_arguments)]
+    fn render_gameplay_ui<'a>(
         &'a mut self,
         render_pass: &mut wgpu::RenderPass<'a>,
         device: &wgpu::Device,
@@ -472,7 +521,6 @@ impl GuiRenderer {
         self.ensure_textures(device, queue, sprite_renderer);
         self.ensure_font(device, queue, sprite_renderer);
         self.ensure_topbar_textures(device, queue, sprite_renderer);
-        self.hit_boxes.clear();
 
         // Collect topbar draw commands first (to avoid borrowing self during draw)
         let topbar_draws: Vec<(usize, f32, f32, f32, f32)> = {
@@ -874,415 +922,404 @@ impl GuiRenderer {
 
             self.hit_boxes.push((action_name.to_string(), hit_box));
         }
+    }
 
-        // Phase 8.5.2: Render country selection panels when not in-game
-        // (No country selected = country selection screen)
-        if state.country.is_none() {
-            log::info!(
-                "Rendering country selection panels: left={}, top={}, lobby={}",
-                self.left_panel.is_some(),
-                self.top_panel.is_some(),
-                self.lobby_controls.is_some()
-            );
+    /// Render the country selection UI (frontend panels).
+    /// Called when screen is `Screen::SinglePlayer`.
+    #[allow(clippy::too_many_arguments)]
+    fn render_country_selection<'a>(
+        &'a mut self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        sprite_renderer: &'a SpriteRenderer,
+        screen_size: (u32, u32),
+    ) {
+        self.ensure_font(device, queue, sprite_renderer);
 
-            // Phase 1: Load ALL textures for ALL panels (must be done before any rendering)
-            // This avoids borrow checker issues from sprite_renderer.draw() extending borrows to lifetime 'a
+        log::info!(
+            "Rendering country selection panels: left={}, top={}, lobby={}",
+            self.left_panel.is_some(),
+            self.top_panel.is_some(),
+            self.lobby_controls.is_some()
+        );
 
-            // Load top panel textures
-            if let Some(ref panel) = self.top_panel {
-                let buttons = vec![
-                    panel.mapmode_terrain.clone(),
-                    panel.mapmode_political.clone(),
-                    panel.mapmode_trade.clone(),
-                    panel.mapmode_religion.clone(),
-                    panel.mapmode_empire.clone(),
-                    panel.mapmode_diplomacy.clone(),
-                    panel.mapmode_economy.clone(),
-                    panel.mapmode_region.clone(),
-                    panel.mapmode_culture.clone(),
-                    panel.mapmode_players.clone(),
-                ];
+        // Phase 1: Load ALL textures for ALL panels (must be done before any rendering)
+        // This avoids borrow checker issues from sprite_renderer.draw() extending borrows to lifetime 'a
 
-                for button in &buttons {
-                    if let Some(sprite_type) = button.sprite_type() {
-                        let button_name = button.name();
-                        if !self
-                            .frontend_button_bind_groups
-                            .iter()
-                            .any(|(name, _, _, _)| name == button_name)
-                        {
-                            if let Some(sprite) = self.gfx_db.get(sprite_type) {
-                                if let Some((view, w, h)) =
-                                    self.sprite_cache.get(&sprite.texture_file, device, queue)
-                                {
-                                    log::info!(
-                                        "Loaded button texture: {} ({}x{})",
-                                        button_name,
-                                        w,
-                                        h
-                                    );
-                                    let bind_group =
-                                        sprite_renderer.create_bind_group(device, view);
-                                    self.frontend_button_bind_groups.push((
-                                        button_name.to_string(),
-                                        bind_group,
-                                        w,
-                                        h,
-                                    ));
-                                } else {
-                                    log::warn!(
-                                        "Failed to load texture for button {}: texture file not found",
-                                        button_name
-                                    );
-                                }
+        // Load top panel textures
+        if let Some(ref panel) = self.top_panel {
+            let buttons = vec![
+                panel.mapmode_terrain.clone(),
+                panel.mapmode_political.clone(),
+                panel.mapmode_trade.clone(),
+                panel.mapmode_religion.clone(),
+                panel.mapmode_empire.clone(),
+                panel.mapmode_diplomacy.clone(),
+                panel.mapmode_economy.clone(),
+                panel.mapmode_region.clone(),
+                panel.mapmode_culture.clone(),
+                panel.mapmode_players.clone(),
+            ];
+
+            for button in &buttons {
+                if let Some(sprite_type) = button.sprite_type() {
+                    let button_name = button.name();
+                    if !self
+                        .frontend_button_bind_groups
+                        .iter()
+                        .any(|(name, _, _, _)| name == button_name)
+                    {
+                        if let Some(sprite) = self.gfx_db.get(sprite_type) {
+                            if let Some((view, w, h)) =
+                                self.sprite_cache.get(&sprite.texture_file, device, queue)
+                            {
+                                log::info!("Loaded button texture: {} ({}x{})", button_name, w, h);
+                                let bind_group = sprite_renderer.create_bind_group(device, view);
+                                self.frontend_button_bind_groups.push((
+                                    button_name.to_string(),
+                                    bind_group,
+                                    w,
+                                    h,
+                                ));
                             } else {
                                 log::warn!(
-                                    "Failed to load button {}: sprite '{}' not in gfx_db",
-                                    button_name,
-                                    sprite_type
+                                    "Failed to load texture for button {}: texture file not found",
+                                    button_name
                                 );
                             }
+                        } else {
+                            log::warn!(
+                                "Failed to load button {}: sprite '{}' not in gfx_db",
+                                button_name,
+                                sprite_type
+                            );
                         }
-                    } else {
-                        log::warn!("Button {} has no sprite_type", button.name());
+                    }
+                } else {
+                    log::warn!("Button {} has no sprite_type", button.name());
+                }
+            }
+        }
+
+        // Load left panel textures
+        if let Some(ref panel) = self.left_panel
+            && let Some(sprite_type) = panel.back_button.sprite_type()
+        {
+            let button_name = panel.back_button.name();
+            if !self
+                .frontend_button_bind_groups
+                .iter()
+                .any(|(name, _, _, _)| name == button_name)
+                && let Some(sprite) = self.gfx_db.get(sprite_type)
+                && let Some((view, w, h)) =
+                    self.sprite_cache.get(&sprite.texture_file, device, queue)
+            {
+                let bind_group = sprite_renderer.create_bind_group(device, view);
+                self.frontend_button_bind_groups
+                    .push((button_name.to_string(), bind_group, w, h));
+            }
+        }
+
+        // Load lobby panel textures
+        if let Some(ref panel) = self.lobby_controls
+            && let Some(sprite_type) = panel.play_button.sprite_type()
+        {
+            let button_name = panel.play_button.name();
+            if !self
+                .frontend_button_bind_groups
+                .iter()
+                .any(|(name, _, _, _)| name == button_name)
+                && let Some(sprite) = self.gfx_db.get(sprite_type)
+                && let Some((view, w, h)) =
+                    self.sprite_cache.get(&sprite.texture_file, device, queue)
+            {
+                let bind_group = sprite_renderer.create_bind_group(device, view);
+                self.frontend_button_bind_groups
+                    .push((button_name.to_string(), bind_group, w, h));
+            }
+        }
+
+        // Phase 2: Render all panels using loaded textures
+
+        // Render top panel (map mode buttons, year label)
+        if let Some(ref panel) = self.top_panel {
+            let top_anchor = get_window_anchor(
+                self.top_panel_layout.window_pos,
+                self.top_panel_layout.orientation,
+                screen_size,
+            );
+
+            // Clone widgets to avoid borrow conflicts
+            let buttons_to_render = vec![
+                (panel.mapmode_terrain.clone(), "mapmode_terrain"),
+                (panel.mapmode_political.clone(), "mapmode_political"),
+                (panel.mapmode_trade.clone(), "mapmode_trade"),
+                (panel.mapmode_religion.clone(), "mapmode_religion"),
+                (panel.mapmode_empire.clone(), "mapmode_empire"),
+                (panel.mapmode_diplomacy.clone(), "mapmode_diplomacy"),
+                (panel.mapmode_economy.clone(), "mapmode_economy"),
+                (panel.mapmode_region.clone(), "mapmode_region"),
+                (panel.mapmode_culture.clone(), "mapmode_culture"),
+                (panel.mapmode_players.clone(), "mapmode_players"),
+            ];
+            let year_label = panel.year_label.clone();
+            let select_label = panel.select_label.clone();
+            let _ = panel;
+
+            // Extract render data to avoid lifetime issues
+            type ButtonRenderData = (usize, (i32, i32), Orientation, (u32, u32), String);
+            let mut button_render_data: Vec<ButtonRenderData> = Vec::new();
+            for (button, action_name) in &buttons_to_render {
+                if let Some(pos) = button.position()
+                    && let Some(orientation) = button.orientation()
+                {
+                    let button_name = button.name();
+                    if let Some(idx) = self
+                        .frontend_button_bind_groups
+                        .iter()
+                        .position(|(name, _, _, _)| name == button_name)
+                    {
+                        let (w, h) = (
+                            self.frontend_button_bind_groups[idx].2,
+                            self.frontend_button_bind_groups[idx].3,
+                        );
+                        button_render_data.push((
+                            idx,
+                            pos,
+                            orientation,
+                            (w, h),
+                            action_name.to_string(),
+                        ));
                     }
                 }
             }
 
-            // Load left panel textures
-            if let Some(ref panel) = self.left_panel
-                && let Some(sprite_type) = panel.back_button.sprite_type()
-            {
-                let button_name = panel.back_button.name();
-                if !self
-                    .frontend_button_bind_groups
-                    .iter()
-                    .any(|(name, _, _, _)| name == button_name)
-                    && let Some(sprite) = self.gfx_db.get(sprite_type)
-                    && let Some((view, w, h)) =
-                        self.sprite_cache.get(&sprite.texture_file, device, queue)
-                {
-                    let bind_group = sprite_renderer.create_bind_group(device, view);
-                    self.frontend_button_bind_groups.push((
-                        button_name.to_string(),
-                        bind_group,
-                        w,
-                        h,
-                    ));
-                }
-            }
+            // Render buttons using extracted data
+            for (idx, pos, orientation, (w, h), action_name) in button_render_data {
+                let button_screen_pos = position_from_anchor(top_anchor, pos, orientation, (w, h));
+                let (clip_x, clip_y, clip_w, clip_h) =
+                    rect_to_clip_space(button_screen_pos, (w, h), screen_size);
 
-            // Load lobby panel textures
-            if let Some(ref panel) = self.lobby_controls
-                && let Some(sprite_type) = panel.play_button.sprite_type()
-            {
-                let button_name = panel.play_button.name();
-                if !self
-                    .frontend_button_bind_groups
-                    .iter()
-                    .any(|(name, _, _, _)| name == button_name)
-                    && let Some(sprite) = self.gfx_db.get(sprite_type)
-                    && let Some((view, w, h)) =
-                        self.sprite_cache.get(&sprite.texture_file, device, queue)
-                {
-                    let bind_group = sprite_renderer.create_bind_group(device, view);
-                    self.frontend_button_bind_groups.push((
-                        button_name.to_string(),
-                        bind_group,
-                        w,
-                        h,
-                    ));
-                }
-            }
-
-            // Phase 2: Render all panels using loaded textures
-
-            // Render top panel (map mode buttons, year label)
-            if let Some(ref panel) = self.top_panel {
-                let top_anchor = get_window_anchor(
-                    self.top_panel_layout.window_pos,
-                    self.top_panel_layout.orientation,
-                    screen_size,
+                let bind_group = &self.frontend_button_bind_groups[idx].1;
+                sprite_renderer.draw(
+                    render_pass,
+                    bind_group,
+                    queue,
+                    clip_x,
+                    clip_y,
+                    clip_w,
+                    clip_h,
                 );
 
-                // Clone widgets to avoid borrow conflicts
-                let buttons_to_render = vec![
-                    (panel.mapmode_terrain.clone(), "mapmode_terrain"),
-                    (panel.mapmode_political.clone(), "mapmode_political"),
-                    (panel.mapmode_trade.clone(), "mapmode_trade"),
-                    (panel.mapmode_religion.clone(), "mapmode_religion"),
-                    (panel.mapmode_empire.clone(), "mapmode_empire"),
-                    (panel.mapmode_diplomacy.clone(), "mapmode_diplomacy"),
-                    (panel.mapmode_economy.clone(), "mapmode_economy"),
-                    (panel.mapmode_region.clone(), "mapmode_region"),
-                    (panel.mapmode_culture.clone(), "mapmode_culture"),
-                    (panel.mapmode_players.clone(), "mapmode_players"),
-                ];
-                let year_label = panel.year_label.clone();
-                let select_label = panel.select_label.clone();
-                let _ = panel;
+                self.hit_boxes.push((
+                    action_name,
+                    HitBox {
+                        x: button_screen_pos.0,
+                        y: button_screen_pos.1,
+                        width: w as f32,
+                        height: h as f32,
+                    },
+                ));
+            }
 
-                // Extract render data to avoid lifetime issues
-                type ButtonRenderData = (usize, (i32, i32), Orientation, (u32, u32), String);
-                let mut button_render_data: Vec<ButtonRenderData> = Vec::new();
-                for (button, action_name) in &buttons_to_render {
-                    if let Some(pos) = button.position()
-                        && let Some(orientation) = button.orientation()
-                    {
-                        let button_name = button.name();
-                        if let Some(idx) = self
-                            .frontend_button_bind_groups
-                            .iter()
-                            .position(|(name, _, _, _)| name == button_name)
-                        {
-                            let (w, h) = (
-                                self.frontend_button_bind_groups[idx].2,
-                                self.frontend_button_bind_groups[idx].3,
-                            );
-                            button_render_data.push((
-                                idx,
-                                pos,
-                                orientation,
-                                (w, h),
-                                action_name.to_string(),
-                            ));
-                        }
-                    }
-                }
+            // Render text labels (inline to avoid lifetime issues)
+            for text_widget in &[year_label, select_label] {
+                if let Some(ref font_bind_group) = self.font_bind_group
+                    && let Some(loaded) = self.font_cache.get("vic_18", device, queue)
+                {
+                    let font = &loaded.font;
+                    let value = text_widget.text();
 
-                // Render buttons using extracted data
-                for (idx, pos, orientation, (w, h), action_name) in button_render_data {
-                    let button_screen_pos =
-                        position_from_anchor(top_anchor, pos, orientation, (w, h));
-                    let (clip_x, clip_y, clip_w, clip_h) =
-                        rect_to_clip_space(button_screen_pos, (w, h), screen_size);
+                    if !value.is_empty() {
+                        let pos = text_widget.position();
+                        let orientation = text_widget.orientation();
+                        let format = text_widget.format();
+                        let max_dimensions = text_widget.max_dimensions();
+                        let border_size = text_widget.border_size();
 
-                    let bind_group = &self.frontend_button_bind_groups[idx].1;
-                    sprite_renderer.draw(
-                        render_pass,
-                        bind_group,
-                        queue,
-                        clip_x,
-                        clip_y,
-                        clip_w,
-                        clip_h,
-                    );
+                        let text_screen_pos =
+                            position_from_anchor(top_anchor, pos, orientation, max_dimensions);
+                        let text_width = font.measure_width(value);
+                        let max_width = max_dimensions.0 as f32;
 
-                    self.hit_boxes.push((
-                        action_name,
-                        HitBox {
-                            x: button_screen_pos.0,
-                            y: button_screen_pos.1,
-                            width: w as f32,
-                            height: h as f32,
-                        },
-                    ));
-                }
+                        let start_x = match format {
+                            types::TextFormat::Left => text_screen_pos.0 + border_size.0 as f32,
+                            types::TextFormat::Center => {
+                                text_screen_pos.0 + (max_width - text_width) / 2.0
+                            }
+                            types::TextFormat::Right => {
+                                text_screen_pos.0 + max_width - text_width - border_size.0 as f32
+                            }
+                        };
 
-                // Render text labels (inline to avoid lifetime issues)
-                for text_widget in &[year_label, select_label] {
-                    if let Some(ref font_bind_group) = self.font_bind_group
-                        && let Some(loaded) = self.font_cache.get("vic_18", device, queue)
-                    {
-                        let font = &loaded.font;
-                        let value = text_widget.text();
+                        let mut cursor_x = start_x;
+                        let cursor_y = text_screen_pos.1 + border_size.1 as f32;
 
-                        if !value.is_empty() {
-                            let pos = text_widget.position();
-                            let orientation = text_widget.orientation();
-                            let format = text_widget.format();
-                            let max_dimensions = text_widget.max_dimensions();
-                            let border_size = text_widget.border_size();
-
-                            let text_screen_pos =
-                                position_from_anchor(top_anchor, pos, orientation, max_dimensions);
-                            let text_width = font.measure_width(value);
-                            let max_width = max_dimensions.0 as f32;
-
-                            let start_x = match format {
-                                types::TextFormat::Left => text_screen_pos.0 + border_size.0 as f32,
-                                types::TextFormat::Center => {
-                                    text_screen_pos.0 + (max_width - text_width) / 2.0
-                                }
-                                types::TextFormat::Right => {
-                                    text_screen_pos.0 + max_width
-                                        - text_width
-                                        - border_size.0 as f32
-                                }
-                            };
-
-                            let mut cursor_x = start_x;
-                            let cursor_y = text_screen_pos.1 + border_size.1 as f32;
-
-                            for c in value.chars() {
-                                if let Some(glyph) = font.get_glyph(c) {
-                                    if glyph.width == 0 || glyph.height == 0 {
-                                        cursor_x += glyph.xadvance as f32;
-                                        continue;
-                                    }
-
-                                    let glyph_x = cursor_x + glyph.xoffset as f32;
-                                    let glyph_y = cursor_y + glyph.yoffset as f32;
-                                    let glyph_screen_pos = (glyph_x, glyph_y);
-                                    let glyph_size = (glyph.width, glyph.height);
-                                    let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
-                                        glyph_screen_pos,
-                                        glyph_size,
-                                        screen_size,
-                                    );
-
-                                    let atlas_width = font.scale_w as f32;
-                                    let atlas_height = font.scale_h as f32;
-                                    let u_min = glyph.x as f32 / atlas_width;
-                                    let v_min = glyph.y as f32 / atlas_height;
-                                    let u_max = (glyph.x + glyph.width) as f32 / atlas_width;
-                                    let v_max = (glyph.y + glyph.height) as f32 / atlas_height;
-
-                                    sprite_renderer.draw_uv(
-                                        render_pass,
-                                        font_bind_group,
-                                        queue,
-                                        clip_x,
-                                        clip_y,
-                                        clip_w,
-                                        clip_h,
-                                        u_min,
-                                        v_min,
-                                        u_max,
-                                        v_max,
-                                    );
-
+                        for c in value.chars() {
+                            if let Some(glyph) = font.get_glyph(c) {
+                                if glyph.width == 0 || glyph.height == 0 {
                                     cursor_x += glyph.xadvance as f32;
+                                    continue;
                                 }
+
+                                let glyph_x = cursor_x + glyph.xoffset as f32;
+                                let glyph_y = cursor_y + glyph.yoffset as f32;
+                                let glyph_screen_pos = (glyph_x, glyph_y);
+                                let glyph_size = (glyph.width, glyph.height);
+                                let (clip_x, clip_y, clip_w, clip_h) =
+                                    rect_to_clip_space(glyph_screen_pos, glyph_size, screen_size);
+
+                                let atlas_width = font.scale_w as f32;
+                                let atlas_height = font.scale_h as f32;
+                                let u_min = glyph.x as f32 / atlas_width;
+                                let v_min = glyph.y as f32 / atlas_height;
+                                let u_max = (glyph.x + glyph.width) as f32 / atlas_width;
+                                let v_max = (glyph.y + glyph.height) as f32 / atlas_height;
+
+                                sprite_renderer.draw_uv(
+                                    render_pass,
+                                    font_bind_group,
+                                    queue,
+                                    clip_x,
+                                    clip_y,
+                                    clip_w,
+                                    clip_h,
+                                    u_min,
+                                    v_min,
+                                    u_max,
+                                    v_max,
+                                );
+
+                                cursor_x += glyph.xadvance as f32;
                             }
                         }
                     }
                 }
             }
+        }
 
-            // Render left panel (back button - others deferred to Part 3)
-            if let Some(ref panel) = self.left_panel {
-                let left_anchor = get_window_anchor(
-                    self.left_panel_layout.window_pos,
-                    self.left_panel_layout.orientation,
-                    screen_size,
+        // Render left panel (back button - others deferred to Part 3)
+        if let Some(ref panel) = self.left_panel {
+            let left_anchor = get_window_anchor(
+                self.left_panel_layout.window_pos,
+                self.left_panel_layout.orientation,
+                screen_size,
+            );
+
+            // Clone back button to avoid borrow conflict
+            let back_button = panel.back_button.clone();
+            let _ = panel;
+
+            // Extract render data
+            let button_data = if let Some(pos) = back_button.position()
+                && let Some(orientation) = back_button.orientation()
+            {
+                let button_name = back_button.name();
+                self.frontend_button_bind_groups
+                    .iter()
+                    .position(|(name, _, _, _)| name == button_name)
+                    .map(|idx| {
+                        let (w, h) = (
+                            self.frontend_button_bind_groups[idx].2,
+                            self.frontend_button_bind_groups[idx].3,
+                        );
+                        (idx, pos, orientation, w, h)
+                    })
+            } else {
+                None
+            };
+
+            // Render using extracted data
+            if let Some((idx, pos, orientation, w, h)) = button_data {
+                let button_screen_pos = position_from_anchor(left_anchor, pos, orientation, (w, h));
+                let (clip_x, clip_y, clip_w, clip_h) =
+                    rect_to_clip_space(button_screen_pos, (w, h), screen_size);
+
+                let bind_group = &self.frontend_button_bind_groups[idx].1;
+                sprite_renderer.draw(
+                    render_pass,
+                    bind_group,
+                    queue,
+                    clip_x,
+                    clip_y,
+                    clip_w,
+                    clip_h,
                 );
 
-                // Clone back button to avoid borrow conflict
-                let back_button = panel.back_button.clone();
-                let _ = panel;
-
-                // Extract render data
-                let button_data = if let Some(pos) = back_button.position()
-                    && let Some(orientation) = back_button.orientation()
-                {
-                    let button_name = back_button.name();
-                    self.frontend_button_bind_groups
-                        .iter()
-                        .position(|(name, _, _, _)| name == button_name)
-                        .map(|idx| {
-                            let (w, h) = (
-                                self.frontend_button_bind_groups[idx].2,
-                                self.frontend_button_bind_groups[idx].3,
-                            );
-                            (idx, pos, orientation, w, h)
-                        })
-                } else {
-                    None
-                };
-
-                // Render using extracted data
-                if let Some((idx, pos, orientation, w, h)) = button_data {
-                    let button_screen_pos =
-                        position_from_anchor(left_anchor, pos, orientation, (w, h));
-                    let (clip_x, clip_y, clip_w, clip_h) =
-                        rect_to_clip_space(button_screen_pos, (w, h), screen_size);
-
-                    let bind_group = &self.frontend_button_bind_groups[idx].1;
-                    sprite_renderer.draw(
-                        render_pass,
-                        bind_group,
-                        queue,
-                        clip_x,
-                        clip_y,
-                        clip_w,
-                        clip_h,
-                    );
-
-                    self.hit_boxes.push((
-                        "back_button".to_string(),
-                        HitBox {
-                            x: button_screen_pos.0,
-                            y: button_screen_pos.1,
-                            width: w as f32,
-                            height: h as f32,
-                        },
-                    ));
-                }
-
-                // TODO Part 3: Render listboxes (bookmarks, saves)
-                // TODO Part 3: Render date widget (year editor, day/month label, adjustment buttons)
+                self.hit_boxes.push((
+                    "back_button".to_string(),
+                    HitBox {
+                        x: button_screen_pos.0,
+                        y: button_screen_pos.1,
+                        width: w as f32,
+                        height: h as f32,
+                    },
+                ));
             }
 
-            // Render lobby controls (play button)
-            if let Some(ref panel) = self.lobby_controls {
-                let lobby_anchor = get_window_anchor(
-                    self.lobby_controls_layout.window_pos,
-                    self.lobby_controls_layout.orientation,
-                    screen_size,
+            // TODO Part 3: Render listboxes (bookmarks, saves)
+            // TODO Part 3: Render date widget (year editor, day/month label, adjustment buttons)
+        }
+
+        // Render lobby controls (play button)
+        if let Some(ref panel) = self.lobby_controls {
+            let lobby_anchor = get_window_anchor(
+                self.lobby_controls_layout.window_pos,
+                self.lobby_controls_layout.orientation,
+                screen_size,
+            );
+
+            // Clone play button to avoid borrow conflict
+            let play_button = panel.play_button.clone();
+            let _ = panel;
+
+            // Extract render data
+            let button_data = if let Some(pos) = play_button.position()
+                && let Some(orientation) = play_button.orientation()
+            {
+                let button_name = play_button.name();
+                self.frontend_button_bind_groups
+                    .iter()
+                    .position(|(name, _, _, _)| name == button_name)
+                    .map(|idx| {
+                        let (w, h) = (
+                            self.frontend_button_bind_groups[idx].2,
+                            self.frontend_button_bind_groups[idx].3,
+                        );
+                        (idx, pos, orientation, w, h)
+                    })
+            } else {
+                None
+            };
+
+            // Render using extracted data
+            if let Some((idx, pos, orientation, w, h)) = button_data {
+                let button_screen_pos =
+                    position_from_anchor(lobby_anchor, pos, orientation, (w, h));
+                let (clip_x, clip_y, clip_w, clip_h) =
+                    rect_to_clip_space(button_screen_pos, (w, h), screen_size);
+
+                let bind_group = &self.frontend_button_bind_groups[idx].1;
+                sprite_renderer.draw(
+                    render_pass,
+                    bind_group,
+                    queue,
+                    clip_x,
+                    clip_y,
+                    clip_w,
+                    clip_h,
                 );
 
-                // Clone play button to avoid borrow conflict
-                let play_button = panel.play_button.clone();
-                let _ = panel;
-
-                // Extract render data
-                let button_data = if let Some(pos) = play_button.position()
-                    && let Some(orientation) = play_button.orientation()
-                {
-                    let button_name = play_button.name();
-                    self.frontend_button_bind_groups
-                        .iter()
-                        .position(|(name, _, _, _)| name == button_name)
-                        .map(|idx| {
-                            let (w, h) = (
-                                self.frontend_button_bind_groups[idx].2,
-                                self.frontend_button_bind_groups[idx].3,
-                            );
-                            (idx, pos, orientation, w, h)
-                        })
-                } else {
-                    None
-                };
-
-                // Render using extracted data
-                if let Some((idx, pos, orientation, w, h)) = button_data {
-                    let button_screen_pos =
-                        position_from_anchor(lobby_anchor, pos, orientation, (w, h));
-                    let (clip_x, clip_y, clip_w, clip_h) =
-                        rect_to_clip_space(button_screen_pos, (w, h), screen_size);
-
-                    let bind_group = &self.frontend_button_bind_groups[idx].1;
-                    sprite_renderer.draw(
-                        render_pass,
-                        bind_group,
-                        queue,
-                        clip_x,
-                        clip_y,
-                        clip_w,
-                        clip_h,
-                    );
-
-                    self.hit_boxes.push((
-                        "play_button".to_string(),
-                        HitBox {
-                            x: button_screen_pos.0,
-                            y: button_screen_pos.1,
-                            width: w as f32,
-                            height: h as f32,
-                        },
-                    ));
-                }
+                self.hit_boxes.push((
+                    "play_button".to_string(),
+                    HitBox {
+                        x: button_screen_pos.0,
+                        y: button_screen_pos.1,
+                        width: w as f32,
+                        height: h as f32,
+                    },
+                ));
             }
         }
     }

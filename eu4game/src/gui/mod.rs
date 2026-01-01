@@ -37,6 +37,10 @@ pub mod frontend;
 #[cfg(test)]
 mod macro_test;
 
+// State machine tests for screen transitions
+#[cfg(test)]
+mod state_machine_tests;
+
 // Phase 3.5: Macro-based UI panels
 pub mod speed_controls;
 pub mod topbar;

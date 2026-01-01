@@ -777,7 +777,7 @@ impl App {
                     }
                 }
                 screen::Screen::SinglePlayer | screen::Screen::Playing => {
-                    log::debug!("Rendering SinglePlayer/Playing screen");
+                    log::debug!("Rendering {:?} screen", current_screen);
                     // Render EU4 GUI overlay (topbar, speed controls, country select)
                     if let Some(gui_renderer) = &mut self.gui_renderer {
                         log::debug!("Calling gui_renderer.render()");
@@ -787,6 +787,7 @@ impl App {
                             &self.queue,
                             &self.sprite_renderer,
                             &gui_state,
+                            current_screen,
                             screen_size,
                         );
                     } else {
