@@ -8,9 +8,10 @@ use eu4_macros::GuiWindow;
 
 /// Left panel for country selection screen.
 ///
-/// Binds to widgets within the `singleplayer` window in `frontend.gui`.
+/// Binds to widgets within the `left` window in `frontend.gui`.
+/// Contains bookmarks list, save games list, date widget, and lobby control buttons.
 #[derive(Debug, GuiWindow)]
-#[gui(window_name = "singleplayer")]
+#[gui(window_name = "left")]
 #[allow(dead_code)] // Fields used in future phases
 pub struct CountrySelectLeftPanel {
     /// Bookmarks listbox (historical start dates).

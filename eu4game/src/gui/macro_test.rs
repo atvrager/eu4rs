@@ -66,6 +66,8 @@ mod tests {
                     sprite_type: "GFX_button".to_string(),
                     orientation: Orientation::UpperLeft,
                     shortcut: None,
+                    button_text: Some("Confirm".to_string()),
+                    button_font: Some("vic_18".to_string()),
                 },
             ],
         }

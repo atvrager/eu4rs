@@ -16,6 +16,7 @@ mod sim_thread;
 mod testing;
 mod text;
 
+use screen::Screen;
 use sim_thread::{SimEvent, SimHandle, SimSpeed};
 use std::sync::Arc;
 
@@ -1774,6 +1775,25 @@ impl App {
                 };
                 self.sim_handle.set_speed(self.sim_speed);
                 log::info!("Pause toggled via GUI click: {:?}", self.sim_speed);
+            }
+            gui::GuiAction::Back => {
+                // Return to main menu from country selection
+                self.screen_manager.transition_to(Screen::MainMenu);
+                log::info!("Returning to main menu via Back button");
+            }
+            gui::GuiAction::StartGame => {
+                // Start game with selected country
+                // TODO: Validate country is selected
+                self.screen_manager.transition_to(Screen::Playing);
+                log::info!("Starting game via Play button");
+            }
+            gui::GuiAction::DateAdjust(part, delta) => {
+                // TODO: Implement date adjustment (Phase 9)
+                log::info!("Date adjust: {:?} by {}", part, delta);
+            }
+            gui::GuiAction::SetMapMode(mode) => {
+                // TODO: Implement map mode switching (Phase 9)
+                log::info!("Set map mode: {}", mode);
             }
         }
         self.window.request_redraw();

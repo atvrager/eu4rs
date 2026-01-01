@@ -540,6 +540,8 @@ fn parse_button_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
     let mut sprite_type = String::new();
     let mut orientation = Orientation::UpperLeft;
     let mut shortcut = None;
+    let mut button_text = None;
+    let mut button_font = None;
 
     for child in &node.children {
         if let EU4TxtAstItem::Assignment = &child.entry
@@ -569,6 +571,16 @@ fn parse_button_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
                         shortcut = Some(s);
                     }
                 }
+                "buttonText" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        button_text = Some(s);
+                    }
+                }
+                "buttonFont" => {
+                    if let Some(s) = get_string_value(get_assignment_value(child)) {
+                        button_font = Some(s);
+                    }
+                }
                 _ => {}
             }
         }
@@ -580,6 +592,8 @@ fn parse_button_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
         sprite_type,
         orientation,
         shortcut,
+        button_text,
+        button_font,
     })
 }
 

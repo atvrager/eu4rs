@@ -173,6 +173,8 @@ mod tests {
                     sprite_type: "GFX_button".to_string(),
                     orientation: Orientation::UpperLeft,
                     shortcut: None,
+                    button_text: None,
+                    button_font: None,
                 }],
             }],
         };

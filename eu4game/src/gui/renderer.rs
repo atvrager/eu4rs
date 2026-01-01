@@ -10,6 +10,7 @@ use super::country_select_left::CountrySelectLeftPanel;
 use super::country_select_top::CountrySelectTopPanel;
 use super::layout::{
     get_window_anchor, position_from_anchor, position_from_anchor_with_screen, rect_to_clip_space,
+    resolve_position,
 };
 use super::layout_types::{SpeedControlsLayout, TopBarLayout};
 use super::legacy_loaders::{
@@ -111,7 +112,8 @@ impl GuiRenderer {
             "interface/speed_controls.gfx",
             "interface/topbar.gfx",
             // Country select panel sprites
-            "interface/general_stuff.gfx", // shield_thin, tech icons, ideas icon
+            "interface/core.gfx",          // button_type_1 (back, play buttons)
+            "interface/general_stuff.gfx", // shield_thin, tech icons, ideas icon, arrow buttons
             "interface/countrydiplomacyview.gfx", // government_rank_strip
             "interface/countrygovernmentview.gfx", // tech_group_strip
             "interface/countryview.gfx",   // icon_religion
@@ -1014,22 +1016,49 @@ impl GuiRenderer {
             }
         }
 
-        // Load left panel textures
-        if let Some(ref panel) = self.left_panel
-            && let Some(sprite_type) = panel.back_button.sprite_type()
-        {
-            let button_name = panel.back_button.name();
-            if !self
-                .frontend_button_bind_groups
-                .iter()
-                .any(|(name, _, _, _)| name == button_name)
-                && let Some(sprite) = self.gfx_db.get(sprite_type)
-                && let Some((view, w, h)) =
-                    self.sprite_cache.get(&sprite.texture_file, device, queue)
-            {
-                let bind_group = sprite_renderer.create_bind_group(device, view);
-                self.frontend_button_bind_groups
-                    .push((button_name.to_string(), bind_group, w, h));
+        // Load left panel textures (back button + date widget buttons)
+        if let Some(ref panel) = self.left_panel {
+            // Collect all buttons to load
+            let buttons_to_load = [
+                &panel.back_button,
+                &panel.year_up_1,
+                &panel.year_down_1,
+                &panel.year_up_2,
+                &panel.year_down_2,
+                &panel.year_up_3,
+                &panel.year_down_3,
+                &panel.month_up,
+                &panel.month_down,
+                &panel.day_up,
+                &panel.day_down,
+            ];
+
+            for button in buttons_to_load {
+                let button_name = button.name();
+                if let Some(sprite_type) = button.sprite_type()
+                    && !self
+                        .frontend_button_bind_groups
+                        .iter()
+                        .any(|(name, _, _, _)| name == button_name)
+                    && let Some(sprite) = self.gfx_db.get(sprite_type)
+                    && let Some((view, w, h)) =
+                        self.sprite_cache.get(&sprite.texture_file, device, queue)
+                {
+                    log::debug!(
+                        "Loaded left panel button: {} -> {} ({}x{})",
+                        button_name,
+                        sprite_type,
+                        w,
+                        h
+                    );
+                    let bind_group = sprite_renderer.create_bind_group(device, view);
+                    self.frontend_button_bind_groups.push((
+                        button_name.to_string(),
+                        bind_group,
+                        w,
+                        h,
+                    ));
+                }
             }
         }
 
@@ -1046,6 +1075,7 @@ impl GuiRenderer {
                 && let Some((view, w, h)) =
                     self.sprite_cache.get(&sprite.texture_file, device, queue)
             {
+                log::debug!("Loaded lobby play_button: {} ({}x{})", sprite_type, w, h);
                 let bind_group = sprite_renderer.create_bind_group(device, view);
                 self.frontend_button_bind_groups
                     .push((button_name.to_string(), bind_group, w, h));
@@ -1250,7 +1280,7 @@ impl GuiRenderer {
             }
         }
 
-        // Render left panel (back button - others deferred to Part 3)
+        // Render left panel (back button + date widget buttons)
         if let Some(ref panel) = self.left_panel {
             let left_anchor = get_window_anchor(
                 self.left_panel_layout.window_pos,
@@ -1258,34 +1288,74 @@ impl GuiRenderer {
                 screen_size,
             );
 
-            // Clone back button to avoid borrow conflict
-            let back_button = panel.back_button.clone();
+            // Clone all buttons to avoid borrow conflicts
+            let buttons_with_actions = vec![
+                (panel.back_button.clone(), "back_button"),
+                (panel.year_up_1.clone(), "year_up_1"),
+                (panel.year_down_1.clone(), "year_down_1"),
+                (panel.year_up_2.clone(), "year_up_2"),
+                (panel.year_down_2.clone(), "year_down_2"),
+                (panel.year_up_3.clone(), "year_up_3"),
+                (panel.year_down_3.clone(), "year_down_3"),
+                (panel.month_up.clone(), "month_up"),
+                (panel.month_down.clone(), "month_down"),
+                (panel.day_up.clone(), "day_up"),
+                (panel.day_down.clone(), "day_down"),
+            ];
             let _ = panel;
 
-            // Extract render data
-            let button_data = if let Some(pos) = back_button.position()
-                && let Some(orientation) = back_button.orientation()
-            {
-                let button_name = back_button.name();
-                self.frontend_button_bind_groups
-                    .iter()
-                    .position(|(name, _, _, _)| name == button_name)
-                    .map(|idx| {
+            // Extract render data for all buttons (idx, pos, orientation, w, h, action_name, button_text)
+            type LeftButtonRenderData = (
+                usize,
+                (i32, i32),
+                Orientation,
+                u32,
+                u32,
+                String,
+                Option<String>,
+            );
+            let mut button_render_data: Vec<LeftButtonRenderData> = Vec::new();
+
+            for (button, action_name) in &buttons_with_actions {
+                if let Some(pos) = button.position()
+                    && let Some(orientation) = button.orientation()
+                {
+                    let button_name = button.name();
+                    if let Some(idx) = self
+                        .frontend_button_bind_groups
+                        .iter()
+                        .position(|(name, _, _, _)| name == button_name)
+                    {
                         let (w, h) = (
                             self.frontend_button_bind_groups[idx].2,
                             self.frontend_button_bind_groups[idx].3,
                         );
-                        (idx, pos, orientation, w, h)
-                    })
-            } else {
-                None
-            };
+                        button_render_data.push((
+                            idx,
+                            pos,
+                            orientation,
+                            w,
+                            h,
+                            action_name.to_string(),
+                            button.button_text().map(|s| s.to_string()),
+                        ));
+                    }
+                }
+            }
 
-            // Render using extracted data
-            if let Some((idx, pos, orientation, w, h)) = button_data {
-                let button_screen_pos = position_from_anchor(left_anchor, pos, orientation, (w, h));
+            // Render all buttons using extracted data
+            for (idx, pos, orientation, w, h, action_name, _button_text) in button_render_data {
+                // For LOWER_* orientations in fullscreen windows, use screen-relative positioning
+                let button_screen_pos = match orientation {
+                    Orientation::LowerLeft | Orientation::LowerRight => {
+                        resolve_position(pos, orientation, (w, h), screen_size)
+                    }
+                    _ => position_from_anchor(left_anchor, pos, orientation, (w, h)),
+                };
                 let (clip_x, clip_y, clip_w, clip_h) =
                     rect_to_clip_space(button_screen_pos, (w, h), screen_size);
+
+                // TODO: Render button_text centered on button using text renderer
 
                 let bind_group = &self.frontend_button_bind_groups[idx].1;
                 sprite_renderer.draw(
@@ -1299,7 +1369,7 @@ impl GuiRenderer {
                 );
 
                 self.hit_boxes.push((
-                    "back_button".to_string(),
+                    action_name,
                     HitBox {
                         x: button_screen_pos.0,
                         y: button_screen_pos.1,
@@ -1310,7 +1380,7 @@ impl GuiRenderer {
             }
 
             // TODO Part 3: Render listboxes (bookmarks, saves)
-            // TODO Part 3: Render date widget (year editor, day/month label, adjustment buttons)
+            // TODO Part 3: Render year editor textbox, day/month label
         }
 
         // Render lobby controls (play button)
@@ -1320,7 +1390,6 @@ impl GuiRenderer {
                 self.lobby_controls_layout.orientation,
                 screen_size,
             );
-
             // Clone play button to avoid borrow conflict
             let play_button = panel.play_button.clone();
             let _ = panel;
@@ -1346,10 +1415,17 @@ impl GuiRenderer {
 
             // Render using extracted data
             if let Some((idx, pos, orientation, w, h)) = button_data {
-                let button_screen_pos =
-                    position_from_anchor(lobby_anchor, pos, orientation, (w, h));
+                // Play button has LOWER_RIGHT orientation in fullscreen window
+                let button_screen_pos = match orientation {
+                    Orientation::LowerLeft | Orientation::LowerRight => {
+                        resolve_position(pos, orientation, (w, h), screen_size)
+                    }
+                    _ => position_from_anchor(lobby_anchor, pos, orientation, (w, h)),
+                };
                 let (clip_x, clip_y, clip_w, clip_h) =
                     rect_to_clip_space(button_screen_pos, (w, h), screen_size);
+
+                // TODO: Render play_button.button_text() centered on button
 
                 let bind_group = &self.frontend_button_bind_groups[idx].1;
                 sprite_renderer.draw(
@@ -1381,6 +1457,7 @@ impl GuiRenderer {
         for (name, hit_box) in &self.hit_boxes {
             if hit_box.contains(x, y) {
                 return match name.as_str() {
+                    // Speed controls
                     "speed_up" => {
                         let new_speed = (current_state.speed + 1).min(5);
                         Some(GuiAction::SetSpeed(new_speed))
@@ -1390,6 +1467,22 @@ impl GuiRenderer {
                         Some(GuiAction::SetSpeed(new_speed))
                     }
                     "pause" => Some(GuiAction::TogglePause),
+                    // Country selection: left panel
+                    "back_button" => Some(GuiAction::Back),
+                    "year_up_1" => Some(GuiAction::DateAdjust(types::DatePart::Year, 1)),
+                    "year_down_1" => Some(GuiAction::DateAdjust(types::DatePart::Year, -1)),
+                    "year_up_2" => Some(GuiAction::DateAdjust(types::DatePart::Year, 10)),
+                    "year_down_2" => Some(GuiAction::DateAdjust(types::DatePart::Year, -10)),
+                    "year_up_3" => Some(GuiAction::DateAdjust(types::DatePart::Year, 100)),
+                    "year_down_3" => Some(GuiAction::DateAdjust(types::DatePart::Year, -100)),
+                    "month_up" => Some(GuiAction::DateAdjust(types::DatePart::Month, 1)),
+                    "month_down" => Some(GuiAction::DateAdjust(types::DatePart::Month, -1)),
+                    "day_up" => Some(GuiAction::DateAdjust(types::DatePart::Day, 1)),
+                    "day_down" => Some(GuiAction::DateAdjust(types::DatePart::Day, -1)),
+                    // Country selection: lobby controls
+                    "play_button" => Some(GuiAction::StartGame),
+                    // Country selection: top panel map modes
+                    s if s.starts_with("mapmode_") => Some(GuiAction::SetMapMode(s.to_string())),
                     _ => None,
                 };
             }

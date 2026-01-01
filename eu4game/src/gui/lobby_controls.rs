@@ -13,10 +13,9 @@ use eu4_macros::GuiWindow;
 ///
 /// Binds to the `right` window in `frontend.gui`, which contains:
 /// - Play button (starts the game)
-/// - Observe mode toggle
-/// - Random country selection
-/// - Nation designer
-/// - Random new world toggle
+/// - Random country button
+/// - Nation designer button
+/// - Random new world button
 #[derive(Debug, GuiWindow)]
 #[gui(window_name = "right")]
 pub struct LobbyControlsPanel {

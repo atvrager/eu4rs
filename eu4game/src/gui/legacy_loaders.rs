@@ -476,6 +476,9 @@ fn find_panels_recursive(
         };
 
         // Check if this is one of the panels we're looking for
+        // - "left" contains bookmarks, save games, date widget, back button
+        // - "top" contains map mode buttons, year label
+        // - "right" contains play button, random country, nation designer buttons
         if name == "left" && left.is_none() {
             *left = Some((element.clone(), layout));
         } else if name == "top" && top.is_none() {

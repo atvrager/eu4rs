@@ -44,6 +44,8 @@ struct ButtonData {
     sprite_type: String,
     orientation: Orientation,
     shortcut: Option<String>,
+    button_text: Option<String>,
+    button_font: Option<String>,
 }
 
 impl GuiButton {
@@ -128,6 +130,17 @@ impl GuiButton {
     pub fn sprite_type(&self) -> Option<&str> {
         self.element.as_ref().map(|e| e.sprite_type.as_str())
     }
+
+    /// Get the button's text label (localization key).
+    pub fn button_text(&self) -> Option<&str> {
+        self.element.as_ref().and_then(|e| e.button_text.as_deref())
+    }
+
+    /// Get the button's font name.
+    #[allow(dead_code)]
+    pub fn button_font(&self) -> Option<&str> {
+        self.element.as_ref().and_then(|e| e.button_font.as_deref())
+    }
 }
 
 impl Bindable for GuiButton {
@@ -139,6 +152,8 @@ impl Bindable for GuiButton {
                 sprite_type,
                 orientation,
                 shortcut,
+                button_text,
+                button_font,
             } => Some(Self {
                 element: Some(ButtonData {
                     name: name.clone(),
@@ -146,6 +161,8 @@ impl Bindable for GuiButton {
                     sprite_type: sprite_type.clone(),
                     orientation: *orientation,
                     shortcut: shortcut.clone(),
+                    button_text: button_text.clone(),
+                    button_font: button_font.clone(),
                 }),
                 state: ButtonState::Normal,
                 was_clicked: false,
@@ -268,6 +285,8 @@ mod tests {
             sprite_type: "GFX_button".to_string(),
             orientation: Orientation::UpperLeft,
             shortcut: None,
+            button_text: None,
+            button_font: None,
         };
 
         let mut button = GuiButton::from_node(&node).expect("Should bind to Button");
@@ -290,6 +309,8 @@ mod tests {
             sprite_type: "GFX_button".to_string(),
             orientation: Orientation::UpperLeft,
             shortcut: None,
+            button_text: None,
+            button_font: None,
         };
 
         let mut button = GuiButton::from_node(&node).expect("Should bind to Button");

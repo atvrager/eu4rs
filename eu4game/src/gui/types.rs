@@ -179,6 +179,10 @@ pub enum GuiElement {
         orientation: Orientation,
         /// Optional shortcut key.
         shortcut: Option<String>,
+        /// Button label text (localization key).
+        button_text: Option<String>,
+        /// Font name for button text.
+        button_font: Option<String>,
     },
     /// Toggle checkbox.
     Checkbox {
@@ -366,6 +370,14 @@ impl HitBox {
 /// Alias for HitBox with more semantic naming for the UI binder system.
 pub type Rect = HitBox;
 
+/// Part of date to adjust (year, month, or day).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DatePart {
+    Year,
+    Month,
+    Day,
+}
+
 /// GUI interaction events.
 #[derive(Debug, Clone)]
 pub enum GuiAction {
@@ -373,4 +385,12 @@ pub enum GuiAction {
     SetSpeed(u32),
     /// Pause/unpause toggled.
     TogglePause,
+    /// Return to previous screen (e.g., main menu).
+    Back,
+    /// Start the game with selected country.
+    StartGame,
+    /// Adjust date by delta (positive = forward, negative = backward).
+    DateAdjust(DatePart, i32),
+    /// Change map rendering mode by name.
+    SetMapMode(String),
 }
