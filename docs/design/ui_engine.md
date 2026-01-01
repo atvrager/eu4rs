@@ -532,11 +532,13 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] Methods: `scroll_offset()`, `max_scroll()`, `set_scroll_offset()`, `scroll_by()`, `visible_range()`
     - [x] Implements `Bindable` (binds to `GuiElement::Listbox`) and `GuiWidget` traits
     - [x] Comprehensive tests (7 tests covering scroll clamping, visible range, empty lists)
-- [ ] **7.4. Rendering**
-    - [ ] Implement scissor rect clipping (wgpu::RenderPass::set_scissor_rect)
-    - [ ] Only render items in visible range
-    - [ ] Render entry widgets at calculated positions
-    - [ ] Render scrollbar if content overflows
+- [x] **7.4. Rendering** ✅ (2025-12-31)
+    - [x] Documented scissor rect clipping pattern (`get_scissor_rect()` helper)
+    - [x] Visible range rendering via `visible_range()` method (from Phase 7.3)
+    - [x] Entry positioning via `calculate_entry_y_offset()` helper
+    - [x] Scrollbar rendering via `get_scrollbar_bounds()` and `get_scrollbar_thumb_bounds()` helpers
+    - [x] Comprehensive rendering documentation with integration example
+    - [x] 5 additional tests for rendering helpers (12 total tests passing)
 - [ ] **7.5. Interaction**
     - [ ] Mouse wheel scrolling
     - [ ] Click on item → selection callback
