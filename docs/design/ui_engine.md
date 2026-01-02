@@ -714,14 +714,16 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
 ### Phase 9.5: Map Mode Rendering
 *Objective: Implement additional map rendering modes beyond Political.*
 
-- [x] **9.5.1. Terrain Mode**
+- [x] **9.5.1. Terrain Mode** ✅
     - [x] Render heightmap-based terrain coloring
     - [x] Display elevation differences visually
     - **Note**: Current implementation uses simplified elevation gradients for functional terrain visualization. Authentic EU4 terrain rendering with detailed biome textures is planned for **Phase 14**.
-- [ ] **9.5.2. Trade Mode**
-    - [ ] Render trade nodes and connections
-    - [ ] Display trade flow arrows
-    - [ ] Color provinces by trade node membership
+- [x] **9.5.2. Trade Mode** ✅
+    - [x] Color provinces by trade node membership (80 trade nodes, 3369 provinces mapped)
+    - [x] Generate colors for nodes without explicit definitions (37/80 nodes use HSV color generation)
+    - [ ] Display trade flow arrows (deferred)
+    - [ ] Render trade node connections (deferred)
+    - **Note**: Visual verification only - golden test for map rendering planned in **Phase 15**.
 - [ ] **9.5.3. Religion Mode**
     - [ ] Color provinces by religion
     - [ ] Use religion colors from game data
@@ -856,6 +858,41 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [ ] Test with various zoom levels and regions
 
 **Success Criteria**: Terrain mode visually matches authentic EU4 with detailed textures for forests, deserts, grasslands, mountains, and other biomes. Province boundaries remain clearly visible.
+
+---
+
+### Phase 15: Map Rendering Golden Tests
+*Objective: Add snapshot testing infrastructure for full map rendering.*
+
+**Background**: Currently, only GUI elements are tested via `GuiTestHarness` (Phase 13.4). Map rendering (political, terrain, trade modes) relies on manual visual verification. This phase adds golden image testing for map modes to catch visual regressions automatically.
+
+- [ ] **15.1. Map Rendering Test Harness**
+    - [ ] Extend or create new test harness for map+GUI rendering
+    - [ ] Support rendering at fixed camera positions
+    - [ ] Support setting specific map modes (Political, Terrain, Trade, etc.)
+    - [ ] Render to image with deterministic state
+- [ ] **15.2. Trade Mode Golden Tests**
+    - [ ] Test trade mode rendering with all 80 trade nodes visible
+    - [ ] Verify generated colors for nodes without explicit definitions
+    - [ ] Test European region (English Channel, Venice, Baltic)
+    - [ ] Test Asian region (Beijing, Hangzhou, Canton, Malacca)
+    - [ ] Test American region (Caribbean, Panama, Brazil)
+    - [ ] Test African region (Cape, Ivory Coast, Zanzibar)
+- [ ] **15.3. Terrain Mode Golden Tests**
+    - [ ] Test terrain rendering at various elevations
+    - [ ] Test mountainous regions (Alps, Himalayas, Andes)
+    - [ ] Test lowland regions (Netherlands, Ganges Delta)
+    - [ ] Test coastal transitions
+- [ ] **15.4. Political Mode Golden Tests**
+    - [ ] Test political map with major nations
+    - [ ] Test province borders rendering
+    - [ ] Test unowned provinces (wastelands)
+- [ ] **15.5. Mode Switching Tests**
+    - [ ] Verify lookup texture updates correctly when switching modes
+    - [ ] Test Political → Terrain → Trade transitions
+    - [ ] Ensure no visual artifacts during mode switches
+
+**Success Criteria**: Automated golden image tests catch visual regressions in map rendering. All map modes have comprehensive test coverage with deterministic, reproducible output.
 
 ---
 

@@ -169,6 +169,11 @@ struct App {
     year_range: (i32, i32),
     /// Current map rendering mode (Phase 9.5.6).
     current_map_mode: gui::MapMode,
+    /// Trade network (Phase 9.5.2 - Trade Mode).
+    trade_network: Option<eu4data::tradenodes::TradeNetwork>,
+
+    /// Sea province IDs from default.map (Phase 9.5.2 - Trade Mode).
+    sea_provinces: std::collections::HashSet<u32>,
 }
 
 impl App {
@@ -324,6 +329,43 @@ impl App {
                 .unwrap_or(0)
         );
 
+        // Load trade network for trade mode rendering (Phase 9.5.2)
+        let trade_network = eu4data::path::detect_game_path().and_then(|game_path| {
+            match eu4data::tradenodes::load_trade_network(&game_path) {
+                Ok(network) => {
+                    log::info!(
+                        "Loaded {} trade nodes ({} provinces mapped)",
+                        network.nodes.len(),
+                        network.province_to_node.len()
+                    );
+                    Some(network)
+                }
+                Err(e) => {
+                    log::warn!("Failed to load trade network: {}", e);
+                    None
+                }
+            }
+        });
+
+        // Load sea provinces from default.map (Phase 9.5.2 - filter sea zones in trade mode)
+        let sea_provinces = eu4data::path::detect_game_path()
+            .and_then(
+                |game_path| match eu4data::map::load_default_map(&game_path) {
+                    Ok(default_map) => {
+                        log::info!(
+                            "Loaded {} sea provinces from default.map",
+                            default_map.sea_starts.len()
+                        );
+                        Some(default_map.sea_starts.into_iter().collect())
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to load default.map: {}", e);
+                        None
+                    }
+                },
+            )
+            .unwrap_or_default();
+
         // Create FrontendUI with panels from GuiRenderer (Phase 8.5.1)
         // Main menu remains a placeholder until Phase 8.5.4
         // Left/top/lobby panels are loaded from frontend.gui when available
@@ -391,6 +433,8 @@ impl App {
             start_date: eu4data::Eu4Date::from_ymd(1444, 11, 11), // Default EU4 start
             year_range,
             current_map_mode: gui::MapMode::Terrain, // MainMenu defaults to terrain (Phase 9.5.1)
+            trade_network,
+            sea_provinces,
         }
     }
 
@@ -633,10 +677,11 @@ impl App {
             .to_uniform(self.config.width as f32, self.config.height as f32);
         self.renderer.update_camera(&self.queue, camera_uniform);
 
-        // Update map mode uniform (Phase 9.5.1)
+        // Update map mode uniform (Phase 9.5.1, 9.5.2)
         let map_mode_value = match self.current_map_mode {
             gui::MapMode::Political => 0.0,
             gui::MapMode::Terrain => 1.0,
+            gui::MapMode::Trade => 2.0,
             _ => 0.0, // Other modes default to political for now
         };
         self.renderer.update_map_mode(
@@ -1285,6 +1330,7 @@ impl App {
             }
             UiAction::SetMapMode(mode) => {
                 self.current_map_mode = mode;
+                self.lookup_dirty = true; // Rebuild lookup texture for new mode
                 log::info!("Map mode changed to: {:?}", mode);
                 false
             }
@@ -1330,6 +1376,15 @@ impl App {
         }
         self.lookup_dirty = false;
 
+        // Choose update method based on current map mode
+        match self.current_map_mode {
+            gui::MapMode::Trade => self.update_lookup_trade(),
+            _ => self.update_lookup_political(),
+        }
+    }
+
+    /// Update lookup texture for political mode (country colors).
+    fn update_lookup_political(&mut self) {
         let Some(world_state) = &self.world_state else {
             return;
         };
@@ -1453,6 +1508,73 @@ impl App {
         }
 
         log::debug!("Updated GPU lookup texture ({} provinces)", max_province_id);
+    }
+
+    /// Update lookup texture for trade mode (trade node colors).
+    fn update_lookup_trade(&mut self) {
+        let Some(ref trade_network) = self.trade_network else {
+            log::warn!("Trade mode requested but trade network not loaded");
+            return;
+        };
+
+        // Build lookup data: province ID -> trade node color
+        // Note: We don't use world_state here because it may not be loaded yet
+        // (e.g., on country selection screen). Instead, we rely solely on the
+        // trade network's province-to-node mapping, which contains all provinces
+        // from the game data files.
+        //
+        // Sea zones are excluded from coloring even though they're part of trade nodes
+        // (ships can contribute trade power), because coloring them makes the map
+        // harder to read. They're rendered with water_color instead.
+        let mut lookup_data: Vec<u8> = Vec::with_capacity((render::LOOKUP_SIZE * 4) as usize);
+
+        let wasteland_color = [60u8, 60, 60, 255]; // Gray for unmapped/wasteland
+        let water_color = [30u8, 60, 100, 255]; // Dark blue for sea zones
+        let unknown_color = [80u8, 80, 80, 255]; // Gray for province 0
+
+        for province_id in 0..render::LOOKUP_SIZE {
+            let color = if province_id == 0 {
+                unknown_color
+            } else if self.sea_provinces.contains(&province_id) {
+                // Sea zone - keep as water even if part of trade node
+                water_color
+            } else if let Some(&trade_node_id) = trade_network.province_to_node.get(&province_id) {
+                // Land province in trade node - use trade node color
+                let node = &trade_network.nodes[trade_node_id.0 as usize];
+                [node.color[0], node.color[1], node.color[2], 255]
+            } else {
+                // Province not mapped to any trade node (wastelands)
+                wasteland_color
+            };
+            lookup_data.extend_from_slice(&color);
+        }
+
+        // Write directly to texture
+        self.queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &self.renderer.lookup_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &lookup_data,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * render::LOOKUP_SIZE),
+                rows_per_image: Some(1),
+            },
+            wgpu::Extent3d {
+                width: render::LOOKUP_SIZE,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        log::debug!(
+            "Updated GPU lookup texture for trade mode ({} trade nodes, {} provinces mapped)",
+            trade_network.nodes.len(),
+            trade_network.province_to_node.len()
+        );
     }
 
     /// Updates the window title with current date and speed.
@@ -2094,6 +2216,7 @@ impl App {
                     }
                 };
                 self.current_map_mode = mode;
+                self.lookup_dirty = true; // Rebuild lookup texture for new mode
                 log::info!("Map mode changed to: {:?}", mode);
             }
             gui::GuiAction::RandomCountry => {

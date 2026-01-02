@@ -219,6 +219,48 @@ fn parse_yes_no(node: &EU4TxtParseNode) -> bool {
     false
 }
 
+/// Generate a deterministic color for a trade node that lacks an explicit color.
+///
+/// Uses a HSV-based color wheel to generate visually distinct colors.
+/// Many trade nodes (especially those added in DLC) don't have explicit colors
+/// in the game files, so we generate them deterministically based on node index.
+fn generate_node_color(index: usize) -> [u8; 3] {
+    // Use golden angle for good color distribution
+    let hue = (index as f32 * 137.5) % 360.0; // Golden angle ≈ 137.5°
+    let saturation = 0.7; // Keep colors vibrant but not oversaturated
+    let value = 0.85; // Keep colors bright enough to see
+
+    hsv_to_rgb(hue, saturation, value)
+}
+
+/// Convert HSV color to RGB (0-255 range).
+fn hsv_to_rgb(h: f32, s: f32, v: f32) -> [u8; 3] {
+    let c = v * s;
+    let h_prime = h / 60.0;
+    let x = c * (1.0 - ((h_prime % 2.0) - 1.0).abs());
+    let m = v - c;
+
+    let (r, g, b) = if h_prime < 1.0 {
+        (c, x, 0.0)
+    } else if h_prime < 2.0 {
+        (x, c, 0.0)
+    } else if h_prime < 3.0 {
+        (0.0, c, x)
+    } else if h_prime < 4.0 {
+        (0.0, x, c)
+    } else if h_prime < 5.0 {
+        (x, 0.0, c)
+    } else {
+        (c, 0.0, x)
+    };
+
+    [
+        ((r + m) * 255.0) as u8,
+        ((g + m) * 255.0) as u8,
+        ((b + m) * 255.0) as u8,
+    ]
+}
+
 /// Parse outgoing block to extract target node name.
 fn parse_outgoing(node: &EU4TxtParseNode) -> Option<String> {
     if let EU4TxtAstItem::AssignmentList = node.entry {
@@ -283,11 +325,18 @@ fn build_network(raw_nodes: Vec<RawNode>) -> Result<TradeNetwork, Box<dyn Error 
             province_to_node.insert(prov, id);
         }
 
+        // Generate color if not explicitly defined (many nodes lack colors)
+        let color = if raw.color == [0, 0, 0] {
+            generate_node_color(i)
+        } else {
+            raw.color
+        };
+
         nodes.push(TradeNodeDef {
             name: raw.name,
             id,
             location: raw.location,
-            color: raw.color,
+            color,
             inland: raw.inland,
             outgoing,
             outgoing_names: raw.outgoing_names,
