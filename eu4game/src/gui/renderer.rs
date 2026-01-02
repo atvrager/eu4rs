@@ -18,6 +18,7 @@ use super::legacy_loaders::{
 };
 use super::lobby_controls::LobbyControlsPanel;
 use super::primitives;
+use super::save_games::{SaveGameEntry, discover_save_games};
 use super::speed_controls;
 use super::sprite_cache::{SpriteBorder, SpriteCache};
 use super::topbar;
@@ -107,6 +108,12 @@ pub struct GuiRenderer {
     bookmarks_scroll_offset: f32,
     /// Currently selected bookmark index (None = no selection).
     selected_bookmark: Option<usize>,
+    /// Discovered save game entries for the save games listbox.
+    save_games: Vec<SaveGameEntry>,
+    /// Scroll offset for save games listbox (in pixels).
+    save_games_scroll_offset: f32,
+    /// Currently selected save game index (None = no selection).
+    selected_save_game: Option<usize>,
 }
 
 impl GuiRenderer {
@@ -188,6 +195,10 @@ impl GuiRenderer {
         let bookmarks = eu4data::bookmarks::parse_bookmarks(game_path);
         log::info!("Loaded {} bookmarks", bookmarks.len());
 
+        // Discover save games for the save games listbox
+        let save_games = discover_save_games();
+        log::info!("Discovered {} save games", save_games.len());
+
         Self {
             gfx_db,
             interner,
@@ -222,6 +233,9 @@ impl GuiRenderer {
             bookmarks,
             bookmarks_scroll_offset: 0.0,
             selected_bookmark: Some(0), // Default to first bookmark selected
+            save_games,
+            save_games_scroll_offset: 0.0,
+            selected_save_game: None, // No save selected by default
         }
     }
 
@@ -1755,6 +1769,196 @@ impl GuiRenderer {
                 render_pass.set_scissor_rect(0, 0, screen_size.0, screen_size.1);
             }
 
+            // Render save games listbox
+            if !self.save_games.is_empty() {
+                let listbox = &panel.save_games_list;
+                let listbox_pos = listbox.position();
+                let listbox_size = listbox.size();
+
+                // Calculate listbox screen position
+                let listbox_screen_pos = position_from_anchor(
+                    left_anchor,
+                    (listbox_pos.0, listbox_pos.1),
+                    Orientation::UpperLeft,
+                    (listbox_size.0, listbox_size.1),
+                );
+
+                // Entry dimensions (same as bookmarks)
+                const ENTRY_HEIGHT: f32 = 41.0;
+                const NAME_OFFSET_X: f32 = 20.0;
+                const NAME_OFFSET_Y: f32 = 5.0;
+                const DATE_OFFSET_X: f32 = 21.0;
+                const DATE_OFFSET_Y: f32 = 22.0;
+
+                // Set scissor rect to clip to listbox bounds
+                let scissor_x = listbox_screen_pos.0.max(0.0) as u32;
+                let scissor_y = listbox_screen_pos.1.max(0.0) as u32;
+                let scissor_w = listbox_size.0.min(screen_size.0 - scissor_x);
+                let scissor_h = listbox_size.1.min(screen_size.1 - scissor_y);
+                render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_w, scissor_h);
+
+                // Store listbox screen bounds for hit testing
+                self.hit_boxes.push((
+                    "save_games_list".to_string(),
+                    HitBox {
+                        x: listbox_screen_pos.0,
+                        y: listbox_screen_pos.1,
+                        width: listbox_size.0 as f32,
+                        height: listbox_size.1 as f32,
+                    },
+                ));
+
+                // Render each visible save game entry
+                let visible_count = (listbox_size.1 as f32 / ENTRY_HEIGHT).ceil() as usize + 1;
+                let scroll_offset = self.save_games_scroll_offset;
+                let start_idx = (scroll_offset / ENTRY_HEIGHT).floor() as usize;
+                let end_idx = (start_idx + visible_count).min(self.save_games.len());
+
+                for idx in start_idx..end_idx {
+                    let save = &self.save_games[idx];
+                    let entry_y =
+                        listbox_screen_pos.1 + (idx as f32 * ENTRY_HEIGHT) - scroll_offset;
+
+                    // Render selection highlight if this entry is selected
+                    if self.selected_save_game == Some(idx) {
+                        let highlight_width = listbox_size.0 as f32 - 8.0;
+                        let highlight_height = ENTRY_HEIGHT - 2.0;
+                        let highlight_x = listbox_screen_pos.0 + 4.0;
+                        let highlight_y = entry_y + 1.0;
+                        let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
+                            (highlight_x, highlight_y),
+                            (highlight_width as u32, highlight_height as u32),
+                            screen_size,
+                        );
+
+                        if let Some((_, font_bg)) = self.font_bind_groups.first() {
+                            sprite_renderer.draw_uv(
+                                render_pass,
+                                font_bg,
+                                queue,
+                                clip_x,
+                                clip_y,
+                                clip_w,
+                                clip_h,
+                                0.0,
+                                0.0,
+                                0.01,
+                                0.01,
+                            );
+                        }
+                    }
+
+                    // Render save name with vic_18 font
+                    if let Some(font_idx) = self
+                        .font_bind_groups
+                        .iter()
+                        .position(|(name, _)| name == "vic_18")
+                        && let Some(loaded) = self.font_cache.get("vic_18", device, queue)
+                    {
+                        let font = &loaded.font;
+                        let name_x = listbox_screen_pos.0 + NAME_OFFSET_X;
+                        let name_y = entry_y + NAME_OFFSET_Y;
+
+                        let mut cursor_x = name_x;
+                        for c in save.name.chars() {
+                            if let Some(glyph) = font.get_glyph(c) {
+                                if glyph.width == 0 || glyph.height == 0 {
+                                    cursor_x += glyph.xadvance as f32;
+                                    continue;
+                                }
+
+                                let glyph_x = cursor_x + glyph.xoffset as f32;
+                                let glyph_y = name_y + glyph.yoffset as f32;
+                                let glyph_screen_pos = (glyph_x, glyph_y);
+                                let glyph_size = (glyph.width, glyph.height);
+                                let (glyph_clip_x, glyph_clip_y, glyph_clip_w, glyph_clip_h) =
+                                    rect_to_clip_space(glyph_screen_pos, glyph_size, screen_size);
+
+                                let atlas_width = font.scale_w as f32;
+                                let atlas_height = font.scale_h as f32;
+                                let u_min = glyph.x as f32 / atlas_width;
+                                let v_min = glyph.y as f32 / atlas_height;
+                                let u_max = (glyph.x + glyph.width) as f32 / atlas_width;
+                                let v_max = (glyph.y + glyph.height) as f32 / atlas_height;
+
+                                let font_bind_group = &self.font_bind_groups[font_idx].1;
+                                sprite_renderer.draw_uv(
+                                    render_pass,
+                                    font_bind_group,
+                                    queue,
+                                    glyph_clip_x,
+                                    glyph_clip_y,
+                                    glyph_clip_w,
+                                    glyph_clip_h,
+                                    u_min,
+                                    v_min,
+                                    u_max,
+                                    v_max,
+                                );
+                                cursor_x += glyph.xadvance as f32;
+                            }
+                        }
+                    }
+
+                    // Render save modification date with Arial12 font
+                    if let Some(font_idx) = self
+                        .font_bind_groups
+                        .iter()
+                        .position(|(name, _)| name == "Arial12")
+                        && let Some(loaded) = self.font_cache.get("Arial12", device, queue)
+                    {
+                        let font = &loaded.font;
+                        let date_x = listbox_screen_pos.0 + DATE_OFFSET_X;
+                        let date_y = entry_y + DATE_OFFSET_Y;
+
+                        let date_str = save.modified_str();
+
+                        let mut cursor_x = date_x;
+                        for c in date_str.chars() {
+                            if let Some(glyph) = font.get_glyph(c) {
+                                if glyph.width == 0 || glyph.height == 0 {
+                                    cursor_x += glyph.xadvance as f32;
+                                    continue;
+                                }
+
+                                let glyph_x = cursor_x + glyph.xoffset as f32;
+                                let glyph_y = date_y + glyph.yoffset as f32;
+                                let glyph_screen_pos = (glyph_x, glyph_y);
+                                let glyph_size = (glyph.width, glyph.height);
+                                let (glyph_clip_x, glyph_clip_y, glyph_clip_w, glyph_clip_h) =
+                                    rect_to_clip_space(glyph_screen_pos, glyph_size, screen_size);
+
+                                let atlas_width = font.scale_w as f32;
+                                let atlas_height = font.scale_h as f32;
+                                let u_min = glyph.x as f32 / atlas_width;
+                                let v_min = glyph.y as f32 / atlas_height;
+                                let u_max = (glyph.x + glyph.width) as f32 / atlas_width;
+                                let v_max = (glyph.y + glyph.height) as f32 / atlas_height;
+
+                                let font_bind_group = &self.font_bind_groups[font_idx].1;
+                                sprite_renderer.draw_uv(
+                                    render_pass,
+                                    font_bind_group,
+                                    queue,
+                                    glyph_clip_x,
+                                    glyph_clip_y,
+                                    glyph_clip_w,
+                                    glyph_clip_h,
+                                    u_min,
+                                    v_min,
+                                    u_max,
+                                    v_max,
+                                );
+                                cursor_x += glyph.xadvance as f32;
+                            }
+                        }
+                    }
+                }
+
+                // Reset scissor rect to full screen
+                render_pass.set_scissor_rect(0, 0, screen_size.0, screen_size.1);
+            }
+
             // TODO Part 3: Render year editor textbox, day/month label
         }
 
@@ -1945,6 +2149,18 @@ impl GuiRenderer {
                     return None;
                 }
 
+                // Check for save games list click
+                if name == "save_games_list" {
+                    let relative_y = y - hit_box.y + self.save_games_scroll_offset;
+                    let clicked_idx = (relative_y / ENTRY_HEIGHT).floor() as usize;
+
+                    if clicked_idx < self.save_games.len() {
+                        self.selected_save_game = Some(clicked_idx);
+                        return Some(GuiAction::SelectSaveGame(clicked_idx));
+                    }
+                    return None;
+                }
+
                 return match name.as_str() {
                     // Speed controls
                     "speed_up" => {
@@ -1991,7 +2207,7 @@ impl GuiRenderer {
         const ENTRY_HEIGHT: f32 = 41.0;
         const SCROLL_SPEED: f32 = 40.0;
 
-        // Check if mouse is over bookmarks list
+        // Check if mouse is over bookmarks list or save games list
         for (name, hit_box) in &self.hit_boxes {
             if name == "bookmarks_list" && hit_box.contains(x, y) {
                 // Calculate max scroll based on content height
@@ -2005,6 +2221,17 @@ impl GuiRenderer {
 
                 return true;
             }
+
+            if name == "save_games_list" && hit_box.contains(x, y) {
+                let content_height = self.save_games.len() as f32 * ENTRY_HEIGHT;
+                let viewport_height = hit_box.height;
+                let max_scroll = (content_height - viewport_height).max(0.0);
+
+                self.save_games_scroll_offset =
+                    (self.save_games_scroll_offset + delta_y * SCROLL_SPEED).clamp(0.0, max_scroll);
+
+                return true;
+            }
         }
         false
     }
@@ -2013,6 +2240,12 @@ impl GuiRenderer {
     pub fn selected_bookmark(&self) -> Option<&BookmarkEntry> {
         self.selected_bookmark
             .and_then(|idx| self.bookmarks.get(idx))
+    }
+
+    /// Get the currently selected save game entry, if any.
+    pub fn selected_save_game(&self) -> Option<&SaveGameEntry> {
+        self.selected_save_game
+            .and_then(|idx| self.save_games.get(idx))
     }
 }
 

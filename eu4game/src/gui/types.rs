@@ -405,4 +405,6 @@ pub enum GuiAction {
     ToggleCustomNation,
     /// Select a bookmark by index.
     SelectBookmark(usize),
+    /// Select a save game by index.
+    SelectSaveGame(usize),
 }

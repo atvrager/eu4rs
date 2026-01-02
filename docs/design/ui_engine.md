@@ -2,7 +2,7 @@
 
 **Status**: Draft
 **Date**: 2025-12-31
-**Last Updated**: 2026-01-01 (Phase 8.6.1 complete with bookmarks listbox scroll & selection)
+**Last Updated**: 2026-01-01 (Phase 8.6.2 complete with save games listbox)
 **Objective**: Create a scalable, type-safe, and mod-friendly system for rendering EU4-style UI panels.
 
 ## 1. Problem Statement
@@ -641,12 +641,13 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] Wire selection to `GuiAction::SelectBookmark(idx)`
     - [x] Unit tests for scroll and click behavior
     - Note: Localization keys display as-is (e.g., "GC_AFRICA_BOOKMARK") pending Phase 10
-- [ ] **8.6.2. Save Games Listbox**
-    - [ ] Render save games listbox container
-    - [ ] Implement save file discovery (scan save directory) - placeholder data for now
-    - [ ] Display save name, date, country
-    - [ ] Selection and scroll behavior (reuse from 8.6.1)
-    - [ ] Wire selection to `UiAction::SelectSave(path)`
+- [x] **8.6.2. Save Games Listbox** ✅ (2026-01-01)
+    - [x] Render save games listbox container with scrollable area
+    - [x] Implement save file discovery (scan Steam cloud, local Paradox, Documents folders)
+    - [x] Display save name and modification date
+    - [x] Selection and scroll behavior (reuses pattern from 8.6.1)
+    - [x] Wire selection to `GuiAction::SelectSaveGame(idx)`
+    - Note: Country display and actual save loading deferred to Phase 9
 - [ ] **8.6.3. Date Widget**
     - [ ] Render year editor (editable text field)
     - [ ] Render day/month label (read-only display)

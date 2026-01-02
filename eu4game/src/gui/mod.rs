@@ -51,6 +51,7 @@ pub mod main_menu;
 // Phase 8.2: Country selection left panel
 pub mod bookmarks;
 pub mod country_select_left;
+pub mod save_games;
 
 // Phase 8.3: Country selection top panel
 pub mod country_select_top;

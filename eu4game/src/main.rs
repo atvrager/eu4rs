@@ -1800,6 +1800,19 @@ impl App {
                     );
                 }
             }
+            gui::GuiAction::SelectSaveGame(idx) => {
+                // Log save game selection; actual save loading happens in Phase 9
+                if let Some(gui_renderer) = &self.gui_renderer
+                    && let Some(save) = gui_renderer.selected_save_game()
+                {
+                    log::info!(
+                        "Selected save game {}: {} (modified: {})",
+                        idx,
+                        save.name,
+                        save.modified_str()
+                    );
+                }
+            }
         }
         self.window.request_redraw();
     }
