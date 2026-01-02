@@ -56,7 +56,6 @@ impl LobbyControlsPanel {
     /// Enable or disable the play button based on selection state.
     ///
     /// The play button should only be enabled when a country is selected.
-    #[allow(dead_code)]
     pub fn set_play_enabled(&mut self, enabled: bool) {
         self.play_button.set_enabled(enabled);
     }

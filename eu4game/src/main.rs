@@ -813,6 +813,8 @@ impl App {
                         } else {
                             None
                         };
+                        // Enable/disable play button based on country selection (Phase 9.3)
+                        gui_renderer.set_play_button_enabled(self.player_tag.is_some());
                         gui_renderer.render(
                             &mut render_pass,
                             &self.device,
@@ -1463,6 +1465,101 @@ impl App {
     }
 
     /// Selects the province at the given world coordinates.
+    /// Select a country by clicking on the map (SinglePlayer mode).
+    ///
+    /// Looks up the province at the clicked position and selects the country
+    /// that owns it. Clicking ocean/wasteland or the same country deselects.
+    fn select_country_at(&mut self, world_x: f64, world_y: f64) {
+        // Wrap X to 0..1 range
+        let world_x = world_x.rem_euclid(1.0);
+
+        // Check bounds for Y
+        if !(0.0..=1.0).contains(&world_y) {
+            log::debug!("Click outside map bounds: y={:.4}", world_y);
+            return;
+        }
+
+        // Convert to pixel coordinates
+        let map_width = self.province_map.width();
+        let map_height = self.province_map.height();
+        let pixel_x = (world_x * map_width as f64) as u32;
+        let pixel_y = (world_y * map_height as f64) as u32;
+
+        // Clamp to valid range
+        let pixel_x = pixel_x.min(map_width - 1);
+        let pixel_y = pixel_y.min(map_height - 1);
+
+        // Sample pixel color
+        let pixel = self.province_map.get_pixel(pixel_x, pixel_y);
+        let color = (pixel[0], pixel[1], pixel[2]);
+
+        // Look up province ID
+        let province_id = if let Some(lookup) = &self.province_lookup {
+            lookup.by_color.get(&color).copied()
+        } else {
+            None
+        };
+
+        let Some(province_id) = province_id else {
+            log::debug!(
+                "No province at pixel ({}, {}) - color {:?}. Deselecting country.",
+                pixel_x,
+                pixel_y,
+                color
+            );
+            self.player_tag = None;
+            self.lookup_dirty = true;
+            return;
+        };
+
+        // Get province owner from world state
+        let province_owner = self
+            .world_state
+            .as_ref()
+            .and_then(|ws| ws.provinces.get(&province_id).and_then(|p| p.owner.clone()));
+
+        let Some(owner_tag) = province_owner else {
+            log::debug!(
+                "Province {} has no owner (ocean/wasteland). Deselecting country.",
+                province_id
+            );
+            self.player_tag = None;
+            self.lookup_dirty = true;
+            return;
+        };
+
+        // Check if clicking the same country (toggle deselection)
+        if self.player_tag.as_deref() == Some(&owner_tag) {
+            log::info!("Deselected country: {}", owner_tag);
+            self.player_tag = None;
+            self.lookup_dirty = true;
+            return;
+        }
+
+        // Select the new country
+        log::info!("Selected country: {}", owner_tag);
+        self.player_tag = Some(owner_tag.clone());
+
+        // Update country_selection_index to match
+        if let Some((idx, _)) = self
+            .playable_countries
+            .iter()
+            .enumerate()
+            .find(|(_, (tag, _, _))| tag == &owner_tag)
+        {
+            self.country_selection_index = idx;
+            log::info!(
+                "Country selection index updated to {} for tag {}",
+                idx,
+                owner_tag
+            );
+        } else {
+            log::warn!("Country {} not found in playable_countries list", owner_tag);
+        }
+
+        self.lookup_dirty = true;
+    }
+
     fn select_province_at(&mut self, world_x: f64, world_y: f64) {
         // Wrap X to 0..1 range
         let world_x = world_x.rem_euclid(1.0);
@@ -1783,15 +1880,29 @@ impl App {
                         }
                     }
 
-                    // Regular province click (only in Playing mode)
-                    if current_screen == screen::Screen::Playing {
-                        let world_pos = self.camera.screen_to_world(
-                            self.cursor_pos.0,
-                            self.cursor_pos.1,
-                            self.config.width as f64,
-                            self.config.height as f64,
-                        );
-                        self.select_province_at(world_pos.0, world_pos.1);
+                    // Map clicks: different behavior per screen
+                    match current_screen {
+                        screen::Screen::Playing => {
+                            // Playing mode: select provinces for viewing info
+                            let world_pos = self.camera.screen_to_world(
+                                self.cursor_pos.0,
+                                self.cursor_pos.1,
+                                self.config.width as f64,
+                                self.config.height as f64,
+                            );
+                            self.select_province_at(world_pos.0, world_pos.1);
+                        }
+                        screen::Screen::SinglePlayer => {
+                            // SinglePlayer mode: select countries for game start
+                            let world_pos = self.camera.screen_to_world(
+                                self.cursor_pos.0,
+                                self.cursor_pos.1,
+                                self.config.width as f64,
+                                self.config.height as f64,
+                            );
+                            self.select_country_at(world_pos.0, world_pos.1);
+                        }
+                        _ => {}
                     }
                 }
             }

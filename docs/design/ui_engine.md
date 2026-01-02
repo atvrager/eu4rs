@@ -2,7 +2,7 @@
 
 **Status**: Draft
 **Date**: 2025-12-31
-**Last Updated**: 2026-01-02 (Phase 8.6.4 complete with integration tests)
+**Last Updated**: 2026-01-02 (Phase 9 complete - game integration)
 **Objective**: Create a scalable, type-safe, and mod-friendly system for rendering EU4-style UI panels.
 
 ## 1. Problem Statement
@@ -669,25 +669,29 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] Generated golden snapshots for all test cases (8 new snapshots)
     - Note: Synthetic input injection deferred to Phase 13.4 (requires input injection infrastructure)
 
-### Phase 9: Game Integration
+### Phase 9: Game Integration ✅ (2026-01-02)
 *Objective: Connect UI to game systems for complete start flow.*
 
-- [ ] **9.1. Bookmark System**
-    - [ ] Load bookmarks from game data (already parsed in `eu4data`)
-    - [ ] Populate bookmarks listbox with bookmark entries
-    - [ ] Bookmark selection updates start date
-    - [ ] Bookmark selection may suggest default country
-- [ ] **9.2. Country Selection Data Flow**
-    - [ ] Add `selected_country: Option<CountryTag>` to game state
-    - [ ] Map click → country selection (extend existing province click handler)
-    - [ ] Track selection and update `CountrySelectPanel` state
-    - [ ] Handle deselection (click on same country or ocean)
-- [ ] **9.3. Game Start Validation**
-    - [ ] Validate country selected before allowing play
-    - [ ] Enable/disable play button via `set_play_enabled()`
-    - [ ] Load world state for selected date
-    - [ ] Set player country
-    - [ ] Initialize simulation thread with selected state
+- [x] **9.1. Bookmark System** ✅
+    - [x] Load bookmarks from game data (completed in Phase 8.6.1)
+    - [x] Populate bookmarks listbox with bookmark entries
+    - [x] Bookmark selection updates start date (completed in Phase 8.6.3)
+    - Note: Bookmark-suggested countries deferred (not in vanilla EU4)
+- [x] **9.2. Country Selection Data Flow** ✅
+    - [x] Map click → country selection via `select_country_at()` method
+    - [x] Use existing `player_tag: Option<String>` for selection tracking
+    - [x] Province click resolves to country owner, sets `player_tag`
+    - [x] Update `country_selection_index` to match selected country
+    - [x] Handle deselection (click ocean/wasteland or same country again)
+    - [x] Different map click behavior per screen (SinglePlayer vs Playing)
+    - Note: CountrySelectPanel state update deferred to Phase 10 (requires game data integration)
+- [x] **9.3. Game Start Validation** ✅
+    - [x] Enable/disable play button via `set_play_enabled()` method
+    - [x] Call `set_play_button_enabled(player_tag.is_some())` before render
+    - [x] Disabled buttons don't register hit boxes (Phase 9.3)
+    - [x] World state loading already implemented (loads on game start)
+    - [x] Player country setting already implemented (`start_game_with_selected_country()`)
+    - [x] Simulation initialization already implemented
 
 ### Phase 9.5: Map Mode Rendering
 *Objective: Implement additional map rendering modes beyond Political.*

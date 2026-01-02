@@ -303,6 +303,15 @@ impl GuiRenderer {
         self.lobby_controls.take()
     }
 
+    /// Set the play button enabled state based on country selection (Phase 9.3).
+    ///
+    /// The play button should only be enabled when a country is selected.
+    pub fn set_play_button_enabled(&mut self, enabled: bool) {
+        if let Some(ref mut lobby_controls) = self.lobby_controls {
+            lobby_controls.set_play_enabled(enabled);
+        }
+    }
+
     /// Ensure textures are loaded and bind groups created.
     fn ensure_textures(
         &mut self,
@@ -2507,7 +2516,7 @@ impl GuiRenderer {
             ];
             let _ = panel; // Release borrow
 
-            // Extract render data for all buttons
+            // Extract render data for all buttons (including enabled state)
             type LobbyButtonRenderData = (
                 usize,
                 (i32, i32),
@@ -2517,6 +2526,7 @@ impl GuiRenderer {
                 String,
                 Option<String>,
                 Option<String>,
+                bool, // enabled
             );
             let mut button_render_data: Vec<LobbyButtonRenderData> = Vec::new();
 
@@ -2543,13 +2553,14 @@ impl GuiRenderer {
                             button_name.to_string(),
                             button.button_text().map(|s| s.to_string()),
                             button.button_font().map(|s| s.to_string()),
+                            button.is_enabled(),
                         ));
                     }
                 }
             }
 
             // Render all buttons
-            for (idx, pos, orientation, w, h, button_name, button_text, button_font) in
+            for (idx, pos, orientation, w, h, button_name, button_text, button_font, enabled) in
                 button_render_data
             {
                 // All lobby buttons use LOWER_RIGHT orientation
@@ -2642,16 +2653,18 @@ impl GuiRenderer {
                     }
                 }
 
-                // Register hit box for this button
-                self.hit_boxes.push((
-                    button_name,
-                    HitBox {
-                        x: button_screen_pos.0,
-                        y: button_screen_pos.1,
-                        width: w as f32,
-                        height: h as f32,
-                    },
-                ));
+                // Register hit box only for enabled buttons (Phase 9.3)
+                if enabled {
+                    self.hit_boxes.push((
+                        button_name,
+                        HitBox {
+                            x: button_screen_pos.0,
+                            y: button_screen_pos.1,
+                            width: w as f32,
+                            height: h as f32,
+                        },
+                    ));
+                }
             }
         }
     }
