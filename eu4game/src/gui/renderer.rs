@@ -26,6 +26,7 @@ use super::{interner, parse_gfx_file};
 use crate::bmfont::BitmapFontCache;
 use crate::render::SpriteRenderer;
 use crate::screen::Screen;
+use eu4data::bookmarks::BookmarkEntry;
 use std::path::Path;
 
 /// GUI renderer that uses EU4's authentic layout and sprites.
@@ -100,6 +101,8 @@ pub struct GuiRenderer {
     bg_size: (u32, u32),
     /// Speed indicator dimensions (per frame).
     speed_size: (u32, u32),
+    /// Loaded bookmark entries for the bookmarks listbox.
+    bookmarks: Vec<BookmarkEntry>,
 }
 
 impl GuiRenderer {
@@ -177,6 +180,10 @@ impl GuiRenderer {
             .map(|(root, layout)| (Some(LobbyControlsPanel::bind(&root, &interner)), layout))
             .unwrap_or((None, Default::default()));
 
+        // Load bookmarks for the bookmarks listbox
+        let bookmarks = eu4data::bookmarks::parse_bookmarks(game_path);
+        log::info!("Loaded {} bookmarks", bookmarks.len());
+
         Self {
             gfx_db,
             interner,
@@ -208,6 +215,7 @@ impl GuiRenderer {
             hit_boxes: Vec::new(),
             bg_size: (1, 1),    // Updated from texture in ensure_textures()
             speed_size: (1, 1), // Updated from texture in ensure_textures()
+            bookmarks,
         }
     }
 
@@ -1257,6 +1265,21 @@ impl GuiRenderer {
                 }
             }
 
+            // Load fonts for bookmark listbox (vic_18 for title, Arial12 for date)
+            for font_name in ["vic_18", "Arial12"] {
+                if !self
+                    .font_bind_groups
+                    .iter()
+                    .any(|(name, _)| name == font_name)
+                    && let Some(loaded) = self.font_cache.get(font_name, device, queue)
+                {
+                    let bind_group = sprite_renderer.create_bind_group(device, &loaded.view);
+                    self.font_bind_groups
+                        .push((font_name.to_string(), bind_group));
+                    log::debug!("Loaded bookmark font: {}", font_name);
+                }
+            }
+
             // Phase 2b: Render text labels
             for text_widget in &[year_label, select_label] {
                 let font_name = text_widget.font();
@@ -1523,7 +1546,165 @@ impl GuiRenderer {
                 ));
             }
 
-            // TODO Part 3: Render listboxes (bookmarks, saves)
+            // Render bookmarks listbox
+            if !self.bookmarks.is_empty() {
+                let listbox = &panel.bookmarks_list;
+                let listbox_pos = listbox.position();
+                let listbox_size = listbox.size();
+
+                // Calculate listbox screen position
+                let listbox_screen_pos = position_from_anchor(
+                    left_anchor,
+                    (listbox_pos.0, listbox_pos.1),
+                    Orientation::UpperLeft, // Listbox uses UPPER_LEFT
+                    (listbox_size.0, listbox_size.1),
+                );
+
+                // Entry dimensions from bookmark_entry template
+                const ENTRY_HEIGHT: f32 = 41.0;
+                const TITLE_OFFSET_X: f32 = 20.0;
+                const TITLE_OFFSET_Y: f32 = 5.0;
+                const DATE_OFFSET_X: f32 = 21.0;
+                const DATE_OFFSET_Y: f32 = 22.0;
+
+                // Set scissor rect to clip to listbox bounds
+                let scissor_x = listbox_screen_pos.0.max(0.0) as u32;
+                let scissor_y = listbox_screen_pos.1.max(0.0) as u32;
+                let scissor_w = listbox_size.0.min(screen_size.0 - scissor_x);
+                let scissor_h = listbox_size.1.min(screen_size.1 - scissor_y);
+                render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_w, scissor_h);
+
+                // Render each visible bookmark entry
+                let visible_count = (listbox_size.1 as f32 / ENTRY_HEIGHT).ceil() as usize + 1;
+                let scroll_offset = listbox.scroll_offset();
+                let start_idx = (scroll_offset / ENTRY_HEIGHT).floor() as usize;
+                let end_idx = (start_idx + visible_count).min(self.bookmarks.len());
+
+                for idx in start_idx..end_idx {
+                    let bookmark = &self.bookmarks[idx];
+                    let entry_y =
+                        listbox_screen_pos.1 + (idx as f32 * ENTRY_HEIGHT) - scroll_offset;
+
+                    // Render bookmark title with vic_18 font
+                    if let Some(font_idx) = self
+                        .font_bind_groups
+                        .iter()
+                        .position(|(name, _)| name == "vic_18")
+                        && let Some(loaded) = self.font_cache.get("vic_18", device, queue)
+                    {
+                        let font = &loaded.font;
+                        let title_x = listbox_screen_pos.0 + TITLE_OFFSET_X;
+                        let title_y = entry_y + TITLE_OFFSET_Y;
+
+                        // Use bookmark name as display (localization key for now)
+                        let display_name = bookmark.name.trim_start_matches("BMARK_");
+
+                        let mut cursor_x = title_x;
+                        for c in display_name.chars() {
+                            if let Some(glyph) = font.get_glyph(c) {
+                                if glyph.width == 0 || glyph.height == 0 {
+                                    cursor_x += glyph.xadvance as f32;
+                                    continue;
+                                }
+
+                                let glyph_x = cursor_x + glyph.xoffset as f32;
+                                let glyph_y = title_y + glyph.yoffset as f32;
+                                let glyph_screen_pos = (glyph_x, glyph_y);
+                                let glyph_size = (glyph.width, glyph.height);
+                                let (glyph_clip_x, glyph_clip_y, glyph_clip_w, glyph_clip_h) =
+                                    rect_to_clip_space(glyph_screen_pos, glyph_size, screen_size);
+
+                                let atlas_width = font.scale_w as f32;
+                                let atlas_height = font.scale_h as f32;
+                                let u_min = glyph.x as f32 / atlas_width;
+                                let v_min = glyph.y as f32 / atlas_height;
+                                let u_max = (glyph.x + glyph.width) as f32 / atlas_width;
+                                let v_max = (glyph.y + glyph.height) as f32 / atlas_height;
+
+                                let font_bind_group = &self.font_bind_groups[font_idx].1;
+                                sprite_renderer.draw_uv(
+                                    render_pass,
+                                    font_bind_group,
+                                    queue,
+                                    glyph_clip_x,
+                                    glyph_clip_y,
+                                    glyph_clip_w,
+                                    glyph_clip_h,
+                                    u_min,
+                                    v_min,
+                                    u_max,
+                                    v_max,
+                                );
+                                cursor_x += glyph.xadvance as f32;
+                            }
+                        }
+                    }
+
+                    // Render bookmark date with Arial12 font
+                    if let Some(font_idx) = self
+                        .font_bind_groups
+                        .iter()
+                        .position(|(name, _)| name == "Arial12")
+                        && let Some(loaded) = self.font_cache.get("Arial12", device, queue)
+                    {
+                        let font = &loaded.font;
+                        let date_x = listbox_screen_pos.0 + DATE_OFFSET_X;
+                        let date_y = entry_y + DATE_OFFSET_Y;
+
+                        // Format date as "dd Month yyyy"
+                        let date_str = format!(
+                            "{} {} {}",
+                            bookmark.date.day(),
+                            month_name(bookmark.date.month()),
+                            bookmark.date.year()
+                        );
+
+                        let mut cursor_x = date_x;
+                        for c in date_str.chars() {
+                            if let Some(glyph) = font.get_glyph(c) {
+                                if glyph.width == 0 || glyph.height == 0 {
+                                    cursor_x += glyph.xadvance as f32;
+                                    continue;
+                                }
+
+                                let glyph_x = cursor_x + glyph.xoffset as f32;
+                                let glyph_y = date_y + glyph.yoffset as f32;
+                                let glyph_screen_pos = (glyph_x, glyph_y);
+                                let glyph_size = (glyph.width, glyph.height);
+                                let (glyph_clip_x, glyph_clip_y, glyph_clip_w, glyph_clip_h) =
+                                    rect_to_clip_space(glyph_screen_pos, glyph_size, screen_size);
+
+                                let atlas_width = font.scale_w as f32;
+                                let atlas_height = font.scale_h as f32;
+                                let u_min = glyph.x as f32 / atlas_width;
+                                let v_min = glyph.y as f32 / atlas_height;
+                                let u_max = (glyph.x + glyph.width) as f32 / atlas_width;
+                                let v_max = (glyph.y + glyph.height) as f32 / atlas_height;
+
+                                let font_bind_group = &self.font_bind_groups[font_idx].1;
+                                sprite_renderer.draw_uv(
+                                    render_pass,
+                                    font_bind_group,
+                                    queue,
+                                    glyph_clip_x,
+                                    glyph_clip_y,
+                                    glyph_clip_w,
+                                    glyph_clip_h,
+                                    u_min,
+                                    v_min,
+                                    u_max,
+                                    v_max,
+                                );
+                                cursor_x += glyph.xadvance as f32;
+                            }
+                        }
+                    }
+                }
+
+                // Reset scissor rect to full screen
+                render_pass.set_scissor_rect(0, 0, screen_size.0, screen_size.1);
+            }
+
             // TODO Part 3: Render year editor textbox, day/month label
         }
 
@@ -1738,7 +1919,28 @@ impl GuiRenderer {
         }
         None
     }
+}
 
+/// Convert month number (1-12) to month name abbreviation.
+fn month_name(month: u8) -> &'static str {
+    match month {
+        1 => "Jan",
+        2 => "Feb",
+        3 => "Mar",
+        4 => "Apr",
+        5 => "May",
+        6 => "Jun",
+        7 => "Jul",
+        8 => "Aug",
+        9 => "Sep",
+        10 => "Oct",
+        11 => "Nov",
+        12 => "Dec",
+        _ => "???",
+    }
+}
+
+impl GuiRenderer {
     /// Render only the speed controls component (for isolated testing).
     #[cfg(test)]
     #[allow(clippy::too_many_arguments)]

@@ -2,7 +2,7 @@
 
 **Status**: Draft
 **Date**: 2025-12-31
-**Last Updated**: 2026-01-01 (Phase 8.5.4 additional lobby controls binding)
+**Last Updated**: 2026-01-01 (Phase 8.5.4 complete with button rendering & LOWER_RIGHT fix)
 **Objective**: Create a scalable, type-safe, and mod-friendly system for rendering EU4-style UI panels.
 
 ## 1. Problem Statement
@@ -627,15 +627,13 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] Bind enable_custom_nation_button (GuiButton) - checkbox toggle (TODO)
     - [x] Added UiAction/GuiAction variants for all new buttons
     - [x] Added RandomCountry action with rand crate for actual randomization
-    - *Note: Button rendering deferred - bindings and handlers complete*
-- [ ] **8.5.5. Data Population**
-    - [ ] Populate bookmarks listbox with data from `eu4data` (deferred from Phase 8.2)
-    - [ ] Populate save games listbox (placeholder for now, full implementation in Phase 9.1)
+    - [x] Full button rendering implemented with proper LOWER_RIGHT positioning fix
 
 ### Phase 8.6: Left Panel Widget Polish
 *Objective: Complete the left panel with complex interactive widgets. Trial by fire for listbox and editable text.*
 
 - [ ] **8.6.1. Bookmarks Listbox**
+    - [ ] Load bookmark data from `eu4data` (parsed in Phase 8.2)
     - [ ] Render bookmarks listbox container with scrollable area
     - [ ] Implement listbox item rendering (bookmark name, date)
     - [ ] Scroll behavior (mouse wheel, drag scrollbar)
@@ -643,7 +641,7 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [ ] Wire selection to `UiAction::SelectBookmark(id)`
 - [ ] **8.6.2. Save Games Listbox**
     - [ ] Render save games listbox container
-    - [ ] Implement save file discovery (scan save directory)
+    - [ ] Implement save file discovery (scan save directory) - placeholder data for now
     - [ ] Display save name, date, country
     - [ ] Selection and scroll behavior (reuse from 8.6.1)
     - [ ] Wire selection to `UiAction::SelectSave(path)`
