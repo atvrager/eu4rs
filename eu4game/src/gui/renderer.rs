@@ -1783,64 +1783,80 @@ impl GuiRenderer {
                 );
                 sprite_renderer.draw(render_pass, bg_bind, queue, clip_x, clip_y, clip_w, clip_h);
 
-                // Arrow button positions from frontend.gui (relative to datewidget)
-                // Year arrows: 3 columns at x=111, 131, 151
-                let year_arrow_positions = [(111, 34, 80), (131, 34, 80), (151, 34, 80)]; // (x, up_y, down_y)
-                for (ax, up_y, down_y) in year_arrow_positions {
-                    // Up arrow
-                    let (ref up_bind, up_w, up_h) = sprites.arrow_up_small;
-                    let up_pos = (datewidget_base.0 + ax as f32, datewidget_base.1 + up_y as f32);
-                    let (clip_x, clip_y, clip_w, clip_h) =
-                        rect_to_clip_space(up_pos, (up_w, up_h), screen_size);
-                    sprite_renderer.draw(render_pass, up_bind, queue, clip_x, clip_y, clip_w, clip_h);
-
-                    // Down arrow
-                    let (ref down_bind, down_w, down_h) = sprites.arrow_down_small;
-                    let down_pos = (datewidget_base.0 + ax as f32, datewidget_base.1 + down_y as f32);
-                    let (clip_x, clip_y, clip_w, clip_h) =
-                        rect_to_clip_space(down_pos, (down_w, down_h), screen_size);
-                    sprite_renderer.draw(render_pass, down_bind, queue, clip_x, clip_y, clip_w, clip_h);
+                // Year up/down arrows - use parsed positions from panel
+                let year_buttons = [
+                    (&panel.year_up_1, &panel.year_down_1),
+                    (&panel.year_up_2, &panel.year_down_2),
+                    (&panel.year_up_3, &panel.year_down_3),
+                ];
+                for (up_btn, down_btn) in year_buttons {
+                    if let Some((ux, uy)) = up_btn.position() {
+                        let (ref up_bind, up_w, up_h) = sprites.arrow_up_small;
+                        let up_pos = (datewidget_base.0 + ux as f32, datewidget_base.1 + uy as f32);
+                        let (clip_x, clip_y, clip_w, clip_h) =
+                            rect_to_clip_space(up_pos, (up_w, up_h), screen_size);
+                        sprite_renderer.draw(render_pass, up_bind, queue, clip_x, clip_y, clip_w, clip_h);
+                    }
+                    if let Some((dx, dy)) = down_btn.position() {
+                        let (ref down_bind, down_w, down_h) = sprites.arrow_down_small;
+                        let down_pos = (datewidget_base.0 + dx as f32, datewidget_base.1 + dy as f32);
+                        let (clip_x, clip_y, clip_w, clip_h) =
+                            rect_to_clip_space(down_pos, (down_w, down_h), screen_size);
+                        sprite_renderer.draw(render_pass, down_bind, queue, clip_x, clip_y, clip_w, clip_h);
+                    }
                 }
 
-                // Month arrows (left/right big)
-                let (ref left_big_bind, lbw, lbh) = sprites.arrow_left_big;
-                let month_left_pos = (datewidget_base.0 + 20.0, datewidget_base.1 + 109.0);
-                let (clip_x, clip_y, clip_w, clip_h) =
-                    rect_to_clip_space(month_left_pos, (lbw, lbh), screen_size);
-                sprite_renderer.draw(render_pass, left_big_bind, queue, clip_x, clip_y, clip_w, clip_h);
+                // Month arrows (left/right big) - use parsed positions
+                if let Some((mx, my)) = panel.month_down.position() {
+                    let (ref left_big_bind, lbw, lbh) = sprites.arrow_left_big;
+                    let month_left_pos = (datewidget_base.0 + mx as f32, datewidget_base.1 + my as f32);
+                    let (clip_x, clip_y, clip_w, clip_h) =
+                        rect_to_clip_space(month_left_pos, (lbw, lbh), screen_size);
+                    sprite_renderer.draw(render_pass, left_big_bind, queue, clip_x, clip_y, clip_w, clip_h);
+                }
+                if let Some((mx, my)) = panel.month_up.position() {
+                    let (ref right_big_bind, rbw, rbh) = sprites.arrow_right_big;
+                    let month_right_pos = (datewidget_base.0 + mx as f32, datewidget_base.1 + my as f32);
+                    let (clip_x, clip_y, clip_w, clip_h) =
+                        rect_to_clip_space(month_right_pos, (rbw, rbh), screen_size);
+                    sprite_renderer.draw(render_pass, right_big_bind, queue, clip_x, clip_y, clip_w, clip_h);
+                }
 
-                let (ref right_big_bind, rbw, rbh) = sprites.arrow_right_big;
-                let month_right_pos = (datewidget_base.0 + 237.0, datewidget_base.1 + 109.0);
-                let (clip_x, clip_y, clip_w, clip_h) =
-                    rect_to_clip_space(month_right_pos, (rbw, rbh), screen_size);
-                sprite_renderer.draw(render_pass, right_big_bind, queue, clip_x, clip_y, clip_w, clip_h);
-
-                // Day arrows (left/right small)
-                let (ref left_small_bind, lsw, lsh) = sprites.arrow_left_small;
-                let day_left_pos = (datewidget_base.0 + 42.0, datewidget_base.1 + 109.0);
-                let (clip_x, clip_y, clip_w, clip_h) =
-                    rect_to_clip_space(day_left_pos, (lsw, lsh), screen_size);
-                sprite_renderer.draw(render_pass, left_small_bind, queue, clip_x, clip_y, clip_w, clip_h);
-
-                let (ref right_small_bind, rsw, rsh) = sprites.arrow_right_small;
-                let day_right_pos = (datewidget_base.0 + 215.0, datewidget_base.1 + 109.0);
-                let (clip_x, clip_y, clip_w, clip_h) =
-                    rect_to_clip_space(day_right_pos, (rsw, rsh), screen_size);
-                sprite_renderer.draw(render_pass, right_small_bind, queue, clip_x, clip_y, clip_w, clip_h);
+                // Day arrows (left/right small) - use parsed positions
+                if let Some((dx, dy)) = panel.day_down.position() {
+                    let (ref left_small_bind, lsw, lsh) = sprites.arrow_left_small;
+                    let day_left_pos = (datewidget_base.0 + dx as f32, datewidget_base.1 + dy as f32);
+                    let (clip_x, clip_y, clip_w, clip_h) =
+                        rect_to_clip_space(day_left_pos, (lsw, lsh), screen_size);
+                    sprite_renderer.draw(render_pass, left_small_bind, queue, clip_x, clip_y, clip_w, clip_h);
+                }
+                if let Some((dx, dy)) = panel.day_up.position() {
+                    let (ref right_small_bind, rsw, rsh) = sprites.arrow_right_small;
+                    let day_right_pos = (datewidget_base.0 + dx as f32, datewidget_base.1 + dy as f32);
+                    let (clip_x, clip_y, clip_w, clip_h) =
+                        rect_to_clip_space(day_right_pos, (rsw, rsh), screen_size);
+                    sprite_renderer.draw(render_pass, right_small_bind, queue, clip_x, clip_y, clip_w, clip_h);
+                }
             }
 
             // Render year text with vic_22 font (larger font for year)
             if let Some(date) = start_date {
-                // Year text at (120, 57) within datewidget - centered in 80px box
+                // Center year between the parsed arrow positions
                 if let Some(font_idx) = self.font_bind_groups.iter().position(|(name, _)| name == "vic_22")
                     && let Some(loaded) = self.font_cache.get("vic_22", device, queue)
                 {
                     let font_bind_group = &self.font_bind_groups[font_idx].1;
                     let year_str = format!("{}", date.year());
-                    // Year arrows are at x=111, 131, 151 - center year between them
-                    // Visual center is around x=131, use range 100-170 (width 70)
-                    let year_center_x = datewidget_base.0 + 135.0;
-                    let year_box_y = datewidget_base.1 + 57.0;
+
+                    // Get year arrow positions for centering calculation
+                    let arrow_x1 = panel.year_up_1.position().map(|(x, _)| x as f32).unwrap_or(111.0);
+                    let arrow_x3 = panel.year_up_3.position().map(|(x, _)| x as f32).unwrap_or(151.0);
+                    let arrow_width = self.datewidget_sprites.as_ref().map(|s| s.arrow_up_small.1 as f32).unwrap_or(16.0);
+                    let year_center_x = datewidget_base.0 + (arrow_x1 + arrow_x3 + arrow_width) / 2.0;
+
+                    // Get year editbox Y position
+                    let (_, editor_y) = panel.year_editor.position();
+                    let year_box_y = datewidget_base.1 + editor_y as f32;
 
                     // Calculate text width for centering
                     let text_width: f32 = year_str
@@ -1877,15 +1893,17 @@ impl GuiRenderer {
                     }
                 }
 
-                // Day/month text at (82, 113) within datewidget - centered in 110px box
+                // Day/month text - use parsed position from panel
                 if let Some(font_idx) = self.font_bind_groups.iter().position(|(name, _)| name == "vic_18")
                     && let Some(loaded) = self.font_cache.get("vic_18", device, queue)
                 {
                     let font_bind_group = &self.font_bind_groups[font_idx].1;
                     let daymonth_str = date.day_month_str();
-                    let daymonth_box_x = datewidget_base.0 + 82.0;
-                    let daymonth_box_y = datewidget_base.1 + 113.0;
-                    let daymonth_box_w = 110.0;
+                    let (label_x, label_y) = panel.day_month_label.position();
+                    let (label_w, _) = panel.day_month_label.max_dimensions();
+                    let daymonth_box_x = datewidget_base.0 + label_x as f32;
+                    let daymonth_box_y = datewidget_base.1 + label_y as f32;
+                    let daymonth_box_w = if label_w > 0 { label_w as f32 } else { 110.0 };
 
                     let daymonth_width: f32 = daymonth_str
                         .chars()
