@@ -2830,3 +2830,145 @@ impl GuiRenderer {
         Some(rect_to_clip_space(screen_pos, shield_size, screen_size))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_handle_mouse_wheel_scrolls_bookmarks() {
+        // Create a minimal GuiRenderer for testing scroll behavior
+        // We can't easily create a full GuiRenderer without game assets,
+        // so we test the scroll logic directly by setting up hit_boxes manually.
+
+        let game_path = std::path::Path::new("/nonexistent");
+        let mut renderer = GuiRenderer::new(game_path);
+
+        // Manually set up bookmarks and hit_boxes as if render() had been called
+        renderer.bookmarks = vec![
+            eu4data::bookmarks::BookmarkEntry {
+                id: "test1".to_string(),
+                name: "TEST_1".to_string(),
+                date: eu4data::Eu4Date::from_ymd(1444, 11, 11),
+                countries: vec![],
+            },
+            eu4data::bookmarks::BookmarkEntry {
+                id: "test2".to_string(),
+                name: "TEST_2".to_string(),
+                date: eu4data::Eu4Date::from_ymd(1453, 5, 29),
+                countries: vec![],
+            },
+            eu4data::bookmarks::BookmarkEntry {
+                id: "test3".to_string(),
+                name: "TEST_3".to_string(),
+                date: eu4data::Eu4Date::from_ymd(1492, 1, 1),
+                countries: vec![],
+            },
+        ];
+
+        // Simulate hit_boxes as populated by render()
+        renderer.hit_boxes.push((
+            "bookmarks_list".to_string(),
+            HitBox {
+                x: 10.0,
+                y: 20.0,
+                width: 200.0,
+                height: 80.0, // Only fits ~2 entries (41px each)
+            },
+        ));
+
+        // Initial scroll offset should be 0
+        assert_eq!(renderer.bookmarks_scroll_offset, 0.0);
+
+        // Scroll down (positive delta) while mouse is over listbox
+        let consumed = renderer.handle_mouse_wheel(100.0, 50.0, 1.0);
+        assert!(consumed, "Scroll over listbox should be consumed");
+        assert!(
+            renderer.bookmarks_scroll_offset > 0.0,
+            "Scroll offset should increase"
+        );
+
+        // Scroll outside listbox should not be consumed
+        let consumed = renderer.handle_mouse_wheel(300.0, 300.0, 1.0);
+        assert!(!consumed, "Scroll outside listbox should not be consumed");
+
+        // Scroll should clamp to max (content - viewport)
+        // 3 entries * 41px = 123px content, 80px viewport, max = 43px
+        for _ in 0..10 {
+            renderer.handle_mouse_wheel(100.0, 50.0, 1.0);
+        }
+        let max_scroll = (3.0 * 41.0) - 80.0; // 43.0
+        assert!(
+            renderer.bookmarks_scroll_offset <= max_scroll + 0.1,
+            "Scroll should clamp to max: {} <= {}",
+            renderer.bookmarks_scroll_offset,
+            max_scroll
+        );
+
+        // Scroll up should decrease offset
+        let before = renderer.bookmarks_scroll_offset;
+        renderer.handle_mouse_wheel(100.0, 50.0, -1.0);
+        assert!(
+            renderer.bookmarks_scroll_offset < before,
+            "Scroll up should decrease offset"
+        );
+
+        // Scroll should clamp to 0
+        for _ in 0..10 {
+            renderer.handle_mouse_wheel(100.0, 50.0, -1.0);
+        }
+        assert_eq!(
+            renderer.bookmarks_scroll_offset, 0.0,
+            "Scroll should clamp to 0"
+        );
+    }
+
+    #[test]
+    fn test_handle_click_selects_bookmark() {
+        let game_path = std::path::Path::new("/nonexistent");
+        let mut renderer = GuiRenderer::new(game_path);
+
+        // Set up bookmarks
+        renderer.bookmarks = vec![
+            eu4data::bookmarks::BookmarkEntry {
+                id: "test1".to_string(),
+                name: "TEST_1".to_string(),
+                date: eu4data::Eu4Date::from_ymd(1444, 11, 11),
+                countries: vec![],
+            },
+            eu4data::bookmarks::BookmarkEntry {
+                id: "test2".to_string(),
+                name: "TEST_2".to_string(),
+                date: eu4data::Eu4Date::from_ymd(1453, 5, 29),
+                countries: vec![],
+            },
+        ];
+
+        // Simulate hit_boxes
+        renderer.hit_boxes.push((
+            "bookmarks_list".to_string(),
+            HitBox {
+                x: 10.0,
+                y: 20.0,
+                width: 200.0,
+                height: 100.0,
+            },
+        ));
+
+        let gui_state = GuiState::default();
+
+        // Click on first entry (y=20 to y=61, entry height=41)
+        let action = renderer.handle_click(50.0, 30.0, &gui_state);
+        assert!(matches!(action, Some(GuiAction::SelectBookmark(0))));
+        assert_eq!(renderer.selected_bookmark, Some(0));
+
+        // Click on second entry (y=61 to y=102)
+        let action = renderer.handle_click(50.0, 70.0, &gui_state);
+        assert!(matches!(action, Some(GuiAction::SelectBookmark(1))));
+        assert_eq!(renderer.selected_bookmark, Some(1));
+
+        // Click outside listbox returns None
+        let action = renderer.handle_click(300.0, 300.0, &gui_state);
+        assert!(action.is_none());
+    }
+}

@@ -2,7 +2,7 @@
 
 **Status**: Draft
 **Date**: 2025-12-31
-**Last Updated**: 2026-01-01 (Phase 8.5.4 complete with button rendering & LOWER_RIGHT fix)
+**Last Updated**: 2026-01-01 (Phase 8.6.1 complete with bookmarks listbox scroll & selection)
 **Objective**: Create a scalable, type-safe, and mod-friendly system for rendering EU4-style UI panels.
 
 ## 1. Problem Statement
@@ -632,13 +632,15 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
 ### Phase 8.6: Left Panel Widget Polish
 *Objective: Complete the left panel with complex interactive widgets. Trial by fire for listbox and editable text.*
 
-- [ ] **8.6.1. Bookmarks Listbox**
-    - [ ] Load bookmark data from `eu4data` (parsed in Phase 8.2)
-    - [ ] Render bookmarks listbox container with scrollable area
-    - [ ] Implement listbox item rendering (bookmark name, date)
-    - [ ] Scroll behavior (mouse wheel, drag scrollbar)
-    - [ ] Selection highlight on click
-    - [ ] Wire selection to `UiAction::SelectBookmark(id)`
+- [x] **8.6.1. Bookmarks Listbox** ✅ (2026-01-01)
+    - [x] Load bookmark data from `eu4data` (parsed in Phase 8.2)
+    - [x] Render bookmarks listbox container with scrollable area
+    - [x] Implement listbox item rendering (bookmark name, date)
+    - [x] Scroll behavior (mouse wheel) - scrollbar drag deferred
+    - [x] Selection highlight on click (first bookmark selected by default)
+    - [x] Wire selection to `GuiAction::SelectBookmark(idx)`
+    - [x] Unit tests for scroll and click behavior
+    - Note: Localization keys display as-is (e.g., "GC_AFRICA_BOOKMARK") pending Phase 10
 - [ ] **8.6.2. Save Games Listbox**
     - [ ] Render save games listbox container
     - [ ] Implement save file discovery (scan save directory) - placeholder data for now
