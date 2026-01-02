@@ -717,6 +717,7 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
 - [x] **9.5.1. Terrain Mode**
     - [x] Render heightmap-based terrain coloring
     - [x] Display elevation differences visually
+    - **Note**: Current implementation uses simplified elevation gradients for functional terrain visualization. Authentic EU4 terrain rendering with detailed biome textures is planned for **Phase 14**.
 - [ ] **9.5.2. Trade Mode**
     - [ ] Render trade nodes and connections
     - [ ] Display trade flow arrows
@@ -821,6 +822,40 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [ ] Generate golden images at key interaction points
     - [ ] *Rationale*: Manual testing is impractical with timeouts; synthetic input
           allows automated verification of the complete UI state machine
+
+### Phase 14: Authentic Terrain Rendering
+*Objective: Replace simplified elevation gradients with authentic EU4 terrain textures.*
+
+**Background**: The current terrain mode (Phase 9.5.1) uses basic elevation-based color gradients. Authentic EU4 terrain mode renders rich, detailed terrain textures showing forests, deserts, grasslands, mountains with snow, rivers, and varied biomes. This phase implements texture-based terrain rendering to match EU4's visual fidelity.
+
+- [ ] **14.1. Terrain Texture Research**
+    - [ ] Locate terrain texture files in EU4 game directory
+    - [ ] Document texture formats and atlas structure
+    - [ ] Identify how terrain types map to provinces/regions
+    - [ ] Understand terrain blending at biome boundaries
+- [ ] **14.2. Terrain Type Mapping**
+    - [ ] Load terrain type definitions from game data
+    - [ ] Map provinces to terrain types (grassland, forest, desert, mountain, etc.)
+    - [ ] Handle climate zones and seasonal variations if needed
+- [ ] **14.3. Terrain Texture Loading**
+    - [ ] Extend texture loading system for terrain atlases
+    - [ ] Create texture samplers for terrain rendering
+    - [ ] Load DDS terrain textures from game files
+- [ ] **14.4. Shader Implementation**
+    - [ ] Add terrain texture sampling to fragment shader
+    - [ ] Implement terrain type lookup per province
+    - [ ] Add biome blending for smooth transitions
+    - [ ] Preserve terrain shading for depth and lighting
+- [ ] **14.5. Performance Optimization**
+    - [ ] Profile terrain rendering performance
+    - [ ] Optimize texture sampling if needed
+    - [ ] Consider LOD/mipmapping for distant terrain
+- [ ] **14.6. Visual Polish**
+    - [ ] Ensure province borders remain visible over terrain
+    - [ ] Match color palette and visual style of authentic EU4
+    - [ ] Test with various zoom levels and regions
+
+**Success Criteria**: Terrain mode visually matches authentic EU4 with detailed textures for forests, deserts, grasslands, mountains, and other biomes. Province boundaries remain clearly visible.
 
 ---
 

@@ -129,6 +129,12 @@ fn compute_terrain_shading(uv: vec2<f32>) -> f32 {
 
 // Compute terrain color based on heightmap elevation
 // Returns RGB color gradient: low (ocean/lowlands) -> mid (plains) -> high (mountains)
+//
+// NOTE: This is a simplified terrain mode implementation using elevation gradients.
+// The actual EU4 terrain mode uses detailed terrain textures with much richer visual
+// detail (grass, forests, deserts, snow, etc.). This gradient-based approach provides
+// functional terrain visualization but doesn't match EU4's terrain aesthetic.
+// Future improvement: Load and render actual terrain textures from game files.
 fn compute_terrain_color(uv: vec2<f32>) -> vec4<f32> {
     let height = textureSample(t_heightmap, s_heightmap, uv).r;
 
