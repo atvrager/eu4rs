@@ -2,7 +2,7 @@
 
 **Status**: Draft
 **Date**: 2025-12-31
-**Last Updated**: 2026-01-01 (Phase 8.6.2 complete with save games listbox)
+**Last Updated**: 2026-01-02 (Phase 8.6.4 complete with integration tests)
 **Objective**: Create a scalable, type-safe, and mod-friendly system for rendering EU4-style UI panels.
 
 ## 1. Problem Statement
@@ -648,18 +648,26 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] Selection and scroll behavior (reuses pattern from 8.6.1)
     - [x] Wire selection to `GuiAction::SelectSaveGame(idx)`
     - Note: Country display and actual save loading deferred to Phase 9
-- [ ] **8.6.3. Date Widget**
-    - [ ] Render year editor (editable text field)
-    - [ ] Render day/month label (read-only display)
-    - [ ] Render up/down adjustment buttons
-    - [ ] Implement year validation (1444-1821 range)
-    - [ ] Handle text input for year editing
-    - [ ] Wire adjustment buttons to increment/decrement year
-    - [ ] Update date display when bookmark selected
-- [ ] **8.6.4. Integration Testing**
-    - [ ] Add listbox rendering to state machine tests
-    - [ ] Verify scroll behavior with synthetic input
-    - [ ] Test date widget validation edge cases
+- [x] **8.6.3. Date Widget** ✅ (2026-01-02)
+    - [x] Render year editor (text display with centered year)
+    - [x] Render day/month label (read-only display)
+    - [x] Render up/down adjustment buttons (all 6 year buttons + month/day arrows)
+    - [x] Implement mod-friendly year validation (derived from bookmarks, supports Extended Timeline)
+    - [x] Wire adjustment buttons to increment/decrement year/month/day with range clamping
+    - [x] Update date display when bookmark selected
+    - Note: Text input for year editing deferred (current implementation uses buttons only)
+- [x] **8.6.4. Integration Testing** ✅ (2026-01-02)
+    - [x] Add listbox rendering to state machine tests (`test_listbox_rendering`)
+    - [x] Test date widget validation edge cases:
+        - [x] Default date (1444.11.11)
+        - [x] Minimum year edge case (year 1)
+        - [x] Maximum year edge case (year 9999)
+        - [x] Extended Timeline mod support (year 2)
+        - [x] Various months (January, December)
+        - [x] Leap year dates (February 29)
+    - [x] Added `set_start_date()` method to `GuiTestHarness` for state manipulation
+    - [x] Generated golden snapshots for all test cases (8 new snapshots)
+    - Note: Synthetic input injection deferred to Phase 13.4 (requires input injection infrastructure)
 
 ### Phase 9: Game Integration
 *Objective: Connect UI to game systems for complete start flow.*

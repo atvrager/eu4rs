@@ -6,6 +6,31 @@
 use crate::Eu4Date;
 use std::path::Path;
 
+/// Derive the valid year range from a list of bookmarks.
+///
+/// Returns (min_year, max_year) based on the earliest and latest bookmark dates.
+/// If no bookmarks are provided, returns vanilla EU4's default range (1444-1821).
+///
+/// This approach supports mods like Extended Timeline that have bookmarks outside
+/// the vanilla range.
+pub fn get_year_range_from_bookmarks(bookmarks: &[BookmarkEntry]) -> (i32, i32) {
+    if bookmarks.is_empty() {
+        return (Eu4Date::VANILLA_MIN_YEAR, Eu4Date::VANILLA_MAX_YEAR);
+    }
+
+    let min_year = bookmarks.iter().map(|b| b.date.year()).min().unwrap();
+    let max_year = bookmarks.iter().map(|b| b.date.year()).max().unwrap();
+
+    // Bookmarks define specific start dates, but allow some flexibility
+    // (e.g., vanilla has bookmarks for 1444, 1492, 1618, etc., but allows
+    // custom dates in between). Use a reasonable buffer.
+    let buffer = 100; // Allow dates 100 years before/after earliest/latest bookmark
+    (
+        (min_year - buffer).max(1),    // Don't go below year 1
+        (max_year + buffer).min(9999), // Don't go above year 9999
+    )
+}
+
 /// A bookmark entry representing a historical start date.
 #[derive(Debug, Clone)]
 pub struct BookmarkEntry {

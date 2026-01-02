@@ -39,12 +39,47 @@ impl Eu4Date {
         self.day
     }
 
-    /// Adjust the year by delta, clamping to valid range (1-9999).
-    pub fn adjust_year(&mut self, delta: i32) {
-        self.year = (self.year + delta).clamp(1, 9999);
+    /// Vanilla EU4's default start year range (for fallback if no bookmarks loaded).
+    /// Extended Timeline and other mods may have different ranges derived from their bookmarks.
+    pub const VANILLA_MIN_YEAR: i32 = 1444;
+    pub const VANILLA_MAX_YEAR: i32 = 1821;
+
+    /// Adjust the year by delta, clamping to a provided range.
+    ///
+    /// Use `get_year_range_from_bookmarks()` to derive the range from loaded bookmarks,
+    /// which supports mods like Extended Timeline.
+    pub fn adjust_year(&mut self, delta: i32, min_year: i32, max_year: i32) {
+        self.year = (self.year + delta).clamp(min_year, max_year);
+    }
+
+    /// Set the year directly, clamping to a provided range.
+    ///
+    /// Returns true if the year was valid (within range), false if it was clamped.
+    pub fn set_year(&mut self, year: i32, min_year: i32, max_year: i32) -> bool {
+        let clamped = year.clamp(min_year, max_year);
+        self.year = clamped;
+        clamped == year
+    }
+
+    /// Try to parse and set the year from a string, with validation against a range.
+    ///
+    /// Returns Ok(true) if parsed and within range,
+    /// Ok(false) if parsed but clamped to range,
+    /// Err if the string is not a valid number.
+    pub fn try_set_year_from_str(
+        &mut self,
+        s: &str,
+        min_year: i32,
+        max_year: i32,
+    ) -> Result<bool, std::num::ParseIntError> {
+        let year = s.parse::<i32>()?;
+        Ok(self.set_year(year, min_year, max_year))
     }
 
     /// Adjust the month by delta, wrapping and adjusting year as needed.
+    ///
+    /// NOTE: Year wrapping uses a wide range (1-9999). For UI validation,
+    /// use `adjust_year()` with bookmark-derived min/max after this call.
     pub fn adjust_month(&mut self, delta: i32) {
         let mut new_month = self.month as i32 + delta;
         while new_month < 1 {
@@ -58,6 +93,7 @@ impl Eu4Date {
         self.month = new_month as u8;
         // Clamp day to valid range for new month
         self.day = self.day.min(Self::days_in_month(self.year, self.month));
+        // Prevent absurd years, but don't enforce bookmark-specific range here
         self.year = self.year.clamp(1, 9999);
     }
 

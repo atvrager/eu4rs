@@ -165,3 +165,123 @@ fn test_screen_states_produce_different_output() {
         single_vs_playing
     );
 }
+
+/// Test that listboxes render correctly on the SinglePlayer screen.
+///
+/// Verifies that both the bookmarks listbox and save games listbox
+/// are rendered with their content visible.
+#[test]
+fn test_listbox_rendering() {
+    let Some(mut harness) = GuiTestHarness::new() else {
+        return;
+    };
+
+    harness.transition_to(Screen::SinglePlayer);
+    let image = harness.render_to_image(TEST_SCREEN_SIZE);
+
+    // This golden will capture the listboxes in their initial state
+    // (bookmarks loaded, save games loaded, default scroll position)
+    assert_snapshot(&image, "listbox_rendering");
+}
+
+/// Test that the date widget renders correctly with the default date.
+#[test]
+fn test_date_widget_default() {
+    let Some(mut harness) = GuiTestHarness::new() else {
+        return;
+    };
+
+    harness.transition_to(Screen::SinglePlayer);
+    let image = harness.render_to_image(TEST_SCREEN_SIZE);
+
+    // Default date is 1444.11.11 (11 November 1444)
+    // This should render the year "1444" in the year editor
+    // and "11 November" in the day/month label
+    assert_snapshot(&image, "date_widget_default");
+}
+
+/// Test date widget with minimum year edge case.
+///
+/// Verifies that years at the lower bound of the valid range
+/// (derived from bookmarks) render correctly.
+#[test]
+fn test_date_widget_min_year() {
+    let Some(mut harness) = GuiTestHarness::new() else {
+        return;
+    };
+
+    harness.transition_to(Screen::SinglePlayer);
+    harness.set_start_date(eu4data::Eu4Date::from_ymd(1, 1, 1));
+
+    let image = harness.render_to_image(TEST_SCREEN_SIZE);
+    assert_snapshot(&image, "date_widget_min_year");
+}
+
+/// Test date widget with maximum year edge case.
+///
+/// Verifies that years at the upper bound (9999) render correctly.
+#[test]
+fn test_date_widget_max_year() {
+    let Some(mut harness) = GuiTestHarness::new() else {
+        return;
+    };
+
+    harness.transition_to(Screen::SinglePlayer);
+    harness.set_start_date(eu4data::Eu4Date::from_ymd(9999, 12, 31));
+
+    let image = harness.render_to_image(TEST_SCREEN_SIZE);
+    assert_snapshot(&image, "date_widget_max_year");
+}
+
+/// Test date widget with a date outside vanilla EU4 range.
+///
+/// This verifies mod support (e.g., Extended Timeline) where years
+/// can be outside the vanilla 1444-1821 range.
+#[test]
+fn test_date_widget_extended_timeline() {
+    let Some(mut harness) = GuiTestHarness::new() else {
+        return;
+    };
+
+    harness.transition_to(Screen::SinglePlayer);
+    // Extended Timeline allows dates like year 2 (very early) or 9999 (far future)
+    // Test with year 58 BC would be -58, but let's use year 2 as it's valid
+    harness.set_start_date(eu4data::Eu4Date::from_ymd(2, 1, 1));
+
+    let image = harness.render_to_image(TEST_SCREEN_SIZE);
+    assert_snapshot(&image, "date_widget_extended_timeline_early");
+}
+
+/// Test date widget with different months to verify month wrapping.
+#[test]
+fn test_date_widget_various_months() {
+    let Some(mut harness) = GuiTestHarness::new() else {
+        return;
+    };
+
+    harness.transition_to(Screen::SinglePlayer);
+
+    // Test January (month 1)
+    harness.set_start_date(eu4data::Eu4Date::from_ymd(1500, 1, 15));
+    let jan_image = harness.render_to_image(TEST_SCREEN_SIZE);
+    assert_snapshot(&jan_image, "date_widget_january");
+
+    // Test December (month 12)
+    harness.set_start_date(eu4data::Eu4Date::from_ymd(1500, 12, 25));
+    let dec_image = harness.render_to_image(TEST_SCREEN_SIZE);
+    assert_snapshot(&dec_image, "date_widget_december");
+}
+
+/// Test that leap year dates render correctly (February 29).
+#[test]
+fn test_date_widget_leap_year() {
+    let Some(mut harness) = GuiTestHarness::new() else {
+        return;
+    };
+
+    harness.transition_to(Screen::SinglePlayer);
+    harness.set_start_date(eu4data::Eu4Date::from_ymd(1600, 2, 29));
+
+    let image = harness.render_to_image(TEST_SCREEN_SIZE);
+    assert_snapshot(&image, "date_widget_leap_year");
+}

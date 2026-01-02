@@ -146,6 +146,11 @@ struct DatewidgetSprites {
 }
 
 impl GuiRenderer {
+    /// Get the loaded bookmarks.
+    pub fn bookmarks(&self) -> &[BookmarkEntry] {
+        &self.bookmarks
+    }
+
     /// Create a new GUI renderer.
     pub fn new(game_path: &Path) -> Self {
         let mut gfx_db = GfxDatabase::default();
@@ -433,7 +438,7 @@ impl GuiRenderer {
             // Load all sprites
             let mut loaded: Vec<Option<(wgpu::BindGroup, u32, u32)>> = Vec::new();
             for name in &sprite_names {
-                let result = self.gfx_db.get(*name).cloned().and_then(|sprite| {
+                let result = self.gfx_db.get(name).cloned().and_then(|sprite| {
                     self.sprite_cache
                         .get(&sprite.texture_file, device, queue)
                         .map(|(view, w, h)| (sprite_renderer.create_bind_group(device, view), w, h))
@@ -1566,8 +1571,11 @@ impl GuiRenderer {
                     // Draw icon centered on tab (3 frames: hourglass, folder, ?)
                     let icon_x = tab_screen_pos.0 + (TAB_WIDTH as f32 - ICON_WIDTH as f32) / 2.0;
                     let icon_y = tab_screen_pos.1 + (TAB_HEIGHT as f32 - ICON_HEIGHT as f32) / 2.0;
-                    let (icon_clip_x, icon_clip_y, icon_clip_w, icon_clip_h) =
-                        rect_to_clip_space((icon_x, icon_y), (ICON_WIDTH, ICON_HEIGHT), screen_size);
+                    let (icon_clip_x, icon_clip_y, icon_clip_w, icon_clip_h) = rect_to_clip_space(
+                        (icon_x, icon_y),
+                        (ICON_WIDTH, ICON_HEIGHT),
+                        screen_size,
+                    );
                     let icon_u_min = icon_frame as f32 / 3.0;
                     let icon_u_max = icon_u_min + 1.0 / 3.0;
                     sprite_renderer.draw_uv(
@@ -1601,19 +1609,11 @@ impl GuiRenderer {
                 }
             }
 
-            // Clone all buttons to avoid borrow conflicts
+            // Clone buttons to avoid borrow conflicts
+            // Note: Date widget buttons (year_*, month_*, day_*) are excluded here
+            // because they're rendered separately in the datewidget section with proper positioning
             let buttons_with_actions = vec![
                 (panel.back_button.clone(), "back_button"),
-                (panel.year_up_1.clone(), "year_up_1"),
-                (panel.year_down_1.clone(), "year_down_1"),
-                (panel.year_up_2.clone(), "year_up_2"),
-                (panel.year_down_2.clone(), "year_down_2"),
-                (panel.year_up_3.clone(), "year_up_3"),
-                (panel.year_down_3.clone(), "year_down_3"),
-                (panel.month_up.clone(), "month_up"),
-                (panel.month_down.clone(), "month_down"),
-                (panel.day_up.clone(), "day_up"),
-                (panel.day_down.clone(), "day_down"),
                 (panel.observe_mode_button.clone(), "observe_mode_button"),
             ];
             let _ = panel;
@@ -1785,74 +1785,218 @@ impl GuiRenderer {
 
                 // Year up/down arrows - use parsed positions from panel
                 let year_buttons = [
-                    (&panel.year_up_1, &panel.year_down_1),
-                    (&panel.year_up_2, &panel.year_down_2),
-                    (&panel.year_up_3, &panel.year_down_3),
+                    (
+                        &panel.year_up_1,
+                        &panel.year_down_1,
+                        "year_up_1",
+                        "year_down_1",
+                    ),
+                    (
+                        &panel.year_up_2,
+                        &panel.year_down_2,
+                        "year_up_2",
+                        "year_down_2",
+                    ),
+                    (
+                        &panel.year_up_3,
+                        &panel.year_down_3,
+                        "year_up_3",
+                        "year_down_3",
+                    ),
                 ];
-                for (up_btn, down_btn) in year_buttons {
+                for (up_btn, down_btn, up_name, down_name) in year_buttons {
                     if let Some((ux, uy)) = up_btn.position() {
                         let (ref up_bind, up_w, up_h) = sprites.arrow_up_small;
                         let up_pos = (datewidget_base.0 + ux as f32, datewidget_base.1 + uy as f32);
                         let (clip_x, clip_y, clip_w, clip_h) =
                             rect_to_clip_space(up_pos, (up_w, up_h), screen_size);
-                        sprite_renderer.draw(render_pass, up_bind, queue, clip_x, clip_y, clip_w, clip_h);
+                        sprite_renderer.draw(
+                            render_pass,
+                            up_bind,
+                            queue,
+                            clip_x,
+                            clip_y,
+                            clip_w,
+                            clip_h,
+                        );
+                        // Register hit box
+                        self.hit_boxes.push((
+                            up_name.to_string(),
+                            HitBox {
+                                x: up_pos.0,
+                                y: up_pos.1,
+                                width: up_w as f32,
+                                height: up_h as f32,
+                            },
+                        ));
                     }
                     if let Some((dx, dy)) = down_btn.position() {
                         let (ref down_bind, down_w, down_h) = sprites.arrow_down_small;
-                        let down_pos = (datewidget_base.0 + dx as f32, datewidget_base.1 + dy as f32);
+                        let down_pos =
+                            (datewidget_base.0 + dx as f32, datewidget_base.1 + dy as f32);
                         let (clip_x, clip_y, clip_w, clip_h) =
                             rect_to_clip_space(down_pos, (down_w, down_h), screen_size);
-                        sprite_renderer.draw(render_pass, down_bind, queue, clip_x, clip_y, clip_w, clip_h);
+                        sprite_renderer.draw(
+                            render_pass,
+                            down_bind,
+                            queue,
+                            clip_x,
+                            clip_y,
+                            clip_w,
+                            clip_h,
+                        );
+                        // Register hit box
+                        self.hit_boxes.push((
+                            down_name.to_string(),
+                            HitBox {
+                                x: down_pos.0,
+                                y: down_pos.1,
+                                width: down_w as f32,
+                                height: down_h as f32,
+                            },
+                        ));
                     }
                 }
 
                 // Month arrows (left/right big) - use parsed positions
                 if let Some((mx, my)) = panel.month_down.position() {
                     let (ref left_big_bind, lbw, lbh) = sprites.arrow_left_big;
-                    let month_left_pos = (datewidget_base.0 + mx as f32, datewidget_base.1 + my as f32);
+                    let month_left_pos =
+                        (datewidget_base.0 + mx as f32, datewidget_base.1 + my as f32);
                     let (clip_x, clip_y, clip_w, clip_h) =
                         rect_to_clip_space(month_left_pos, (lbw, lbh), screen_size);
-                    sprite_renderer.draw(render_pass, left_big_bind, queue, clip_x, clip_y, clip_w, clip_h);
+                    sprite_renderer.draw(
+                        render_pass,
+                        left_big_bind,
+                        queue,
+                        clip_x,
+                        clip_y,
+                        clip_w,
+                        clip_h,
+                    );
+                    // Register hit box
+                    self.hit_boxes.push((
+                        "month_down".to_string(),
+                        HitBox {
+                            x: month_left_pos.0,
+                            y: month_left_pos.1,
+                            width: lbw as f32,
+                            height: lbh as f32,
+                        },
+                    ));
                 }
                 if let Some((mx, my)) = panel.month_up.position() {
                     let (ref right_big_bind, rbw, rbh) = sprites.arrow_right_big;
-                    let month_right_pos = (datewidget_base.0 + mx as f32, datewidget_base.1 + my as f32);
+                    let month_right_pos =
+                        (datewidget_base.0 + mx as f32, datewidget_base.1 + my as f32);
                     let (clip_x, clip_y, clip_w, clip_h) =
                         rect_to_clip_space(month_right_pos, (rbw, rbh), screen_size);
-                    sprite_renderer.draw(render_pass, right_big_bind, queue, clip_x, clip_y, clip_w, clip_h);
+                    sprite_renderer.draw(
+                        render_pass,
+                        right_big_bind,
+                        queue,
+                        clip_x,
+                        clip_y,
+                        clip_w,
+                        clip_h,
+                    );
+                    // Register hit box
+                    self.hit_boxes.push((
+                        "month_up".to_string(),
+                        HitBox {
+                            x: month_right_pos.0,
+                            y: month_right_pos.1,
+                            width: rbw as f32,
+                            height: rbh as f32,
+                        },
+                    ));
                 }
 
                 // Day arrows (left/right small) - use parsed positions
                 if let Some((dx, dy)) = panel.day_down.position() {
                     let (ref left_small_bind, lsw, lsh) = sprites.arrow_left_small;
-                    let day_left_pos = (datewidget_base.0 + dx as f32, datewidget_base.1 + dy as f32);
+                    let day_left_pos =
+                        (datewidget_base.0 + dx as f32, datewidget_base.1 + dy as f32);
                     let (clip_x, clip_y, clip_w, clip_h) =
                         rect_to_clip_space(day_left_pos, (lsw, lsh), screen_size);
-                    sprite_renderer.draw(render_pass, left_small_bind, queue, clip_x, clip_y, clip_w, clip_h);
+                    sprite_renderer.draw(
+                        render_pass,
+                        left_small_bind,
+                        queue,
+                        clip_x,
+                        clip_y,
+                        clip_w,
+                        clip_h,
+                    );
+                    // Register hit box
+                    self.hit_boxes.push((
+                        "day_down".to_string(),
+                        HitBox {
+                            x: day_left_pos.0,
+                            y: day_left_pos.1,
+                            width: lsw as f32,
+                            height: lsh as f32,
+                        },
+                    ));
                 }
                 if let Some((dx, dy)) = panel.day_up.position() {
                     let (ref right_small_bind, rsw, rsh) = sprites.arrow_right_small;
-                    let day_right_pos = (datewidget_base.0 + dx as f32, datewidget_base.1 + dy as f32);
+                    let day_right_pos =
+                        (datewidget_base.0 + dx as f32, datewidget_base.1 + dy as f32);
                     let (clip_x, clip_y, clip_w, clip_h) =
                         rect_to_clip_space(day_right_pos, (rsw, rsh), screen_size);
-                    sprite_renderer.draw(render_pass, right_small_bind, queue, clip_x, clip_y, clip_w, clip_h);
+                    sprite_renderer.draw(
+                        render_pass,
+                        right_small_bind,
+                        queue,
+                        clip_x,
+                        clip_y,
+                        clip_w,
+                        clip_h,
+                    );
+                    // Register hit box
+                    self.hit_boxes.push((
+                        "day_up".to_string(),
+                        HitBox {
+                            x: day_right_pos.0,
+                            y: day_right_pos.1,
+                            width: rsw as f32,
+                            height: rsh as f32,
+                        },
+                    ));
                 }
             }
 
             // Render year text with vic_22 font (larger font for year)
             if let Some(date) = start_date {
                 // Center year between the parsed arrow positions
-                if let Some(font_idx) = self.font_bind_groups.iter().position(|(name, _)| name == "vic_22")
+                if let Some(font_idx) = self
+                    .font_bind_groups
+                    .iter()
+                    .position(|(name, _)| name == "vic_22")
                     && let Some(loaded) = self.font_cache.get("vic_22", device, queue)
                 {
                     let font_bind_group = &self.font_bind_groups[font_idx].1;
                     let year_str = format!("{}", date.year());
 
                     // Get year arrow positions for centering calculation
-                    let arrow_x1 = panel.year_up_1.position().map(|(x, _)| x as f32).unwrap_or(111.0);
-                    let arrow_x3 = panel.year_up_3.position().map(|(x, _)| x as f32).unwrap_or(151.0);
-                    let arrow_width = self.datewidget_sprites.as_ref().map(|s| s.arrow_up_small.1 as f32).unwrap_or(16.0);
-                    let year_center_x = datewidget_base.0 + (arrow_x1 + arrow_x3 + arrow_width) / 2.0;
+                    let arrow_x1 = panel
+                        .year_up_1
+                        .position()
+                        .map(|(x, _)| x as f32)
+                        .unwrap_or(111.0);
+                    let arrow_x3 = panel
+                        .year_up_3
+                        .position()
+                        .map(|(x, _)| x as f32)
+                        .unwrap_or(151.0);
+                    let arrow_width = self
+                        .datewidget_sprites
+                        .as_ref()
+                        .map(|s| s.arrow_up_small.1 as f32)
+                        .unwrap_or(16.0);
+                    let year_center_x =
+                        datewidget_base.0 + (arrow_x1 + arrow_x3 + arrow_width) / 2.0;
 
                     // Get year editbox Y position
                     let (_, editor_y) = panel.year_editor.position();
@@ -1872,8 +2016,11 @@ impl GuiRenderer {
                         if let Some(glyph) = loaded.font.get_glyph(c) {
                             let glyph_x = cursor_x + glyph.xoffset as f32;
                             let glyph_y = year_y + glyph.yoffset as f32;
-                            let (clip_x, clip_y, clip_w, clip_h) =
-                                rect_to_clip_space((glyph_x, glyph_y), (glyph.width, glyph.height), screen_size);
+                            let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
+                                (glyph_x, glyph_y),
+                                (glyph.width, glyph.height),
+                                screen_size,
+                            );
                             let (u_min, v_min, u_max, v_max) = loaded.font.glyph_uv(glyph);
                             sprite_renderer.draw_uv(
                                 render_pass,
@@ -1894,7 +2041,10 @@ impl GuiRenderer {
                 }
 
                 // Day/month text - use parsed position from panel
-                if let Some(font_idx) = self.font_bind_groups.iter().position(|(name, _)| name == "vic_18")
+                if let Some(font_idx) = self
+                    .font_bind_groups
+                    .iter()
+                    .position(|(name, _)| name == "vic_18")
                     && let Some(loaded) = self.font_cache.get("vic_18", device, queue)
                 {
                     let font_bind_group = &self.font_bind_groups[font_idx].1;
@@ -1918,8 +2068,11 @@ impl GuiRenderer {
                         if let Some(glyph) = loaded.font.get_glyph(c) {
                             let glyph_x = cursor_x + glyph.xoffset as f32;
                             let glyph_y = daymonth_y + glyph.yoffset as f32;
-                            let (clip_x, clip_y, clip_w, clip_h) =
-                                rect_to_clip_space((glyph_x, glyph_y), (glyph.width, glyph.height), screen_size);
+                            let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
+                                (glyph_x, glyph_y),
+                                (glyph.width, glyph.height),
+                                screen_size,
+                            );
                             let (u_min, v_min, u_max, v_max) = loaded.font.glyph_uv(glyph);
                             sprite_renderer.draw_uv(
                                 render_pass,

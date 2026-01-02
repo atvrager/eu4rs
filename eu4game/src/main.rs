@@ -164,6 +164,9 @@ struct App {
     country_select_left: Option<gui::CountrySelectLeftPanel>,
     /// Selected start date on country selection screen.
     start_date: eu4data::Eu4Date,
+    /// Valid year range for start dates (min, max), derived from loaded bookmarks.
+    /// Supports mod compatibility (e.g., Extended Timeline).
+    year_range: (i32, i32),
 }
 
 impl App {
@@ -301,6 +304,24 @@ impl App {
             log::warn!("GUI rendering unavailable (game path not found)");
         }
 
+        // Derive valid year range from loaded bookmarks (supports mod compatibility)
+        let year_range = gui_renderer
+            .as_ref()
+            .map(|gr| eu4data::bookmarks::get_year_range_from_bookmarks(gr.bookmarks()))
+            .unwrap_or((
+                eu4data::Eu4Date::VANILLA_MIN_YEAR,
+                eu4data::Eu4Date::VANILLA_MAX_YEAR,
+            ));
+        log::info!(
+            "Valid start year range: {}-{} (from {} bookmarks)",
+            year_range.0,
+            year_range.1,
+            gui_renderer
+                .as_ref()
+                .map(|gr| gr.bookmarks().len())
+                .unwrap_or(0)
+        );
+
         // Create FrontendUI with panels from GuiRenderer (Phase 8.5.1)
         // Main menu remains a placeholder until Phase 8.5.4
         // Left/top/lobby panels are loaded from frontend.gui when available
@@ -366,6 +387,7 @@ impl App {
             frontend_ui,
             country_select_left: None,
             start_date: eu4data::Eu4Date::from_ymd(1444, 11, 11), // Default EU4 start
+            year_range,
         }
     }
 
@@ -1157,22 +1179,52 @@ impl App {
             UiAction::DateAdjust(part, delta) => {
                 use gui::core::DatePart;
                 match part {
-                    DatePart::Year => self.start_date.adjust_year(delta),
-                    DatePart::Month => self.start_date.adjust_month(delta),
-                    DatePart::Day => self.start_date.adjust_day(delta),
+                    DatePart::Year => {
+                        self.start_date
+                            .adjust_year(delta, self.year_range.0, self.year_range.1);
+                    }
+                    DatePart::Month => {
+                        self.start_date.adjust_month(delta);
+                        // Month adjustment can wrap the year, so clamp it back to range
+                        let year = self.start_date.year();
+                        self.start_date
+                            .set_year(year, self.year_range.0, self.year_range.1);
+                    }
+                    DatePart::Day => {
+                        self.start_date.adjust_day(delta);
+                        // Day adjustment can wrap the year, so clamp it back to range
+                        let year = self.start_date.year();
+                        self.start_date
+                            .set_year(year, self.year_range.0, self.year_range.1);
+                    }
                 }
                 log::info!(
-                    "Date adjusted to: {}.{}.{}",
+                    "Date adjusted to: {}.{}.{} (range: {}-{})",
                     self.start_date.year(),
                     self.start_date.month(),
-                    self.start_date.day()
+                    self.start_date.day(),
+                    self.year_range.0,
+                    self.year_range.1
                 );
                 self.lookup_dirty = true;
                 false
             }
             UiAction::SelectBookmark(idx) => {
                 log::info!("Select bookmark: {}", idx);
-                // TODO: Implement bookmark selection when we have bookmarks loaded
+                // Update start date from selected bookmark
+                if let Some(gui_renderer) = &self.gui_renderer
+                    && let Some(bookmark) = gui_renderer.bookmarks().get(idx)
+                {
+                    self.start_date = bookmark.date;
+                    log::info!(
+                        "Date set to bookmark '{}': {}.{}.{}",
+                        bookmark.name,
+                        self.start_date.year(),
+                        self.start_date.month(),
+                        self.start_date.day()
+                    );
+                    self.lookup_dirty = true;
+                }
                 false
             }
             UiAction::SelectSaveGame(idx) => {
@@ -1782,15 +1834,32 @@ impl App {
             gui::GuiAction::DateAdjust(part, delta) => {
                 use gui::types::DatePart;
                 match part {
-                    DatePart::Year => self.start_date.adjust_year(delta),
-                    DatePart::Month => self.start_date.adjust_month(delta),
-                    DatePart::Day => self.start_date.adjust_day(delta),
+                    DatePart::Year => {
+                        self.start_date
+                            .adjust_year(delta, self.year_range.0, self.year_range.1);
+                    }
+                    DatePart::Month => {
+                        self.start_date.adjust_month(delta);
+                        // Month adjustment can wrap the year, so clamp it back to range
+                        let year = self.start_date.year();
+                        self.start_date
+                            .set_year(year, self.year_range.0, self.year_range.1);
+                    }
+                    DatePart::Day => {
+                        self.start_date.adjust_day(delta);
+                        // Day adjustment can wrap the year, so clamp it back to range
+                        let year = self.start_date.year();
+                        self.start_date
+                            .set_year(year, self.year_range.0, self.year_range.1);
+                    }
                 }
                 log::info!(
-                    "Date adjusted to: {}.{}.{}",
+                    "Date adjusted to: {}.{}.{} (range: {}-{})",
                     self.start_date.year(),
                     self.start_date.month(),
-                    self.start_date.day()
+                    self.start_date.day(),
+                    self.year_range.0,
+                    self.year_range.1
                 );
                 // Mark lookup dirty to trigger political map update
                 self.lookup_dirty = true;

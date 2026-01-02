@@ -242,6 +242,11 @@ impl GuiTestHarness {
         self.gui_state.paused = paused;
     }
 
+    /// Set the start date for the country selection screen.
+    pub fn set_start_date(&mut self, date: eu4data::Eu4Date) {
+        self.start_date = date;
+    }
+
     // ========================================
     // Rendering
     // ========================================
