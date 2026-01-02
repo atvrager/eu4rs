@@ -1736,12 +1736,12 @@ impl GuiRenderer {
                 let year_x = year_pos.0 + 80.0 - text_width - 5.0; // Right align with padding
                 let year_y = year_pos.1 + 5.0;
 
-                for c in year_str.chars() {
+                for (i, c) in year_str.chars().enumerate() {
                     if let Some(glyph) = loaded.font.get_glyph(c) {
                         let glyph_x = year_x
                             + year_str
                                 .chars()
-                                .take_while(|&ch| ch != c)
+                                .take(i)
                                 .filter_map(|ch| loaded.font.get_glyph(ch))
                                 .map(|g| g.xadvance as f32)
                                 .sum::<f32>()
