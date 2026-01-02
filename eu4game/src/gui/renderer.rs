@@ -129,6 +129,20 @@ pub struct GuiRenderer {
     /// Tab button bind groups: (bg_bind_group, icon_bind_group).
     /// bg has 2 frames (unselected/selected), icon has 3 frames (hourglass/folder/?).
     tab_bind_groups: Option<(wgpu::BindGroup, wgpu::BindGroup, u32, u32)>,
+    /// Datewidget sprites: (bg, arrow_up_small, arrow_down_small, arrow_left_big, arrow_right_big, arrow_left_small, arrow_right_small).
+    /// Each tuple element is (bind_group, width, height).
+    datewidget_sprites: Option<DatewidgetSprites>,
+}
+
+/// Bind groups and dimensions for datewidget sprites.
+struct DatewidgetSprites {
+    bg: (wgpu::BindGroup, u32, u32),
+    arrow_up_small: (wgpu::BindGroup, u32, u32),
+    arrow_down_small: (wgpu::BindGroup, u32, u32),
+    arrow_left_big: (wgpu::BindGroup, u32, u32),
+    arrow_right_big: (wgpu::BindGroup, u32, u32),
+    arrow_left_small: (wgpu::BindGroup, u32, u32),
+    arrow_right_small: (wgpu::BindGroup, u32, u32),
 }
 
 impl GuiRenderer {
@@ -253,6 +267,7 @@ impl GuiRenderer {
             selected_save_game: None, // No save selected by default
             active_tab: StartScreenTab::Bookmarks,
             tab_bind_groups: None,
+            datewidget_sprites: None,
         }
     }
 
@@ -400,6 +415,45 @@ impl GuiRenderer {
                     let frame_w = bg_w / 2; // 2 frames in bg sprite
                     self.tab_bind_groups = Some((bg_bind, icon_bind, frame_w, bg_h));
                 }
+            }
+        }
+
+        // Load datewidget sprites (background and arrows)
+        if self.datewidget_sprites.is_none() {
+            let sprite_names = [
+                "GFX_lobby_date_bg",
+                "GFX_arrow_up_small",
+                "GFX_arrow_down_small",
+                "GFX_arrow_left_big",
+                "GFX_arrow_right_big",
+                "GFX_arrow_left_small",
+                "GFX_arrow_right_small",
+            ];
+
+            // Load all sprites
+            let mut loaded: Vec<Option<(wgpu::BindGroup, u32, u32)>> = Vec::new();
+            for name in &sprite_names {
+                let result = self.gfx_db.get(*name).cloned().and_then(|sprite| {
+                    self.sprite_cache
+                        .get(&sprite.texture_file, device, queue)
+                        .map(|(view, w, h)| (sprite_renderer.create_bind_group(device, view), w, h))
+                });
+                loaded.push(result);
+            }
+
+            // Only store if all sprites loaded successfully
+            if loaded.iter().all(|s| s.is_some()) {
+                let mut iter = loaded.into_iter().map(|s| s.unwrap());
+                self.datewidget_sprites = Some(DatewidgetSprites {
+                    bg: iter.next().unwrap(),
+                    arrow_up_small: iter.next().unwrap(),
+                    arrow_down_small: iter.next().unwrap(),
+                    arrow_left_big: iter.next().unwrap(),
+                    arrow_right_big: iter.next().unwrap(),
+                    arrow_left_small: iter.next().unwrap(),
+                    arrow_right_small: iter.next().unwrap(),
+                });
+                log::debug!("Loaded datewidget sprites");
             }
         }
     }
@@ -1340,7 +1394,8 @@ impl GuiRenderer {
             }
 
             // Load fonts for bookmark listbox (vic_18 for title, Arial12 for date)
-            for font_name in ["vic_18", "Arial12"] {
+            // Also load vic_22 for datewidget year display
+            for font_name in ["vic_18", "Arial12", "vic_22"] {
                 if !self
                     .font_bind_groups
                     .iter()
@@ -1705,105 +1760,163 @@ impl GuiRenderer {
                 ));
             }
 
-            // Render year and day/month text for date widget
+            // Render date widget with background, arrows, and text
             // datewidget window is at (10, 401) relative to left panel
             const DATEWIDGET_X: i32 = 10;
             const DATEWIDGET_Y: i32 = 401;
 
-            if let Some(date) = start_date
-                && let Some(font_idx) = self
-                    .font_bind_groups
-                    .iter()
-                    .position(|(name, _)| name == "vic_18")
-                && let Some(loaded) = self.font_cache.get("vic_18", device, queue)
-            {
-                let font_bind_group = &self.font_bind_groups[font_idx].1;
+            // Calculate datewidget base position
+            let datewidget_base = position_from_anchor(
+                left_anchor,
+                (DATEWIDGET_X, DATEWIDGET_Y),
+                Orientation::UpperLeft,
+                (200, 200),
+            );
 
-                // Year text at (120, 57) within datewidget - right-aligned in 80px box
-                let year_str = format!("{}", date.year());
-                let year_pos = position_from_anchor(
-                    left_anchor,
-                    (DATEWIDGET_X + 120, DATEWIDGET_Y + 57),
-                    Orientation::UpperLeft,
-                    (80, 30),
+            // Render datewidget background
+            if let Some(ref sprites) = self.datewidget_sprites {
+                let (ref bg_bind, bg_w, bg_h) = sprites.bg;
+                let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
+                    (datewidget_base.0, datewidget_base.1),
+                    (bg_w, bg_h),
+                    screen_size,
                 );
-                // Calculate text width for right alignment
-                let text_width: f32 = year_str
-                    .chars()
-                    .filter_map(|c| loaded.font.get_glyph(c))
-                    .map(|g| g.xadvance as f32)
-                    .sum();
-                let year_x = year_pos.0 + 80.0 - text_width - 5.0; // Right align with padding
-                let year_y = year_pos.1 + 5.0;
+                sprite_renderer.draw(render_pass, bg_bind, queue, clip_x, clip_y, clip_w, clip_h);
 
-                for (i, c) in year_str.chars().enumerate() {
-                    if let Some(glyph) = loaded.font.get_glyph(c) {
-                        let glyph_x = year_x
-                            + year_str
-                                .chars()
-                                .take(i)
-                                .filter_map(|ch| loaded.font.get_glyph(ch))
-                                .map(|g| g.xadvance as f32)
-                                .sum::<f32>()
-                            + glyph.xoffset as f32;
-                        let glyph_y = year_y + glyph.yoffset as f32;
-                        let (clip_x, clip_y, clip_w, clip_h) =
-                            rect_to_clip_space((glyph_x, glyph_y), (glyph.width, glyph.height), screen_size);
-                        let (u_min, v_min, u_max, v_max) = loaded.font.glyph_uv(glyph);
-                        sprite_renderer.draw_uv(
-                            render_pass,
-                            font_bind_group,
-                            queue,
-                            clip_x,
-                            clip_y,
-                            clip_w,
-                            clip_h,
-                            u_min,
-                            v_min,
-                            u_max,
-                            v_max,
-                        );
+                // Arrow button positions from frontend.gui (relative to datewidget)
+                // Year arrows: 3 columns at x=111, 131, 151
+                let year_arrow_positions = [(111, 34, 80), (131, 34, 80), (151, 34, 80)]; // (x, up_y, down_y)
+                for (ax, up_y, down_y) in year_arrow_positions {
+                    // Up arrow
+                    let (ref up_bind, up_w, up_h) = sprites.arrow_up_small;
+                    let up_pos = (datewidget_base.0 + ax as f32, datewidget_base.1 + up_y as f32);
+                    let (clip_x, clip_y, clip_w, clip_h) =
+                        rect_to_clip_space(up_pos, (up_w, up_h), screen_size);
+                    sprite_renderer.draw(render_pass, up_bind, queue, clip_x, clip_y, clip_w, clip_h);
+
+                    // Down arrow
+                    let (ref down_bind, down_w, down_h) = sprites.arrow_down_small;
+                    let down_pos = (datewidget_base.0 + ax as f32, datewidget_base.1 + down_y as f32);
+                    let (clip_x, clip_y, clip_w, clip_h) =
+                        rect_to_clip_space(down_pos, (down_w, down_h), screen_size);
+                    sprite_renderer.draw(render_pass, down_bind, queue, clip_x, clip_y, clip_w, clip_h);
+                }
+
+                // Month arrows (left/right big)
+                let (ref left_big_bind, lbw, lbh) = sprites.arrow_left_big;
+                let month_left_pos = (datewidget_base.0 + 20.0, datewidget_base.1 + 109.0);
+                let (clip_x, clip_y, clip_w, clip_h) =
+                    rect_to_clip_space(month_left_pos, (lbw, lbh), screen_size);
+                sprite_renderer.draw(render_pass, left_big_bind, queue, clip_x, clip_y, clip_w, clip_h);
+
+                let (ref right_big_bind, rbw, rbh) = sprites.arrow_right_big;
+                let month_right_pos = (datewidget_base.0 + 237.0, datewidget_base.1 + 109.0);
+                let (clip_x, clip_y, clip_w, clip_h) =
+                    rect_to_clip_space(month_right_pos, (rbw, rbh), screen_size);
+                sprite_renderer.draw(render_pass, right_big_bind, queue, clip_x, clip_y, clip_w, clip_h);
+
+                // Day arrows (left/right small)
+                let (ref left_small_bind, lsw, lsh) = sprites.arrow_left_small;
+                let day_left_pos = (datewidget_base.0 + 42.0, datewidget_base.1 + 109.0);
+                let (clip_x, clip_y, clip_w, clip_h) =
+                    rect_to_clip_space(day_left_pos, (lsw, lsh), screen_size);
+                sprite_renderer.draw(render_pass, left_small_bind, queue, clip_x, clip_y, clip_w, clip_h);
+
+                let (ref right_small_bind, rsw, rsh) = sprites.arrow_right_small;
+                let day_right_pos = (datewidget_base.0 + 215.0, datewidget_base.1 + 109.0);
+                let (clip_x, clip_y, clip_w, clip_h) =
+                    rect_to_clip_space(day_right_pos, (rsw, rsh), screen_size);
+                sprite_renderer.draw(render_pass, right_small_bind, queue, clip_x, clip_y, clip_w, clip_h);
+            }
+
+            // Render year text with vic_22 font (larger font for year)
+            if let Some(date) = start_date {
+                // Year text at (120, 57) within datewidget - centered in 80px box
+                if let Some(font_idx) = self.font_bind_groups.iter().position(|(name, _)| name == "vic_22")
+                    && let Some(loaded) = self.font_cache.get("vic_22", device, queue)
+                {
+                    let font_bind_group = &self.font_bind_groups[font_idx].1;
+                    let year_str = format!("{}", date.year());
+                    let year_box_x = datewidget_base.0 + 120.0;
+                    let year_box_y = datewidget_base.1 + 57.0;
+                    let year_box_w = 80.0;
+
+                    // Calculate text width for centering
+                    let text_width: f32 = year_str
+                        .chars()
+                        .filter_map(|c| loaded.font.get_glyph(c))
+                        .map(|g| g.xadvance as f32)
+                        .sum();
+                    let year_x = year_box_x + (year_box_w - text_width) / 2.0;
+                    let year_y = year_box_y + 5.0;
+
+                    let mut cursor_x = year_x;
+                    for c in year_str.chars() {
+                        if let Some(glyph) = loaded.font.get_glyph(c) {
+                            let glyph_x = cursor_x + glyph.xoffset as f32;
+                            let glyph_y = year_y + glyph.yoffset as f32;
+                            let (clip_x, clip_y, clip_w, clip_h) =
+                                rect_to_clip_space((glyph_x, glyph_y), (glyph.width, glyph.height), screen_size);
+                            let (u_min, v_min, u_max, v_max) = loaded.font.glyph_uv(glyph);
+                            sprite_renderer.draw_uv(
+                                render_pass,
+                                font_bind_group,
+                                queue,
+                                clip_x,
+                                clip_y,
+                                clip_w,
+                                clip_h,
+                                u_min,
+                                v_min,
+                                u_max,
+                                v_max,
+                            );
+                            cursor_x += glyph.xadvance as f32;
+                        }
                     }
                 }
 
                 // Day/month text at (82, 113) within datewidget - centered in 110px box
-                let daymonth_str = date.day_month_str();
-                let daymonth_pos = position_from_anchor(
-                    left_anchor,
-                    (DATEWIDGET_X + 82, DATEWIDGET_Y + 113),
-                    Orientation::UpperLeft,
-                    (110, 20),
-                );
-                let daymonth_width: f32 = daymonth_str
-                    .chars()
-                    .filter_map(|c| loaded.font.get_glyph(c))
-                    .map(|g| g.xadvance as f32)
-                    .sum();
-                let daymonth_x = daymonth_pos.0 + (110.0 - daymonth_width) / 2.0;
-                let daymonth_y = daymonth_pos.1 + 2.0;
+                if let Some(font_idx) = self.font_bind_groups.iter().position(|(name, _)| name == "vic_18")
+                    && let Some(loaded) = self.font_cache.get("vic_18", device, queue)
+                {
+                    let font_bind_group = &self.font_bind_groups[font_idx].1;
+                    let daymonth_str = date.day_month_str();
+                    let daymonth_box_x = datewidget_base.0 + 82.0;
+                    let daymonth_box_y = datewidget_base.1 + 113.0;
+                    let daymonth_box_w = 110.0;
 
-                let mut cursor_x = daymonth_x;
-                for c in daymonth_str.chars() {
-                    if let Some(glyph) = loaded.font.get_glyph(c) {
-                        let glyph_x = cursor_x + glyph.xoffset as f32;
-                        let glyph_y = daymonth_y + glyph.yoffset as f32;
-                        let (clip_x, clip_y, clip_w, clip_h) =
-                            rect_to_clip_space((glyph_x, glyph_y), (glyph.width, glyph.height), screen_size);
-                        let (u_min, v_min, u_max, v_max) = loaded.font.glyph_uv(glyph);
-                        sprite_renderer.draw_uv(
-                            render_pass,
-                            font_bind_group,
-                            queue,
-                            clip_x,
-                            clip_y,
-                            clip_w,
-                            clip_h,
-                            u_min,
-                            v_min,
-                            u_max,
-                            v_max,
-                        );
-                        cursor_x += glyph.xadvance as f32;
+                    let daymonth_width: f32 = daymonth_str
+                        .chars()
+                        .filter_map(|c| loaded.font.get_glyph(c))
+                        .map(|g| g.xadvance as f32)
+                        .sum();
+                    let daymonth_x = daymonth_box_x + (daymonth_box_w - daymonth_width) / 2.0;
+                    let daymonth_y = daymonth_box_y + 2.0;
+
+                    let mut cursor_x = daymonth_x;
+                    for c in daymonth_str.chars() {
+                        if let Some(glyph) = loaded.font.get_glyph(c) {
+                            let glyph_x = cursor_x + glyph.xoffset as f32;
+                            let glyph_y = daymonth_y + glyph.yoffset as f32;
+                            let (clip_x, clip_y, clip_w, clip_h) =
+                                rect_to_clip_space((glyph_x, glyph_y), (glyph.width, glyph.height), screen_size);
+                            let (u_min, v_min, u_max, v_max) = loaded.font.glyph_uv(glyph);
+                            sprite_renderer.draw_uv(
+                                render_pass,
+                                font_bind_group,
+                                queue,
+                                clip_x,
+                                clip_y,
+                                clip_w,
+                                clip_h,
+                                u_min,
+                                v_min,
+                                u_max,
+                                v_max,
+                            );
+                            cursor_x += glyph.xadvance as f32;
+                        }
                     }
                 }
             }
