@@ -733,10 +733,10 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [ ] Economy mode (development)
     - [ ] Region mode (geographic regions)
     - [ ] Players mode (multiplayer - highlight player nations)
-- [ ] **9.5.6. Mode Switching**
-    - [ ] Connect `SetMapMode` action to rendering state
-    - [ ] Update map renderer based on active mode
-    - [ ] Preserve mode selection across screens
+- [x] **9.5.6. Mode Switching**
+    - [x] Connect `SetMapMode` action to rendering state
+    - [x] Update map renderer based on active mode
+    - [x] Preserve mode selection across screens
 
 ### Phase 10: Localization System
 *Objective: Support EU4's $KEY$ localization tokens.*

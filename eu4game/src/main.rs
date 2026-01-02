@@ -167,6 +167,8 @@ struct App {
     /// Valid year range for start dates (min, max), derived from loaded bookmarks.
     /// Supports mod compatibility (e.g., Extended Timeline).
     year_range: (i32, i32),
+    /// Current map rendering mode (Phase 9.5.6).
+    current_map_mode: gui::MapMode,
 }
 
 impl App {
@@ -388,6 +390,7 @@ impl App {
             country_select_left: None,
             start_date: eu4data::Eu4Date::from_ymd(1444, 11, 11), // Default EU4 start
             year_range,
+            current_map_mode: gui::MapMode::Political, // Default mode (Phase 9.5.6)
         }
     }
 
@@ -1260,8 +1263,8 @@ impl App {
                 false
             }
             UiAction::SetMapMode(mode) => {
-                log::info!("Set map mode: {:?}", mode);
-                // TODO: Implement map mode switching when rendering supports multiple modes
+                self.current_map_mode = mode;
+                log::info!("Map mode changed to: {:?}", mode);
                 false
             }
             UiAction::RandomCountry => {
@@ -2049,9 +2052,27 @@ impl App {
                 // Mark lookup dirty to trigger political map update
                 self.lookup_dirty = true;
             }
-            gui::GuiAction::SetMapMode(mode) => {
-                // TODO: Implement map mode switching (Phase 9)
-                log::info!("Set map mode: {}", mode);
+            gui::GuiAction::SetMapMode(mode_str) => {
+                // Parse the mode string to MapMode enum
+                use gui::MapMode;
+                let mode = match mode_str.as_str() {
+                    "terrain" => MapMode::Terrain,
+                    "political" => MapMode::Political,
+                    "trade" => MapMode::Trade,
+                    "religion" => MapMode::Religion,
+                    "empire" => MapMode::Empire,
+                    "diplomacy" => MapMode::Diplomacy,
+                    "economy" => MapMode::Economy,
+                    "region" => MapMode::Region,
+                    "culture" => MapMode::Culture,
+                    "players" => MapMode::Players,
+                    _ => {
+                        log::warn!("Unknown map mode: {}", mode_str);
+                        return;
+                    }
+                };
+                self.current_map_mode = mode;
+                log::info!("Map mode changed to: {:?}", mode);
             }
             gui::GuiAction::RandomCountry => {
                 // Select a random country from playable countries

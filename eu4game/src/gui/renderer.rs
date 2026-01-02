@@ -93,7 +93,8 @@ pub struct GuiRenderer {
     button_bind_groups: Vec<(String, wgpu::BindGroup, u32, u32)>,
     /// Cached frontend button bind groups: (button_name, bind_group, width, height).
     /// Used for country selection panel buttons (play, map modes, back, etc.).
-    frontend_button_bind_groups: Vec<(String, wgpu::BindGroup, u32, u32)>,
+    /// Frontend button textures: (name, bind_group, tex_width, tex_height, num_frames)
+    frontend_button_bind_groups: Vec<(String, wgpu::BindGroup, u32, u32, u32)>,
     /// Cached speed controls icon bind groups: (sprite_name, bind_group, width, height).
     speed_icon_bind_groups: Vec<(String, wgpu::BindGroup, u32, u32)>,
     /// Cached country select icon bind groups: (sprite_name, bind_group, width, height, WIP - used in tests).
@@ -1150,19 +1151,21 @@ impl GuiRenderer {
                     if !self
                         .frontend_button_bind_groups
                         .iter()
-                        .any(|(name, _, _, _)| name == button_name)
+                        .any(|(name, _, _, _, _)| name == button_name)
                     {
                         if let Some(sprite) = self.gfx_db.get(sprite_type) {
                             if let Some((view, w, h)) =
                                 self.sprite_cache.get(&sprite.texture_file, device, queue)
                             {
-                                log::info!("Loaded button texture: {} ({}x{})", button_name, w, h);
                                 let bind_group = sprite_renderer.create_bind_group(device, view);
+                                // Store num_frames to handle multi-frame button sprites
+                                let num_frames = sprite.num_frames.max(1);
                                 self.frontend_button_bind_groups.push((
                                     button_name.to_string(),
                                     bind_group,
                                     w,
                                     h,
+                                    num_frames,
                                 ));
                             } else {
                                 log::warn!(
@@ -1208,7 +1211,7 @@ impl GuiRenderer {
                     && !self
                         .frontend_button_bind_groups
                         .iter()
-                        .any(|(name, _, _, _)| name == button_name)
+                        .any(|(name, _, _, _, _)| name == button_name)
                     && let Some(sprite) = self.gfx_db.get(sprite_type)
                     && let Some((view, w, h)) =
                         self.sprite_cache.get(&sprite.texture_file, device, queue)
@@ -1221,11 +1224,13 @@ impl GuiRenderer {
                         h
                     );
                     let bind_group = sprite_renderer.create_bind_group(device, view);
+                    let num_frames = sprite.num_frames.max(1);
                     self.frontend_button_bind_groups.push((
                         button_name.to_string(),
                         bind_group,
                         w,
                         h,
+                        num_frames,
                     ));
                 }
             }
@@ -1248,7 +1253,7 @@ impl GuiRenderer {
                     if !self
                         .frontend_button_bind_groups
                         .iter()
-                        .any(|(name, _, _, _)| name == button_name)
+                        .any(|(name, _, _, _, _)| name == button_name)
                         && let Some(sprite) = self.gfx_db.get(sprite_type)
                         && let Some((view, w, h)) =
                             self.sprite_cache.get(&sprite.texture_file, device, queue)
@@ -1261,11 +1266,13 @@ impl GuiRenderer {
                             h
                         );
                         let bind_group = sprite_renderer.create_bind_group(device, view);
+                        let num_frames = sprite.num_frames.max(1);
                         self.frontend_button_bind_groups.push((
                             button_name.to_string(),
                             bind_group,
                             w,
                             h,
+                            num_frames,
                         ));
                     }
                 }
@@ -1300,7 +1307,8 @@ impl GuiRenderer {
             let _ = panel;
 
             // Extract render data to avoid lifetime issues
-            type ButtonRenderData = (usize, (i32, i32), Orientation, (u32, u32), String);
+            // Tuple: (idx, pos, orientation, tex_w, tex_h, num_frames, action_name)
+            type ButtonRenderData = (usize, (i32, i32), Orientation, u32, u32, u32, String);
             let mut button_render_data: Vec<ButtonRenderData> = Vec::new();
             for (button, action_name) in &buttons_to_render {
                 if let Some(pos) = button.position()
@@ -1310,17 +1318,20 @@ impl GuiRenderer {
                     if let Some(idx) = self
                         .frontend_button_bind_groups
                         .iter()
-                        .position(|(name, _, _, _)| name == button_name)
+                        .position(|(name, _, _, _, _)| name == button_name)
                     {
-                        let (w, h) = (
+                        let (w, h, num_frames) = (
                             self.frontend_button_bind_groups[idx].2,
                             self.frontend_button_bind_groups[idx].3,
+                            self.frontend_button_bind_groups[idx].4,
                         );
                         button_render_data.push((
                             idx,
                             pos,
                             orientation,
-                            (w, h),
+                            w,
+                            h,
+                            num_frames,
                             action_name.to_string(),
                         ));
                     }
@@ -1328,13 +1339,19 @@ impl GuiRenderer {
             }
 
             // Render buttons using extracted data
-            for (idx, pos, orientation, (w, h), action_name) in button_render_data {
-                let button_screen_pos = position_from_anchor(top_anchor, pos, orientation, (w, h));
+            for (idx, pos, orientation, tex_w, tex_h, num_frames, action_name) in button_render_data
+            {
+                // For multi-frame sprites, use per-frame width
+                let frame_w = tex_w / num_frames;
+                let button_screen_pos =
+                    position_from_anchor(top_anchor, pos, orientation, (frame_w, tex_h));
                 let (clip_x, clip_y, clip_w, clip_h) =
-                    rect_to_clip_space(button_screen_pos, (w, h), screen_size);
+                    rect_to_clip_space(button_screen_pos, (frame_w, tex_h), screen_size);
 
                 let bind_group = &self.frontend_button_bind_groups[idx].1;
-                sprite_renderer.draw(
+                // Use draw_uv to render only frame 0 (normal state)
+                let u_max = 1.0 / num_frames as f32;
+                sprite_renderer.draw_uv(
                     render_pass,
                     bind_group,
                     queue,
@@ -1342,6 +1359,10 @@ impl GuiRenderer {
                     clip_y,
                     clip_w,
                     clip_h,
+                    0.0,   // u_min
+                    0.0,   // v_min
+                    u_max, // u_max (1.0/num_frames for frame 0)
+                    1.0,   // v_max
                 );
 
                 self.hit_boxes.push((
@@ -1349,8 +1370,8 @@ impl GuiRenderer {
                     HitBox {
                         x: button_screen_pos.0,
                         y: button_screen_pos.1,
-                        width: w as f32,
-                        height: h as f32,
+                        width: frame_w as f32,
+                        height: tex_h as f32,
                     },
                 ));
             }
@@ -1646,10 +1667,12 @@ impl GuiRenderer {
             let _ = panel;
 
             // Extract render data for all buttons (idx, pos, orientation, w, h, action_name, button_text, button_font)
+            // Tuple: (idx, pos, orientation, tex_w, tex_h, num_frames, action_name, text, font)
             type LeftButtonRenderData = (
                 usize,
                 (i32, i32),
                 Orientation,
+                u32,
                 u32,
                 u32,
                 String,
@@ -1666,11 +1689,12 @@ impl GuiRenderer {
                     if let Some(idx) = self
                         .frontend_button_bind_groups
                         .iter()
-                        .position(|(name, _, _, _)| name == button_name)
+                        .position(|(name, _, _, _, _)| name == button_name)
                     {
-                        let (w, h) = (
+                        let (w, h, num_frames) = (
                             self.frontend_button_bind_groups[idx].2,
                             self.frontend_button_bind_groups[idx].3,
+                            self.frontend_button_bind_groups[idx].4,
                         );
                         button_render_data.push((
                             idx,
@@ -1678,6 +1702,7 @@ impl GuiRenderer {
                             orientation,
                             w,
                             h,
+                            num_frames,
                             action_name.to_string(),
                             button.button_text().map(|s| s.to_string()),
                             button.button_font().map(|s| s.to_string()),
@@ -1687,22 +1712,34 @@ impl GuiRenderer {
             }
 
             // Render all buttons using extracted data
-            for (idx, pos, orientation, w, h, action_name, button_text, button_font) in
-                button_render_data
+            for (
+                idx,
+                pos,
+                orientation,
+                tex_w,
+                tex_h,
+                num_frames,
+                action_name,
+                button_text,
+                button_font,
+            ) in button_render_data
             {
+                // For multi-frame sprites, use per-frame width
+                let frame_w = tex_w / num_frames;
                 // For LOWER_* orientations in fullscreen windows, use screen-relative positioning
                 let button_screen_pos = match orientation {
                     Orientation::LowerLeft | Orientation::LowerRight => {
-                        resolve_position(pos, orientation, (w, h), screen_size)
+                        resolve_position(pos, orientation, (frame_w, tex_h), screen_size)
                     }
-                    _ => position_from_anchor(left_anchor, pos, orientation, (w, h)),
+                    _ => position_from_anchor(left_anchor, pos, orientation, (frame_w, tex_h)),
                 };
                 let (clip_x, clip_y, clip_w, clip_h) =
-                    rect_to_clip_space(button_screen_pos, (w, h), screen_size);
+                    rect_to_clip_space(button_screen_pos, (frame_w, tex_h), screen_size);
 
-                // Draw button sprite
+                // Draw button sprite using UV to render only frame 0
                 let bind_group = &self.frontend_button_bind_groups[idx].1;
-                sprite_renderer.draw(
+                let u_max = 1.0 / num_frames as f32;
+                sprite_renderer.draw_uv(
                     render_pass,
                     bind_group,
                     queue,
@@ -1710,6 +1747,10 @@ impl GuiRenderer {
                     clip_y,
                     clip_w,
                     clip_h,
+                    0.0,
+                    0.0,
+                    u_max,
+                    1.0,
                 );
 
                 // Render button text centered on button
@@ -1731,8 +1772,8 @@ impl GuiRenderer {
                     let text_height = font.line_height as f32;
 
                     // Center text horizontally and vertically on button
-                    let text_x = button_screen_pos.0 + (w as f32 - text_width) / 2.0;
-                    let text_y = button_screen_pos.1 + (h as f32 - text_height) / 2.0;
+                    let text_x = button_screen_pos.0 + (frame_w as f32 - text_width) / 2.0;
+                    let text_y = button_screen_pos.1 + (tex_h as f32 - text_height) / 2.0;
 
                     let mut cursor_x = text_x;
                     for c in display_text.chars() {
@@ -1781,8 +1822,8 @@ impl GuiRenderer {
                     HitBox {
                         x: button_screen_pos.0,
                         y: button_screen_pos.1,
-                        width: w as f32,
-                        height: h as f32,
+                        width: frame_w as f32,
+                        height: tex_h as f32,
                     },
                 ));
             }
@@ -2535,10 +2576,12 @@ impl GuiRenderer {
             let _ = panel; // Release borrow
 
             // Extract render data for all buttons (including enabled state)
+            // Tuple: (idx, pos, orientation, tex_w, tex_h, num_frames, name, text, font, enabled)
             type LobbyButtonRenderData = (
                 usize,
                 (i32, i32),
                 Orientation,
+                u32,
                 u32,
                 u32,
                 String,
@@ -2556,11 +2599,12 @@ impl GuiRenderer {
                     if let Some(idx) = self
                         .frontend_button_bind_groups
                         .iter()
-                        .position(|(name, _, _, _)| name == button_name)
+                        .position(|(name, _, _, _, _)| name == button_name)
                     {
-                        let (w, h) = (
+                        let (w, h, num_frames) = (
                             self.frontend_button_bind_groups[idx].2,
                             self.frontend_button_bind_groups[idx].3,
+                            self.frontend_button_bind_groups[idx].4,
                         );
                         button_render_data.push((
                             idx,
@@ -2568,6 +2612,7 @@ impl GuiRenderer {
                             orientation,
                             w,
                             h,
+                            num_frames,
                             button_name.to_string(),
                             button.button_text().map(|s| s.to_string()),
                             button.button_font().map(|s| s.to_string()),
@@ -2578,22 +2623,35 @@ impl GuiRenderer {
             }
 
             // Render all buttons
-            for (idx, pos, orientation, w, h, button_name, button_text, button_font, enabled) in
-                button_render_data
+            for (
+                idx,
+                pos,
+                orientation,
+                tex_w,
+                tex_h,
+                num_frames,
+                button_name,
+                button_text,
+                button_font,
+                enabled,
+            ) in button_render_data
             {
+                // For multi-frame sprites, use per-frame width
+                let frame_w = tex_w / num_frames;
                 // All lobby buttons use LOWER_RIGHT orientation
                 let button_screen_pos = match orientation {
                     Orientation::LowerLeft | Orientation::LowerRight => {
-                        resolve_position(pos, orientation, (w, h), screen_size)
+                        resolve_position(pos, orientation, (frame_w, tex_h), screen_size)
                     }
-                    _ => position_from_anchor(lobby_anchor, pos, orientation, (w, h)),
+                    _ => position_from_anchor(lobby_anchor, pos, orientation, (frame_w, tex_h)),
                 };
                 let (clip_x, clip_y, clip_w, clip_h) =
-                    rect_to_clip_space(button_screen_pos, (w, h), screen_size);
+                    rect_to_clip_space(button_screen_pos, (frame_w, tex_h), screen_size);
 
-                // Draw button sprite
+                // Draw button sprite using UV to render only frame 0
                 let bind_group = &self.frontend_button_bind_groups[idx].1;
-                sprite_renderer.draw(
+                let u_max = 1.0 / num_frames as f32;
+                sprite_renderer.draw_uv(
                     render_pass,
                     bind_group,
                     queue,
@@ -2601,6 +2659,10 @@ impl GuiRenderer {
                     clip_y,
                     clip_w,
                     clip_h,
+                    0.0,
+                    0.0,
+                    u_max,
+                    1.0,
                 );
 
                 // Render button text centered on button
@@ -2626,8 +2688,8 @@ impl GuiRenderer {
                     let text_height = font.line_height as f32;
 
                     // Center text horizontally and vertically on button
-                    let text_x = button_screen_pos.0 + (w as f32 - text_width) / 2.0;
-                    let text_y = button_screen_pos.1 + (h as f32 - text_height) / 2.0;
+                    let text_x = button_screen_pos.0 + (frame_w as f32 - text_width) / 2.0;
+                    let text_y = button_screen_pos.1 + (tex_h as f32 - text_height) / 2.0;
 
                     let mut cursor_x = text_x;
                     for c in display_text.chars() {
@@ -2678,8 +2740,8 @@ impl GuiRenderer {
                         HitBox {
                             x: button_screen_pos.0,
                             y: button_screen_pos.1,
-                            width: w as f32,
-                            height: h as f32,
+                            width: frame_w as f32,
+                            height: tex_h as f32,
                         },
                     ));
                 }
@@ -2768,7 +2830,13 @@ impl GuiRenderer {
 
             if has_country {
                 // Draw icons (only when country selected)
+                // Note: Map mode icons (mapmode_*) are excluded here because
+                // they're rendered separately by the top panel (Phase 9.5.6)
                 for icon in &self.country_select_layout.icons {
+                    // Skip map mode icons - they're rendered by the top panel now
+                    if icon.name.starts_with("mapmode_") {
+                        continue;
+                    }
                     if let Some(idx) = self
                         .country_select_icons
                         .iter()
@@ -3605,7 +3673,13 @@ impl GuiRenderer {
         );
 
         // Draw icons (with proper frame selection)
+        // Note: Map mode icons (mapmode_*) are excluded here because
+        // they're rendered separately by the top panel (Phase 9.5.6)
         for icon in &self.country_select_layout.icons {
+            // Skip map mode icons - they're rendered by the top panel now
+            if icon.name.starts_with("mapmode_") {
+                continue;
+            }
             if let Some(idx) = self
                 .country_select_icons
                 .iter()
