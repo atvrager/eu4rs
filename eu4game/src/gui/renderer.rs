@@ -1837,9 +1837,10 @@ impl GuiRenderer {
                 {
                     let font_bind_group = &self.font_bind_groups[font_idx].1;
                     let year_str = format!("{}", date.year());
-                    let year_box_x = datewidget_base.0 + 120.0;
+                    // Year arrows are at x=111, 131, 151 - center year between them
+                    // Visual center is around x=131, use range 100-170 (width 70)
+                    let year_center_x = datewidget_base.0 + 135.0;
                     let year_box_y = datewidget_base.1 + 57.0;
-                    let year_box_w = 80.0;
 
                     // Calculate text width for centering
                     let text_width: f32 = year_str
@@ -1847,7 +1848,7 @@ impl GuiRenderer {
                         .filter_map(|c| loaded.font.get_glyph(c))
                         .map(|g| g.xadvance as f32)
                         .sum();
-                    let year_x = year_box_x + (year_box_w - text_width) / 2.0;
+                    let year_x = year_center_x - text_width / 2.0;
                     let year_y = year_box_y + 5.0;
 
                     let mut cursor_x = year_x;
