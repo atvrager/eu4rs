@@ -717,13 +717,15 @@ impl App {
             .to_uniform(self.config.width as f32, self.config.height as f32);
         self.renderer.update_camera(&self.queue, camera_uniform);
 
-        // Update map mode uniform (Phase 9.5.1, 9.5.2, 9.5.3, 9.5.4)
+        // Update map mode uniform (Phase 9.5.1, 9.5.2, 9.5.3, 9.5.4, 9.5.5)
         let map_mode_value = match self.current_map_mode {
             gui::MapMode::Political => 0.0,
             gui::MapMode::Terrain => 1.0,
             gui::MapMode::Trade => 2.0,
             gui::MapMode::Religion => 3.0,
             gui::MapMode::Culture => 4.0,
+            gui::MapMode::Economy => 5.0,
+            gui::MapMode::Empire => 6.0,
             _ => 0.0, // Other modes default to political for now
         };
         self.renderer.update_map_mode(
@@ -1423,6 +1425,8 @@ impl App {
             gui::MapMode::Trade => self.update_lookup_trade(),
             gui::MapMode::Religion => self.update_lookup_religion(),
             gui::MapMode::Culture => self.update_lookup_culture(),
+            gui::MapMode::Economy => self.update_lookup_economy(),
+            gui::MapMode::Empire => self.update_lookup_empire(),
             _ => self.update_lookup_political(),
         }
     }
@@ -1825,6 +1829,206 @@ impl App {
             "Updated GPU lookup texture for culture mode ({} cultures loaded)",
             self.cultures.len()
         );
+    }
+
+    /// Update lookup texture for economy mode (province development).
+    /// Colors provinces by total development (base_tax + base_production + base_manpower)
+    /// using a gradient from low (dark green) to high (bright yellow).
+    fn update_lookup_economy(&mut self) {
+        let Some(world_state) = &self.world_state else {
+            // No world state loaded yet
+            let mut lookup_data: Vec<u8> = Vec::with_capacity((render::LOOKUP_SIZE * 4) as usize);
+            let default_color = [60u8, 60, 60, 255];
+            for _ in 0..render::LOOKUP_SIZE {
+                lookup_data.extend_from_slice(&default_color);
+            }
+
+            self.queue.write_texture(
+                wgpu::ImageCopyTexture {
+                    texture: &self.renderer.lookup_texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &lookup_data,
+                wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * render::LOOKUP_SIZE),
+                    rows_per_image: Some(1),
+                },
+                wgpu::Extent3d {
+                    width: render::LOOKUP_SIZE,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+            );
+            return;
+        };
+
+        // Build lookup data: province ID -> development color
+        let mut lookup_data: Vec<u8> = Vec::with_capacity((render::LOOKUP_SIZE * 4) as usize);
+
+        let wasteland_color = [60u8, 60, 60, 255];
+        let water_color = [30u8, 60, 100, 255];
+
+        for province_id in 0..render::LOOKUP_SIZE {
+            let color = if province_id == 0 {
+                wasteland_color
+            } else if self.sea_provinces.contains(&province_id) {
+                water_color
+            } else if let Some(province) = world_state.provinces.get(&province_id) {
+                // Calculate total development
+                use eu4sim_core::fixed::Fixed;
+                let dev_total =
+                    province.base_tax + province.base_production + province.base_manpower;
+                let dev_f32 = Fixed::to_f32(dev_total);
+
+                // Color gradient based on development
+                // 0-10: low (dark green)
+                // 10-20: medium (green-yellow)
+                // 20-30: high (yellow)
+                // 30+: very high (bright yellow-orange)
+                let color_rgb = if dev_f32 < 10.0 {
+                    // Low dev: dark green to green
+                    let t = dev_f32 / 10.0;
+                    let r = (40.0 + t * 60.0) as u8;
+                    let g = (80.0 + t * 80.0) as u8;
+                    let b = (40.0 + t * 20.0) as u8;
+                    [r, g, b]
+                } else if dev_f32 < 20.0 {
+                    // Medium dev: green to yellow-green
+                    let t = (dev_f32 - 10.0) / 10.0;
+                    let r = (100.0 + t * 100.0) as u8;
+                    let g = (160.0 + t * 60.0) as u8;
+                    let b = (60.0 - t * 20.0) as u8;
+                    [r, g, b]
+                } else if dev_f32 < 30.0 {
+                    // High dev: yellow-green to yellow
+                    let t = (dev_f32 - 20.0) / 10.0;
+                    let r = (200.0 + t * 40.0) as u8;
+                    let g = (220.0 + t * 20.0) as u8;
+                    let b = (40.0 - t * 20.0) as u8;
+                    [r, g, b]
+                } else {
+                    // Very high dev: yellow to orange
+                    let t = ((dev_f32 - 30.0) / 20.0).min(1.0);
+                    let r = 240;
+                    let g = (240.0 - t * 60.0) as u8;
+                    let b = (20.0 - t * 20.0) as u8;
+                    [r, g, b]
+                };
+
+                [color_rgb[0], color_rgb[1], color_rgb[2], 255]
+            } else {
+                wasteland_color
+            };
+            lookup_data.extend_from_slice(&color);
+        }
+
+        // Write directly to texture
+        self.queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &self.renderer.lookup_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &lookup_data,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * render::LOOKUP_SIZE),
+                rows_per_image: Some(1),
+            },
+            wgpu::Extent3d {
+                width: render::LOOKUP_SIZE,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        log::debug!("Updated GPU lookup texture for economy mode (development gradient)");
+    }
+
+    /// Update lookup texture for empire mode (HRE membership).
+    /// Colors HRE provinces in gold/yellow, non-HRE in gray.
+    fn update_lookup_empire(&mut self) {
+        let Some(world_state) = &self.world_state else {
+            // No world state loaded yet
+            let mut lookup_data: Vec<u8> = Vec::with_capacity((render::LOOKUP_SIZE * 4) as usize);
+            let default_color = [60u8, 60, 60, 255];
+            for _ in 0..render::LOOKUP_SIZE {
+                lookup_data.extend_from_slice(&default_color);
+            }
+
+            self.queue.write_texture(
+                wgpu::ImageCopyTexture {
+                    texture: &self.renderer.lookup_texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &lookup_data,
+                wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * render::LOOKUP_SIZE),
+                    rows_per_image: Some(1),
+                },
+                wgpu::Extent3d {
+                    width: render::LOOKUP_SIZE,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+            );
+            return;
+        };
+
+        // Build lookup data: province ID -> HRE color
+        let mut lookup_data: Vec<u8> = Vec::with_capacity((render::LOOKUP_SIZE * 4) as usize);
+
+        let hre_color = [220u8, 180, 50, 255]; // Gold for HRE provinces
+        let non_hre_color = [100u8, 100, 100, 255]; // Gray for non-HRE
+        let wasteland_color = [60u8, 60, 60, 255];
+        let water_color = [30u8, 60, 100, 255];
+
+        for province_id in 0..render::LOOKUP_SIZE {
+            let color = if province_id == 0 {
+                wasteland_color
+            } else if self.sea_provinces.contains(&province_id) {
+                water_color
+            } else if let Some(province) = world_state.provinces.get(&province_id) {
+                if province.is_in_hre {
+                    hre_color
+                } else {
+                    non_hre_color
+                }
+            } else {
+                wasteland_color
+            };
+            lookup_data.extend_from_slice(&color);
+        }
+
+        // Write directly to texture
+        self.queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &self.renderer.lookup_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &lookup_data,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * render::LOOKUP_SIZE),
+                rows_per_image: Some(1),
+            },
+            wgpu::Extent3d {
+                width: render::LOOKUP_SIZE,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        log::debug!("Updated GPU lookup texture for empire mode (HRE membership)");
     }
 
     /// Updates the window title with current date and speed.

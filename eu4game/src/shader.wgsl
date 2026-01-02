@@ -28,7 +28,7 @@ struct MapSettings {
     texture_size: vec2<f32>,    // Province texture dimensions
     lookup_size: f32,           // Lookup texture width (e.g., 8192)
     border_enabled: f32,        // 1.0 = show borders, 0.0 = hide
-    map_mode: f32,              // 0.0 = political, 1.0 = terrain, 2.0 = trade, 3.0 = religion, 4.0 = culture
+    map_mode: f32,              // 0.0 = political, 1.0 = terrain, 2.0 = trade, 3.0 = religion, 4.0 = culture, 5.0 = economy, 6.0 = empire
 };
 
 // Province ID texture (RG8 encoded: R = low byte, G = high byte)
@@ -223,6 +223,18 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         // Culture mode: use culture color lookup
         color = lookup_color(province_id);
         // Apply subtle terrain shading to culture colors
+        let terrain_shade = compute_terrain_shading(final_uv);
+        color = vec4<f32>(color.rgb * terrain_shade, color.a);
+    } else if (settings.map_mode < 5.5) {
+        // Economy mode: use development gradient lookup
+        color = lookup_color(province_id);
+        // Apply subtle terrain shading to economy colors
+        let terrain_shade = compute_terrain_shading(final_uv);
+        color = vec4<f32>(color.rgb * terrain_shade, color.a);
+    } else if (settings.map_mode < 6.5) {
+        // Empire mode: use HRE membership lookup
+        color = lookup_color(province_id);
+        // Apply subtle terrain shading to empire colors
         let terrain_shade = compute_terrain_shading(final_uv);
         color = vec4<f32>(color.rgb * terrain_shade, color.a);
     } else {
