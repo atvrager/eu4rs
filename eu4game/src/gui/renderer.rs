@@ -561,6 +561,7 @@ impl GuiRenderer {
         state: &GuiState,
         screen: Screen,
         screen_size: (u32, u32),
+        start_date: Option<&eu4data::Eu4Date>,
     ) {
         self.hit_boxes.clear();
 
@@ -576,6 +577,7 @@ impl GuiRenderer {
                     queue,
                     sprite_renderer,
                     screen_size,
+                    start_date,
                 );
             }
             Screen::Playing => {
@@ -1020,6 +1022,7 @@ impl GuiRenderer {
         queue: &wgpu::Queue,
         sprite_renderer: &'a SpriteRenderer,
         screen_size: (u32, u32),
+        start_date: Option<&eu4data::Eu4Date>,
     ) {
         self.ensure_textures(device, queue, sprite_renderer);
         self.ensure_font(device, queue, sprite_renderer);
@@ -1032,8 +1035,7 @@ impl GuiRenderer {
         );
 
         // Update panel text labels before rendering
-        // TODO: Pass actual start_year from game state (Phase 9)
-        let start_year = 1444;
+        let start_year = start_date.map(|d| d.year()).unwrap_or(1444);
         if let Some(ref mut panel) = self.top_panel {
             let _ = panel.update(crate::gui::core::MapMode::Political, start_year);
         }
@@ -1701,6 +1703,109 @@ impl GuiRenderer {
                         height: h as f32,
                     },
                 ));
+            }
+
+            // Render year and day/month text for date widget
+            // datewidget window is at (10, 401) relative to left panel
+            const DATEWIDGET_X: i32 = 10;
+            const DATEWIDGET_Y: i32 = 401;
+
+            if let Some(date) = start_date
+                && let Some(font_idx) = self
+                    .font_bind_groups
+                    .iter()
+                    .position(|(name, _)| name == "vic_18")
+                && let Some(loaded) = self.font_cache.get("vic_18", device, queue)
+            {
+                let font_bind_group = &self.font_bind_groups[font_idx].1;
+
+                // Year text at (120, 57) within datewidget - right-aligned in 80px box
+                let year_str = format!("{}", date.year());
+                let year_pos = position_from_anchor(
+                    left_anchor,
+                    (DATEWIDGET_X + 120, DATEWIDGET_Y + 57),
+                    Orientation::UpperLeft,
+                    (80, 30),
+                );
+                // Calculate text width for right alignment
+                let text_width: f32 = year_str
+                    .chars()
+                    .filter_map(|c| loaded.font.get_glyph(c))
+                    .map(|g| g.xadvance as f32)
+                    .sum();
+                let year_x = year_pos.0 + 80.0 - text_width - 5.0; // Right align with padding
+                let year_y = year_pos.1 + 5.0;
+
+                for c in year_str.chars() {
+                    if let Some(glyph) = loaded.font.get_glyph(c) {
+                        let glyph_x = year_x
+                            + year_str
+                                .chars()
+                                .take_while(|&ch| ch != c)
+                                .filter_map(|ch| loaded.font.get_glyph(ch))
+                                .map(|g| g.xadvance as f32)
+                                .sum::<f32>()
+                            + glyph.xoffset as f32;
+                        let glyph_y = year_y + glyph.yoffset as f32;
+                        let (clip_x, clip_y, clip_w, clip_h) =
+                            rect_to_clip_space((glyph_x, glyph_y), (glyph.width, glyph.height), screen_size);
+                        let (u_min, v_min, u_max, v_max) = loaded.font.glyph_uv(glyph);
+                        sprite_renderer.draw_uv(
+                            render_pass,
+                            font_bind_group,
+                            queue,
+                            clip_x,
+                            clip_y,
+                            clip_w,
+                            clip_h,
+                            u_min,
+                            v_min,
+                            u_max,
+                            v_max,
+                        );
+                    }
+                }
+
+                // Day/month text at (82, 113) within datewidget - centered in 110px box
+                let daymonth_str = date.day_month_str();
+                let daymonth_pos = position_from_anchor(
+                    left_anchor,
+                    (DATEWIDGET_X + 82, DATEWIDGET_Y + 113),
+                    Orientation::UpperLeft,
+                    (110, 20),
+                );
+                let daymonth_width: f32 = daymonth_str
+                    .chars()
+                    .filter_map(|c| loaded.font.get_glyph(c))
+                    .map(|g| g.xadvance as f32)
+                    .sum();
+                let daymonth_x = daymonth_pos.0 + (110.0 - daymonth_width) / 2.0;
+                let daymonth_y = daymonth_pos.1 + 2.0;
+
+                let mut cursor_x = daymonth_x;
+                for c in daymonth_str.chars() {
+                    if let Some(glyph) = loaded.font.get_glyph(c) {
+                        let glyph_x = cursor_x + glyph.xoffset as f32;
+                        let glyph_y = daymonth_y + glyph.yoffset as f32;
+                        let (clip_x, clip_y, clip_w, clip_h) =
+                            rect_to_clip_space((glyph_x, glyph_y), (glyph.width, glyph.height), screen_size);
+                        let (u_min, v_min, u_max, v_max) = loaded.font.glyph_uv(glyph);
+                        sprite_renderer.draw_uv(
+                            render_pass,
+                            font_bind_group,
+                            queue,
+                            clip_x,
+                            clip_y,
+                            clip_w,
+                            clip_h,
+                            u_min,
+                            v_min,
+                            u_max,
+                            v_max,
+                        );
+                        cursor_x += glyph.xadvance as f32;
+                    }
+                }
             }
 
             // Render bookmarks listbox (only when Bookmarks tab is active)

@@ -162,6 +162,8 @@ struct App {
     gui_renderer: Option<gui::GuiRenderer>,
     /// Country selection left panel (Phase 8.2).
     country_select_left: Option<gui::CountrySelectLeftPanel>,
+    /// Selected start date on country selection screen.
+    start_date: eu4data::Eu4Date,
 }
 
 impl App {
@@ -363,6 +365,7 @@ impl App {
             gui_renderer,
             frontend_ui,
             country_select_left: None,
+            start_date: eu4data::Eu4Date::from_ymd(1444, 11, 11), // Default EU4 start
         }
     }
 
@@ -782,6 +785,12 @@ impl App {
                     // Render EU4 GUI overlay (topbar, speed controls, country select)
                     if let Some(gui_renderer) = &mut self.gui_renderer {
                         log::debug!("Calling gui_renderer.render()");
+                        // Pass start_date for SinglePlayer screen (date widget display)
+                        let start_date = if current_screen == screen::Screen::SinglePlayer {
+                            Some(&self.start_date)
+                        } else {
+                            None
+                        };
                         gui_renderer.render(
                             &mut render_pass,
                             &self.device,
@@ -790,6 +799,7 @@ impl App {
                             &gui_state,
                             current_screen,
                             screen_size,
+                            start_date,
                         );
                     } else {
                         log::warn!("gui_renderer is None");
@@ -1145,8 +1155,19 @@ impl App {
                 false
             }
             UiAction::DateAdjust(part, delta) => {
-                log::info!("Date adjust: {:?} by {}", part, delta);
-                // TODO: Implement date adjustment when we have game start date state
+                use gui::core::DatePart;
+                match part {
+                    DatePart::Year => self.start_date.adjust_year(delta),
+                    DatePart::Month => self.start_date.adjust_month(delta),
+                    DatePart::Day => self.start_date.adjust_day(delta),
+                }
+                log::info!(
+                    "Date adjusted to: {}.{}.{}",
+                    self.start_date.year(),
+                    self.start_date.month(),
+                    self.start_date.day()
+                );
+                self.lookup_dirty = true;
                 false
             }
             UiAction::SelectBookmark(idx) => {
@@ -1759,8 +1780,20 @@ impl App {
                 self.start_game_with_selected_country();
             }
             gui::GuiAction::DateAdjust(part, delta) => {
-                // TODO: Implement date adjustment (Phase 9)
-                log::info!("Date adjust: {:?} by {}", part, delta);
+                use gui::types::DatePart;
+                match part {
+                    DatePart::Year => self.start_date.adjust_year(delta),
+                    DatePart::Month => self.start_date.adjust_month(delta),
+                    DatePart::Day => self.start_date.adjust_day(delta),
+                }
+                log::info!(
+                    "Date adjusted to: {}.{}.{}",
+                    self.start_date.year(),
+                    self.start_date.month(),
+                    self.start_date.day()
+                );
+                // Mark lookup dirty to trigger political map update
+                self.lookup_dirty = true;
             }
             gui::GuiAction::SetMapMode(mode) => {
                 // TODO: Implement map mode switching (Phase 9)

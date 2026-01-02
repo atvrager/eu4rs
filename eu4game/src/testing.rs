@@ -152,6 +152,8 @@ pub struct GuiTestHarness {
     /// Game data path.
     #[allow(dead_code)]
     game_path: PathBuf,
+    /// Start date for country selection screen.
+    start_date: eu4data::Eu4Date,
 }
 
 impl GuiTestHarness {
@@ -180,6 +182,7 @@ impl GuiTestHarness {
             screen_manager,
             gui_state,
             game_path,
+            start_date: eu4data::Eu4Date::from_ymd(1444, 11, 11),
         })
     }
 
@@ -313,6 +316,11 @@ impl GuiTestHarness {
 
             // Render based on current screen state
             let current_screen = self.screen_manager.current();
+            let start_date = if current_screen == Screen::SinglePlayer {
+                Some(&self.start_date)
+            } else {
+                None
+            };
             self.gui_renderer.render(
                 &mut render_pass,
                 &self.gpu.device,
@@ -321,6 +329,7 @@ impl GuiTestHarness {
                 &self.gui_state,
                 current_screen,
                 screen_size,
+                start_date,
             );
         }
 
