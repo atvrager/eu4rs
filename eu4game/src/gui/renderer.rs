@@ -3,6 +3,16 @@
 //! This module contains the `GuiRenderer` struct which handles rendering
 //! EU4's authentic layout and sprites using WGPU.
 
+/// Which tab is active on the start screen (bookmarks vs save games).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StartScreenTab {
+    /// Historical bookmarks (hourglass icon).
+    #[default]
+    Bookmarks,
+    /// Save game files (folder icon).
+    SaveGames,
+}
+
 #[cfg(test)]
 use super::country_select::SelectedCountryState;
 use super::country_select::{CountrySelectLayout, CountrySelectPanel};
@@ -114,6 +124,11 @@ pub struct GuiRenderer {
     save_games_scroll_offset: f32,
     /// Currently selected save game index (None = no selection).
     selected_save_game: Option<usize>,
+    /// Active tab on start screen (bookmarks vs save games).
+    active_tab: StartScreenTab,
+    /// Tab button bind groups: (bg_bind_group, icon_bind_group).
+    /// bg has 2 frames (unselected/selected), icon has 3 frames (hourglass/folder/?).
+    tab_bind_groups: Option<(wgpu::BindGroup, wgpu::BindGroup, u32, u32)>,
 }
 
 impl GuiRenderer {
@@ -236,6 +251,8 @@ impl GuiRenderer {
             save_games,
             save_games_scroll_offset: 0.0,
             selected_save_game: None, // No save selected by default
+            active_tab: StartScreenTab::Bookmarks,
+            tab_bind_groups: None,
         }
     }
 
@@ -348,6 +365,40 @@ impl GuiRenderer {
                     );
                     self.speed_icon_bind_groups
                         .push((icon.sprite.clone(), bind_group, w, h));
+                }
+            }
+        }
+
+        // Load tab button textures for start screen (bookmarks/saves toggle)
+        if self.tab_bind_groups.is_none() {
+            let bg_sprite = self.gfx_db.get("GFX_start_type_option_bg").cloned();
+            let icon_sprite = self.gfx_db.get("GFX_start_type_option_icon").cloned();
+
+            if let (Some(bg), Some(icon)) = (bg_sprite, icon_sprite) {
+                // Load and create bind groups one at a time to avoid borrow conflicts
+                let bg_result = self
+                    .sprite_cache
+                    .get(&bg.texture_file, device, queue)
+                    .map(|(view, w, h)| (sprite_renderer.create_bind_group(device, view), w, h));
+
+                let icon_result = self
+                    .sprite_cache
+                    .get(&icon.texture_file, device, queue)
+                    .map(|(view, w, h)| (sprite_renderer.create_bind_group(device, view), w, h));
+
+                if let (Some((bg_bind, bg_w, bg_h)), Some((icon_bind, icon_w, icon_h))) =
+                    (bg_result, icon_result)
+                {
+                    log::debug!(
+                        "Loaded tab sprites: bg={}x{} (2 frames), icon={}x{} (3 frames)",
+                        bg_w,
+                        bg_h,
+                        icon_w,
+                        icon_h
+                    );
+                    // Store bg dimensions (per frame), icon dimensions are slightly smaller
+                    let frame_w = bg_w / 2; // 2 frames in bg sprite
+                    self.tab_bind_groups = Some((bg_bind, icon_bind, frame_w, bg_h));
                 }
             }
         }
@@ -970,6 +1021,7 @@ impl GuiRenderer {
         sprite_renderer: &'a SpriteRenderer,
         screen_size: (u32, u32),
     ) {
+        self.ensure_textures(device, queue, sprite_renderer);
         self.ensure_font(device, queue, sprite_renderer);
 
         log::info!(
@@ -1407,6 +1459,91 @@ impl GuiRenderer {
                 screen_size,
             );
 
+            // Render start type tabs (bookmarks vs saves)
+            // Position from frontend.gui: start_type_options at (32, 49), each tab is 80x50 with spacing=2
+            if let Some((ref bg_bind, ref icon_bind, frame_w, frame_h)) = self.tab_bind_groups {
+                const TAB_X: i32 = 32;
+                const TAB_Y: i32 = 49;
+                const TAB_WIDTH: u32 = 80;
+                const TAB_HEIGHT: u32 = 50;
+                const TAB_SPACING: i32 = 2;
+                const ICON_WIDTH: u32 = 67; // 200px / 3 frames
+                const ICON_HEIGHT: u32 = 30;
+
+                for (tab_idx, tab) in [StartScreenTab::Bookmarks, StartScreenTab::SaveGames]
+                    .iter()
+                    .enumerate()
+                {
+                    let tab_x = TAB_X + (tab_idx as i32 * (TAB_WIDTH as i32 + TAB_SPACING));
+                    let tab_screen_pos = position_from_anchor(
+                        left_anchor,
+                        (tab_x, TAB_Y),
+                        Orientation::UpperLeft,
+                        (TAB_WIDTH, TAB_HEIGHT),
+                    );
+
+                    // Determine if this tab is selected
+                    let is_selected = self.active_tab == *tab;
+                    let bg_frame = if is_selected { 1 } else { 0 };
+                    let icon_frame = tab_idx as u32; // 0 = hourglass (bookmarks), 1 = folder (saves)
+
+                    // Draw background (2 frames: unselected=0, selected=1)
+                    let (clip_x, clip_y, clip_w, clip_h) =
+                        rect_to_clip_space(tab_screen_pos, (frame_w, frame_h), screen_size);
+                    let u_min = bg_frame as f32 * 0.5;
+                    let u_max = u_min + 0.5;
+                    sprite_renderer.draw_uv(
+                        render_pass,
+                        bg_bind,
+                        queue,
+                        clip_x,
+                        clip_y,
+                        clip_w,
+                        clip_h,
+                        u_min,
+                        0.0,
+                        u_max,
+                        1.0,
+                    );
+
+                    // Draw icon centered on tab (3 frames: hourglass, folder, ?)
+                    let icon_x = tab_screen_pos.0 + (TAB_WIDTH as f32 - ICON_WIDTH as f32) / 2.0;
+                    let icon_y = tab_screen_pos.1 + (TAB_HEIGHT as f32 - ICON_HEIGHT as f32) / 2.0;
+                    let (icon_clip_x, icon_clip_y, icon_clip_w, icon_clip_h) =
+                        rect_to_clip_space((icon_x, icon_y), (ICON_WIDTH, ICON_HEIGHT), screen_size);
+                    let icon_u_min = icon_frame as f32 / 3.0;
+                    let icon_u_max = icon_u_min + 1.0 / 3.0;
+                    sprite_renderer.draw_uv(
+                        render_pass,
+                        icon_bind,
+                        queue,
+                        icon_clip_x,
+                        icon_clip_y,
+                        icon_clip_w,
+                        icon_clip_h,
+                        icon_u_min,
+                        0.0,
+                        icon_u_max,
+                        1.0,
+                    );
+
+                    // Store hit box for tab clicks
+                    let tab_name = match tab {
+                        StartScreenTab::Bookmarks => "tab_bookmarks",
+                        StartScreenTab::SaveGames => "tab_save_games",
+                    };
+                    self.hit_boxes.push((
+                        tab_name.to_string(),
+                        HitBox {
+                            x: tab_screen_pos.0,
+                            y: tab_screen_pos.1,
+                            width: TAB_WIDTH as f32,
+                            height: TAB_HEIGHT as f32,
+                        },
+                    ));
+                }
+            }
+
             // Clone all buttons to avoid borrow conflicts
             let buttons_with_actions = vec![
                 (panel.back_button.clone(), "back_button"),
@@ -1566,8 +1703,8 @@ impl GuiRenderer {
                 ));
             }
 
-            // Render bookmarks listbox
-            if !self.bookmarks.is_empty() {
+            // Render bookmarks listbox (only when Bookmarks tab is active)
+            if !self.bookmarks.is_empty() && self.active_tab == StartScreenTab::Bookmarks {
                 let listbox = &panel.bookmarks_list;
                 let listbox_pos = listbox.position();
                 let listbox_size = listbox.size();
@@ -1769,8 +1906,8 @@ impl GuiRenderer {
                 render_pass.set_scissor_rect(0, 0, screen_size.0, screen_size.1);
             }
 
-            // Render save games listbox
-            if !self.save_games.is_empty() {
+            // Render save games listbox (only when SaveGames tab is active)
+            if !self.save_games.is_empty() && self.active_tab == StartScreenTab::SaveGames {
                 let listbox = &panel.save_games_list;
                 let listbox_pos = listbox.position();
                 let listbox_size = listbox.size();
@@ -2158,6 +2295,16 @@ impl GuiRenderer {
                         self.selected_save_game = Some(clicked_idx);
                         return Some(GuiAction::SelectSaveGame(clicked_idx));
                     }
+                    return None;
+                }
+
+                // Check for tab clicks
+                if name == "tab_bookmarks" {
+                    self.active_tab = StartScreenTab::Bookmarks;
+                    return None; // Tab switch is internal state, no GuiAction needed
+                }
+                if name == "tab_save_games" {
+                    self.active_tab = StartScreenTab::SaveGames;
                     return None;
                 }
 
