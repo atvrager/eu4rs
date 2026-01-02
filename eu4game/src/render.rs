@@ -950,8 +950,9 @@ impl SpriteInstance {
 }
 
 /// Maximum sprites per frame.
-/// Increased to support: topbar (12+), speed controls (10+), date text (20+ glyphs)
-const MAX_SPRITES_PER_FRAME: usize = 256;
+/// Sized for complex UI: country selection with bookmarks, saves, date widget,
+/// topbar, text glyphs, etc. Each text character is one sprite draw.
+const MAX_SPRITES_PER_FRAME: usize = 2048;
 
 /// Sprite renderer for drawing textured quads (flags, icons).
 ///
