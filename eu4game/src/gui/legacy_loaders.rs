@@ -368,7 +368,7 @@ fn extract_topbar_layout(
 ///
 /// Returns a tuple of (CountrySelectLayout, Option<GuiElement>) where:
 /// - CountrySelectLayout contains rendering metadata (window size, icon vectors, text vectors, etc.)
-/// - GuiElement is the root window for macro-based widget binding (CountrySelectPanel)
+/// - GuiElement is the root window for macro-based widget binding (CountrySelectRightPanel)
 pub(super) fn load_country_select_split(
     game_path: &Path,
     interner: &interner::StringInterner,

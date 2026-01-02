@@ -70,7 +70,7 @@ mod renderer;
 
 // Country select panel
 #[allow(unused_imports)] // SelectedCountryState used in tests
-pub use country_select::{CountrySelectLayout, CountrySelectPanel, SelectedCountryState};
+pub use country_select::{CountrySelectLayout, CountrySelectRightPanel, SelectedCountryState};
 pub use country_select_left::CountrySelectLeftPanel;
 #[allow(unused_imports)] // WIP - not yet integrated
 pub use country_select_top::CountrySelectTopPanel;

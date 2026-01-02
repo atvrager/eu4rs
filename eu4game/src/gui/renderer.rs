@@ -15,7 +15,7 @@ pub enum StartScreenTab {
 
 #[cfg(test)]
 use super::country_select::SelectedCountryState;
-use super::country_select::{CountrySelectLayout, CountrySelectPanel};
+use super::country_select::{CountrySelectLayout, CountrySelectRightPanel};
 use super::country_select_left::CountrySelectLeftPanel;
 use super::country_select_top::CountrySelectTopPanel;
 use super::layout::{
@@ -64,7 +64,7 @@ pub struct GuiRenderer {
     country_select_layout: CountrySelectLayout,
     /// Macro-based country select panel widgets (Phase 3.5).
     #[allow(dead_code)] // Used in render_country_select_only (test-only)
-    country_select_panel: Option<CountrySelectPanel>,
+    country_select_panel: Option<CountrySelectRightPanel>,
     /// Country selection left panel (Phase 8.5.1).
     #[allow(dead_code)] // Phase 8.5.2 rendering integration
     left_panel: Option<CountrySelectLeftPanel>,
@@ -202,7 +202,7 @@ impl GuiRenderer {
         let (country_select_layout, country_select_root) =
             load_country_select_split(game_path, &interner);
         let country_select_panel =
-            country_select_root.map(|root| CountrySelectPanel::bind(&root, &interner));
+            country_select_root.map(|root| CountrySelectRightPanel::bind(&root, &interner));
 
         // Load frontend panels (Phase 8.5.1)
         let (left_data, top_data, right_data) = load_frontend_panels(game_path, &interner);
@@ -309,6 +309,20 @@ impl GuiRenderer {
     pub fn set_play_button_enabled(&mut self, enabled: bool) {
         if let Some(ref mut lobby_controls) = self.lobby_controls {
             lobby_controls.set_play_enabled(enabled);
+        }
+    }
+
+    /// Update the country selection right panel with selected country data (Phase 9.4).
+    ///
+    /// This populates the right panel with country information when a country is selected.
+    pub fn update_selected_country(
+        &mut self,
+        state: Option<&super::country_select::SelectedCountryState>,
+    ) {
+        if let Some(ref mut panel) = self.country_select_panel
+            && let Some(state) = state
+        {
+            panel.update(state);
         }
     }
 

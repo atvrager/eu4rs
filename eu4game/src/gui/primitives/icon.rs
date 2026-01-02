@@ -1,6 +1,6 @@
 //! GuiIcon - wrapper around Icon elements for runtime binding.
 //!
-//! Used by SpeedControls (speed indicator) and CountrySelectPanel (government rank, religion, tech group icons).
+//! Used by SpeedControls (speed indicator) and CountrySelectRightPanel (government rank, religion, tech group icons).
 
 use crate::gui::binder::{Bindable, GuiNode};
 use crate::gui::core::{EventResult, GuiRenderer, GuiWidget, UiContext, UiEvent};

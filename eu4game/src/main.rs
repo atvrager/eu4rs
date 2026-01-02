@@ -804,6 +804,14 @@ impl App {
                 }
                 screen::Screen::SinglePlayer | screen::Screen::Playing => {
                     log::debug!("Rendering {:?} screen", current_screen);
+
+                    // Create country state before mut borrow (Phase 9.4)
+                    let country_state = if current_screen == screen::Screen::SinglePlayer {
+                        self.create_selected_country_state()
+                    } else {
+                        None
+                    };
+
                     // Render EU4 GUI overlay (topbar, speed controls, country select)
                     if let Some(gui_renderer) = &mut self.gui_renderer {
                         log::debug!("Calling gui_renderer.render()");
@@ -815,6 +823,10 @@ impl App {
                         };
                         // Enable/disable play button based on country selection (Phase 9.3)
                         gui_renderer.set_play_button_enabled(self.player_tag.is_some());
+
+                        // Update country selection right panel (Phase 9.4)
+                        gui_renderer.update_selected_country(country_state.as_ref());
+
                         gui_renderer.render(
                             &mut render_pass,
                             &self.device,
@@ -1462,6 +1474,55 @@ impl App {
             }
         };
         self.window.set_title(&title);
+    }
+
+    /// Create SelectedCountryState for the current player_tag (Phase 9.4).
+    ///
+    /// Returns None if no country selected or world state unavailable.
+    fn create_selected_country_state(&self) -> Option<gui::country_select::SelectedCountryState> {
+        let player_tag = self.player_tag.as_ref()?;
+        let world_state = self.world_state.as_ref()?;
+
+        // Get country data from world state
+        let country = world_state.countries.get(player_tag)?;
+
+        // Count provinces owned by this country
+        let province_count = world_state
+            .provinces
+            .values()
+            .filter(|p| p.owner.as_deref() == Some(player_tag))
+            .count();
+
+        // Calculate total development (Fixed -> f32 -> i32)
+        let total_development: i32 = world_state
+            .provinces
+            .values()
+            .filter(|p| p.owner.as_deref() == Some(player_tag))
+            .map(|p| (p.base_tax + p.base_production + p.base_manpower).to_f32())
+            .sum::<f32>() as i32;
+
+        Some(gui::country_select::SelectedCountryState {
+            tag: player_tag.clone(),
+            name: player_tag.clone(), // TODO: localize country name
+            government_type: "Feudal Monarchy".to_string(), // TODO: get from country data
+            fog_status: String::new(), // Always visible for selected country
+            government_rank: 2,       // TODO: get from country data (1=Duchy, 2=Kingdom, 3=Empire)
+            religion_frame: 0,        // TODO: get from religion data
+            tech_group_frame: 0,      // TODO: get from tech group data
+            ruler_name: format!("{} (placeholder)", player_tag), // TODO: get actual ruler
+            ruler_adm: country.ruler_adm,
+            ruler_dip: country.ruler_dip,
+            ruler_mil: country.ruler_mil,
+            adm_tech: country.adm_tech,
+            dip_tech: country.dip_tech,
+            mil_tech: country.mil_tech,
+            ideas_name: format!("{} Ideas", player_tag), // TODO: get actual idea group
+            ideas_unlocked: 0,                           // TODO: count unlocked ideas
+            province_count: province_count as u32,
+            total_development,
+            fort_level: 0, // TODO: calculate max fort level
+            diplomacy_header: "Diplomacy".to_string(),
+        })
     }
 
     /// Selects the province at the given world coordinates.

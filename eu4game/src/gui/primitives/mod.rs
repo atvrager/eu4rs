@@ -5,8 +5,8 @@
 //!
 //! ## Production Status
 //!
-//! - **GuiText**: ✅ Actively used in TopBar, SpeedControls, CountrySelectPanel (Phase 3.5)
-//! - **GuiIcon**: ✅ Actively used in SpeedControls, CountrySelectPanel (Phase 3.5)
+//! - **GuiText**: ✅ Actively used in TopBar, SpeedControls, CountrySelectRightPanel (Phase 3.5)
+//! - **GuiIcon**: ✅ Actively used in SpeedControls, CountrySelectRightPanel (Phase 3.5)
 //! - **GuiButton**: ⚠️ Available but not yet used in production panels (Phase 4)
 //! - **GuiContainer**: ⚠️ Available but not yet used in production panels (Phase 4+)
 //! - **GuiListbox**: ⚠️ Core primitive implemented (Phase 7.3), rendering and interaction pending (Phase 7.4-7.5)

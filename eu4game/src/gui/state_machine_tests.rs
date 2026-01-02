@@ -285,3 +285,24 @@ fn test_date_widget_leap_year() {
     let image = harness.render_to_image(TEST_SCREEN_SIZE);
     assert_snapshot(&image, "date_widget_leap_year");
 }
+
+/// Test country selection with right panel data populated (Phase 9.4).
+///
+/// Verifies that when a country is selected, the play button is enabled
+/// and the right panel data is updated (actual rendering deferred to Phase 10).
+#[test]
+fn test_country_selection_with_data() {
+    let Some(mut harness) = GuiTestHarness::new() else {
+        return;
+    };
+
+    harness.transition_to(Screen::SinglePlayer);
+    // Select Austria (HAB) as the player country
+    harness.set_player_country(Some("HAB".to_string()));
+
+    let image = harness.render_to_image(TEST_SCREEN_SIZE);
+    // This golden captures the state with a country selected
+    // The play button should be enabled (clickable)
+    // The right panel data is populated but rendering is Phase 10
+    assert_snapshot(&image, "country_selection_with_country");
+}

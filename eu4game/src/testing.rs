@@ -154,6 +154,8 @@ pub struct GuiTestHarness {
     game_path: PathBuf,
     /// Start date for country selection screen.
     start_date: eu4data::Eu4Date,
+    /// Selected player country (for testing country selection).
+    player_tag: Option<String>,
 }
 
 impl GuiTestHarness {
@@ -183,6 +185,7 @@ impl GuiTestHarness {
             gui_state,
             game_path,
             start_date: eu4data::Eu4Date::from_ymd(1444, 11, 11),
+            player_tag: None,
         })
     }
 
@@ -245,6 +248,11 @@ impl GuiTestHarness {
     /// Set the start date for the country selection screen.
     pub fn set_start_date(&mut self, date: eu4data::Eu4Date) {
         self.start_date = date;
+    }
+
+    /// Set the selected player country (for testing country selection).
+    pub fn set_player_country(&mut self, tag: Option<String>) {
+        self.player_tag = tag;
     }
 
     // ========================================

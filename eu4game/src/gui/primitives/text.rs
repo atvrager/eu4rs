@@ -1,6 +1,6 @@
 //! GuiText - wrapper around TextBox elements for runtime binding.
 //!
-//! Used by TopBar, SpeedControls, and CountrySelectPanel for dynamic text labels.
+//! Used by TopBar, SpeedControls, and CountrySelectRightPanel for dynamic text labels.
 
 use crate::gui::binder::{Bindable, GuiNode};
 use crate::gui::core::{EventResult, GuiRenderer, GuiWidget, UiContext, UiEvent};

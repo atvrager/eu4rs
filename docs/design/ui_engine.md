@@ -692,6 +692,17 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] World state loading already implemented (loads on game start)
     - [x] Player country setting already implemented (`start_game_with_selected_country()`)
     - [x] Simulation initialization already implemented
+- [x] **9.4. Country Selection Right Panel Data** ✅
+    - [x] Rename `CountrySelectPanel` to `CountrySelectRightPanel` for consistency
+    - [x] Add `create_selected_country_state()` method to populate panel data
+    - [x] Extract country stats from world state (ruler, tech, provinces, development)
+    - [x] Add `update_selected_country()` method to `GuiRenderer`
+    - [x] Call update before rendering to populate right panel data
+    - [x] Add `set_player_country()` to test harness for testing
+    - [x] Add `test_country_selection_with_data` golden test
+    - Note: Right panel RENDERING deferred to Phase 10 (data pipeline complete)
+    - Note: Country deselection via Back button (returns to main menu)
+    - Note: Clicking another country switches selection
 
 ### Phase 9.5: Map Mode Rendering
 *Objective: Implement additional map rendering modes beyond Political.*

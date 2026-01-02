@@ -7,7 +7,7 @@ use super::primitives::{GuiIcon, GuiText};
 use super::types::{Orientation, TextFormat};
 use eu4_macros::GuiWindow;
 
-/// Country selection panel using the new binder pattern.
+/// Country selection right panel using the new binder pattern.
 ///
 /// This demonstrates Phase 3 of the UI engine: using the `#[derive(GuiWindow)]`
 /// macro to automatically bind to specific widgets from the `singleplayer` window
@@ -15,9 +15,12 @@ use eu4_macros::GuiWindow;
 ///
 /// Unlike `CountrySelectLayout` which collects all widgets into vectors,
 /// this struct binds to specific named widgets that we need to interact with.
+///
+/// Renamed from `CountrySelectPanel` to `CountrySelectRightPanel` to match
+/// the naming convention with `CountrySelectLeftPanel`.
 #[derive(GuiWindow)]
 #[gui(window_name = "singleplayer")]
-pub struct CountrySelectPanel {
+pub struct CountrySelectRightPanel {
     /// Main country name label
     pub selected_nation_label: GuiText,
 
@@ -76,7 +79,7 @@ pub struct CountrySelectPanel {
     pub techgroup_icon: GuiIcon,
 }
 
-impl CountrySelectPanel {
+impl CountrySelectRightPanel {
     /// Update all text fields from game state.
     ///
     /// This demonstrates the explicit data binding pattern: we manually
@@ -335,7 +338,7 @@ mod tests {
             .expect("Should find singleplayer window in frontend.gui");
 
         // Bind the panel using the macro-generated method
-        let panel = CountrySelectPanel::bind(singleplayer_window, &interner);
+        let panel = CountrySelectRightPanel::bind(singleplayer_window, &interner);
 
         // Verify that key widgets were bound (not placeholders)
         assert_ne!(
@@ -409,7 +412,7 @@ mod tests {
         };
 
         // Should not panic even with missing widgets
-        let panel = CountrySelectPanel::bind(&empty_window, &interner);
+        let panel = CountrySelectRightPanel::bind(&empty_window, &interner);
 
         // All widgets should be placeholders
         assert_eq!(panel.selected_nation_label.name(), "<placeholder>");
