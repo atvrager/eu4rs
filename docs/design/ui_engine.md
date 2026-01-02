@@ -724,18 +724,18 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [ ] Display trade flow arrows (deferred)
     - [ ] Render trade node connections (deferred)
     - **Note**: Visual verification only - golden test for map rendering planned in **Phase 15**.
-- [ ] **9.5.3. Religion Mode**
-    - [ ] Color provinces by religion
-    - [ ] Use religion colors from game data
-- [ ] **9.5.4. Culture Mode**
-    - [ ] Color provinces by culture group
-    - [ ] Use culture colors from game data
-- [ ] **9.5.5. Additional Modes**
-    - [ ] Empire mode (HRE borders)
-    - [ ] Diplomacy mode (relations)
-    - [ ] Economy mode (development)
-    - [ ] Region mode (geographic regions)
-    - [ ] Players mode (multiplayer - highlight player nations)
+- [x] **9.5.3. Religion Mode**
+    - [x] Color provinces by religion
+    - [x] Use religion colors from game data
+- [x] **9.5.4. Culture Mode**
+    - [x] Color provinces by culture group
+    - [x] Use hash-generated colors for cultures
+- [x] **9.5.5. Additional Modes**
+    - [x] Empire mode (HRE borders)
+    - [ ] Diplomacy mode (relations) - *deferred: complex requirements*
+    - [x] Economy mode (development)
+    - [x] Region mode (geographic regions)
+    - [ ] Players mode (multiplayer) - *deferred: multiplayer-specific*
 - [x] **9.5.6. Mode Switching**
     - [x] Connect `SetMapMode` action to rendering state
     - [x] Update map renderer based on active mode

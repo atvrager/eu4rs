@@ -180,6 +180,9 @@ struct App {
 
     /// Culture definitions (Phase 9.5.4 - Culture Mode).
     cultures: std::collections::HashMap<String, eu4data::cultures::Culture>,
+
+    /// Region mapping (Phase 9.5.5 - Region Mode).
+    region_mapping: Option<eu4data::regions::ProvinceRegionMapping>,
 }
 
 impl App {
@@ -404,6 +407,17 @@ impl App {
             )
             .unwrap_or_default();
 
+        // Load region mapping for region mode rendering (Phase 9.5.5)
+        let region_mapping = eu4data::path::detect_game_path().and_then(|game_path| {
+            match eu4data::regions::load_region_mapping(&game_path) {
+                Ok(mapping) => Some(mapping),
+                Err(e) => {
+                    log::warn!("Failed to load region mapping: {}", e);
+                    None
+                }
+            }
+        });
+
         // Create FrontendUI with panels from GuiRenderer (Phase 8.5.1)
         // Main menu remains a placeholder until Phase 8.5.4
         // Left/top/lobby panels are loaded from frontend.gui when available
@@ -475,6 +489,7 @@ impl App {
             sea_provinces,
             religions,
             cultures,
+            region_mapping,
         }
     }
 
@@ -726,6 +741,7 @@ impl App {
             gui::MapMode::Culture => 4.0,
             gui::MapMode::Economy => 5.0,
             gui::MapMode::Empire => 6.0,
+            gui::MapMode::Region => 7.0,
             _ => 0.0, // Other modes default to political for now
         };
         self.renderer.update_map_mode(
@@ -1427,6 +1443,7 @@ impl App {
             gui::MapMode::Culture => self.update_lookup_culture(),
             gui::MapMode::Economy => self.update_lookup_economy(),
             gui::MapMode::Empire => self.update_lookup_empire(),
+            gui::MapMode::Region => self.update_lookup_region(),
             _ => self.update_lookup_political(),
         }
     }
@@ -2029,6 +2046,87 @@ impl App {
         );
 
         log::debug!("Updated GPU lookup texture for empire mode (HRE membership)");
+    }
+
+    /// Update lookup texture for region mode (geographic regions).
+    /// Colors provinces by their geographic region using hash-generated colors.
+    fn update_lookup_region(&mut self) {
+        let Some(ref region_mapping) = self.region_mapping else {
+            // No region data loaded
+            let mut lookup_data: Vec<u8> = Vec::with_capacity((render::LOOKUP_SIZE * 4) as usize);
+            let default_color = [60u8, 60, 60, 255];
+            for _ in 0..render::LOOKUP_SIZE {
+                lookup_data.extend_from_slice(&default_color);
+            }
+
+            self.queue.write_texture(
+                wgpu::ImageCopyTexture {
+                    texture: &self.renderer.lookup_texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &lookup_data,
+                wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * render::LOOKUP_SIZE),
+                    rows_per_image: Some(1),
+                },
+                wgpu::Extent3d {
+                    width: render::LOOKUP_SIZE,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+            );
+            return;
+        };
+
+        // Build lookup data: province ID -> region color
+        let mut lookup_data: Vec<u8> = Vec::with_capacity((render::LOOKUP_SIZE * 4) as usize);
+
+        let water_color = [30u8, 60, 100, 255];
+        let unknown_color = [100u8, 100, 100, 255]; // Gray for unmapped provinces
+
+        for province_id in 0..render::LOOKUP_SIZE {
+            let color = if province_id == 0 {
+                unknown_color
+            } else if self.sea_provinces.contains(&province_id) {
+                water_color
+            } else if let Some(region_name) = region_mapping.province_to_region.get(&province_id) {
+                // Generate deterministic color from region name
+                let region_color = eu4data::cultures::hash_color(region_name);
+                [region_color[0], region_color[1], region_color[2], 255]
+            } else {
+                unknown_color
+            };
+            lookup_data.extend_from_slice(&color);
+        }
+
+        // Write directly to texture
+        self.queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &self.renderer.lookup_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &lookup_data,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * render::LOOKUP_SIZE),
+                rows_per_image: Some(1),
+            },
+            wgpu::Extent3d {
+                width: render::LOOKUP_SIZE,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        log::debug!(
+            "Updated GPU lookup texture for region mode ({} regions mapped)",
+            region_mapping.regions.len()
+        );
     }
 
     /// Updates the window title with current date and speed.

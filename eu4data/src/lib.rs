@@ -53,6 +53,7 @@ pub mod manifest;
 pub mod map;
 pub mod path;
 pub mod policies;
+pub mod regions;
 pub mod religions;
 pub mod subject_types;
 pub mod terrain;
