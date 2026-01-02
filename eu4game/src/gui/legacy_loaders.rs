@@ -1403,6 +1403,24 @@ mod tests {
             // Check if play_button has a sprite type
             let has_sprite = panel.play_button.sprite_type().is_some();
             println!("  play_button has sprite: {}", has_sprite);
+            // Debug: print positions of all lobby buttons
+            println!("  play_button position: {:?}", panel.play_button.position());
+            println!(
+                "  random_country_button position: {:?}",
+                panel.random_country_button.position()
+            );
+            println!(
+                "  nation_designer_button position: {:?}",
+                panel.nation_designer_button.position()
+            );
+            println!(
+                "  random_new_world_button position: {:?}",
+                panel.random_new_world_button.position()
+            );
+            println!(
+                "  enable_custom_nation_button position: {:?}",
+                panel.enable_custom_nation_button.position()
+            );
         } else {
             println!("Lobby controls not loaded - skipping binding test");
         }

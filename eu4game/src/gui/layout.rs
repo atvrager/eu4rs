@@ -131,9 +131,10 @@ pub fn resolve_position(
             (px as f32, py as f32 - eh)
         }
         Orientation::LowerRight => {
-            // Anchored bottom-right: position gives the element's LEFT edge offset from anchor
-            // (not right edge), and we subtract height to get top from bottom position
-            (px as f32, py as f32 - eh)
+            // Anchored bottom-right: position gives the element's TOP-LEFT corner offset
+            // from anchor. Unlike LowerLeft, we don't subtract height - the y offset
+            // already specifies the top position.
+            (px as f32, py as f32)
         }
         Orientation::Center => {
             // Center anchor: offset from center, element centered on that point
@@ -356,10 +357,11 @@ mod tests {
 
     #[test]
     fn test_resolve_position_lower_right() {
-        // Position gives element's LEFT edge offset from anchor (not right edge)
+        // Position gives element's TOP-LEFT corner offset from anchor
+        // Y offset specifies the top position directly (no height subtraction)
         let pos = resolve_position((-10, -20), Orientation::LowerRight, (100, 50), SCREEN);
         assert!((pos.0 - 1910.0).abs() < 0.001); // 1920 - 10 (left edge)
-        assert!((pos.1 - 1010.0).abs() < 0.001); // 1080 - 20 - 50
+        assert!((pos.1 - 1060.0).abs() < 0.001); // 1080 - 20 (top, no height subtraction)
     }
 
     // ========== resolve_child_position tests ==========
