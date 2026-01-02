@@ -2,7 +2,7 @@
 
 **Status**: Draft
 **Date**: 2025-12-31
-**Last Updated**: 2026-01-02 (Phase 9 complete - game integration)
+**Last Updated**: 2026-01-02 (Phase 9.4 complete - country selection right panel rendering)
 **Objective**: Create a scalable, type-safe, and mod-friendly system for rendering EU4-style UI panels.
 
 ## 1. Problem Statement
@@ -692,7 +692,7 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] World state loading already implemented (loads on game start)
     - [x] Player country setting already implemented (`start_game_with_selected_country()`)
     - [x] Simulation initialization already implemented
-- [x] **9.4. Country Selection Right Panel Data** ✅
+- [x] **9.4. Country Selection Right Panel Rendering** ✅
     - [x] Rename `CountrySelectPanel` to `CountrySelectRightPanel` for consistency
     - [x] Add `create_selected_country_state()` method to populate panel data
     - [x] Extract country stats from world state (ruler, tech, provinces, development)
@@ -700,9 +700,16 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] Call update before rendering to populate right panel data
     - [x] Add `set_player_country()` to test harness for testing
     - [x] Add `test_country_selection_with_data` golden test
-    - Note: Right panel RENDERING deferred to Phase 10 (data pipeline complete)
-    - Note: Country deselection via Back button (returns to main menu)
-    - Note: Clicking another country switches selection
+    - [x] Render right panel with 9-slice background
+    - [x] Position panel using `get_window_anchor()` from singleplayer window layout
+    - [x] Panel width from GUI file, height calculated from content positions
+    - [x] Render icons (government rank, religion, tech group) with correct frames
+    - [x] Render all text fields (country name, ruler, stats, tech, ideas, etc.)
+    - [x] Show "No country selected" when no country chosen
+    - [x] ESC key deselects country (clears panel text, shows "No country selected")
+    - [x] ESC with no country selected returns to main menu
+    - [x] Panel always visible on SinglePlayer screen
+    - [x] All positioning from frontend.gui (no magic numbers)
 
 ### Phase 9.5: Map Mode Rendering
 *Objective: Implement additional map rendering modes beyond Political.*

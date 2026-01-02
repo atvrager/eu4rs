@@ -319,10 +319,13 @@ impl GuiRenderer {
         &mut self,
         state: Option<&super::country_select::SelectedCountryState>,
     ) {
-        if let Some(ref mut panel) = self.country_select_panel
-            && let Some(state) = state
-        {
-            panel.update(state);
+        if let Some(ref mut panel) = self.country_select_panel {
+            if let Some(state) = state {
+                panel.update(state);
+            } else {
+                // Clear all text when no country selected
+                panel.update(&super::country_select::SelectedCountryState::default());
+            }
         }
     }
 
@@ -1108,6 +1111,7 @@ impl GuiRenderer {
     ) {
         self.ensure_textures(device, queue, sprite_renderer);
         self.ensure_font(device, queue, sprite_renderer);
+        self.ensure_country_select_textures(device, queue, sprite_renderer);
 
         log::info!(
             "Rendering country selection panels: left={}, top={}, lobby={}",
@@ -2678,6 +2682,327 @@ impl GuiRenderer {
                             height: h as f32,
                         },
                     ));
+                }
+            }
+        }
+
+        // Render country selection right panel (Phase 9.4)
+        // Always render the right panel (shows "No country selected" when empty)
+        if let Some(ref panel) = self.country_select_panel {
+            // Inline rendering to avoid borrow checker conflicts with button rendering above
+            // (textures/fonts already ensured at top of function)
+
+            // Check if we have a country selected
+            let has_country = !panel.selected_nation_label.text().is_empty();
+
+            // Get border size from panel definition
+            let border_size = self
+                .gfx_db
+                .get_cornered_tile("GFX_country_selection_panel_bg")
+                .map(|p| (p.border_size.0 as f32, p.border_size.1 as f32))
+                .unwrap_or((32.0, 32.0));
+
+            // Calculate panel size: window_size width from GUI file + dynamic height based on content
+            let content_width = self.country_select_layout.window_size.0 as f32;
+
+            // Calculate height based on actual content positions
+            let max_content_y = self
+                .country_select_layout
+                .icons
+                .iter()
+                .map(|i| i.position.1)
+                .chain(
+                    self.country_select_layout
+                        .texts
+                        .iter()
+                        .map(|t| t.position.1),
+                )
+                .max()
+                .unwrap_or(500) as f32
+                + 50.0; // Add bottom padding
+
+            let panel_width = content_width + border_size.0 * 2.0;
+            let panel_height = max_content_y + border_size.1 * 2.0;
+
+            // Use position and orientation from the singleplayer window in frontend.gui
+            // singleplayer window has: pos=(-236, 40), orientation=UpperRight
+            // This positions the panel's upper-left corner 236px from right edge, 40px from top
+            // Use get_window_anchor (not resolve_position) because the position specifies
+            // the window's upper-left corner, not its anchor point
+            let panel_top_left = super::layout::get_window_anchor(
+                self.country_select_layout.window_pos,
+                self.country_select_layout.window_orientation,
+                screen_size,
+            );
+
+            // Content offset (inside the 9-slice border)
+            let content_offset = (border_size.0, border_size.1);
+
+            // Draw 9-slice panel background
+            if let Some(panel_bg) = self
+                .gfx_db
+                .get_cornered_tile("GFX_country_selection_panel_bg")
+                && let Some((ref bind_group, tex_w, tex_h)) = self.panel_bg_bind_group
+            {
+                sprite_renderer.draw_cornered_tile(
+                    render_pass,
+                    bind_group,
+                    queue,
+                    panel_top_left.0,
+                    panel_top_left.1,
+                    panel_width,
+                    panel_height,
+                    panel_bg.border_size.0 as f32,
+                    panel_bg.border_size.1 as f32,
+                    tex_w,
+                    tex_h,
+                    screen_size,
+                );
+            }
+
+            // Content anchor
+            let window_anchor = (
+                panel_top_left.0 + content_offset.0,
+                panel_top_left.1 + content_offset.1,
+            );
+
+            if has_country {
+                // Draw icons (only when country selected)
+                for icon in &self.country_select_layout.icons {
+                    if let Some(idx) = self
+                        .country_select_icons
+                        .iter()
+                        .position(|(name, _, _, _)| name == &icon.sprite)
+                    {
+                        let (sprite_name, bind_group, tex_w, tex_h) =
+                            &self.country_select_icons[idx];
+
+                        // Get sprite info for frame count
+                        let sprite = self.gfx_db.get(sprite_name);
+                        let num_frames = sprite.map(|s| s.num_frames).unwrap_or(1);
+
+                        // Get frame from panel widget state
+                        let frame = if let Some(ref panel) = self.country_select_panel {
+                            match icon.name.as_str() {
+                                "government_rank" => {
+                                    panel.government_rank.frame().min(num_frames - 1)
+                                }
+                                "religion_icon" => panel.religion_icon.frame().min(num_frames - 1),
+                                "techgroup_icon" => {
+                                    panel.techgroup_icon.frame().min(num_frames - 1)
+                                }
+                                _ => icon.frame.min(num_frames - 1),
+                            }
+                        } else {
+                            icon.frame.min(num_frames - 1)
+                        };
+
+                        // Calculate per-frame dimensions
+                        let (frame_w, frame_h) = if num_frames > 1 {
+                            // Horizontal strip
+                            (*tex_w / num_frames, *tex_h)
+                        } else {
+                            (*tex_w, *tex_h)
+                        };
+
+                        // Apply scale factor
+                        let scaled_w = (frame_w as f32 * icon.scale) as u32;
+                        let scaled_h = (frame_h as f32 * icon.scale) as u32;
+
+                        let icon_pos = super::layout::position_from_anchor(
+                            window_anchor,
+                            icon.position,
+                            icon.orientation,
+                            (scaled_w, scaled_h),
+                        );
+                        let (clip_x, clip_y, clip_w, clip_h) = super::layout::rect_to_clip_space(
+                            icon_pos,
+                            (scaled_w, scaled_h),
+                            screen_size,
+                        );
+
+                        // Calculate UVs for frame
+                        let (u_min, v_min, u_max, v_max) = if let Some(s) = sprite {
+                            s.frame_uv(frame)
+                        } else {
+                            (0.0, 0.0, 1.0, 1.0)
+                        };
+
+                        sprite_renderer.draw_uv(
+                            render_pass,
+                            bind_group,
+                            queue,
+                            clip_x,
+                            clip_y,
+                            clip_w,
+                            clip_h,
+                            u_min,
+                            v_min,
+                            u_max,
+                            v_max,
+                        );
+                    }
+                }
+
+                // Draw text (only when country selected)
+                for text in &self.country_select_layout.texts {
+                    if let Some(font_idx) = self
+                        .font_bind_groups
+                        .iter()
+                        .position(|(name, _)| name == &text.font)
+                        && let Some(loaded) = self.font_cache.get(&text.font, device, queue)
+                    {
+                        let font = &loaded.font;
+
+                        // Get text value from panel widget state
+                        let value: Option<&str> = if let Some(ref panel) = self.country_select_panel
+                        {
+                            match text.name.as_str() {
+                                "selected_nation_label" => Some(panel.selected_nation_label.text()),
+                                "selected_nation_status_label" => {
+                                    Some(panel.selected_nation_status_label.text())
+                                }
+                                "selected_fog" => Some(panel.selected_fog.text()),
+                                "selected_ruler" => Some(panel.selected_ruler.text()),
+                                "ruler_adm_value" => Some(panel.ruler_adm_value.text()),
+                                "ruler_dip_value" => Some(panel.ruler_dip_value.text()),
+                                "ruler_mil_value" => Some(panel.ruler_mil_value.text()),
+                                "admtech_value" => Some(panel.admtech_value.text()),
+                                "diptech_value" => Some(panel.diptech_value.text()),
+                                "miltech_value" => Some(panel.miltech_value.text()),
+                                "national_ideagroup_name" => {
+                                    Some(panel.national_ideagroup_name.text())
+                                }
+                                "ideas_value" => Some(panel.ideas_value.text()),
+                                "provinces_value" => Some(panel.provinces_value.text()),
+                                "economy_value" => Some(panel.economy_value.text()),
+                                "fort_value" => Some(panel.fort_value.text()),
+                                "diplomacy_banner_label" => {
+                                    Some(panel.diplomacy_banner_label.text())
+                                }
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        };
+
+                        if let Some(text_value) = value {
+                            let text_pos = super::layout::position_from_anchor(
+                                window_anchor,
+                                text.position,
+                                text.orientation,
+                                (text.max_width, text.max_height),
+                            );
+
+                            // Render text character by character
+                            let mut cursor_x = text_pos.0;
+                            for c in text_value.chars() {
+                                if let Some(glyph) = font.get_glyph(c) {
+                                    if glyph.width == 0 || glyph.height == 0 {
+                                        cursor_x += glyph.xadvance as f32;
+                                        continue;
+                                    }
+
+                                    let glyph_x = cursor_x + glyph.xoffset as f32;
+                                    let glyph_y = text_pos.1 + glyph.yoffset as f32;
+                                    let glyph_screen_pos = (glyph_x, glyph_y);
+                                    let glyph_size = (glyph.width, glyph.height);
+                                    let (glyph_clip_x, glyph_clip_y, glyph_clip_w, glyph_clip_h) =
+                                        super::layout::rect_to_clip_space(
+                                            glyph_screen_pos,
+                                            glyph_size,
+                                            screen_size,
+                                        );
+
+                                    let atlas_width = font.scale_w as f32;
+                                    let atlas_height = font.scale_h as f32;
+                                    let u_min = glyph.x as f32 / atlas_width;
+                                    let v_min = glyph.y as f32 / atlas_height;
+                                    let u_max = (glyph.x + glyph.width) as f32 / atlas_width;
+                                    let v_max = (glyph.y + glyph.height) as f32 / atlas_height;
+
+                                    let font_bind_group = &self.font_bind_groups[font_idx].1;
+                                    sprite_renderer.draw_uv(
+                                        render_pass,
+                                        font_bind_group,
+                                        queue,
+                                        glyph_clip_x,
+                                        glyph_clip_y,
+                                        glyph_clip_w,
+                                        glyph_clip_h,
+                                        u_min,
+                                        v_min,
+                                        u_max,
+                                        v_max,
+                                    );
+
+                                    cursor_x += glyph.xadvance as f32;
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // No country selected - show centered message
+                if let Some(font_idx) = self
+                    .font_bind_groups
+                    .iter()
+                    .position(|(name, _)| name == "vic_18")
+                    && let Some(loaded) = self.font_cache.get("vic_18", device, queue)
+                {
+                    let font = &loaded.font;
+                    let text = "No country selected";
+                    let text_width = font.measure_width(text);
+                    let text_height = font.line_height as f32;
+
+                    // Center text in panel
+                    let text_x = panel_top_left.0 + (panel_width - text_width) / 2.0;
+                    let text_y = panel_top_left.1 + (panel_height - text_height) / 2.0;
+
+                    let mut cursor_x = text_x;
+                    for c in text.chars() {
+                        if let Some(glyph) = font.get_glyph(c) {
+                            if glyph.width == 0 || glyph.height == 0 {
+                                cursor_x += glyph.xadvance as f32;
+                                continue;
+                            }
+
+                            let glyph_x = cursor_x + glyph.xoffset as f32;
+                            let glyph_y = text_y + glyph.yoffset as f32;
+                            let glyph_screen_pos = (glyph_x, glyph_y);
+                            let glyph_size = (glyph.width, glyph.height);
+                            let (glyph_clip_x, glyph_clip_y, glyph_clip_w, glyph_clip_h) =
+                                super::layout::rect_to_clip_space(
+                                    glyph_screen_pos,
+                                    glyph_size,
+                                    screen_size,
+                                );
+
+                            let atlas_width = font.scale_w as f32;
+                            let atlas_height = font.scale_h as f32;
+                            let u_min = glyph.x as f32 / atlas_width;
+                            let v_min = glyph.y as f32 / atlas_height;
+                            let u_max = (glyph.x + glyph.width) as f32 / atlas_width;
+                            let v_max = (glyph.y + glyph.height) as f32 / atlas_height;
+
+                            let font_bind_group = &self.font_bind_groups[font_idx].1;
+                            sprite_renderer.draw_uv(
+                                render_pass,
+                                font_bind_group,
+                                queue,
+                                glyph_clip_x,
+                                glyph_clip_y,
+                                glyph_clip_w,
+                                glyph_clip_h,
+                                u_min,
+                                v_min,
+                                u_max,
+                                v_max,
+                            );
+
+                            cursor_x += glyph.xadvance as f32;
+                        }
+                    }
                 }
             }
         }

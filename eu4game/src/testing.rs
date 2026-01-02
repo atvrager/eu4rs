@@ -334,6 +334,42 @@ impl GuiTestHarness {
             } else {
                 None
             };
+
+            // Update selected country if we have a player tag (Phase 9.4)
+            if current_screen == Screen::SinglePlayer {
+                if let Some(ref tag) = self.player_tag {
+                    // Create mock country state for testing
+                    let country_state = crate::gui::country_select::SelectedCountryState {
+                        tag: tag.clone(),
+                        name: "Austria".to_string(),
+                        government_type: "Archduchy".to_string(),
+                        fog_status: String::new(),
+                        government_rank: 3,
+                        religion_frame: 0,
+                        tech_group_frame: 0,
+                        ruler_name: "Friedrich III von Habsburg".to_string(),
+                        ruler_adm: 3,
+                        ruler_dip: 4,
+                        ruler_mil: 2,
+                        adm_tech: 3,
+                        dip_tech: 3,
+                        mil_tech: 3,
+                        ideas_name: "Austrian Ideas".to_string(),
+                        ideas_unlocked: 2,
+                        province_count: 12,
+                        total_development: 156,
+                        fort_level: 1,
+                        diplomacy_header: "Diplomacy".to_string(),
+                    };
+                    self.gui_renderer
+                        .update_selected_country(Some(&country_state));
+                    self.gui_renderer.set_play_button_enabled(true);
+                } else {
+                    self.gui_renderer.update_selected_country(None);
+                    self.gui_renderer.set_play_button_enabled(false);
+                }
+            }
+
             self.gui_renderer.render(
                 &mut render_pass,
                 &self.gpu.device,

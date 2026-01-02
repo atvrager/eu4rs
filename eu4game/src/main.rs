@@ -973,6 +973,19 @@ impl App {
 
         // Handle Escape key for back navigation (Phase 6.1.4)
         if key == KeyCode::Escape {
+            // On SinglePlayer screen with country selected: deselect country
+            if self.screen_manager.current() == screen::Screen::SinglePlayer
+                && self.player_tag.is_some()
+            {
+                log::info!("Escape pressed - deselecting country");
+                self.player_tag = None;
+                if let Some(gui_renderer) = &mut self.gui_renderer {
+                    gui_renderer.update_selected_country(None);
+                    gui_renderer.set_play_button_enabled(false);
+                }
+                return false;
+            }
+
             // Try to go back in navigation history
             if self.screen_manager.can_go_back() {
                 log::info!("Escape pressed - going back");
