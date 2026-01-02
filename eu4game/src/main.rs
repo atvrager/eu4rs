@@ -177,6 +177,9 @@ struct App {
 
     /// Religion definitions (Phase 9.5.3 - Religion Mode).
     religions: std::collections::HashMap<String, eu4data::religions::Religion>,
+
+    /// Culture definitions (Phase 9.5.4 - Culture Mode).
+    cultures: std::collections::HashMap<String, eu4data::cultures::Culture>,
 }
 
 impl App {
@@ -385,6 +388,22 @@ impl App {
             )
             .unwrap_or_default();
 
+        // Load culture definitions for culture mode rendering (Phase 9.5.4)
+        let cultures = eu4data::path::detect_game_path()
+            .and_then(
+                |game_path| match eu4data::cultures::load_cultures(&game_path) {
+                    Ok(cultures) => {
+                        log::info!("Loaded {} cultures", cultures.len());
+                        Some(cultures)
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to load cultures: {}", e);
+                        None
+                    }
+                },
+            )
+            .unwrap_or_default();
+
         // Create FrontendUI with panels from GuiRenderer (Phase 8.5.1)
         // Main menu remains a placeholder until Phase 8.5.4
         // Left/top/lobby panels are loaded from frontend.gui when available
@@ -455,6 +474,7 @@ impl App {
             trade_network,
             sea_provinces,
             religions,
+            cultures,
         }
     }
 
@@ -697,12 +717,13 @@ impl App {
             .to_uniform(self.config.width as f32, self.config.height as f32);
         self.renderer.update_camera(&self.queue, camera_uniform);
 
-        // Update map mode uniform (Phase 9.5.1, 9.5.2, 9.5.3)
+        // Update map mode uniform (Phase 9.5.1, 9.5.2, 9.5.3, 9.5.4)
         let map_mode_value = match self.current_map_mode {
             gui::MapMode::Political => 0.0,
             gui::MapMode::Terrain => 1.0,
             gui::MapMode::Trade => 2.0,
             gui::MapMode::Religion => 3.0,
+            gui::MapMode::Culture => 4.0,
             _ => 0.0, // Other modes default to political for now
         };
         self.renderer.update_map_mode(
@@ -1401,6 +1422,7 @@ impl App {
         match self.current_map_mode {
             gui::MapMode::Trade => self.update_lookup_trade(),
             gui::MapMode::Religion => self.update_lookup_religion(),
+            gui::MapMode::Culture => self.update_lookup_culture(),
             _ => self.update_lookup_political(),
         }
     }
@@ -1701,6 +1723,107 @@ impl App {
         log::debug!(
             "Updated GPU lookup texture for religion mode ({} religions loaded)",
             self.religions.len()
+        );
+    }
+
+    /// Update lookup texture for culture mode (province culture colors).
+    fn update_lookup_culture(&mut self) {
+        let Some(world_state) = &self.world_state else {
+            // No world state loaded yet (e.g., on country selection screen)
+            // Show empty map with water/wastelands
+            let mut lookup_data: Vec<u8> = Vec::with_capacity((render::LOOKUP_SIZE * 4) as usize);
+            let default_color = [60u8, 60, 60, 255]; // Gray
+            for _ in 0..render::LOOKUP_SIZE {
+                lookup_data.extend_from_slice(&default_color);
+            }
+
+            self.queue.write_texture(
+                wgpu::ImageCopyTexture {
+                    texture: &self.renderer.lookup_texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &lookup_data,
+                wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * render::LOOKUP_SIZE),
+                    rows_per_image: Some(1),
+                },
+                wgpu::Extent3d {
+                    width: render::LOOKUP_SIZE,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+            );
+            return;
+        };
+
+        // Build lookup data: province ID -> culture color
+        let mut lookup_data: Vec<u8> = Vec::with_capacity((render::LOOKUP_SIZE * 4) as usize);
+
+        let wasteland_color = [60u8, 60, 60, 255]; // Gray for unmapped/wasteland
+        let water_color = [30u8, 60, 100, 255]; // Dark blue for sea zones
+        let unknown_color = [120u8, 120, 120, 255]; // Lighter gray for provinces without culture
+        let no_culture_data_color = [200u8, 200, 200, 255]; // Very light gray for unknown cultures
+
+        for province_id in 0..render::LOOKUP_SIZE {
+            let color = if province_id == 0 {
+                unknown_color
+            } else if self.sea_provinces.contains(&province_id) {
+                // Sea zone - render as water
+                water_color
+            } else if let Some(province) = world_state.provinces.get(&province_id) {
+                // Land province - check culture
+                if let Some(ref culture_name) = province.culture {
+                    // Look up culture color
+                    if let Some(culture_def) = self.cultures.get(culture_name) {
+                        // Culture has color definition (hash-generated)
+                        [
+                            culture_def.color[0],
+                            culture_def.color[1],
+                            culture_def.color[2],
+                            255,
+                        ]
+                    } else {
+                        // Culture exists but not in our definitions
+                        no_culture_data_color
+                    }
+                } else {
+                    // Province has no culture (uncolonized, wasteland, etc.)
+                    wasteland_color
+                }
+            } else {
+                // Province not in world state
+                wasteland_color
+            };
+            lookup_data.extend_from_slice(&color);
+        }
+
+        // Write directly to texture
+        self.queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &self.renderer.lookup_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &lookup_data,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * render::LOOKUP_SIZE),
+                rows_per_image: Some(1),
+            },
+            wgpu::Extent3d {
+                width: render::LOOKUP_SIZE,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        log::debug!(
+            "Updated GPU lookup texture for culture mode ({} cultures loaded)",
+            self.cultures.len()
         );
     }
 
