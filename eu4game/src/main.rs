@@ -1617,30 +1617,39 @@ impl App {
         );
     }
 
-    /// Handles mouse scroll for zooming.
+    /// Handles mouse scroll for zooming or GUI scrolling.
     fn handle_scroll(&mut self, delta: MouseScrollDelta) {
-        let zoom_factor = match delta {
-            MouseScrollDelta::LineDelta(_, y) => {
-                log::debug!("Scroll line delta: {}", y);
-                if y > 0.0 {
-                    1.1
-                } else if y < 0.0 {
-                    0.9
-                } else {
-                    return;
-                }
-            }
+        // Extract scroll delta
+        let scroll_delta = match delta {
+            MouseScrollDelta::LineDelta(_, y) => y,
             MouseScrollDelta::PixelDelta(pos) => {
-                log::debug!("Scroll pixel delta: {}", pos.y);
-                if pos.y > 0.0 {
-                    1.1
-                } else if pos.y < 0.0 {
-                    0.9
-                } else {
-                    return;
-                }
+                // Convert pixel delta to line delta (approximate)
+                (pos.y / 40.0) as f32
             }
         };
+
+        if scroll_delta == 0.0 {
+            return;
+        }
+
+        // First, check if GUI wants to handle the scroll (e.g., listboxes)
+        let current_screen = self.screen_manager.current();
+        if matches!(current_screen, Screen::SinglePlayer)
+            && let Some(gui_renderer) = &mut self.gui_renderer
+        {
+            let gui_consumed = gui_renderer.handle_mouse_wheel(
+                self.cursor_pos.0 as f32,
+                self.cursor_pos.1 as f32,
+                -scroll_delta, // Negate: positive wheel delta = scroll up (decrease offset)
+            );
+            if gui_consumed {
+                log::debug!("GUI consumed mouse wheel scroll");
+                return;
+            }
+        }
+
+        // Otherwise, apply map zoom
+        let zoom_factor = if scroll_delta > 0.0 { 1.1 } else { 0.9 };
 
         log::debug!(
             "Zooming by factor {}, cursor at {:?}",
@@ -1674,7 +1683,7 @@ impl App {
                     if matches!(
                         current_screen,
                         screen::Screen::Playing | screen::Screen::SinglePlayer
-                    ) && let Some(ref gui_renderer) = self.gui_renderer
+                    ) && let Some(ref mut gui_renderer) = self.gui_renderer
                     {
                         // Create current GUI state for hit testing
                         let gui_state = gui::GuiState {
@@ -1777,6 +1786,19 @@ impl App {
             }
             gui::GuiAction::ToggleCustomNation => {
                 log::info!("Toggle Custom Nation - not yet implemented");
+            }
+            gui::GuiAction::SelectBookmark(idx) => {
+                // Log bookmark selection; actual date application happens in Phase 9
+                if let Some(gui_renderer) = &self.gui_renderer
+                    && let Some(bookmark) = gui_renderer.selected_bookmark()
+                {
+                    log::info!(
+                        "Selected bookmark {}: {} ({:?})",
+                        idx,
+                        bookmark.name,
+                        bookmark.date
+                    );
+                }
             }
         }
         self.window.request_redraw();

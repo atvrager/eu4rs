@@ -2,6 +2,7 @@ target/
 *.profraw
 /map_*.png
 *_actual.png
+/*.jpg
 coverage.json
 stats.json
 stats.html

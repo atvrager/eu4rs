@@ -403,4 +403,6 @@ pub enum GuiAction {
     ToggleObserveMode,
     /// Toggle custom nation creation.
     ToggleCustomNation,
+    /// Select a bookmark by index.
+    SelectBookmark(usize),
 }

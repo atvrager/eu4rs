@@ -103,6 +103,10 @@ pub struct GuiRenderer {
     speed_size: (u32, u32),
     /// Loaded bookmark entries for the bookmarks listbox.
     bookmarks: Vec<BookmarkEntry>,
+    /// Scroll offset for bookmarks listbox (in pixels).
+    bookmarks_scroll_offset: f32,
+    /// Currently selected bookmark index (None = no selection).
+    selected_bookmark: Option<usize>,
 }
 
 impl GuiRenderer {
@@ -216,6 +220,8 @@ impl GuiRenderer {
             bg_size: (1, 1),    // Updated from texture in ensure_textures()
             speed_size: (1, 1), // Updated from texture in ensure_textures()
             bookmarks,
+            bookmarks_scroll_offset: 0.0,
+            selected_bookmark: Some(0), // Default to first bookmark selected
         }
     }
 
@@ -1574,9 +1580,20 @@ impl GuiRenderer {
                 let scissor_h = listbox_size.1.min(screen_size.1 - scissor_y);
                 render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_w, scissor_h);
 
+                // Store listbox screen bounds for hit testing
+                self.hit_boxes.push((
+                    "bookmarks_list".to_string(),
+                    HitBox {
+                        x: listbox_screen_pos.0,
+                        y: listbox_screen_pos.1,
+                        width: listbox_size.0 as f32,
+                        height: listbox_size.1 as f32,
+                    },
+                ));
+
                 // Render each visible bookmark entry
                 let visible_count = (listbox_size.1 as f32 / ENTRY_HEIGHT).ceil() as usize + 1;
-                let scroll_offset = listbox.scroll_offset();
+                let scroll_offset = self.bookmarks_scroll_offset;
                 let start_idx = (scroll_offset / ENTRY_HEIGHT).floor() as usize;
                 let end_idx = (start_idx + visible_count).min(self.bookmarks.len());
 
@@ -1584,6 +1601,39 @@ impl GuiRenderer {
                     let bookmark = &self.bookmarks[idx];
                     let entry_y =
                         listbox_screen_pos.1 + (idx as f32 * ENTRY_HEIGHT) - scroll_offset;
+
+                    // Render selection highlight if this entry is selected
+                    if self.selected_bookmark == Some(idx) {
+                        // Draw a semi-transparent highlight bar using the font atlas
+                        // (reusing existing white pixels from font texture for simple highlight)
+                        let highlight_width = listbox_size.0 as f32 - 8.0; // Slight margin
+                        let highlight_height = ENTRY_HEIGHT - 2.0;
+                        let highlight_x = listbox_screen_pos.0 + 4.0;
+                        let highlight_y = entry_y + 1.0;
+                        let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
+                            (highlight_x, highlight_y),
+                            (highlight_width as u32, highlight_height as u32),
+                            screen_size,
+                        );
+
+                        // Use the first font bind group (vic_18) with UV pointing to a white area
+                        if let Some((_, font_bg)) = self.font_bind_groups.first() {
+                            // Draw with minimal UV to pick up font base color (acts as tint)
+                            sprite_renderer.draw_uv(
+                                render_pass,
+                                font_bg,
+                                queue,
+                                clip_x,
+                                clip_y,
+                                clip_w,
+                                clip_h,
+                                0.0,
+                                0.0,
+                                0.01, // Tiny region to sample one color
+                                0.01,
+                            );
+                        }
+                    }
 
                     // Render bookmark title with vic_18 font
                     if let Some(font_idx) = self
@@ -1877,9 +1927,24 @@ impl GuiRenderer {
 
     /// Handle a click at screen coordinates.
     /// Returns an action if a GUI element was clicked.
-    pub fn handle_click(&self, x: f32, y: f32, current_state: &GuiState) -> Option<GuiAction> {
+    pub fn handle_click(&mut self, x: f32, y: f32, current_state: &GuiState) -> Option<GuiAction> {
+        const ENTRY_HEIGHT: f32 = 41.0;
+
         for (name, hit_box) in &self.hit_boxes {
             if hit_box.contains(x, y) {
+                // Check for bookmarks list click first (needs special handling)
+                if name == "bookmarks_list" {
+                    // Calculate which entry was clicked
+                    let relative_y = y - hit_box.y + self.bookmarks_scroll_offset;
+                    let clicked_idx = (relative_y / ENTRY_HEIGHT).floor() as usize;
+
+                    if clicked_idx < self.bookmarks.len() {
+                        self.selected_bookmark = Some(clicked_idx);
+                        return Some(GuiAction::SelectBookmark(clicked_idx));
+                    }
+                    return None;
+                }
+
                 return match name.as_str() {
                     // Speed controls
                     "speed_up" => {
@@ -1918,6 +1983,36 @@ impl GuiRenderer {
             }
         }
         None
+    }
+
+    /// Handle mouse wheel scroll at screen coordinates.
+    /// Returns true if the scroll was consumed by a GUI element (e.g., listbox).
+    pub fn handle_mouse_wheel(&mut self, x: f32, y: f32, delta_y: f32) -> bool {
+        const ENTRY_HEIGHT: f32 = 41.0;
+        const SCROLL_SPEED: f32 = 40.0;
+
+        // Check if mouse is over bookmarks list
+        for (name, hit_box) in &self.hit_boxes {
+            if name == "bookmarks_list" && hit_box.contains(x, y) {
+                // Calculate max scroll based on content height
+                let content_height = self.bookmarks.len() as f32 * ENTRY_HEIGHT;
+                let viewport_height = hit_box.height;
+                let max_scroll = (content_height - viewport_height).max(0.0);
+
+                // Apply scroll (positive delta = scroll down)
+                self.bookmarks_scroll_offset =
+                    (self.bookmarks_scroll_offset + delta_y * SCROLL_SPEED).clamp(0.0, max_scroll);
+
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Get the currently selected bookmark entry, if any.
+    pub fn selected_bookmark(&self) -> Option<&BookmarkEntry> {
+        self.selected_bookmark
+            .and_then(|idx| self.bookmarks.get(idx))
     }
 }
 
