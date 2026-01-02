@@ -28,6 +28,7 @@ struct MapSettings {
     texture_size: vec2<f32>,    // Province texture dimensions
     lookup_size: f32,           // Lookup texture width (e.g., 8192)
     border_enabled: f32,        // 1.0 = show borders, 0.0 = hide
+    map_mode: f32,              // 0.0 = political, 1.0 = terrain
 };
 
 // Province ID texture (RG8 encoded: R = low byte, G = high byte)
@@ -126,6 +127,49 @@ fn compute_terrain_shading(uv: vec2<f32>) -> f32 {
     return clamp(shading + height_boost, 0.6, 1.3);
 }
 
+// Compute terrain color based on heightmap elevation
+// Returns RGB color gradient: low (ocean/lowlands) -> mid (plains) -> high (mountains)
+fn compute_terrain_color(uv: vec2<f32>) -> vec4<f32> {
+    let height = textureSample(t_heightmap, s_heightmap, uv).r;
+
+    // Color gradient based on elevation
+    // 0.0-0.2: Ocean (dark blue to light blue)
+    // 0.2-0.3: Coastal/lowlands (light green)
+    // 0.3-0.5: Plains (green to yellow-green)
+    // 0.5-0.7: Hills (brown/tan)
+    // 0.7-1.0: Mountains (gray to white)
+
+    var color: vec3<f32>;
+
+    if (height < 0.2) {
+        // Ocean: dark blue -> light blue
+        let t = height / 0.2;
+        color = mix(vec3<f32>(0.1, 0.2, 0.4), vec3<f32>(0.3, 0.5, 0.7), t);
+    } else if (height < 0.3) {
+        // Coastal/lowlands: light blue -> light green
+        let t = (height - 0.2) / 0.1;
+        color = mix(vec3<f32>(0.3, 0.5, 0.7), vec3<f32>(0.5, 0.7, 0.4), t);
+    } else if (height < 0.5) {
+        // Plains: light green -> yellow-green
+        let t = (height - 0.3) / 0.2;
+        color = mix(vec3<f32>(0.5, 0.7, 0.4), vec3<f32>(0.6, 0.7, 0.3), t);
+    } else if (height < 0.7) {
+        // Hills: yellow-green -> brown
+        let t = (height - 0.5) / 0.2;
+        color = mix(vec3<f32>(0.6, 0.7, 0.3), vec3<f32>(0.6, 0.5, 0.3), t);
+    } else {
+        // Mountains: brown -> gray -> white
+        let t = (height - 0.7) / 0.3;
+        color = mix(vec3<f32>(0.6, 0.5, 0.3), vec3<f32>(0.9, 0.9, 0.9), t);
+    }
+
+    // Apply subtle shading for more depth
+    let terrain_shade = compute_terrain_shading(uv);
+    color = color * terrain_shade;
+
+    return vec4<f32>(color, 1.0);
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Transform UV to world space using camera
@@ -145,12 +189,19 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Sample province ID
     let province_id = sample_province_id(final_uv);
 
-    // Look up the color for this province
-    var color = lookup_color(province_id);
+    var color: vec4<f32>;
 
-    // Apply terrain shading from heightmap
-    let terrain_shade = compute_terrain_shading(final_uv);
-    color = vec4<f32>(color.rgb * terrain_shade, color.a);
+    // Branch based on map mode
+    if (settings.map_mode < 0.5) {
+        // Political mode: use political color lookup
+        color = lookup_color(province_id);
+        // Apply subtle terrain shading to political colors
+        let terrain_shade = compute_terrain_shading(final_uv);
+        color = vec4<f32>(color.rgb * terrain_shade, color.a);
+    } else {
+        // Terrain mode: use heightmap-based coloring
+        color = compute_terrain_color(final_uv);
+    }
 
     // Apply border darkening if enabled
     if (settings.border_enabled > 0.5 && is_border(final_uv, province_id)) {

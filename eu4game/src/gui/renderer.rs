@@ -3081,8 +3081,16 @@ impl GuiRenderer {
     pub fn handle_click(&mut self, x: f32, y: f32, current_state: &GuiState) -> Option<GuiAction> {
         const ENTRY_HEIGHT: f32 = 41.0;
 
+        log::debug!(
+            "handle_click at ({}, {}), checking {} hit boxes",
+            x,
+            y,
+            self.hit_boxes.len()
+        );
+
         for (name, hit_box) in &self.hit_boxes {
             if hit_box.contains(x, y) {
+                log::info!("Hit box clicked: {}", name);
                 // Check for bookmarks list click first (needs special handling)
                 if name == "bookmarks_list" {
                     // Calculate which entry was clicked
@@ -3150,8 +3158,14 @@ impl GuiRenderer {
                     // Country selection: left panel
                     "observe_mode_button" => Some(GuiAction::ToggleObserveMode),
                     // Country selection: top panel map modes
-                    s if s.starts_with("mapmode_") => Some(GuiAction::SetMapMode(s.to_string())),
-                    _ => None,
+                    s if s.starts_with("mapmode_") => {
+                        log::info!("Map mode button clicked: {}", s);
+                        Some(GuiAction::SetMapMode(s.to_string()))
+                    }
+                    _ => {
+                        log::debug!("Unhandled hit box: {}", name);
+                        None
+                    }
                 };
             }
         }

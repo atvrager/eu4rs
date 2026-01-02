@@ -92,6 +92,10 @@ pub struct MapSettings {
     pub lookup_size: f32,
     /// Border enabled (1.0 = yes, 0.0 = no).
     pub border_enabled: f32,
+    /// Map mode (0.0 = political, 1.0 = terrain).
+    pub map_mode: f32,
+    /// Padding to align to 16 bytes (wgpu requirement).
+    _padding: [f32; 3],
 }
 
 impl Default for MapSettings {
@@ -100,6 +104,8 @@ impl Default for MapSettings {
             texture_size: [5632.0, 2048.0],
             lookup_size: LOOKUP_SIZE as f32,
             border_enabled: 1.0,
+            map_mode: 0.0, // Default to political mode
+            _padding: [0.0; 3],
         }
     }
 }
@@ -490,6 +496,8 @@ impl Renderer {
             texture_size: [map_size.0 as f32, map_size.1 as f32],
             lookup_size: LOOKUP_SIZE as f32,
             border_enabled: 1.0,
+            map_mode: 0.0, // Default to political mode
+            _padding: [0.0; 3],
         };
         let settings_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Settings Buffer"),
@@ -857,6 +865,21 @@ impl Renderer {
     /// Updates the camera uniform buffer.
     pub fn update_camera(&self, queue: &wgpu::Queue, uniform: CameraUniform) {
         queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[uniform]));
+    }
+
+    /// Updates the map mode in the settings buffer.
+    ///
+    /// # Arguments
+    /// * `map_mode` - 0.0 for political mode, 1.0 for terrain mode
+    pub fn update_map_mode(&self, queue: &wgpu::Queue, map_mode: f32, map_size: (u32, u32)) {
+        let settings = MapSettings {
+            texture_size: [map_size.0 as f32, map_size.1 as f32],
+            lookup_size: LOOKUP_SIZE as f32,
+            border_enabled: 1.0,
+            map_mode,
+            _padding: [0.0; 3],
+        };
+        queue.write_buffer(&self.settings_buffer, 0, bytemuck::cast_slice(&[settings]));
     }
 
     /// Updates the color lookup texture with new province colors.

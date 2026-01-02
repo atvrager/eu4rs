@@ -714,9 +714,9 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
 ### Phase 9.5: Map Mode Rendering
 *Objective: Implement additional map rendering modes beyond Political.*
 
-- [ ] **9.5.1. Terrain Mode**
-    - [ ] Render heightmap-based terrain coloring
-    - [ ] Display elevation differences visually
+- [x] **9.5.1. Terrain Mode**
+    - [x] Render heightmap-based terrain coloring
+    - [x] Display elevation differences visually
 - [ ] **9.5.2. Trade Mode**
     - [ ] Render trade nodes and connections
     - [ ] Display trade flow arrows

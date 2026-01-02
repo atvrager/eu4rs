@@ -390,7 +390,7 @@ impl App {
             country_select_left: None,
             start_date: eu4data::Eu4Date::from_ymd(1444, 11, 11), // Default EU4 start
             year_range,
-            current_map_mode: gui::MapMode::Political, // Default mode (Phase 9.5.6)
+            current_map_mode: gui::MapMode::Terrain, // MainMenu defaults to terrain (Phase 9.5.1)
         }
     }
 
@@ -632,6 +632,18 @@ impl App {
             .camera
             .to_uniform(self.config.width as f32, self.config.height as f32);
         self.renderer.update_camera(&self.queue, camera_uniform);
+
+        // Update map mode uniform (Phase 9.5.1)
+        let map_mode_value = match self.current_map_mode {
+            gui::MapMode::Political => 0.0,
+            gui::MapMode::Terrain => 1.0,
+            _ => 0.0, // Other modes default to political for now
+        };
+        self.renderer.update_map_mode(
+            &self.queue,
+            map_mode_value,
+            (self.config.width, self.config.height),
+        );
 
         // Create command encoder
         let mut encoder = self
@@ -961,6 +973,10 @@ impl App {
                     self.screen_manager
                         .transition_to(screen::Screen::SinglePlayer);
 
+                    // Force political mode when entering SinglePlayer (Phase 9.5.1)
+                    self.current_map_mode = gui::MapMode::Political;
+                    log::info!("Map mode forced to Political for country selection");
+
                     self.update_window_title();
                     return false;
                 }
@@ -1179,6 +1195,11 @@ impl App {
             UiAction::ShowSinglePlayer => {
                 self.screen_manager
                     .transition_to(screen::Screen::SinglePlayer);
+
+                // Force political mode when entering SinglePlayer (Phase 9.5.1)
+                self.current_map_mode = gui::MapMode::Political;
+                log::info!("Map mode forced to Political for country selection");
+
                 self.update_window_title();
                 false
             }
@@ -2053,21 +2074,22 @@ impl App {
                 self.lookup_dirty = true;
             }
             gui::GuiAction::SetMapMode(mode_str) => {
+                log::info!("GuiAction::SetMapMode received: {}", mode_str);
                 // Parse the mode string to MapMode enum
                 use gui::MapMode;
                 let mode = match mode_str.as_str() {
-                    "terrain" => MapMode::Terrain,
-                    "political" => MapMode::Political,
-                    "trade" => MapMode::Trade,
-                    "religion" => MapMode::Religion,
-                    "empire" => MapMode::Empire,
-                    "diplomacy" => MapMode::Diplomacy,
-                    "economy" => MapMode::Economy,
-                    "region" => MapMode::Region,
-                    "culture" => MapMode::Culture,
-                    "players" => MapMode::Players,
+                    "mapmode_terrain" => MapMode::Terrain,
+                    "mapmode_political" => MapMode::Political,
+                    "mapmode_trade" => MapMode::Trade,
+                    "mapmode_religion" => MapMode::Religion,
+                    "mapmode_empire" => MapMode::Empire,
+                    "mapmode_diplomacy" => MapMode::Diplomacy,
+                    "mapmode_economy" => MapMode::Economy,
+                    "mapmode_region" => MapMode::Region,
+                    "mapmode_culture" => MapMode::Culture,
+                    "mapmode_players" => MapMode::Players,
                     _ => {
-                        log::warn!("Unknown map mode: {}", mode_str);
+                        log::warn!("Unknown map mode string: {}", mode_str);
                         return;
                     }
                 };
