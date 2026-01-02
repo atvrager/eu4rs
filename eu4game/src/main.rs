@@ -174,6 +174,9 @@ struct App {
 
     /// Sea province IDs from default.map (Phase 9.5.2 - Trade Mode).
     sea_provinces: std::collections::HashSet<u32>,
+
+    /// Religion definitions (Phase 9.5.3 - Religion Mode).
+    religions: std::collections::HashMap<String, eu4data::religions::Religion>,
 }
 
 impl App {
@@ -366,6 +369,22 @@ impl App {
             )
             .unwrap_or_default();
 
+        // Load religion definitions for religion mode rendering (Phase 9.5.3)
+        let religions = eu4data::path::detect_game_path()
+            .and_then(
+                |game_path| match eu4data::religions::load_religions(&game_path) {
+                    Ok(religions) => {
+                        log::info!("Loaded {} religions", religions.len());
+                        Some(religions)
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to load religions: {}", e);
+                        None
+                    }
+                },
+            )
+            .unwrap_or_default();
+
         // Create FrontendUI with panels from GuiRenderer (Phase 8.5.1)
         // Main menu remains a placeholder until Phase 8.5.4
         // Left/top/lobby panels are loaded from frontend.gui when available
@@ -435,6 +454,7 @@ impl App {
             current_map_mode: gui::MapMode::Terrain, // MainMenu defaults to terrain (Phase 9.5.1)
             trade_network,
             sea_provinces,
+            religions,
         }
     }
 
@@ -677,11 +697,12 @@ impl App {
             .to_uniform(self.config.width as f32, self.config.height as f32);
         self.renderer.update_camera(&self.queue, camera_uniform);
 
-        // Update map mode uniform (Phase 9.5.1, 9.5.2)
+        // Update map mode uniform (Phase 9.5.1, 9.5.2, 9.5.3)
         let map_mode_value = match self.current_map_mode {
             gui::MapMode::Political => 0.0,
             gui::MapMode::Terrain => 1.0,
             gui::MapMode::Trade => 2.0,
+            gui::MapMode::Religion => 3.0,
             _ => 0.0, // Other modes default to political for now
         };
         self.renderer.update_map_mode(
@@ -1379,6 +1400,7 @@ impl App {
         // Choose update method based on current map mode
         match self.current_map_mode {
             gui::MapMode::Trade => self.update_lookup_trade(),
+            gui::MapMode::Religion => self.update_lookup_religion(),
             _ => self.update_lookup_political(),
         }
     }
@@ -1574,6 +1596,111 @@ impl App {
             "Updated GPU lookup texture for trade mode ({} trade nodes, {} provinces mapped)",
             trade_network.nodes.len(),
             trade_network.province_to_node.len()
+        );
+    }
+
+    /// Update lookup texture for religion mode (province religion colors).
+    fn update_lookup_religion(&mut self) {
+        let Some(world_state) = &self.world_state else {
+            // No world state loaded yet (e.g., on country selection screen)
+            // Show empty map with water/wastelands
+            let mut lookup_data: Vec<u8> = Vec::with_capacity((render::LOOKUP_SIZE * 4) as usize);
+            let default_color = [60u8, 60, 60, 255]; // Gray
+            for _ in 0..render::LOOKUP_SIZE {
+                lookup_data.extend_from_slice(&default_color);
+            }
+
+            self.queue.write_texture(
+                wgpu::ImageCopyTexture {
+                    texture: &self.renderer.lookup_texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &lookup_data,
+                wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * render::LOOKUP_SIZE),
+                    rows_per_image: Some(1),
+                },
+                wgpu::Extent3d {
+                    width: render::LOOKUP_SIZE,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+            );
+            return;
+        };
+
+        // Build lookup data: province ID -> religion color
+        let mut lookup_data: Vec<u8> = Vec::with_capacity((render::LOOKUP_SIZE * 4) as usize);
+
+        let wasteland_color = [60u8, 60, 60, 255]; // Gray for unmapped/wasteland
+        let water_color = [30u8, 60, 100, 255]; // Dark blue for sea zones
+        let unknown_color = [120u8, 120, 120, 255]; // Lighter gray for provinces without religion
+        let no_religion_data_color = [200u8, 200, 200, 255]; // Very light gray for unknown religions
+
+        for province_id in 0..render::LOOKUP_SIZE {
+            let color = if province_id == 0 {
+                unknown_color
+            } else if self.sea_provinces.contains(&province_id) {
+                // Sea zone - render as water
+                water_color
+            } else if let Some(province) = world_state.provinces.get(&province_id) {
+                // Land province - check religion
+                if let Some(ref religion_name) = province.religion {
+                    // Look up religion color
+                    if let Some(religion_def) = self.religions.get(religion_name) {
+                        // Religion has explicit color definition
+                        if religion_def.color.len() >= 3 {
+                            [
+                                religion_def.color[0],
+                                religion_def.color[1],
+                                religion_def.color[2],
+                                255,
+                            ]
+                        } else {
+                            no_religion_data_color
+                        }
+                    } else {
+                        // Religion exists but not in our definitions
+                        no_religion_data_color
+                    }
+                } else {
+                    // Province has no religion (uncolonized, wasteland, etc.)
+                    wasteland_color
+                }
+            } else {
+                // Province not in world state
+                wasteland_color
+            };
+            lookup_data.extend_from_slice(&color);
+        }
+
+        // Write directly to texture
+        self.queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &self.renderer.lookup_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &lookup_data,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * render::LOOKUP_SIZE),
+                rows_per_image: Some(1),
+            },
+            wgpu::Extent3d {
+                width: render::LOOKUP_SIZE,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        log::debug!(
+            "Updated GPU lookup texture for religion mode ({} religions loaded)",
+            self.religions.len()
         );
     }
 

@@ -28,7 +28,7 @@ struct MapSettings {
     texture_size: vec2<f32>,    // Province texture dimensions
     lookup_size: f32,           // Lookup texture width (e.g., 8192)
     border_enabled: f32,        // 1.0 = show borders, 0.0 = hide
-    map_mode: f32,              // 0.0 = political, 1.0 = terrain, 2.0 = trade
+    map_mode: f32,              // 0.0 = political, 1.0 = terrain, 2.0 = trade, 3.0 = religion
 };
 
 // Province ID texture (RG8 encoded: R = low byte, G = high byte)
@@ -207,10 +207,21 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     } else if (settings.map_mode < 1.5) {
         // Terrain mode: use heightmap-based coloring
         color = compute_terrain_color(final_uv);
-    } else {
+    } else if (settings.map_mode < 2.5) {
         // Trade mode: use trade node color lookup
         color = lookup_color(province_id);
         // Apply subtle terrain shading to trade colors
+        let terrain_shade = compute_terrain_shading(final_uv);
+        color = vec4<f32>(color.rgb * terrain_shade, color.a);
+    } else if (settings.map_mode < 3.5) {
+        // Religion mode: use religion color lookup
+        color = lookup_color(province_id);
+        // Apply subtle terrain shading to religion colors
+        let terrain_shade = compute_terrain_shading(final_uv);
+        color = vec4<f32>(color.rgb * terrain_shade, color.a);
+    } else {
+        // Future map modes
+        color = lookup_color(province_id);
         let terrain_shade = compute_terrain_shading(final_uv);
         color = vec4<f32>(color.rgb * terrain_shade, color.a);
     }
