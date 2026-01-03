@@ -356,9 +356,37 @@ pub fn load_initial_state(
         }
     }
 
-    // Second pass: Set country religions, manpower, and home trade nodes
-    // (Country history not yet loaded, so we use capital's religion as proxy)
+    // 4b. Load Country History (government, religion, tech group, monarch)
+    log::info!("Loading country history...");
+    let (country_history, (ch_success, ch_fail)) =
+        eu4data::history::load_country_history(game_path)
+            .map_err(|e| anyhow::anyhow!("Failed to load country history: {}", e))?;
+    log::info!(
+        "Loaded {} country histories ({} failed)",
+        ch_success,
+        ch_fail
+    );
+
+    // Second pass: Set country data from history, manpower, and home trade nodes
     for (tag, country) in &mut countries {
+        // Apply country history data if available
+        if let Some(hist) = country_history.get(tag) {
+            // Religion from country history (overrides capital-based fallback)
+            if hist.religion.is_some() {
+                country.religion = hist.religion.clone();
+            }
+            country.government_rank = hist.government_rank;
+            country.technology_group = hist.technology_group.clone();
+
+            // Monarch data
+            if let Some(ref monarch) = hist.monarch {
+                country.ruler_name = Some(monarch.name.clone());
+                country.ruler_dynasty = monarch.dynasty.clone();
+                country.ruler_adm = monarch.adm;
+                country.ruler_dip = monarch.dip;
+                country.ruler_mil = monarch.mil;
+            }
+        }
         // Calculate total development for this country
         let total_dev: f32 = provinces
             .values()
@@ -393,8 +421,11 @@ pub fn load_initial_state(
         country.treasury = Fixed::from_f32(total_dev * TREASURY_PER_DEV);
 
         if let Some(&capital_id) = country_capitals.get(tag) {
-            if let Some(capital) = provinces.get(&capital_id) {
-                country.religion = capital.religion.clone();
+            // Fallback religion from capital (if not set from country history)
+            if country.religion.is_none() {
+                if let Some(capital) = provinces.get(&capital_id) {
+                    country.religion = capital.religion.clone();
+                }
             }
 
             // Set home trade node based on capital province

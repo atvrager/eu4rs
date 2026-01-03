@@ -2021,15 +2021,25 @@ impl App {
             .map(|p| (p.base_tax + p.base_production + p.base_manpower).to_f32())
             .sum::<f32>() as i32;
 
+        // Format ruler name with dynasty if available
+        let ruler_name = match (&country.ruler_name, &country.ruler_dynasty) {
+            (Some(name), Some(dynasty)) => format!("{} {}", name, dynasty),
+            (Some(name), None) => name.clone(),
+            (None, _) => format!("{} (placeholder)", player_tag),
+        };
+
         Some(gui::country_select::SelectedCountryState {
             tag: player_tag.clone(),
             name: player_tag.clone(), // TODO: localize country name
-            government_type: "Feudal Monarchy".to_string(), // TODO: get from country data
+            government_type: country
+                .technology_group
+                .clone()
+                .unwrap_or_else(|| "Unknown".to_string()), // Show tech group for now
             fog_status: String::new(), // Always visible for selected country
-            government_rank: 2,       // TODO: get from country data (1=Duchy, 2=Kingdom, 3=Empire)
-            religion_frame: 0,        // TODO: get from religion data
-            tech_group_frame: 0,      // TODO: get from tech group data
-            ruler_name: format!("{} (placeholder)", player_tag), // TODO: get actual ruler
+            government_rank: country.government_rank,
+            religion_frame: 0,   // TODO: map religion to frame index
+            tech_group_frame: 0, // TODO: map tech group to frame index
+            ruler_name,
             ruler_adm: country.ruler_adm,
             ruler_dip: country.ruler_dip,
             ruler_mil: country.ruler_mil,

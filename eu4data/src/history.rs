@@ -169,6 +169,296 @@ pub fn load_province_history(base_path: &Path) -> Result<HistoryLoadResult, std:
     Ok(results.into_inner().unwrap())
 }
 
+// ============================================================================
+// Country History
+// ============================================================================
+
+/// Historical data for a country at game start (e.g., from `history/countries`).
+///
+/// Country history files contain base country data plus dated events that modify
+/// the country state at specific dates. We extract the base values here.
+#[derive(Debug, Default, TolerantDeserialize, SchemaType)]
+pub struct CountryHistory {
+    /// Starting religion (e.g., "catholic", "sunni").
+    pub religion: Option<String>,
+    /// Starting primary culture (e.g., "austrian", "english").
+    pub primary_culture: Option<String>,
+    /// Technology group (e.g., "western", "eastern", "ottoman").
+    pub technology_group: Option<String>,
+    /// Government rank (1=Duchy, 2=Kingdom, 3=Empire).
+    pub government_rank: Option<i32>,
+    /// Capital province ID.
+    pub capital: Option<i32>,
+    /// Government type (e.g., "monarchy", "republic").
+    pub government: Option<String>,
+    // Monarch data is complex (Vec<serde_json::Value> in generated types).
+    // We'll parse the first monarch separately after loading.
+}
+
+/// Parsed monarch data from country history.
+#[derive(Debug, Default, Clone)]
+pub struct MonarchData {
+    /// Monarch's given name (e.g., "Friedrich").
+    pub name: String,
+    /// Monarch's dynasty (e.g., "von Habsburg").
+    pub dynasty: Option<String>,
+    /// Administrative skill (0-6).
+    pub adm: u8,
+    /// Diplomatic skill (0-6).
+    pub dip: u8,
+    /// Military skill (0-6).
+    pub mil: u8,
+}
+
+/// Combined country history with parsed monarch data.
+#[derive(Debug, Default, Clone)]
+pub struct ParsedCountryHistory {
+    /// State religion.
+    pub religion: Option<String>,
+    /// Primary culture.
+    pub primary_culture: Option<String>,
+    /// Technology group.
+    pub technology_group: Option<String>,
+    /// Government rank (1=Duchy, 2=Kingdom, 3=Empire).
+    pub government_rank: u8,
+    /// Capital province ID.
+    pub capital: Option<u32>,
+    /// Government type.
+    pub government: Option<String>,
+    /// First monarch at game start.
+    pub monarch: Option<MonarchData>,
+}
+
+/// Loads all country history files from the `history/countries` directory.
+/// Returns a map of Country Tag -> ParsedCountryHistory.
+pub type CountryHistoryLoadResult = (HashMap<String, ParsedCountryHistory>, (usize, usize));
+
+pub fn load_country_history(base_path: &Path) -> Result<CountryHistoryLoadResult, std::io::Error> {
+    let history_path = base_path.join("history/countries");
+
+    if !history_path.is_dir() {
+        return Ok((HashMap::new(), (0, 0)));
+    }
+
+    // Collect entries first to bridge to rayon
+    let entries: Vec<_> = std::fs::read_dir(history_path)?
+        .filter_map(|e| e.ok())
+        .collect();
+
+    let results = Mutex::new((HashMap::new(), (0, 0)));
+
+    entries.par_iter().for_each(|entry| {
+        let path = entry.path();
+        if path.extension().is_none_or(|ext| ext != "txt") {
+            return;
+        }
+
+        let try_load = || -> Result<(String, ParsedCountryHistory), String> {
+            let stem = path
+                .file_stem()
+                .ok_or("no file stem")?
+                .to_str()
+                .ok_or("invalid filename encoding")?;
+
+            // Country history files are named like "HAB - Austria.txt" or "ENG - England.txt"
+            // Extract the 3-letter tag from the beginning
+            let tag = stem
+                .split(['-', ' '])
+                .next()
+                .unwrap_or(stem)
+                .trim()
+                .to_uppercase();
+
+            if tag.len() != 3 {
+                return Err(format!("invalid tag length: '{}'", tag));
+            }
+
+            let tokens = DefaultEU4Txt::open_txt(path.to_str().ok_or("path encoding")?)
+                .map_err(|e| format!("tokenize: {}", e))?;
+
+            if tokens.is_empty() {
+                return Ok((tag, ParsedCountryHistory::default()));
+            }
+
+            let ast = DefaultEU4Txt::parse(tokens).map_err(|e| format!("parse: {}", e))?;
+
+            // Parse basic country history fields
+            let hist =
+                from_node::<CountryHistory>(&ast).map_err(|e| format!("deserialize: {}", e))?;
+
+            // Parse monarch data from the AST directly (it's a complex nested structure)
+            let monarch = parse_first_monarch(&ast);
+
+            let parsed = ParsedCountryHistory {
+                religion: hist.religion,
+                primary_culture: hist.primary_culture,
+                technology_group: hist.technology_group,
+                government_rank: hist.government_rank.unwrap_or(1).clamp(1, 3) as u8,
+                capital: hist.capital.map(|c| c as u32),
+                government: hist.government,
+                monarch,
+            };
+
+            Ok((tag, parsed))
+        };
+
+        match try_load() {
+            Ok((tag, hist)) => {
+                let mut lock = results.lock().unwrap();
+                lock.0.insert(tag, hist);
+                lock.1.0 += 1;
+            }
+            Err(e) => {
+                log::warn!(
+                    "Failed to load {:?}: {}",
+                    path.file_name().unwrap_or_default(),
+                    e
+                );
+                let mut lock = results.lock().unwrap();
+                lock.1.1 += 1;
+            }
+        }
+    });
+
+    Ok(results.into_inner().unwrap())
+}
+
+/// Parse the most recent monarch block from a country history AST.
+///
+/// EU4 country history files contain monarchs in dated blocks like:
+/// ```text
+/// 1395.8.29 = { monarch = { name = "Albrecht IV" ... } }
+/// 1404.9.14 = { monarch = { name = "Albrecht V" ... } }
+/// ```
+/// We traverse the entire AST and collect all monarch blocks, returning
+/// the one from the latest date that's still before game start (1444.11.11).
+fn parse_first_monarch(ast: &eu4txt::EU4TxtParseNode) -> Option<MonarchData> {
+    // Collect all monarch blocks with their dates
+    let mut monarchs = Vec::new();
+    collect_monarchs_recursive(ast, None, &mut monarchs);
+
+    // Find the most recent monarch that's before or at game start (1444.11.11)
+    // Date value: year * 10000 + month * 100 + day
+    const GAME_START: u32 = 14_441_111;
+
+    monarchs
+        .into_iter()
+        .filter(|(date, _)| date.unwrap_or(0) <= GAME_START)
+        .max_by_key(|(date, _)| *date)
+        .map(|(_, data)| data)
+}
+
+/// Recursively collect all monarch blocks in the AST with their dates.
+fn collect_monarchs_recursive(
+    node: &eu4txt::EU4TxtParseNode,
+    current_date: Option<u32>,
+    monarchs: &mut Vec<(Option<u32>, MonarchData)>,
+) {
+    use eu4txt::EU4TxtAstItem;
+
+    for child in &node.children {
+        if let EU4TxtAstItem::Assignment = &child.entry
+            && child.children.len() >= 2
+        {
+            let lhs = &child.children[0];
+            let rhs = &child.children[1];
+
+            // Check if this is a date block (e.g., "1444.11.11 = { ... }")
+            if let EU4TxtAstItem::Identifier(key) = &lhs.entry {
+                if let Some(date) = parse_date_key(key) {
+                    // This is a dated block - recurse into it with this date
+                    if matches!(
+                        &rhs.entry,
+                        EU4TxtAstItem::Brace | EU4TxtAstItem::AssignmentList
+                    ) {
+                        collect_monarchs_recursive(rhs, Some(date), monarchs);
+                    }
+                } else if key == "monarch"
+                    && matches!(
+                        &rhs.entry,
+                        EU4TxtAstItem::Brace | EU4TxtAstItem::AssignmentList
+                    )
+                {
+                    // Found a monarch block
+                    if let Some(data) = parse_monarch_block(rhs) {
+                        monarchs.push((current_date, data));
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Parse a date string like "1444.11.11" into a sortable u32.
+fn parse_date_key(key: &str) -> Option<u32> {
+    let parts: Vec<&str> = key.split('.').collect();
+    if parts.len() == 3 {
+        let year: u32 = parts[0].parse().ok()?;
+        let month: u32 = parts[1].parse().ok()?;
+        let day: u32 = parts[2].parse().ok()?;
+        if year > 0 && (1..=12).contains(&month) && (1..=31).contains(&day) {
+            return Some(year * 10000 + month * 100 + day);
+        }
+    }
+    None
+}
+
+/// Parse a monarch block into MonarchData.
+fn parse_monarch_block(block: &eu4txt::EU4TxtParseNode) -> Option<MonarchData> {
+    use eu4txt::EU4TxtAstItem;
+
+    let mut data = MonarchData::default();
+
+    for child in &block.children {
+        if let EU4TxtAstItem::Assignment = &child.entry
+            && child.children.len() >= 2
+        {
+            let lhs = &child.children[0];
+            let rhs = &child.children[1];
+
+            if let EU4TxtAstItem::Identifier(key) = &lhs.entry {
+                match key.as_str() {
+                    "name" => {
+                        if let EU4TxtAstItem::StringValue(v) = &rhs.entry {
+                            data.name = v.clone();
+                        }
+                    }
+                    "dynasty" => {
+                        if let EU4TxtAstItem::StringValue(v) = &rhs.entry {
+                            data.dynasty = Some(v.clone());
+                        } else if let EU4TxtAstItem::Identifier(v) = &rhs.entry {
+                            data.dynasty = Some(v.clone());
+                        }
+                    }
+                    "adm" | "ADM" => {
+                        if let EU4TxtAstItem::IntValue(v) = &rhs.entry {
+                            data.adm = (*v).clamp(0, 6) as u8;
+                        }
+                    }
+                    "dip" | "DIP" => {
+                        if let EU4TxtAstItem::IntValue(v) = &rhs.entry {
+                            data.dip = (*v).clamp(0, 6) as u8;
+                        }
+                    }
+                    "mil" | "MIL" => {
+                        if let EU4TxtAstItem::IntValue(v) = &rhs.entry {
+                            data.mil = (*v).clamp(0, 6) as u8;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    // Only return if we have a name
+    if !data.name.is_empty() {
+        Some(data)
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -304,5 +594,80 @@ mod tests {
                 hist.owner
             );
         }
+    }
+
+    #[test]
+    fn test_load_country_history() {
+        let dir = tempdir().unwrap();
+        let history_path = dir.path().join("history/countries");
+        fs::create_dir_all(&history_path).unwrap();
+
+        // Austria with monarch
+        let file_path = history_path.join("HAB - Austria.txt");
+        let mut file = fs::File::create(file_path).unwrap();
+        writeln!(
+            file,
+            r#"
+            government = monarchy
+            government_rank = 2
+            technology_group = western
+            religion = catholic
+            primary_culture = austrian
+            capital = 134
+
+            monarch = {{
+                name = "Friedrich III"
+                dynasty = "von Habsburg"
+                adm = 3
+                dip = 4
+                mil = 2
+            }}
+            "#
+        )
+        .unwrap();
+
+        // England without dynasty
+        let file_path = history_path.join("ENG - England.txt");
+        let mut file = fs::File::create(file_path).unwrap();
+        writeln!(
+            file,
+            r#"
+            government_rank = 2
+            technology_group = western
+            monarch = {{
+                name = "Henry VI"
+                adm = 1
+                dip = 1
+                mil = 1
+            }}
+            "#
+        )
+        .unwrap();
+
+        let (map, (success, fail)) = load_country_history(dir.path()).unwrap();
+
+        assert_eq!(success, 2);
+        assert_eq!(fail, 0);
+
+        // Check Austria
+        let hab = map.get("HAB").unwrap();
+        assert_eq!(hab.government_rank, 2);
+        assert_eq!(hab.technology_group.as_deref(), Some("western"));
+        assert_eq!(hab.religion.as_deref(), Some("catholic"));
+        assert_eq!(hab.capital, Some(134));
+
+        let monarch = hab.monarch.as_ref().unwrap();
+        assert_eq!(monarch.name, "Friedrich III");
+        assert_eq!(monarch.dynasty.as_deref(), Some("von Habsburg"));
+        assert_eq!(monarch.adm, 3);
+        assert_eq!(monarch.dip, 4);
+        assert_eq!(monarch.mil, 2);
+
+        // Check England
+        let eng = map.get("ENG").unwrap();
+        assert_eq!(eng.government_rank, 2);
+        let eng_monarch = eng.monarch.as_ref().unwrap();
+        assert_eq!(eng_monarch.name, "Henry VI");
+        assert!(eng_monarch.dynasty.is_none());
     }
 }

@@ -830,6 +830,9 @@ pub struct CountryState {
     /// Ruler's military stat (0-6). Determines monthly MIL generation.
     #[serde(default = "default_ruler_stat")]
     pub ruler_mil: u8,
+    /// Ruler's given name (e.g., "Friedrich III").
+    #[serde(default)]
+    pub ruler_name: Option<String>,
     /// Ruler's dynasty name (for HRE re-election bonus and PU mechanics).
     #[serde(default)]
     pub ruler_dynasty: Option<String>,
@@ -839,6 +842,12 @@ pub struct CountryState {
     /// Date when the current ruler was instated (for age/death calculations).
     #[serde(default)]
     pub ruler_instated: Option<Date>,
+    /// Government rank (1=Duchy, 2=Kingdom, 3=Empire).
+    #[serde(default = "default_government_rank")]
+    pub government_rank: u8,
+    /// Technology group (e.g., "western", "eastern", "ottoman").
+    #[serde(default)]
+    pub technology_group: Option<String>,
     /// Administrative technology level
     pub adm_tech: u8,
     /// Diplomatic technology level
@@ -965,6 +974,11 @@ fn default_ruler_stat() -> u8 {
     3
 }
 
+/// Default government rank (1 = Duchy).
+fn default_government_rank() -> u8 {
+    1
+}
+
 impl Default for CountryState {
     fn default() -> Self {
         Self {
@@ -980,9 +994,12 @@ impl Default for CountryState {
             ruler_adm: default_ruler_stat(),
             ruler_dip: default_ruler_stat(),
             ruler_mil: default_ruler_stat(),
+            ruler_name: None,
             ruler_dynasty: None,
             ruler_gender: Gender::Male,
             ruler_instated: None,
+            government_rank: default_government_rank(),
+            technology_group: None,
             adm_tech: 0,
             dip_tech: 0,
             mil_tech: 0,

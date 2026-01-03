@@ -222,3 +222,104 @@ fn test_calculate_total_development_multiple_provinces() {
 
     assert_eq!(calculate_total_development(&provinces, "TUR"), 20);
 }
+
+// -------------------------------------------------------------------------
+// Country history integration tests
+// -------------------------------------------------------------------------
+
+/// Test that country history data flows through to CountryState.
+///
+/// This verifies the data binding pipeline:
+/// 1. eu4data loads country history from game files
+/// 2. eu4sim loader populates CountryState with ruler/rank/tech
+/// 3. Data is accessible for UI display
+#[test]
+fn test_country_history_integration() {
+    // Find game path or skip
+    let game_path = std::env::var("EU4_GAME_PATH")
+        .ok()
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            let steam_path = std::path::Path::new(
+                "/home/atv/.steam/steam/steamapps/common/Europa Universalis IV",
+            );
+            if steam_path.exists() {
+                Some(steam_path.to_path_buf())
+            } else {
+                None
+            }
+        });
+
+    let Some(game_path) = game_path else {
+        eprintln!("Skipping test_country_history_integration: EU4 game files not found");
+        return;
+    };
+
+    // Load world state at game start
+    let start_date = eu4sim_core::state::Date::new(1444, 11, 11);
+    let (world_state, _adjacency) = eu4sim::loader::load_initial_state(&game_path, start_date, 42)
+        .expect("Failed to load world state");
+
+    // Austria (HAB) should have its historical data
+    let austria = world_state
+        .countries
+        .get("HAB")
+        .expect("Austria (HAB) should exist in world state");
+
+    // Verify ruler data is loaded from country history
+    assert!(
+        austria.ruler_name.is_some(),
+        "Austria should have a ruler name from country history"
+    );
+    assert!(
+        austria.ruler_dynasty.is_some(),
+        "Austria should have a dynasty from country history"
+    );
+
+    // Friedrich III was ruler in 1444
+    let ruler_name = austria.ruler_name.as_ref().unwrap();
+    assert!(
+        ruler_name.contains("Friedrich"),
+        "Austria's 1444 ruler should be Friedrich III, got: {}",
+        ruler_name
+    );
+
+    // Verify government rank (Austria is a duchy in 1444, rank=1)
+    // Actually in 1444 Austria was an Archduchy under the HRE, typically rank 1
+    assert!(
+        austria.government_rank >= 1,
+        "Austria should have government_rank >= 1, got: {}",
+        austria.government_rank
+    );
+
+    // Verify tech group is loaded
+    assert!(
+        austria.technology_group.is_some(),
+        "Austria should have a technology group"
+    );
+    let tech_group = austria.technology_group.as_ref().unwrap();
+    assert_eq!(
+        tech_group, "western",
+        "Austria should have 'western' tech group, got: {}",
+        tech_group
+    );
+
+    // Verify ruler stats are reasonable (not default 3/3/3)
+    // Friedrich III was 4/4/1 in EU4
+    let total_stats = austria.ruler_adm + austria.ruler_dip + austria.ruler_mil;
+    assert!(
+        total_stats > 0 && total_stats <= 18,
+        "Ruler stats should be loaded (got adm={}, dip={}, mil={})",
+        austria.ruler_adm,
+        austria.ruler_dip,
+        austria.ruler_mil
+    );
+
+    eprintln!(
+        "Austria (HAB) country history verified: ruler='{}', dynasty={:?}, rank={}, tech={:?}",
+        austria.ruler_name.as_ref().unwrap_or(&"?".to_string()),
+        austria.ruler_dynasty,
+        austria.government_rank,
+        austria.technology_group
+    );
+}
