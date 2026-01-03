@@ -255,6 +255,31 @@ impl GuiTestHarness {
         self.player_tag = tag;
     }
 
+    /// Set the mouse position to trigger hover states.
+    ///
+    /// This calls the gui_renderer's handle_mouse_move method to update
+    /// button hover states based on position.
+    #[allow(dead_code)]
+    pub fn set_mouse_position(&mut self, x: f32, y: f32) {
+        self.gui_renderer.handle_mouse_move(x, y);
+    }
+
+    /// Find the center position of a button by name.
+    ///
+    /// Returns `Some((x, y))` if the button was found in hit boxes,
+    /// `None` otherwise. Must be called after `render_to_image()`.
+    #[allow(dead_code)]
+    pub fn find_button_center(&self, button_name: &str) -> Option<(f32, f32)> {
+        for (name, hit_box) in self.gui_renderer.get_hit_boxes() {
+            if name == button_name {
+                let center_x = hit_box.x + hit_box.width / 2.0;
+                let center_y = hit_box.y + hit_box.height / 2.0;
+                return Some((center_x, center_y));
+            }
+        }
+        None
+    }
+
     // ========================================
     // Rendering
     // ========================================

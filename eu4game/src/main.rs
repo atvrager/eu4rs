@@ -627,53 +627,19 @@ impl App {
             log::debug!("Current screen for rendering: {:?}", current_screen);
             match current_screen {
                 screen::Screen::MainMenu => {
-                    // Phase 8.1: Main menu rendering
-                    // Show simple text instructions
+                    // Phase 9.7: Real EU4 main menu rendering
                     log::debug!("Rendering MainMenu screen");
-                    if let Some(text_renderer) = &self.text_renderer {
-                        log::debug!(
-                            "Rendering main menu text (screen size: {}x{})",
-                            screen_size.0,
-                            screen_size.1
+                    if let Some(gui_renderer) = &mut self.gui_renderer {
+                        gui_renderer.render(
+                            &mut render_pass,
+                            &self.device,
+                            &self.queue,
+                            &self.sprite_renderer,
+                            &gui_state,
+                            current_screen,
+                            screen_size,
+                            None, // No start_date for main menu
                         );
-                        // Phase 8.1: Main menu text
-                        let white = [1.0, 1.0, 1.0, 1.0];
-                        let screen_f32 = (screen_size.0 as f32, screen_size.1 as f32);
-
-                        // Collect ALL quads first, then draw once (avoids buffer sync issues)
-                        let mut all_quads = Vec::new();
-                        all_quads.extend(text_renderer.layout_text(
-                            "EUROPA UNIVERSALIS IV",
-                            400.0,
-                            200.0,
-                            white,
-                            screen_f32,
-                        ));
-                        all_quads.extend(text_renderer.layout_text(
-                            "Main Menu",
-                            400.0,
-                            250.0,
-                            white,
-                            screen_f32,
-                        ));
-                        all_quads.extend(text_renderer.layout_text(
-                            "Press 'S' for Single Player",
-                            400.0,
-                            350.0,
-                            white,
-                            screen_f32,
-                        ));
-                        all_quads.extend(text_renderer.layout_text(
-                            "Press ESC to Exit",
-                            400.0,
-                            400.0,
-                            white,
-                            screen_f32,
-                        ));
-
-                        text_renderer.draw(&mut render_pass, &self.queue, &all_quads);
-                    } else {
-                        log::warn!("text_renderer is None - cannot render main menu text");
                     }
                 }
                 screen::Screen::SinglePlayer | screen::Screen::Playing => {
@@ -803,8 +769,8 @@ impl App {
                 (true, false)
             }
             WindowEvent::MouseInput { button, state, .. } => {
-                self.handle_mouse_button(*button, *state);
-                (true, false)
+                let should_exit = self.handle_mouse_button(*button, *state);
+                (true, should_exit)
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let needs_redraw = self.handle_cursor_move(position.x, position.y);
@@ -2362,8 +2328,8 @@ impl App {
         log::debug!("New camera zoom: {}", self.camera.zoom);
     }
 
-    /// Handles mouse button events.
-    fn handle_mouse_button(&mut self, button: MouseButton, state: ElementState) {
+    /// Handles mouse button input. Returns true if should exit.
+    fn handle_mouse_button(&mut self, button: MouseButton, state: ElementState) -> bool {
         log::debug!("Mouse button {:?} {:?}", button, state);
         match button {
             MouseButton::Middle => {
@@ -2375,10 +2341,12 @@ impl App {
                 if state == ElementState::Pressed {
                     let current_screen = self.screen_manager.current();
 
-                    // Check GUI clicks for screens with UI panels
+                    // Check GUI clicks for screens with UI panels (Phase 9.7: added MainMenu)
                     if matches!(
                         current_screen,
-                        screen::Screen::Playing | screen::Screen::SinglePlayer
+                        screen::Screen::MainMenu
+                            | screen::Screen::Playing
+                            | screen::Screen::SinglePlayer
                     ) && let Some(ref mut gui_renderer) = self.gui_renderer
                     {
                         // Create current GUI state for hit testing
@@ -2401,8 +2369,8 @@ impl App {
                             self.cursor_pos.1 as f32,
                             &gui_state,
                         ) {
-                            self.handle_gui_action(action);
-                            return; // Don't process as province click
+                            let should_exit = self.handle_gui_action(action);
+                            return should_exit; // Don't process as province click
                         }
                     }
 
@@ -2434,11 +2402,35 @@ impl App {
             }
             _ => {}
         }
+        false
     }
 
-    /// Handles GUI actions from button clicks.
-    fn handle_gui_action(&mut self, action: gui::GuiAction) {
+    /// Handles GUI actions from button clicks. Returns true if should exit.
+    fn handle_gui_action(&mut self, action: gui::GuiAction) -> bool {
         match action {
+            // Main menu actions (Phase 9.7)
+            gui::GuiAction::ShowSinglePlayer => {
+                log::info!("Starting Single Player mode via button click");
+                self.screen_manager
+                    .transition_to(screen::Screen::SinglePlayer);
+                // Force political mode when entering SinglePlayer (Phase 9.5.1)
+                self.current_map_mode = gui::MapMode::Political;
+                log::info!("Map mode forced to Political for country selection");
+                self.update_window_title();
+            }
+            gui::GuiAction::ShowMultiplayer => {
+                log::info!("Starting Multiplayer mode via button click");
+                self.screen_manager
+                    .transition_to(screen::Screen::Multiplayer);
+                self.update_window_title();
+            }
+            gui::GuiAction::Exit => {
+                log::info!("Exiting via main menu button click");
+                self.sim_handle.shutdown();
+                self.window.request_redraw();
+                return true;
+            }
+            // Speed controls
             gui::GuiAction::SetSpeed(speed) => {
                 self.sim_speed = match speed {
                     0 => SimSpeed::Paused,
@@ -2518,7 +2510,8 @@ impl App {
                     "mapmode_players" => MapMode::Players,
                     _ => {
                         log::warn!("Unknown map mode string: {}", mode_str);
-                        return;
+                        self.window.request_redraw();
+                        return false;
                     }
                 };
                 self.current_map_mode = mode;
@@ -2574,6 +2567,7 @@ impl App {
             }
         }
         self.window.request_redraw();
+        false
     }
 
     /// Starts the game with the currently selected country.
@@ -2664,7 +2658,12 @@ impl App {
                 .pan(dx, dy, self.config.width as f64, self.config.height as f64);
             true
         } else {
-            false
+            // Handle button hover states (Phase 9.7.4)
+            if let Some(ref mut gui_renderer) = self.gui_renderer {
+                gui_renderer.handle_mouse_move(x as f32, y as f32)
+            } else {
+                false
+            }
         }
     }
 

@@ -381,6 +381,14 @@ pub enum DatePart {
 /// GUI interaction events.
 #[derive(Debug, Clone)]
 pub enum GuiAction {
+    // Main menu actions (Phase 9.7)
+    /// Navigate to single player country selection.
+    ShowSinglePlayer,
+    /// Navigate to multiplayer setup (placeholder).
+    ShowMultiplayer,
+    /// Exit the application.
+    Exit,
+    // Speed controls
     /// Speed button clicked (new speed 1-5).
     SetSpeed(u32),
     /// Pause/unpause toggled.

@@ -402,63 +402,75 @@ pub(super) fn load_country_select_split(
 /// Panel data: GuiElement root and layout metadata.
 type PanelData = (GuiElement, super::layout_types::FrontendPanelLayout);
 
+/// All frontend panels loaded from frontend.gui.
+#[derive(Default)]
+pub struct FrontendPanels {
+    /// Main menu panel (mainmenu window)
+    pub main_menu: Option<PanelData>,
+    /// Country selection left panel (left window)
+    pub left: Option<PanelData>,
+    /// Country selection top panel (top window)
+    pub top: Option<PanelData>,
+    /// Country selection right panel / lobby controls (right window)
+    pub right: Option<PanelData>,
+}
+
 /// Load frontend panels from frontend.gui for Phase 8.5 integration.
 ///
-/// Returns tuples of (GuiElement, FrontendPanelLayout) for left, top, right windows.
+/// Returns FrontendPanels containing all panel data.
 /// Returns None for any window not found (CI-safe).
 pub(super) fn load_frontend_panels(
     game_path: &Path,
     interner: &interner::StringInterner,
-) -> (Option<PanelData>, Option<PanelData>, Option<PanelData>) {
+) -> FrontendPanels {
     let gui_path = game_path.join("interface/frontend.gui");
 
     if !gui_path.exists() {
         log::warn!("frontend.gui not found for panel loading");
-        return (None, None, None);
+        return FrontendPanels::default();
     }
 
     match parse_gui_file(&gui_path, interner) {
         Ok(db) => {
-            // The left, top, right windows are nested inside country_selection_panel
-            // Search recursively through all top-level windows
-            let mut left = None;
-            let mut top = None;
-            let mut right = None;
+            // Search for panels - mainmenu is at top level, others are nested
+            let mut panels = FrontendPanels::default();
 
             for element in db.values() {
-                find_panels_recursive(element, &mut left, &mut top, &mut right);
-                // Early exit if we found all three
-                if left.is_some() && top.is_some() && right.is_some() {
+                find_panels_recursive(element, &mut panels);
+                // Early exit if we found all panels
+                if panels.main_menu.is_some()
+                    && panels.left.is_some()
+                    && panels.top.is_some()
+                    && panels.right.is_some()
+                {
                     break;
                 }
             }
 
-            if left.is_none() {
+            if panels.main_menu.is_none() {
+                log::warn!("'mainmenu_panel_bottom' window not found in frontend.gui");
+            }
+            if panels.left.is_none() {
                 log::warn!("'left' window not found in frontend.gui");
             }
-            if top.is_none() {
+            if panels.top.is_none() {
                 log::warn!("'top' window not found in frontend.gui");
             }
-            if right.is_none() {
+            if panels.right.is_none() {
                 log::warn!("'right' window not found in frontend.gui");
             }
 
-            (left, top, right)
+            panels
         }
         Err(e) => {
             log::warn!("Failed to parse frontend.gui for panels: {}", e);
-            (None, None, None)
+            FrontendPanels::default()
         }
     }
 }
 
-/// Recursively search for left, top, and right windows in the GUI element tree.
-fn find_panels_recursive(
-    element: &GuiElement,
-    left: &mut Option<PanelData>,
-    top: &mut Option<PanelData>,
-    right: &mut Option<PanelData>,
-) {
+/// Recursively search for frontend panel windows in the GUI element tree.
+fn find_panels_recursive(element: &GuiElement, panels: &mut FrontendPanels) {
     use super::layout_types::FrontendPanelLayout;
 
     if let GuiElement::Window {
@@ -476,20 +488,24 @@ fn find_panels_recursive(
         };
 
         // Check if this is one of the panels we're looking for
+        // - "mainmenu_panel_bottom" contains single player, multiplayer, exit buttons
+        //   (has CENTER_DOWN orientation for proper bottom positioning)
         // - "left" contains bookmarks, save games, date widget, back button
         // - "top" contains map mode buttons, year label
         // - "right" contains play button, random country, nation designer buttons
-        if name == "left" && left.is_none() {
-            *left = Some((element.clone(), layout));
-        } else if name == "top" && top.is_none() {
-            *top = Some((element.clone(), layout));
-        } else if name == "right" && right.is_none() {
-            *right = Some((element.clone(), layout));
+        if name == "mainmenu_panel_bottom" && panels.main_menu.is_none() {
+            panels.main_menu = Some((element.clone(), layout));
+        } else if name == "left" && panels.left.is_none() {
+            panels.left = Some((element.clone(), layout));
+        } else if name == "top" && panels.top.is_none() {
+            panels.top = Some((element.clone(), layout));
+        } else if name == "right" && panels.right.is_none() {
+            panels.right = Some((element.clone(), layout));
         }
 
         // Recurse into children
         for child in children {
-            find_panels_recursive(child, left, top, right);
+            find_panels_recursive(child, panels);
         }
     }
 }
@@ -1287,30 +1303,38 @@ mod tests {
         };
 
         let interner = interner::StringInterner::new();
-        let (left, top, right) = load_frontend_panels(&game_path, &interner);
+        let panels = load_frontend_panels(&game_path, &interner);
 
         // Report what we found
         println!("\n=== Frontend Panel Loading Test ===");
-        println!("Left panel (country_select_left): {}", left.is_some());
-        println!("Top panel (country_select_top): {}", top.is_some());
-        println!("Right panel (lobby_controls): {}", right.is_some());
+        println!("Main menu: {}", panels.main_menu.is_some());
+        println!(
+            "Left panel (country_select_left): {}",
+            panels.left.is_some()
+        );
+        println!("Top panel (country_select_top): {}", panels.top.is_some());
+        println!("Right panel (lobby_controls): {}", panels.right.is_some());
 
-        // All three should be Some for a complete game installation
+        // All panels should be Some for a complete game installation
         assert!(
-            left.is_some(),
+            panels.main_menu.is_some(),
+            "Main menu should be loaded from frontend.gui"
+        );
+        assert!(
+            panels.left.is_some(),
             "Left panel should be loaded from frontend.gui"
         );
         assert!(
-            top.is_some(),
+            panels.top.is_some(),
             "Top panel should be loaded from frontend.gui"
         );
         assert!(
-            right.is_some(),
+            panels.right.is_some(),
             "Right panel should be loaded from frontend.gui"
         );
 
         // Verify left panel has expected structure
-        if let Some((element, layout)) = left {
+        if let Some((element, layout)) = panels.left {
             println!(
                 "\nLeft panel layout: pos={:?}, orientation={:?}",
                 layout.window_pos, layout.orientation
@@ -1330,7 +1354,7 @@ mod tests {
         }
 
         // Verify top panel has expected structure
-        if let Some((element, layout)) = top {
+        if let Some((element, layout)) = panels.top {
             println!(
                 "\nTop panel layout: pos={:?}, orientation={:?}",
                 layout.window_pos, layout.orientation
@@ -1342,7 +1366,7 @@ mod tests {
         }
 
         // Verify right panel has expected structure
-        if let Some((element, layout)) = right {
+        if let Some((element, layout)) = panels.right {
             println!(
                 "\nRight panel layout: pos={:?}, orientation={:?}",
                 layout.window_pos, layout.orientation
@@ -1361,6 +1385,7 @@ mod tests {
         use crate::gui::country_select_left::CountrySelectLeftPanel;
         use crate::gui::country_select_top::CountrySelectTopPanel;
         use crate::gui::lobby_controls::LobbyControlsPanel;
+        use crate::gui::main_menu::MainMenuPanel;
 
         let Some((_, game_path)) = get_test_context() else {
             println!("Skipping test_frontend_panel_widget_binding: prerequisites not available");
@@ -1368,12 +1393,22 @@ mod tests {
         };
 
         let interner = interner::StringInterner::new();
-        let (left_data, top_data, right_data) = load_frontend_panels(&game_path, &interner);
+        let panels = load_frontend_panels(&game_path, &interner);
 
         println!("\n=== Frontend Panel Widget Binding Test ===");
 
+        // Test main menu binding (Phase 9.7)
+        if let Some((root, _)) = panels.main_menu {
+            let panel = MainMenuPanel::bind(&root, &interner);
+            println!("Main menu bound successfully");
+            let has_sprite = panel.single_player.sprite_type().is_some();
+            println!("  single_player_button has sprite: {}", has_sprite);
+        } else {
+            println!("Main menu not loaded - skipping binding test");
+        }
+
         // Test left panel binding
-        if let Some((root, _)) = left_data {
+        if let Some((root, _)) = panels.left {
             let panel = CountrySelectLeftPanel::bind(&root, &interner);
             println!("Left panel bound successfully");
             // Check if back_button has a sprite type (indicates successful binding)
@@ -1384,7 +1419,7 @@ mod tests {
         }
 
         // Test top panel binding
-        if let Some((root, _)) = top_data {
+        if let Some((root, _)) = panels.top {
             let panel = CountrySelectTopPanel::bind(&root, &interner);
             println!("Top panel bound successfully");
             // Check if mapmode buttons have sprites
@@ -1397,7 +1432,7 @@ mod tests {
         }
 
         // Test lobby controls binding
-        if let Some((root, _)) = right_data {
+        if let Some((root, _)) = panels.right {
             let panel = LobbyControlsPanel::bind(&root, &interner);
             println!("Lobby controls bound successfully");
             // Check if play_button has a sprite type

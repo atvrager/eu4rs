@@ -9,9 +9,9 @@ use crate::testing::{GuiTestHarness, assert_snapshot};
 /// Standard screen size for state machine tests (1080p).
 const TEST_SCREEN_SIZE: (u32, u32) = (1920, 1080);
 
-/// Test that MainMenu screen renders nothing (empty background).
+/// Test that MainMenu screen renders main menu buttons (Phase 9.7).
 #[test]
-fn test_main_menu_renders_empty() {
+fn test_main_menu_renders_buttons() {
     let Some(mut harness) = GuiTestHarness::new() else {
         // Skip if no GPU or game path
         return;
@@ -21,6 +21,31 @@ fn test_main_menu_renders_empty() {
 
     let image = harness.render_to_image(TEST_SCREEN_SIZE);
     assert_snapshot(&image, "state_machine_main_menu");
+}
+
+/// Test that main menu buttons show hover state (Phase 9.7.4).
+#[test]
+fn test_main_menu_button_hover() {
+    let Some(mut harness) = GuiTestHarness::new() else {
+        return;
+    };
+
+    assert_eq!(harness.current_screen(), Screen::MainMenu);
+
+    // First render to populate hit boxes
+    let _ = harness.render_to_image(TEST_SCREEN_SIZE);
+
+    // Find the actual position of the Single Player button
+    let button_pos = harness
+        .find_button_center("single_player_button")
+        .expect("Single Player button should be in hit boxes after render");
+
+    // Move mouse over the Single Player button
+    harness.set_mouse_position(button_pos.0, button_pos.1);
+
+    // Render again with hover state
+    let image = harness.render_to_image(TEST_SCREEN_SIZE);
+    assert_snapshot(&image, "main_menu_button_hover");
 }
 
 /// Test that SinglePlayer screen renders country selection panels only.
@@ -146,7 +171,7 @@ fn test_screen_states_produce_different_output() {
     let single_vs_playing = count_different_pixels(&single_player_image, &playing_image);
 
     // All three screens should produce different images
-    // (MainMenu is empty, SinglePlayer has country selection, Playing has topbar/speed)
+    // (MainMenu has buttons, SinglePlayer has country selection, Playing has topbar/speed)
     assert!(
         main_vs_single > 100,
         "MainMenu and SinglePlayer should look different, only {} pixels differ",

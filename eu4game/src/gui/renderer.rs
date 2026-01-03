@@ -27,6 +27,7 @@ use super::legacy_loaders::{
     load_country_select_split, load_frontend_panels, load_speed_controls_split, load_topbar_split,
 };
 use super::lobby_controls::LobbyControlsPanel;
+use super::main_menu::MainMenuPanel;
 use super::primitives;
 use super::save_games::{SaveGameEntry, discover_save_games};
 use super::speed_controls;
@@ -82,6 +83,12 @@ pub struct GuiRenderer {
     lobby_controls: Option<LobbyControlsPanel>,
     /// Lobby controls window layout (Phase 8.5.2).
     lobby_controls_layout: super::layout_types::FrontendPanelLayout,
+    /// Main menu panel (Phase 9.7).
+    main_menu_panel: Option<MainMenuPanel>,
+    /// Main menu window layout (Phase 9.7).
+    main_menu_layout: super::layout_types::FrontendPanelLayout,
+    /// Cached main menu button bind groups: (button_name, bind_group, width, height, num_frames).
+    main_menu_button_bind_groups: Vec<(String, wgpu::BindGroup, u32, u32, u32)>,
     /// Cached bind groups for frequently used sprites.
     bg_bind_group: Option<wgpu::BindGroup>,
     speed_bind_group: Option<wgpu::BindGroup>,
@@ -109,6 +116,8 @@ pub struct GuiRenderer {
     font_bind_groups: Vec<(String, wgpu::BindGroup)>,
     /// Hit boxes for interactive elements (screen pixel coords).
     hit_boxes: Vec<(String, HitBox)>,
+    /// Currently hovered button name (for visual feedback).
+    hovered_button: Option<String>,
     /// Background sprite dimensions.
     bg_size: (u32, u32),
     /// Speed indicator dimensions (per frame).
@@ -205,24 +214,34 @@ impl GuiRenderer {
         let country_select_panel =
             country_select_root.map(|root| CountrySelectRightPanel::bind(&root, &interner));
 
-        // Load frontend panels (Phase 8.5.1)
-        let (left_data, top_data, right_data) = load_frontend_panels(game_path, &interner);
+        // Load frontend panels (Phase 8.5.1, Phase 9.7: main menu added)
+        let frontend_panels = load_frontend_panels(game_path, &interner);
         log::info!(
-            "Frontend panels loaded: left={}, top={}, right={}",
-            left_data.is_some(),
-            top_data.is_some(),
-            right_data.is_some()
+            "Frontend panels loaded: main_menu={}, left={}, top={}, right={}",
+            frontend_panels.main_menu.is_some(),
+            frontend_panels.left.is_some(),
+            frontend_panels.top.is_some(),
+            frontend_panels.right.is_some()
         );
 
-        let (left_panel, left_panel_layout) = left_data
+        // Bind main menu panel (Phase 9.7)
+        let (main_menu_panel, main_menu_layout) = frontend_panels
+            .main_menu
+            .map(|(root, layout)| (Some(MainMenuPanel::bind(&root, &interner)), layout))
+            .unwrap_or((None, Default::default()));
+
+        let (left_panel, left_panel_layout) = frontend_panels
+            .left
             .map(|(root, layout)| (Some(CountrySelectLeftPanel::bind(&root, &interner)), layout))
             .unwrap_or((None, Default::default()));
 
-        let (top_panel, top_panel_layout) = top_data
+        let (top_panel, top_panel_layout) = frontend_panels
+            .top
             .map(|(root, layout)| (Some(CountrySelectTopPanel::bind(&root, &interner)), layout))
             .unwrap_or((None, Default::default()));
 
-        let (lobby_controls, lobby_controls_layout) = right_data
+        let (lobby_controls, lobby_controls_layout) = frontend_panels
+            .right
             .map(|(root, layout)| (Some(LobbyControlsPanel::bind(&root, &interner)), layout))
             .unwrap_or((None, Default::default()));
 
@@ -251,6 +270,9 @@ impl GuiRenderer {
             top_panel_layout,
             lobby_controls,
             lobby_controls_layout,
+            main_menu_panel,
+            main_menu_layout,
+            main_menu_button_bind_groups: Vec::new(),
             bg_bind_group: None,
             speed_bind_group: None,
             font_bind_group: None,
@@ -263,6 +285,7 @@ impl GuiRenderer {
             shield_frame_bind_group: None,
             font_bind_groups: Vec::new(),
             hit_boxes: Vec::new(),
+            hovered_button: None,
             bg_size: (1, 1),    // Updated from texture in ensure_textures()
             speed_size: (1, 1), // Updated from texture in ensure_textures()
             bookmarks,
@@ -302,6 +325,21 @@ impl GuiRenderer {
     #[allow(dead_code)] // Phase 8.5+ main.rs integration
     pub fn take_lobby_controls(&mut self) -> Option<LobbyControlsPanel> {
         self.lobby_controls.take()
+    }
+
+    /// Take ownership of the main menu panel (Phase 9.7).
+    ///
+    /// This is typically called once during FrontendUI initialization.
+    /// Returns None if already taken or not loaded.
+    #[allow(dead_code)] // Phase 9.7.3: main.rs integration
+    pub fn take_main_menu_panel(&mut self) -> Option<MainMenuPanel> {
+        self.main_menu_panel.take()
+    }
+
+    /// Get the main menu window layout (Phase 9.7).
+    #[allow(dead_code)] // Phase 9.7.4: button state updates
+    pub fn main_menu_layout(&self) -> &super::layout_types::FrontendPanelLayout {
+        &self.main_menu_layout
     }
 
     /// Set the play button enabled state based on country selection (Phase 9.3).
@@ -652,8 +690,12 @@ impl GuiRenderer {
         self.hit_boxes.clear();
 
         match screen {
-            Screen::MainMenu | Screen::Multiplayer => {
-                // No GUI elements rendered for main menu or multiplayer lobby
+            Screen::MainMenu => {
+                // Render main menu buttons (Phase 9.7.2)
+                self.render_main_menu(render_pass, device, queue, sprite_renderer, screen_size);
+            }
+            Screen::Multiplayer => {
+                // No GUI elements rendered for multiplayer lobby (placeholder)
             }
             Screen::SinglePlayer => {
                 // Country selection panels only
@@ -1095,6 +1137,234 @@ impl GuiRenderer {
             };
 
             self.hit_boxes.push((action_name.to_string(), hit_box));
+        }
+    }
+
+    /// Render the main menu UI (Phase 9.7.2).
+    /// Called when screen is `Screen::MainMenu`.
+    fn render_main_menu<'a>(
+        &'a mut self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        sprite_renderer: &'a SpriteRenderer,
+        screen_size: (u32, u32),
+    ) {
+        // Ensure base textures and font are loaded
+        self.ensure_textures(device, queue, sprite_renderer);
+        self.ensure_font(device, queue, sprite_renderer);
+
+        // Check if we have a main menu panel
+        let Some(ref panel) = self.main_menu_panel else {
+            log::debug!("No main menu panel loaded, skipping render");
+            return;
+        };
+
+        // Phase 1: Load button textures (lazy loading on first render)
+        let buttons = [
+            panel.single_player.clone(),
+            panel.multi_player.clone(),
+            panel.exit.clone(),
+        ];
+        // Also load optional buttons if present
+        let optional_buttons: Vec<_> = [
+            panel.tutorial.clone(),
+            panel.credits.clone(),
+            panel.settings.clone(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+
+        for button in buttons.iter().chain(optional_buttons.iter()) {
+            if let Some(sprite_type) = button.sprite_type() {
+                let button_name = button.name();
+                if !self
+                    .main_menu_button_bind_groups
+                    .iter()
+                    .any(|(name, _, _, _, _)| name == button_name)
+                {
+                    if let Some(sprite) = self.gfx_db.get(sprite_type) {
+                        if let Some((view, w, h)) =
+                            self.sprite_cache.get(&sprite.texture_file, device, queue)
+                        {
+                            let bind_group = sprite_renderer.create_bind_group(device, view);
+                            let num_frames = sprite.num_frames.max(1);
+                            log::info!(
+                                "Loaded main menu button: {} -> {} ({}x{}, {} frames)",
+                                button_name,
+                                sprite_type,
+                                w,
+                                h,
+                                num_frames
+                            );
+                            self.main_menu_button_bind_groups.push((
+                                button_name.to_string(),
+                                bind_group,
+                                w,
+                                h,
+                                num_frames,
+                            ));
+                        }
+                    } else {
+                        log::warn!(
+                            "Main menu button sprite not found: {} (type: {})",
+                            button_name,
+                            sprite_type
+                        );
+                    }
+                }
+            }
+        }
+
+        // Load vic_22 font for button text
+        let has_vic22 = self
+            .font_bind_groups
+            .iter()
+            .any(|(name, _)| name == "vic_22");
+        if !has_vic22 && let Some(loaded) = self.font_cache.get("vic_22", device, queue) {
+            let bind_group = sprite_renderer.create_bind_group(device, &loaded.view);
+            self.font_bind_groups
+                .push(("vic_22".to_string(), bind_group));
+        }
+
+        // Phase 2: Render buttons
+        let window_anchor = get_window_anchor(
+            self.main_menu_layout.window_pos,
+            self.main_menu_layout.orientation,
+            screen_size,
+        );
+
+        // Clone button data to avoid borrow conflicts
+        let buttons_to_render: Vec<_> = buttons
+            .iter()
+            .chain(optional_buttons.iter())
+            .filter_map(|button| {
+                let button_name = button.name();
+                let pos = button.position()?;
+                let orientation = button.orientation()?;
+                let idx = self
+                    .main_menu_button_bind_groups
+                    .iter()
+                    .position(|(name, _, _, _, _)| name == button_name)?;
+                let (_, _, w, h, num_frames) = &self.main_menu_button_bind_groups[idx];
+                Some((
+                    idx,
+                    pos,
+                    orientation,
+                    *w,
+                    *h,
+                    *num_frames,
+                    button_name.to_string(),
+                ))
+            })
+            .collect();
+
+        for (idx, pos, orientation, tex_w, tex_h, num_frames, button_name) in buttons_to_render {
+            // For multi-frame sprites, use per-frame width
+            let frame_w = tex_w / num_frames;
+            let button_screen_pos =
+                position_from_anchor(window_anchor, pos, orientation, (frame_w, tex_h));
+            let (clip_x, clip_y, clip_w, clip_h) =
+                rect_to_clip_space(button_screen_pos, (frame_w, tex_h), screen_size);
+
+            let bind_group = &self.main_menu_button_bind_groups[idx].1;
+
+            // Select frame based on button state:
+            // Frame 0: Normal, Frame 1: Hovered, Frame 2: Pressed, Frame 3: Disabled
+            let frame = if self.hovered_button.as_ref() == Some(&button_name) {
+                1 // Hovered
+            } else {
+                0 // Normal
+            };
+            let frame_size = 1.0 / num_frames as f32;
+            let u_min = frame as f32 * frame_size;
+            let u_max = (frame + 1) as f32 * frame_size;
+
+            sprite_renderer.draw_uv(
+                render_pass,
+                bind_group,
+                queue,
+                clip_x,
+                clip_y,
+                clip_w,
+                clip_h,
+                u_min,
+                0.0,
+                u_max,
+                1.0,
+            );
+
+            // Render button text centered on the button
+            let button_text = match button_name.as_str() {
+                "single_player_button" => "Single Player",
+                "multi_player_button" => "Multiplayer",
+                "exit_button" => "Exit",
+                "tutorial_button" => "Tutorial",
+                "credits_button" => "Credits",
+                "settings_button" => "Options",
+                _ => "",
+            };
+
+            if !button_text.is_empty()
+                && let Some(loaded) = self.font_cache.get("vic_22", device, queue)
+                && let Some((_, font_bind_group)) = self
+                    .font_bind_groups
+                    .iter()
+                    .find(|(name, _)| name == "vic_22")
+            {
+                let font = &loaded.font;
+
+                // Measure text width for centering
+                let text_width = font.measure_width(button_text);
+                let button_width = frame_w as f32;
+                let button_height = tex_h as f32;
+
+                // Center text horizontally on button, vertically adjusted
+                let text_x = button_screen_pos.0 + (button_width - text_width) / 2.0;
+                let text_y = button_screen_pos.1 + (button_height - font.line_height as f32) / 2.0;
+
+                let mut cursor_x = text_x;
+                for c in button_text.chars() {
+                    if let Some(glyph) = font.get_glyph(c) {
+                        if glyph.width > 0 && glyph.height > 0 {
+                            let glyph_x = cursor_x + glyph.xoffset as f32;
+                            let glyph_y = text_y + glyph.yoffset as f32;
+                            let (u_min, v_min, u_max, v_max) = font.glyph_uv(glyph);
+                            let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
+                                (glyph_x, glyph_y),
+                                (glyph.width, glyph.height),
+                                screen_size,
+                            );
+                            sprite_renderer.draw_uv(
+                                render_pass,
+                                font_bind_group,
+                                queue,
+                                clip_x,
+                                clip_y,
+                                clip_w,
+                                clip_h,
+                                u_min,
+                                v_min,
+                                u_max,
+                                v_max,
+                            );
+                        }
+                        cursor_x += glyph.xadvance as f32;
+                    }
+                }
+            }
+
+            // Register hit box for click detection
+            self.hit_boxes.push((
+                button_name,
+                HitBox {
+                    x: button_screen_pos.0,
+                    y: button_screen_pos.1,
+                    width: frame_w as f32,
+                    height: tex_h as f32,
+                },
+            ));
         }
     }
 
@@ -3078,6 +3348,38 @@ impl GuiRenderer {
 
     /// Handle a click at screen coordinates.
     /// Returns an action if a GUI element was clicked.
+    /// Handle mouse move events for button hover states.
+    ///
+    /// Returns true if the hovered button changed (needs redraw).
+    pub fn handle_mouse_move(&mut self, x: f32, y: f32) -> bool {
+        let mut new_hovered = None;
+
+        // Check which button (if any) is under the cursor
+        for (name, hit_box) in &self.hit_boxes {
+            if hit_box.contains(x, y) {
+                // Only track hover for button elements (not listboxes, tabs, etc.)
+                if name.ends_with("_button") {
+                    new_hovered = Some(name.clone());
+                    break;
+                }
+            }
+        }
+
+        // Check if hover state changed
+        if new_hovered != self.hovered_button {
+            self.hovered_button = new_hovered;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Get a reference to the current hit boxes (for debugging/testing).
+    #[cfg(test)]
+    pub fn get_hit_boxes(&self) -> &[(String, HitBox)] {
+        &self.hit_boxes
+    }
+
     pub fn handle_click(&mut self, x: f32, y: f32, current_state: &GuiState) -> Option<GuiAction> {
         const ENTRY_HEIGHT: f32 = 41.0;
 
@@ -3127,6 +3429,10 @@ impl GuiRenderer {
                 }
 
                 return match name.as_str() {
+                    // Main menu buttons (Phase 9.7)
+                    "single_player_button" => Some(GuiAction::ShowSinglePlayer),
+                    "multi_player_button" => Some(GuiAction::ShowMultiplayer),
+                    "exit_button" => Some(GuiAction::Exit),
                     // Speed controls
                     "speed_up" => {
                         let new_speed = (current_state.speed + 1).min(5);

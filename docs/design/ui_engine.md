@@ -2,7 +2,7 @@
 
 **Status**: Draft
 **Date**: 2025-12-31
-**Last Updated**: 2026-01-02 (Phase 9.4 complete - country selection right panel rendering)
+**Last Updated**: 2026-01-02 (Phase 9.7 complete - real EU4 main menu implementation)
 **Objective**: Create a scalable, type-safe, and mod-friendly system for rendering EU4-style UI panels.
 
 ## 1. Problem Statement
@@ -558,7 +558,7 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] Simple text-based main menu rendering
     - [x] Keyboard input handling (S for Single Player, ESC to exit)
     - [x] Screen transition from MainMenu to SinglePlayer working
-    - Note: Full GUI panel implementation pending (currently text-based placeholder)
+    - Note: Text-based placeholder superseded by Phase 9.7 (real EU4 main menu)
 - [x] **8.2. Country Selection Left Panel** (`gui/country_select_left.rs`) ✅ (2025-12-31)
     - [x] Created `CountrySelectLeftPanel` struct with `GuiWindow` derive
     - [x] Defined listbox fields (`bookmarks_list`, `save_games_list`)
@@ -741,6 +741,30 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] Update map renderer based on active mode
     - [x] Preserve mode selection across screens
 
+### Phase 9.7: Real EU4 Main Menu ✅ (2026-01-02)
+*Objective: Replace text-based main menu placeholder with authentic EU4 main menu.*
+
+- [x] **9.7.1. Load Main Menu Panel**
+    - [x] Parse `frontend.gui` to find `mainmenu_panel_bottom` window
+    - [x] Bind `MainMenuPanel` with real button data (single_player_button, etc.)
+    - [x] Extract window position and `CENTER_DOWN` orientation
+- [x] **9.7.2. Render Main Menu Buttons**
+    - [x] Load button sprite textures (multi-frame for states)
+    - [x] Calculate screen positions with `get_window_anchor()` + `position_from_anchor()`
+    - [x] Register hit boxes for click detection
+    - [x] Render centered button text labels
+- [x] **9.7.3. Connect Input Handling**
+    - [x] Add `GuiAction::ShowSinglePlayer`, `ShowMultiplayer`, `Exit` variants
+    - [x] Wire button clicks to screen transitions
+    - [x] Keep keyboard shortcuts as accelerators (S → SinglePlayer, ESC → Exit)
+- [x] **9.7.4. Button State Updates**
+    - [x] Track hovered button via `handle_mouse_move()`
+    - [x] Select correct sprite frame based on state (0=Normal, 1=Hovered)
+    - [x] Request redraw when hover state changes
+- [x] **9.7.5. Golden Image Tests**
+    - [x] `test_main_menu_renders_buttons` - basic main menu with text
+    - [x] `test_main_menu_button_hover` - hover state visualization
+
 ### Phase 10: Localization System
 *Objective: Support EU4's $KEY$ localization tokens.*
 
@@ -800,6 +824,7 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [ ] Audit all `#![allow(dead_code)]` and `#[allow(dead_code)]` added during Phase 2-8
     - [ ] Ensure all primitives and binder methods are properly used
     - [ ] Delete unused placeholder code
+    - [ ] Rename `legacy_loaders.rs` to `panel_loaders.rs` (misnamed - not obsolete, just extracts layout metadata)
 - [ ] **13.2. Performance Audit**
     - [ ] Profile `Binder::find_node_iterative` in large UI files (e.g. `frontend.gui`)
     - [ ] Verify `WindowDatabase` lookup costs are negligible

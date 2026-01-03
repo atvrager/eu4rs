@@ -16,26 +16,27 @@ use eu4_macros::GuiWindow;
 #[allow(dead_code)] // Reserved for Phase 4+ frontend implementation
 pub struct MainMenuPanel {
     /// Single player button - starts country selection
-    #[gui(name = "single_player")]
+    #[gui(name = "single_player_button")]
     pub single_player: GuiButton,
 
     /// Multiplayer button - starts multiplayer setup
-    #[gui(name = "multi_player")]
+    #[gui(name = "multi_player_button")]
     pub multi_player: GuiButton,
 
-    /// Tutorial button - shows tutorial
-    #[gui(optional)]
+    /// Tutorial button - shows tutorial (optional in some versions)
+    #[gui(name = "tutorial_button", optional)]
     pub tutorial: Option<GuiButton>,
 
-    /// Credits button - shows credits
-    #[gui(optional)]
+    /// Credits button - shows credits (optional in some versions)
+    #[gui(name = "credits_button", optional)]
     pub credits: Option<GuiButton>,
 
-    /// Settings button - shows settings
-    #[gui(optional)]
+    /// Settings button - shows settings (optional in some versions)
+    #[gui(name = "settings_button", optional)]
     pub settings: Option<GuiButton>,
 
     /// Exit button - exits the game
+    #[gui(name = "exit_button")]
     pub exit: GuiButton,
 }
 
