@@ -398,3 +398,71 @@ fn test_ideas_localization() {
         test_cases.len()
     );
 }
+
+/// Test that country names are localized correctly.
+///
+/// Verifies that country tags resolve to proper display names.
+#[test]
+fn test_country_name_localization() {
+    // Find game path or skip
+    let game_path = std::env::var("EU4_GAME_PATH")
+        .ok()
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            let steam_path = std::path::Path::new(
+                "/home/atv/.steam/steam/steamapps/common/Europa Universalis IV",
+            );
+            if steam_path.exists() {
+                Some(steam_path.to_path_buf())
+            } else {
+                None
+            }
+        });
+
+    let Some(game_path) = game_path else {
+        eprintln!("Skipping test_country_name_localization: EU4 game files not found");
+        return;
+    };
+
+    // Load localization
+    let loc_path = game_path.join("localisation");
+    let mut localisation = eu4data::localisation::Localisation::new();
+    localisation
+        .load_from_dir(&loc_path, "english")
+        .expect("Failed to load localization");
+
+    // Verify country name localization (tag -> display name)
+    let test_cases = [
+        ("HAB", "Austria"),
+        ("FRA", "France"),
+        ("TUR", "Ottomans"),
+        ("ENG", "England"),
+        ("CAS", "Castile"),
+        ("POR", "Portugal"),
+        ("VEN", "Venice"),
+        ("POL", "Poland"),
+        ("MOS", "Muscovy"),
+        ("MNG", "Ming"),
+    ];
+
+    for (tag, expected_name) in test_cases {
+        let localized = localisation.get(tag);
+        assert!(
+            localized.is_some(),
+            "Country tag '{}' should have localization",
+            tag
+        );
+        assert_eq!(
+            localized.unwrap(),
+            expected_name,
+            "Country '{}' should localize to '{}'",
+            tag,
+            expected_name
+        );
+    }
+
+    eprintln!(
+        "Country name localization verified: {} test cases passed",
+        test_cases.len()
+    );
+}

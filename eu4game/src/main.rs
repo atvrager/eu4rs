@@ -2035,7 +2035,11 @@ impl App {
 
         Some(gui::country_select::SelectedCountryState {
             tag: player_tag.clone(),
-            name: player_tag.clone(), // TODO: localize country name
+            name: self
+                .localisation
+                .get(player_tag)
+                .cloned()
+                .unwrap_or_else(|| player_tag.clone()),
             government_type: country
                 .technology_group
                 .clone()
