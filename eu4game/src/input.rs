@@ -103,6 +103,84 @@ pub fn handle_province_click(
     }
 }
 
+// Re-export winit types used in AppEvent for convenience
+pub use winit::event::MouseButton;
+pub use winit::keyboard::KeyCode;
+
+/// Platform-agnostic input event.
+///
+/// This abstracts over winit's `WindowEvent` to enable headless testing
+/// and programmatic event injection.
+// TODO: Remove allow when AppEvent is used in main.rs
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub enum AppEvent {
+    /// Window was resized.
+    Resize { width: u32, height: u32 },
+    /// Key press or release.
+    KeyPress { key: KeyCode, pressed: bool },
+    /// Mouse button press or release.
+    MouseButton {
+        button: MouseButton,
+        pressed: bool,
+        pos: (f64, f64),
+    },
+    /// Mouse cursor moved.
+    MouseMove { pos: (f64, f64) },
+    /// Mouse wheel scrolled (delta in lines).
+    MouseScroll { delta: (f32, f32) },
+    /// Window close requested.
+    CloseRequested,
+}
+
+#[allow(dead_code)]
+impl AppEvent {
+    /// Convert a winit `WindowEvent` to an `AppEvent`.
+    ///
+    /// Returns `None` for events we don't handle (like focus changes).
+    /// `cursor_pos` is the current cursor position, needed for mouse button events.
+    pub fn from_window_event(
+        event: &winit::event::WindowEvent,
+        cursor_pos: (f64, f64),
+    ) -> Option<Self> {
+        use winit::event::{ElementState, MouseScrollDelta, WindowEvent};
+
+        match event {
+            WindowEvent::Resized(size) => Some(AppEvent::Resize {
+                width: size.width,
+                height: size.height,
+            }),
+            WindowEvent::CloseRequested => Some(AppEvent::CloseRequested),
+            WindowEvent::KeyboardInput { event, .. } => {
+                if let winit::keyboard::PhysicalKey::Code(key) = event.physical_key {
+                    Some(AppEvent::KeyPress {
+                        key,
+                        pressed: event.state == ElementState::Pressed,
+                    })
+                } else {
+                    None
+                }
+            }
+            WindowEvent::MouseInput { button, state, .. } => Some(AppEvent::MouseButton {
+                button: *button,
+                pressed: *state == ElementState::Pressed,
+                pos: cursor_pos,
+            }),
+            WindowEvent::CursorMoved { position, .. } => Some(AppEvent::MouseMove {
+                pos: (position.x, position.y),
+            }),
+            WindowEvent::MouseWheel { delta, .. } => {
+                let (dx, dy) = match delta {
+                    MouseScrollDelta::LineDelta(x, y) => (*x, *y),
+                    MouseScrollDelta::PixelDelta(pos) => (pos.x as f32 / 20.0, pos.y as f32 / 20.0),
+                };
+                Some(AppEvent::MouseScroll { delta: (dx, dy) })
+            }
+            _ => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

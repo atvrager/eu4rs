@@ -9,6 +9,133 @@ use crate::gui::nine_slice::{NineSliceResult, generate_9_slice_quads};
 use std::collections::HashMap;
 use wgpu::util::DeviceExt;
 
+// ============================================================================
+// Render Target Abstraction
+// ============================================================================
+
+// TODO: Remove when integrated with main.rs
+#[allow(dead_code)]
+/// Error type for render target operations.
+#[derive(Debug)]
+pub enum RenderError {
+    /// Surface error from wgpu.
+    Surface(wgpu::SurfaceError),
+}
+
+impl From<wgpu::SurfaceError> for RenderError {
+    fn from(e: wgpu::SurfaceError) -> Self {
+        RenderError::Surface(e)
+    }
+}
+
+impl std::fmt::Display for RenderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RenderError::Surface(e) => write!(f, "Surface error: {:?}", e),
+        }
+    }
+}
+
+impl std::error::Error for RenderError {}
+
+/// Abstraction over render output destination.
+///
+/// This trait allows the application to render to either a window surface
+/// or an offscreen texture (for headless testing).
+#[allow(dead_code)]
+pub trait RenderTarget {
+    /// Get a texture view to render into and the current dimensions.
+    fn get_view(&mut self) -> Result<(wgpu::TextureView, u32, u32), RenderError>;
+
+    /// Present the frame (no-op for offscreen targets).
+    fn present(&mut self);
+
+    /// Get the texture format.
+    fn format(&self) -> wgpu::TextureFormat;
+}
+
+/// Render target backed by a window surface.
+#[allow(dead_code)]
+pub struct SurfaceTarget {
+    surface: wgpu::Surface<'static>,
+    config: wgpu::SurfaceConfiguration,
+    current_texture: Option<wgpu::SurfaceTexture>,
+}
+
+#[allow(dead_code)]
+impl SurfaceTarget {
+    /// Create a new surface target.
+    pub fn new(surface: wgpu::Surface<'static>, config: wgpu::SurfaceConfiguration) -> Self {
+        Self {
+            surface,
+            config,
+            current_texture: None,
+        }
+    }
+
+    /// Reconfigure the surface after resize.
+    pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
+        self.config.width = width.max(1);
+        self.config.height = height.max(1);
+        self.surface.configure(device, &self.config);
+    }
+
+    /// Reconfigure the surface (e.g., after outdated error).
+    pub fn reconfigure(&mut self, device: &wgpu::Device) {
+        self.surface.configure(device, &self.config);
+    }
+
+    /// Get the current dimensions.
+    pub fn size(&self) -> (u32, u32) {
+        (self.config.width, self.config.height)
+    }
+
+    /// Get a reference to the config.
+    pub fn config(&self) -> &wgpu::SurfaceConfiguration {
+        &self.config
+    }
+}
+
+impl RenderTarget for SurfaceTarget {
+    fn get_view(&mut self) -> Result<(wgpu::TextureView, u32, u32), RenderError> {
+        let output = self.surface.get_current_texture()?;
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let dims = (self.config.width, self.config.height);
+        self.current_texture = Some(output);
+        Ok((view, dims.0, dims.1))
+    }
+
+    fn present(&mut self) {
+        if let Some(texture) = self.current_texture.take() {
+            texture.present();
+        }
+    }
+
+    fn format(&self) -> wgpu::TextureFormat {
+        self.config.format
+    }
+}
+
+/// GPU context abstraction for device/queue access.
+///
+/// This trait allows `AppCore` to be created with either a windowed
+/// or headless GPU context.
+#[allow(dead_code)]
+pub trait GpuContext {
+    /// Get the wgpu device.
+    fn device(&self) -> &wgpu::Device;
+    /// Get the wgpu queue.
+    fn queue(&self) -> &wgpu::Queue;
+    /// Get the surface/target format.
+    fn format(&self) -> wgpu::TextureFormat;
+}
+
+// ============================================================================
+// Original Render Module
+// ============================================================================
+
 /// Maximum number of army markers that can be rendered.
 const MAX_ARMIES: usize = 1024;
 

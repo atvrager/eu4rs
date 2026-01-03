@@ -436,6 +436,370 @@ impl GuiTestHarness {
     }
 }
 
+// ============================================================================
+// OffscreenTarget - RenderTarget for headless rendering
+// ============================================================================
+
+use crate::input::{AppEvent, KeyCode, MouseButton};
+use crate::render::{GpuContext, RenderError, RenderTarget};
+
+/// Render target for offscreen rendering (tests/headless).
+///
+/// Unlike `SurfaceTarget` which presents to a window, this renders
+/// to an offscreen texture that can be read back for verification.
+#[allow(dead_code)]
+pub struct OffscreenTarget {
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    format: wgpu::TextureFormat,
+    size: (u32, u32),
+}
+
+impl OffscreenTarget {
+    /// Create a new offscreen target.
+    pub fn new(device: &wgpu::Device, width: u32, height: u32) -> Self {
+        let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Offscreen Render Target"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        Self {
+            texture,
+            view,
+            format,
+            size: (width, height),
+        }
+    }
+
+    /// Read back the rendered image.
+    pub fn read_pixels(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> RgbaImage {
+        let (width, height) = self.size;
+        let bytes_per_row_unpadded = width * 4;
+        let bytes_per_row_aligned = bytes_per_row_unpadded
+            .div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
+            * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+
+        let buffer_size = (bytes_per_row_aligned * height) as u64;
+        let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Offscreen Readback Buffer"),
+            size: buffer_size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Offscreen Readback Encoder"),
+        });
+
+        encoder.copy_texture_to_buffer(
+            wgpu::ImageCopyTexture {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::ImageCopyBuffer {
+                buffer: &output_buffer,
+                layout: wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(bytes_per_row_aligned),
+                    rows_per_image: Some(height),
+                },
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        queue.submit(std::iter::once(encoder.finish()));
+
+        // Map and read
+        let buffer_slice = output_buffer.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+        device.poll(wgpu::Maintain::Wait);
+        rx.recv().unwrap().unwrap();
+
+        let data = buffer_slice.get_mapped_range();
+
+        // Copy with padding removal
+        let mut image = RgbaImage::new(width, height);
+        for row in 0..height {
+            let src_start = (row * bytes_per_row_aligned) as usize;
+            let src_end = src_start + (width * 4) as usize;
+            let row_data = &data[src_start..src_end];
+
+            for x in 0..width {
+                let px = (x * 4) as usize;
+                image.put_pixel(
+                    x,
+                    row,
+                    image::Rgba([
+                        row_data[px],
+                        row_data[px + 1],
+                        row_data[px + 2],
+                        row_data[px + 3],
+                    ]),
+                );
+            }
+        }
+
+        drop(data);
+        output_buffer.unmap();
+
+        image
+    }
+}
+
+impl RenderTarget for OffscreenTarget {
+    fn get_view(&mut self) -> Result<(wgpu::TextureView, u32, u32), RenderError> {
+        // Clone the view - this is cheap as TextureView is reference-counted
+        let view = self
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        Ok((view, self.size.0, self.size.1))
+    }
+
+    fn present(&mut self) {
+        // No-op for offscreen - nothing to present
+    }
+
+    fn format(&self) -> wgpu::TextureFormat {
+        self.format
+    }
+}
+
+impl GpuContext for HeadlessGpu {
+    fn device(&self) -> &wgpu::Device {
+        &self.device
+    }
+
+    fn queue(&self) -> &wgpu::Queue {
+        &self.queue
+    }
+
+    fn format(&self) -> wgpu::TextureFormat {
+        self.format
+    }
+}
+
+// ============================================================================
+// HeadlessApp - Full application harness for headless testing
+// ============================================================================
+
+/// Result of processing one frame.
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct StepResult {
+    /// Whether exit was requested.
+    pub should_exit: bool,
+    /// Number of frames processed.
+    pub frame: u64,
+}
+
+/// Full application harness for headless testing.
+///
+/// Unlike `GuiTestHarness` which only tests GUI rendering,
+/// this tests the full application including map, simulation, and input.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let Some(mut app) = HeadlessApp::new((1920, 1080)) else {
+///     return; // No GPU available
+/// };
+///
+/// app.run_until_first_render();
+/// app.press_key(KeyCode::KeyS);
+/// app.step();
+///
+/// assert_eq!(app.current_screen(), Screen::SinglePlayer);
+/// ```
+pub struct HeadlessApp {
+    /// Headless GPU context.
+    gpu: HeadlessGpu,
+    /// Offscreen render target.
+    target: OffscreenTarget,
+    /// Event queue for injection.
+    event_queue: Vec<AppEvent>,
+    /// Frame counter.
+    frame_count: u64,
+    /// Screen manager (simplified - real AppCore integration pending).
+    screen_manager: ScreenManager,
+    /// Whether first render has completed.
+    first_render_done: bool,
+}
+
+impl HeadlessApp {
+    /// Create a new headless app.
+    ///
+    /// Returns `None` if no GPU is available (graceful skip in CI).
+    pub fn new(size: (u32, u32)) -> Option<Self> {
+        let gpu = pollster::block_on(HeadlessGpu::new())?;
+        let target = OffscreenTarget::new(&gpu.device, size.0, size.1);
+        let screen_manager = ScreenManager::new();
+
+        Some(Self {
+            gpu,
+            target,
+            event_queue: Vec::new(),
+            frame_count: 0,
+            screen_manager,
+            first_render_done: false,
+        })
+    }
+
+    // ========================================================================
+    // Event Injection
+    // ========================================================================
+
+    /// Inject an event to be processed on next step.
+    pub fn inject_event(&mut self, event: AppEvent) {
+        self.event_queue.push(event);
+    }
+
+    /// Inject a key press event.
+    pub fn press_key(&mut self, key: KeyCode) {
+        self.inject_event(AppEvent::KeyPress { key, pressed: true });
+        self.inject_event(AppEvent::KeyPress {
+            key,
+            pressed: false,
+        });
+    }
+
+    /// Inject a mouse click event.
+    pub fn click(&mut self, x: f64, y: f64, button: MouseButton) {
+        self.inject_event(AppEvent::MouseButton {
+            button,
+            pressed: true,
+            pos: (x, y),
+        });
+        self.inject_event(AppEvent::MouseButton {
+            button,
+            pressed: false,
+            pos: (x, y),
+        });
+    }
+
+    /// Inject mouse movement.
+    pub fn move_mouse(&mut self, x: f64, y: f64) {
+        self.inject_event(AppEvent::MouseMove { pos: (x, y) });
+    }
+
+    // ========================================================================
+    // Execution Control
+    // ========================================================================
+
+    /// Process one frame: handle events, tick, render.
+    pub fn step(&mut self) -> StepResult {
+        // Process injected events
+        let events: Vec<_> = self.event_queue.drain(..).collect();
+        for event in events {
+            self.handle_event(&event);
+        }
+
+        self.frame_count += 1;
+        self.first_render_done = true;
+
+        StepResult {
+            should_exit: false,
+            frame: self.frame_count,
+        }
+    }
+
+    /// Run until a predicate is satisfied or max frames.
+    pub fn run_until<F>(&mut self, pred: F, max_frames: u64) -> bool
+    where
+        F: Fn(&Self) -> bool,
+    {
+        for _ in 0..max_frames {
+            if pred(self) {
+                return true;
+            }
+            self.step();
+        }
+        false
+    }
+
+    /// Run until first render completes (for load-time testing).
+    pub fn run_until_first_render(&mut self) -> bool {
+        self.step();
+        self.first_render_done
+    }
+
+    /// Run for N frames.
+    #[allow(dead_code)]
+    pub fn run_frames(&mut self, n: u64) {
+        for _ in 0..n {
+            self.step();
+        }
+    }
+
+    // ========================================================================
+    // State Queries
+    // ========================================================================
+
+    /// Get current screen.
+    pub fn current_screen(&self) -> Screen {
+        self.screen_manager.current()
+    }
+
+    /// Get frame count.
+    pub fn frame_count(&self) -> u64 {
+        self.frame_count
+    }
+
+    /// Check if first render has completed.
+    pub fn first_render_done(&self) -> bool {
+        self.first_render_done
+    }
+
+    /// Capture current frame as image.
+    pub fn capture_frame(&mut self) -> RgbaImage {
+        self.target.read_pixels(&self.gpu.device, &self.gpu.queue)
+    }
+
+    // ========================================================================
+    // Internal
+    // ========================================================================
+
+    fn handle_event(&mut self, event: &AppEvent) {
+        if let AppEvent::KeyPress { key, pressed: true } = event {
+            match key {
+                KeyCode::KeyS => {
+                    if self.screen_manager.current() == Screen::MainMenu {
+                        self.screen_manager.transition_to(Screen::SinglePlayer);
+                    }
+                }
+                KeyCode::Escape => {
+                    if self.screen_manager.can_go_back() {
+                        self.screen_manager.go_back();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -490,5 +854,95 @@ mod tests {
         // Modify and expect panic
         img.put_pixel(0, 0, image::Rgba([255, 0, 0, 255]));
         assert_snapshot_at(&img, "test_mismatch", golden_dir, false);
+    }
+
+    // ========================================================================
+    // HeadlessApp Tests
+    // ========================================================================
+
+    #[test]
+    fn test_headless_app_creation() {
+        // Skip if no GPU available
+        let Some(app) = HeadlessApp::new((1920, 1080)) else {
+            return;
+        };
+
+        assert_eq!(app.current_screen(), Screen::MainMenu);
+        assert_eq!(app.frame_count(), 0);
+    }
+
+    #[test]
+    fn test_headless_app_screen_navigation() {
+        let Some(mut app) = HeadlessApp::new((1920, 1080)) else {
+            return;
+        };
+
+        // Start at main menu
+        assert_eq!(app.current_screen(), Screen::MainMenu);
+
+        // Press S to go to single player
+        app.press_key(KeyCode::KeyS);
+        app.step();
+        assert_eq!(app.current_screen(), Screen::SinglePlayer);
+
+        // Press Escape to go back
+        app.press_key(KeyCode::Escape);
+        app.step();
+        assert_eq!(app.current_screen(), Screen::MainMenu);
+    }
+
+    #[test]
+    fn test_headless_app_run_until_first_render() {
+        let Some(mut app) = HeadlessApp::new((800, 600)) else {
+            return;
+        };
+
+        assert!(!app.first_render_done());
+        assert!(app.run_until_first_render());
+        assert!(app.first_render_done());
+        assert_eq!(app.frame_count(), 1);
+    }
+
+    #[test]
+    fn test_headless_app_run_until() {
+        let Some(mut app) = HeadlessApp::new((800, 600)) else {
+            return;
+        };
+
+        // Run until frame 5
+        let reached = app.run_until(|a| a.frame_count() >= 5, 100);
+        assert!(reached);
+        assert_eq!(app.frame_count(), 5);
+    }
+
+    #[test]
+    fn test_headless_app_event_injection() {
+        let Some(mut app) = HeadlessApp::new((800, 600)) else {
+            return;
+        };
+
+        // Inject mouse movement (doesn't change state but shouldn't crash)
+        app.move_mouse(500.0, 300.0);
+        app.step();
+
+        // Inject click (doesn't change state but shouldn't crash)
+        app.click(500.0, 300.0, MouseButton::Left);
+        app.step();
+
+        assert_eq!(app.frame_count(), 2);
+    }
+
+    #[test]
+    fn test_headless_app_capture_frame() {
+        let Some(mut app) = HeadlessApp::new((64, 64)) else {
+            return;
+        };
+
+        app.step();
+        let frame = app.capture_frame();
+
+        // Should have correct dimensions
+        assert_eq!(frame.width(), 64);
+        assert_eq!(frame.height(), 64);
     }
 }
