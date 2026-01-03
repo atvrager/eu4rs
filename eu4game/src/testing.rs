@@ -602,6 +602,84 @@ impl GpuContext for HeadlessGpu {
 }
 
 // ============================================================================
+// HeadlessRenderer - Shared base for headless rendering
+// ============================================================================
+
+/// Shared headless rendering infrastructure for test harnesses.
+///
+/// Provides GPU context and offscreen rendering with pixel readback,
+/// eliminating duplication between `HeadlessApp` and `MapTestHarness`.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let mut renderer = HeadlessRenderer::new((1920, 1080))?;
+/// let view = renderer.view();
+/// // ... render to view ...
+/// let image = renderer.capture_frame();
+/// ```
+#[allow(dead_code)]
+pub struct HeadlessRenderer {
+    gpu: HeadlessGpu,
+    target: OffscreenTarget,
+}
+
+#[allow(dead_code)]
+impl HeadlessRenderer {
+    /// Create a new headless renderer at the specified resolution.
+    ///
+    /// Returns `None` if no GPU adapter is available (CI waiver).
+    pub fn new(size: (u32, u32)) -> Option<Self> {
+        let gpu = pollster::block_on(HeadlessGpu::new())?;
+        let target = OffscreenTarget::new(&gpu.device, size.0, size.1);
+        Some(Self { gpu, target })
+    }
+
+    /// Resize the offscreen render target.
+    pub fn resize(&mut self, width: u32, height: u32) {
+        self.target = OffscreenTarget::new(&self.gpu.device, width, height);
+    }
+
+    /// Get the current render target view and dimensions.
+    ///
+    /// Returns a fresh view for each call (views are cheap to create).
+    pub fn view(&self) -> (wgpu::TextureView, u32, u32) {
+        let view = self
+            .target
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        (view, self.target.size.0, self.target.size.1)
+    }
+
+    /// Get the target size.
+    pub fn size(&self) -> (u32, u32) {
+        self.target.size
+    }
+
+    /// Capture the current rendered frame as an image.
+    ///
+    /// Performs GPU→CPU readback with proper alignment and padding removal.
+    pub fn capture_frame(&self) -> RgbaImage {
+        self.target.read_pixels(&self.gpu.device, &self.gpu.queue)
+    }
+
+    /// Access the GPU device.
+    pub fn device(&self) -> &wgpu::Device {
+        &self.gpu.device
+    }
+
+    /// Access the GPU queue.
+    pub fn queue(&self) -> &wgpu::Queue {
+        &self.gpu.queue
+    }
+
+    /// Get the surface format.
+    pub fn format(&self) -> wgpu::TextureFormat {
+        self.gpu.format
+    }
+}
+
+// ============================================================================
 // HeadlessApp - Full application harness for headless testing
 // ============================================================================
 
@@ -634,10 +712,8 @@ pub struct StepResult {
 /// assert_eq!(app.current_screen(), Screen::SinglePlayer);
 /// ```
 pub struct HeadlessApp {
-    /// Headless GPU context.
-    gpu: HeadlessGpu,
-    /// Offscreen render target.
-    target: OffscreenTarget,
+    /// Shared headless renderer.
+    renderer: HeadlessRenderer,
     /// Event queue for injection.
     event_queue: Vec<AppEvent>,
     /// Frame counter.
@@ -653,13 +729,11 @@ impl HeadlessApp {
     ///
     /// Returns `None` if no GPU is available (graceful skip in CI).
     pub fn new(size: (u32, u32)) -> Option<Self> {
-        let gpu = pollster::block_on(HeadlessGpu::new())?;
-        let target = OffscreenTarget::new(&gpu.device, size.0, size.1);
+        let renderer = HeadlessRenderer::new(size)?;
         let screen_manager = ScreenManager::new();
 
         Some(Self {
-            gpu,
-            target,
+            renderer,
             event_queue: Vec::new(),
             frame_count: 0,
             screen_manager,
@@ -773,8 +847,8 @@ impl HeadlessApp {
     }
 
     /// Capture current frame as image.
-    pub fn capture_frame(&mut self) -> RgbaImage {
-        self.target.read_pixels(&self.gpu.device, &self.gpu.queue)
+    pub fn capture_frame(&self) -> RgbaImage {
+        self.renderer.capture_frame()
     }
 
     // ========================================================================
@@ -806,10 +880,10 @@ impl HeadlessApp {
 
 #[allow(dead_code)]
 pub struct MapTestHarness {
-    /// Headless GPU context.
-    gpu: HeadlessGpu,
+    /// Shared headless renderer.
+    headless: HeadlessRenderer,
     /// Map renderer with pipelines and textures.
-    renderer: crate::render::Renderer,
+    map_renderer: crate::render::Renderer,
     /// Camera for view/projection control.
     camera: crate::camera::Camera,
 
@@ -851,8 +925,8 @@ impl MapTestHarness {
     pub fn new() -> Option<Self> {
         use std::collections::{HashMap, HashSet};
 
-        // Create headless GPU
-        let gpu = pollster::block_on(HeadlessGpu::new())?;
+        // Create headless renderer (1920x1080 default for map tests)
+        let headless = HeadlessRenderer::new((1920, 1080))?;
 
         // Load province map and data
         let game_path = eu4data::path::detect_game_path()?;
@@ -912,11 +986,11 @@ impl MapTestHarness {
             .map(|(color, id)| (*color, *id))
             .collect();
 
-        // Create renderer
-        let renderer = crate::render::Renderer::new(
-            &gpu.device,
-            &gpu.queue,
-            gpu.format,
+        // Create map renderer
+        let map_renderer = crate::render::Renderer::new(
+            headless.device(),
+            headless.queue(),
+            headless.format(),
             &province_map,
             &lookup,
             heightmap.as_ref(),
@@ -931,8 +1005,8 @@ impl MapTestHarness {
         log::info!("MapTestHarness: Initialized successfully");
 
         Some(Self {
-            gpu,
-            renderer,
+            headless,
+            map_renderer,
             camera,
             province_map,
             province_lookup,
@@ -1004,7 +1078,8 @@ impl MapTestHarness {
 
         // Update camera uniforms
         let camera_uniform = self.camera.to_uniform(width as f32, height as f32);
-        self.renderer.update_camera(&self.gpu.queue, camera_uniform);
+        self.map_renderer
+            .update_camera(self.headless.queue(), camera_uniform);
 
         // Update map mode uniform
         let map_mode_value = match self.current_map_mode {
@@ -1019,19 +1094,19 @@ impl MapTestHarness {
             crate::gui::MapMode::Diplomacy => 8.0,
             crate::gui::MapMode::Players => 9.0,
         };
-        self.renderer
-            .update_map_mode(&self.gpu.queue, map_mode_value, (width, height));
+        self.map_renderer
+            .update_map_mode(self.headless.queue(), map_mode_value, (width, height));
 
         // Create offscreen target
-        let target = OffscreenTarget::new(&self.gpu.device, width, height);
+        let target = OffscreenTarget::new(self.headless.device(), width, height);
 
         // Render to offscreen texture
-        let mut encoder = self
-            .gpu
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Map Test Render Encoder"),
-            });
+        let mut encoder =
+            self.headless
+                .device()
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Map Test Render Encoder"),
+                });
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1050,15 +1125,17 @@ impl MapTestHarness {
             });
 
             // Draw map (fullscreen triangle)
-            render_pass.set_pipeline(&self.renderer.pipeline);
-            render_pass.set_bind_group(0, &self.renderer.bind_group, &[]);
+            render_pass.set_pipeline(&self.map_renderer.pipeline);
+            render_pass.set_bind_group(0, &self.map_renderer.bind_group, &[]);
             render_pass.draw(0..3, 0..1);
         }
 
-        self.gpu.queue.submit(std::iter::once(encoder.finish()));
+        self.headless
+            .queue()
+            .submit(std::iter::once(encoder.finish()));
 
         // Read back pixels
-        target.read_pixels(&self.gpu.device, &self.gpu.queue)
+        target.read_pixels(self.headless.device(), self.headless.queue())
     }
 
     /// Update the lookup texture based on current map mode.
@@ -1269,9 +1346,9 @@ impl MapTestHarness {
 
         let bytes: Vec<u8> = data.iter().flat_map(|c| *c).collect();
 
-        self.gpu.queue.write_texture(
+        self.headless.queue().write_texture(
             wgpu::ImageCopyTexture {
-                texture: &self.renderer.lookup_texture,
+                texture: &self.map_renderer.lookup_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
