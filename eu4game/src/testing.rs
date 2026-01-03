@@ -884,14 +884,10 @@ impl HeadlessApp {
         if let AppEvent::KeyPress { key, pressed: true } = event {
             match key {
                 KeyCode::KeyS => {
-                    if self.screen_manager.current() == Screen::MainMenu {
-                        self.screen_manager.transition_to(Screen::SinglePlayer);
-                    }
+                    self.screen_manager.handle_single_player_shortcut();
                 }
                 KeyCode::Escape => {
-                    if self.screen_manager.can_go_back() {
-                        self.screen_manager.go_back();
-                    }
+                    self.screen_manager.handle_back();
                 }
                 _ => {}
             }

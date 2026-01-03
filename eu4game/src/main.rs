@@ -3,7 +3,6 @@
 //! A playable EU4 experience using eu4sim-core for simulation
 //! and wgpu for rendering.
 
-mod app_core;
 mod bmfont;
 mod camera;
 mod dds;
@@ -805,34 +804,25 @@ impl App {
         }
 
         // Phase 8.1: Handle main menu input
-        if self.screen_manager.current() == screen::Screen::MainMenu {
-            match key {
-                KeyCode::KeyS => {
-                    // Single Player - transition to country selection
-                    log::info!("Starting Single Player mode");
-                    self.screen_manager
-                        .transition_to(screen::Screen::SinglePlayer);
+        if key == KeyCode::KeyS && self.screen_manager.handle_single_player_shortcut() {
+            log::info!("Starting Single Player mode");
+            // Force political mode when entering SinglePlayer (Phase 9.5.1)
+            self.current_map_mode = gui::MapMode::Political;
+            log::info!("Map mode forced to Political for country selection");
+            self.update_window_title();
+            return false;
+        }
 
-                    // Force political mode when entering SinglePlayer (Phase 9.5.1)
-                    self.current_map_mode = gui::MapMode::Political;
-                    log::info!("Map mode forced to Political for country selection");
-
-                    self.update_window_title();
-                    return false;
-                }
-                KeyCode::Escape => {
-                    // Exit from main menu
-                    log::info!("Exiting from main menu");
-                    self.sim_handle.shutdown();
-                    return true;
-                }
-                _ => return false,
-            }
+        // Exit from main menu on Escape (no history to go back to)
+        if key == KeyCode::Escape && self.screen_manager.current() == screen::Screen::MainMenu {
+            log::info!("Exiting from main menu");
+            self.sim_handle.shutdown();
+            return true;
         }
 
         // Handle Escape key for back navigation (Phase 6.1.4)
         if key == KeyCode::Escape {
-            // On SinglePlayer screen with country selected: deselect country
+            // On SinglePlayer screen with country selected: deselect country first
             if self.screen_manager.current() == screen::Screen::SinglePlayer
                 && self.player_tag.is_some()
             {
@@ -846,9 +836,8 @@ impl App {
             }
 
             // Try to go back in navigation history
-            if self.screen_manager.can_go_back() {
+            if self.screen_manager.handle_back() {
                 log::info!("Escape pressed - going back");
-                self.screen_manager.go_back();
                 self.update_window_title();
                 return false;
             }

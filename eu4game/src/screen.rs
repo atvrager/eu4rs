@@ -89,6 +89,34 @@ impl ScreenManager {
     pub fn can_go_back(&self) -> bool {
         !self.history.is_empty()
     }
+
+    // ========================================================================
+    // Navigation Shortcuts (Single Source of Truth)
+    // ========================================================================
+
+    /// Handle 'S' key shortcut - navigate to SinglePlayer if on MainMenu.
+    ///
+    /// Returns `true` if navigation occurred.
+    pub fn handle_single_player_shortcut(&mut self) -> bool {
+        if self.current_screen == Screen::MainMenu {
+            self.transition_to(Screen::SinglePlayer);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Handle Escape key - go back if possible.
+    ///
+    /// Returns `true` if navigation occurred.
+    pub fn handle_back(&mut self) -> bool {
+        if self.can_go_back() {
+            self.go_back();
+            true
+        } else {
+            false
+        }
+    }
 }
 
 impl Default for ScreenManager {
@@ -199,5 +227,44 @@ mod tests {
         assert_eq!(manager.go_back(), Some(Screen::SinglePlayer));
         assert_eq!(manager.go_back(), Some(Screen::MainMenu));
         assert_eq!(manager.go_back(), None);
+    }
+
+    #[test]
+    fn test_single_player_shortcut_from_main_menu() {
+        let mut manager = ScreenManager::new();
+        assert_eq!(manager.current(), Screen::MainMenu);
+
+        let handled = manager.handle_single_player_shortcut();
+        assert!(handled);
+        assert_eq!(manager.current(), Screen::SinglePlayer);
+    }
+
+    #[test]
+    fn test_single_player_shortcut_from_other_screen() {
+        let mut manager = ScreenManager::new();
+        manager.transition_to(Screen::SinglePlayer);
+
+        let handled = manager.handle_single_player_shortcut();
+        assert!(!handled);
+        assert_eq!(manager.current(), Screen::SinglePlayer);
+    }
+
+    #[test]
+    fn test_handle_back_with_history() {
+        let mut manager = ScreenManager::new();
+        manager.transition_to(Screen::SinglePlayer);
+
+        let handled = manager.handle_back();
+        assert!(handled);
+        assert_eq!(manager.current(), Screen::MainMenu);
+    }
+
+    #[test]
+    fn test_handle_back_without_history() {
+        let mut manager = ScreenManager::new();
+
+        let handled = manager.handle_back();
+        assert!(!handled);
+        assert_eq!(manager.current(), Screen::MainMenu);
     }
 }
