@@ -1585,4 +1585,235 @@ mod tests {
         assert_eq!(harness.camera().position.1, 0.2);
         assert_eq!(harness.camera().zoom, 0.5);
     }
+
+    // ========================================================================
+    // Terrain Mode Tests (Phase 15.3)
+    // ========================================================================
+
+    #[test]
+    fn test_map_terrain_center() {
+        let Some(mut harness) = MapTestHarness::new() else {
+            return;
+        };
+
+        harness.set_camera((0.5, 0.5), 1.0);
+        harness.set_map_mode(crate::gui::MapMode::Terrain);
+
+        let image = harness.render_to_image((1920, 1080));
+        assert_snapshot(&image, "map_terrain_center");
+    }
+
+    #[test]
+    fn test_map_terrain_europe() {
+        let Some(mut harness) = MapTestHarness::new() else {
+            return;
+        };
+
+        // Focus on Western Europe (Alps region)
+        harness.set_camera((0.52, 0.42), 2.0);
+        harness.set_map_mode(crate::gui::MapMode::Terrain);
+
+        let image = harness.render_to_image((1920, 1080));
+        assert_snapshot(&image, "map_terrain_europe");
+    }
+
+    #[test]
+    fn test_map_terrain_asia() {
+        let Some(mut harness) = MapTestHarness::new() else {
+            return;
+        };
+
+        // Focus on Himalayas region
+        harness.set_camera((0.70, 0.42), 2.0);
+        harness.set_map_mode(crate::gui::MapMode::Terrain);
+
+        let image = harness.render_to_image((1920, 1080));
+        assert_snapshot(&image, "map_terrain_asia");
+    }
+
+    // ========================================================================
+    // Trade Mode Tests (Phase 15.2)
+    // ========================================================================
+
+    #[test]
+    fn test_map_trade_center() {
+        let Some(mut harness) = MapTestHarness::new() else {
+            return;
+        };
+
+        harness.set_camera((0.5, 0.5), 1.0);
+        harness.set_map_mode(crate::gui::MapMode::Trade);
+
+        let image = harness.render_to_image((1920, 1080));
+        assert_snapshot(&image, "map_trade_center");
+    }
+
+    #[test]
+    fn test_map_trade_europe() {
+        let Some(mut harness) = MapTestHarness::new() else {
+            return;
+        };
+
+        // Focus on European trade nodes (English Channel, Venice, Baltic)
+        harness.set_camera((0.52, 0.40), 2.0);
+        harness.set_map_mode(crate::gui::MapMode::Trade);
+
+        let image = harness.render_to_image((1920, 1080));
+        assert_snapshot(&image, "map_trade_europe");
+    }
+
+    #[test]
+    fn test_map_trade_asia() {
+        let Some(mut harness) = MapTestHarness::new() else {
+            return;
+        };
+
+        // Focus on Asian trade nodes (Beijing, Hangzhou, Canton, Malacca)
+        harness.set_camera((0.75, 0.45), 2.0);
+        harness.set_map_mode(crate::gui::MapMode::Trade);
+
+        let image = harness.render_to_image((1920, 1080));
+        assert_snapshot(&image, "map_trade_asia");
+    }
+
+    // ========================================================================
+    // Religion Mode Tests
+    // ========================================================================
+
+    #[test]
+    fn test_map_religion_center() {
+        let Some(mut harness) = MapTestHarness::new() else {
+            return;
+        };
+
+        harness.set_camera((0.5, 0.5), 1.0);
+        harness.set_map_mode(crate::gui::MapMode::Religion);
+
+        let image = harness.render_to_image((1920, 1080));
+        assert_snapshot(&image, "map_religion_center");
+    }
+
+    #[test]
+    fn test_map_religion_europe() {
+        let Some(mut harness) = MapTestHarness::new() else {
+            return;
+        };
+
+        // Focus on Europe (Catholic vs Protestant divide)
+        harness.set_camera((0.52, 0.42), 2.0);
+        harness.set_map_mode(crate::gui::MapMode::Religion);
+
+        let image = harness.render_to_image((1920, 1080));
+        assert_snapshot(&image, "map_religion_europe");
+    }
+
+    #[test]
+    fn test_map_religion_middle_east() {
+        let Some(mut harness) = MapTestHarness::new() else {
+            return;
+        };
+
+        // Focus on Middle East (Islamic regions)
+        harness.set_camera((0.58, 0.46), 2.0);
+        harness.set_map_mode(crate::gui::MapMode::Religion);
+
+        let image = harness.render_to_image((1920, 1080));
+        assert_snapshot(&image, "map_religion_middle_east");
+    }
+
+    // ========================================================================
+    // Culture Mode Tests
+    // ========================================================================
+
+    #[test]
+    fn test_map_culture_center() {
+        let Some(mut harness) = MapTestHarness::new() else {
+            return;
+        };
+
+        harness.set_camera((0.5, 0.5), 1.0);
+        harness.set_map_mode(crate::gui::MapMode::Culture);
+
+        let image = harness.render_to_image((1920, 1080));
+        assert_snapshot(&image, "map_culture_center");
+    }
+
+    #[test]
+    fn test_map_culture_europe() {
+        let Some(mut harness) = MapTestHarness::new() else {
+            return;
+        };
+
+        // Focus on Europe (diverse culture groups)
+        harness.set_camera((0.52, 0.42), 2.0);
+        harness.set_map_mode(crate::gui::MapMode::Culture);
+
+        let image = harness.render_to_image((1920, 1080));
+        assert_snapshot(&image, "map_culture_europe");
+    }
+
+    // ========================================================================
+    // Economy Mode Tests
+    // ========================================================================
+
+    #[test]
+    fn test_map_economy_center() {
+        let Some(mut harness) = MapTestHarness::new() else {
+            return;
+        };
+
+        harness.set_camera((0.5, 0.5), 1.0);
+        harness.set_map_mode(crate::gui::MapMode::Economy);
+
+        let image = harness.render_to_image((1920, 1080));
+        assert_snapshot(&image, "map_economy_center");
+    }
+
+    // ========================================================================
+    // Empire Mode Tests (HRE)
+    // ========================================================================
+
+    #[test]
+    fn test_map_empire_center() {
+        let Some(mut harness) = MapTestHarness::new() else {
+            return;
+        };
+
+        harness.set_camera((0.5, 0.5), 1.0);
+        harness.set_map_mode(crate::gui::MapMode::Empire);
+
+        let image = harness.render_to_image((1920, 1080));
+        assert_snapshot(&image, "map_empire_center");
+    }
+
+    #[test]
+    fn test_map_empire_hre() {
+        let Some(mut harness) = MapTestHarness::new() else {
+            return;
+        };
+
+        // Focus on HRE region in Europe
+        harness.set_camera((0.52, 0.42), 2.0);
+        harness.set_map_mode(crate::gui::MapMode::Empire);
+
+        let image = harness.render_to_image((1920, 1080));
+        assert_snapshot(&image, "map_empire_hre");
+    }
+
+    // ========================================================================
+    // Region Mode Tests
+    // ========================================================================
+
+    #[test]
+    fn test_map_region_center() {
+        let Some(mut harness) = MapTestHarness::new() else {
+            return;
+        };
+
+        harness.set_camera((0.5, 0.5), 1.0);
+        harness.set_map_mode(crate::gui::MapMode::Region);
+
+        let image = harness.render_to_image((1920, 1080));
+        assert_snapshot(&image, "map_region_center");
+    }
 }

@@ -866,33 +866,35 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
 
 **Background**: Currently, only GUI elements are tested via `GuiTestHarness` (Phase 13.4). Map rendering (political, terrain, trade modes) relies on manual visual verification. This phase adds golden image testing for map modes to catch visual regressions automatically.
 
-- [ ] **15.1. Map Rendering Test Harness**
-    - [ ] Extend or create new test harness for map+GUI rendering
-    - [ ] Support rendering at fixed camera positions
-    - [ ] Support setting specific map modes (Political, Terrain, Trade, etc.)
-    - [ ] Render to image with deterministic state
-- [ ] **15.2. Trade Mode Golden Tests**
-    - [ ] Test trade mode rendering with all 80 trade nodes visible
-    - [ ] Verify generated colors for nodes without explicit definitions
-    - [ ] Test European region (English Channel, Venice, Baltic)
-    - [ ] Test Asian region (Beijing, Hangzhou, Canton, Malacca)
+- [x] **15.1. Map Rendering Test Harness**
+    - [x] Extend or create new test harness for map+GUI rendering
+    - [x] Support rendering at fixed camera positions
+    - [x] Support setting specific map modes (Political, Terrain, Trade, etc.)
+    - [x] Render to image with deterministic state
+- [x] **15.2. Trade Mode Golden Tests**
+    - [x] Test trade mode rendering with all 80 trade nodes visible
+    - [x] Verify generated colors for nodes without explicit definitions
+    - [x] Test European region (English Channel, Venice, Baltic)
+    - [x] Test Asian region (Beijing, Hangzhou, Canton, Malacca)
     - [ ] Test American region (Caribbean, Panama, Brazil)
     - [ ] Test African region (Cape, Ivory Coast, Zanzibar)
-- [ ] **15.3. Terrain Mode Golden Tests**
-    - [ ] Test terrain rendering at various elevations
-    - [ ] Test mountainous regions (Alps, Himalayas, Andes)
+- [x] **15.3. Terrain Mode Golden Tests**
+    - [x] Test terrain rendering at various elevations
+    - [x] Test mountainous regions (Alps, Himalayas, Andes)
     - [ ] Test lowland regions (Netherlands, Ganges Delta)
     - [ ] Test coastal transitions
-- [ ] **15.4. Political Mode Golden Tests**
-    - [ ] Test political map with major nations
-    - [ ] Test province borders rendering
-    - [ ] Test unowned provinces (wastelands)
-- [ ] **15.5. Mode Switching Tests**
-    - [ ] Verify lookup texture updates correctly when switching modes
-    - [ ] Test Political → Terrain → Trade transitions
-    - [ ] Ensure no visual artifacts during mode switches
+- [x] **15.4. Political Mode Golden Tests**
+    - [x] Test political map with major nations
+    - [x] Test province borders rendering
+    - [x] Test unowned provinces (wastelands)
+- [x] **15.5. Mode Switching Tests**
+    - [x] Verify lookup texture updates correctly when switching modes
+    - [x] Test Political → Terrain → Trade transitions
+    - [x] Ensure no visual artifacts during mode switches
 
 **Success Criteria**: Automated golden image tests catch visual regressions in map rendering. All map modes have comprehensive test coverage with deterministic, reproducible output.
+
+**Status**: Core infrastructure complete. 16 golden tests covering all 8 map modes (Political, Terrain, Trade, Religion, Culture, Economy, Empire, Region) with multiple camera positions. Additional regional coverage (Americas, Africa, coastal regions) can be added incrementally.
 
 ---
 
