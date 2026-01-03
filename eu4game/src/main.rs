@@ -225,6 +225,9 @@ struct App {
 
     /// Region mapping (Phase 9.5.5 - Region Mode).
     region_mapping: Option<eu4data::regions::ProvinceRegionMapping>,
+
+    /// Localization data for UI text lookup (e.g., "HAB_ideas" → "Austrian Ideas").
+    localisation: eu4data::localisation::Localisation,
 }
 
 impl App {
@@ -316,7 +319,8 @@ impl App {
         let camera = camera::Camera::new(content_aspect);
 
         // Load world state from game files (or use default if unavailable)
-        let (initial_state, playable_countries, country_colors) = world_loader::load_world_state();
+        let (initial_state, playable_countries, country_colors, localisation) =
+            world_loader::load_world_state();
         let initial_date = initial_state.date;
         let sim_handle = sim_thread::spawn_sim_thread(initial_state);
 
@@ -534,6 +538,7 @@ impl App {
             religions,
             cultures,
             region_mapping,
+            localisation,
         }
     }
 
@@ -2046,8 +2051,12 @@ impl App {
             adm_tech: country.adm_tech,
             dip_tech: country.dip_tech,
             mil_tech: country.mil_tech,
-            ideas_name: format!("{} Ideas", player_tag), // TODO: get actual idea group
-            ideas_unlocked: 0,                           // TODO: count unlocked ideas
+            ideas_name: self
+                .localisation
+                .get(&format!("{}_ideas", player_tag))
+                .cloned()
+                .unwrap_or_else(|| format!("{} Ideas", player_tag)),
+            ideas_unlocked: 0, // TODO: count unlocked ideas
             province_count: province_count as u32,
             total_development,
             fort_level: 0, // TODO: calculate max fort level

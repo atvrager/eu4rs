@@ -202,8 +202,18 @@ pub fn load_or_generate<T: CacheableResource>(
                 }
             }
 
-            let resource: T = serde_json::from_str(&cache_json)?;
-            return Ok(resource);
+            // Try to deserialize; if it fails (corrupted cache), regenerate instead of erroring
+            match serde_json::from_str::<T>(&cache_json) {
+                Ok(resource) => return Ok(resource),
+                Err(e) => {
+                    log::warn!(
+                        "Failed to deserialize cache for {} ({}), regenerating",
+                        cache_name,
+                        e
+                    );
+                    // Fall through to regeneration
+                }
+            }
         } else {
             log::info!("Cache invalid for {}, regenerating", cache_name);
         }
@@ -378,5 +388,40 @@ mod tests {
         let res: MockResource =
             load_or_generate("test", temp.path(), false, CacheValidationMode::Fast).unwrap();
         assert_eq!(res.val, "mock");
+    }
+
+    #[test]
+    fn test_load_or_generate_corrupt_cache_triggers_regeneration() {
+        let temp = TempDir::new().unwrap();
+
+        // First, generate a valid cache
+        let res: MockResource = load_or_generate(
+            "test_corrupt",
+            temp.path(),
+            false,
+            CacheValidationMode::Fast,
+        )
+        .unwrap();
+        assert_eq!(res.val, "mock");
+
+        // Now corrupt the cache file with invalid JSON
+        let cache_dir = get_cache_dir().unwrap();
+        let cache_path = cache_dir.join("test_corrupt.json");
+        fs::write(&cache_path, r#"{ "val": "corrupted", INVALID JSON }"#).unwrap();
+
+        // Loading should regenerate instead of failing
+        let res2: MockResource = load_or_generate(
+            "test_corrupt",
+            temp.path(),
+            false,
+            CacheValidationMode::Fast,
+        )
+        .unwrap();
+        // Should get fresh "mock" value from regeneration, not corrupted value
+        assert_eq!(res2.val, "mock");
+
+        // Clean up
+        let _ = fs::remove_file(&cache_path);
+        let _ = fs::remove_file(cache_dir.join("test_corrupt.meta.json"));
     }
 }

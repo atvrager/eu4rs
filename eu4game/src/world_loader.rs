@@ -90,18 +90,29 @@ pub fn compute_province_centers(
 }
 
 /// Loads the world state from game files.
-/// Returns (world_state, playable_countries, country_colors).
+/// Returns (world_state, playable_countries, country_colors, localisation).
 #[allow(clippy::type_complexity)]
 pub fn load_world_state() -> (
     eu4sim_core::WorldState,
     Vec<(String, String, i32)>,
     HashMap<String, [u8; 3]>,
+    eu4data::localisation::Localisation,
 ) {
     use eu4sim_core::state::Date;
 
     // Try to load from EU4 game path
     if let Some(game_path) = eu4data::path::detect_game_path() {
         log::info!("Loading world state from: {}", game_path.display());
+
+        // Load localization for English
+        let mut localisation = eu4data::localisation::Localisation::new();
+        let loc_path = game_path.join("localisation");
+        if loc_path.exists() {
+            match localisation.load_from_dir(&loc_path, "english") {
+                Ok(count) => log::info!("Loaded {} localization entries", count),
+                Err(e) => log::warn!("Failed to load localization: {}", e),
+            }
+        }
         let start_date = Date::new(1444, 11, 11);
 
         // Load country colors from game data
@@ -168,7 +179,7 @@ pub fn load_world_state() -> (
                     log::info!("Top 5: {:?}", playable.iter().take(5).collect::<Vec<_>>());
                 }
 
-                return (world, playable, country_colors);
+                return (world, playable, country_colors, localisation);
             }
             Err(e) => {
                 log::warn!("Failed to load world state: {}", e);
@@ -182,6 +193,7 @@ pub fn load_world_state() -> (
         eu4sim_core::WorldState::default(),
         Vec::new(),
         HashMap::new(),
+        eu4data::localisation::Localisation::new(),
     )
 }
 
@@ -459,5 +471,70 @@ mod tests {
 
         let centers = compute_province_centers(&img, &Some(lookup));
         assert!(centers.is_empty());
+    }
+
+    /// Test that load_world_state returns playable countries when game files exist.
+    ///
+    /// This is an integration test that requires EU4 game files.
+    #[test]
+    fn test_load_world_state_returns_playable_countries() {
+        // Skip if no game path
+        if eu4data::path::detect_game_path().is_none() {
+            eprintln!(
+                "Skipping test_load_world_state_returns_playable_countries: EU4 game files not found"
+            );
+            return;
+        }
+
+        let (world_state, playable_countries, country_colors, localisation) = load_world_state();
+
+        // Verify world state has content
+        assert!(
+            !world_state.provinces.is_empty(),
+            "World state should have provinces"
+        );
+        assert!(
+            !world_state.countries.is_empty(),
+            "World state should have countries"
+        );
+
+        // Verify playable countries exist
+        assert!(
+            !playable_countries.is_empty(),
+            "Should have playable countries, got 0. World has {} provinces and {} countries.",
+            world_state.provinces.len(),
+            world_state.countries.len()
+        );
+
+        // Verify some expected major nations exist
+        let tags: Vec<&str> = playable_countries
+            .iter()
+            .map(|(t, _, _)| t.as_str())
+            .collect();
+        assert!(
+            tags.contains(&"TUR"),
+            "Ottoman Empire (TUR) should be playable. Available: {:?}",
+            &tags[..tags.len().min(20)]
+        );
+        assert!(tags.contains(&"FRA"), "France (FRA) should be playable");
+        assert!(tags.contains(&"HAB"), "Austria (HAB) should be playable");
+
+        // Verify country colors loaded
+        assert!(!country_colors.is_empty(), "Should have country colors");
+
+        // Verify localization loaded
+        assert!(
+            localisation.get("HAB_ideas").is_some(),
+            "Localization should include HAB_ideas"
+        );
+
+        eprintln!(
+            "load_world_state verified: {} provinces, {} countries, {} playable, {} colors, loc loaded={}",
+            world_state.provinces.len(),
+            world_state.countries.len(),
+            playable_countries.len(),
+            country_colors.len(),
+            localisation.get("HAB_ideas").is_some()
+        );
     }
 }

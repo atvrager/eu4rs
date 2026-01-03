@@ -323,3 +323,78 @@ fn test_country_history_integration() {
         austria.technology_group
     );
 }
+
+// -------------------------------------------------------------------------
+// Localization integration tests
+// -------------------------------------------------------------------------
+
+/// Test that national idea group names are localized correctly.
+///
+/// Verifies the localization pipeline:
+/// 1. eu4data loads localization from game files
+/// 2. {TAG}_ideas keys resolve to localized names
+/// 3. Common nations have expected idea group names
+#[test]
+fn test_ideas_localization() {
+    // Find game path or skip
+    let game_path = std::env::var("EU4_GAME_PATH")
+        .ok()
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            let steam_path = std::path::Path::new(
+                "/home/atv/.steam/steam/steamapps/common/Europa Universalis IV",
+            );
+            if steam_path.exists() {
+                Some(steam_path.to_path_buf())
+            } else {
+                None
+            }
+        });
+
+    let Some(game_path) = game_path else {
+        eprintln!("Skipping test_ideas_localization: EU4 game files not found");
+        return;
+    };
+
+    // Load localization
+    let loc_path = game_path.join("localisation");
+    let mut localisation = eu4data::localisation::Localisation::new();
+    let count = localisation
+        .load_from_dir(&loc_path, "english")
+        .expect("Failed to load localization");
+    assert!(count > 0, "Should load at least some localization entries");
+
+    // Verify common national idea group names
+    let test_cases = [
+        ("HAB_ideas", "Austrian Ideas"),
+        ("FRA_ideas", "French Ideas"),
+        ("TUR_ideas", "Ottoman Ideas"),
+        ("ENG_ideas", "English Ideas"),
+        ("CAS_ideas", "Castilian Ideas"),
+        ("POR_ideas", "Portuguese Ideas"),
+        ("VEN_ideas", "Venetian Ideas"),
+        ("POL_ideas", "Polish Ideas"),
+    ];
+
+    for (key, expected_name) in test_cases {
+        let localized = localisation.get(key);
+        assert!(
+            localized.is_some(),
+            "Localization key '{}' should exist",
+            key
+        );
+        assert_eq!(
+            localized.unwrap(),
+            expected_name,
+            "Localization for '{}' should be '{}'",
+            key,
+            expected_name
+        );
+    }
+
+    eprintln!(
+        "Ideas localization verified: {} entries loaded, {} test cases passed",
+        count,
+        test_cases.len()
+    );
+}
