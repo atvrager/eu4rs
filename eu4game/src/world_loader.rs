@@ -255,3 +255,209 @@ pub fn load_province_data() -> (
     }
     (image::DynamicImage::ImageRgba8(img), None, None)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Creates a minimal WorldState for testing country resource extraction.
+    #[allow(clippy::field_reassign_with_default)] // Clearer for test setup
+    fn create_test_world_state() -> eu4sim_core::WorldState {
+        use eu4sim_core::Fixed;
+        use eu4sim_core::state::{CountryState, Date, ProvinceState};
+
+        let mut world = eu4sim_core::WorldState::default();
+        world.date = Date::new(1444, 11, 11);
+
+        // Add a test country with some resources
+        let mut country = CountryState::default();
+        country.treasury = Fixed::from_f32(500.0);
+        country.manpower = Fixed::from_f32(25000.0);
+        country.stability.set(1);
+        country.prestige.set(Fixed::from_f32(50.0));
+        country.adm_mana = Fixed::from_f32(100.0);
+        country.dip_mana = Fixed::from_f32(75.0);
+        country.mil_mana = Fixed::from_f32(150.0);
+        // Set income breakdown
+        country.income.taxation = Fixed::from_f32(10.0);
+        country.income.trade = Fixed::from_f32(5.0);
+        country.income.production = Fixed::from_f32(8.0);
+        country.income.expenses = Fixed::from_f32(3.0);
+        world.countries.insert("TST".to_string(), country);
+
+        // Add a test province owned by TST
+        let mut province = ProvinceState::default();
+        province.owner = Some("TST".to_string());
+        province.base_tax = Fixed::from_f32(3.0);
+        province.base_production = Fixed::from_f32(3.0);
+        province.base_manpower = Fixed::from_f32(2.0);
+        world.provinces.insert(1, province);
+
+        // Add another province for TST
+        let mut province2 = ProvinceState::default();
+        province2.owner = Some("TST".to_string());
+        province2.base_tax = Fixed::from_f32(5.0);
+        province2.base_production = Fixed::from_f32(4.0);
+        province2.base_manpower = Fixed::from_f32(3.0);
+        world.provinces.insert(2, province2);
+
+        world
+    }
+
+    #[test]
+    fn test_extract_country_resources_found() {
+        let world = create_test_world_state();
+
+        let resources = extract_country_resources(&world, "TST");
+        assert!(resources.is_some());
+
+        let res = resources.unwrap();
+        assert_eq!(res.treasury as i32, 500);
+        assert_eq!(res.manpower, 25000);
+        assert_eq!(res.stability, 1);
+        assert_eq!(res.prestige as i32, 50);
+        assert_eq!(res.adm_power, 100);
+        assert_eq!(res.dip_power, 75);
+        assert_eq!(res.mil_power, 150);
+
+        // Net income = taxation + trade + production - expenses = 10 + 5 + 8 - 3 = 20
+        assert_eq!(res.income as i32, 20);
+
+        // Max manpower = sum of province base_manpower * 250
+        // Province 1: 2 * 250 = 500
+        // Province 2: 3 * 250 = 750
+        // Total: 1250
+        assert_eq!(res.max_manpower, 1250);
+    }
+
+    #[test]
+    fn test_extract_country_resources_not_found() {
+        let world = create_test_world_state();
+
+        let resources = extract_country_resources(&world, "XXX");
+        assert!(resources.is_none());
+    }
+
+    #[test]
+    fn test_compute_province_centers_empty_lookup() {
+        let img = image::RgbaImage::new(100, 100);
+        let centers = compute_province_centers(&img, &None);
+        assert!(centers.is_empty());
+    }
+
+    #[test]
+    fn test_compute_province_centers_single_province() {
+        // Create a 10x10 image with a single color representing province 1
+        let mut img = image::RgbaImage::new(10, 10);
+        for pixel in img.pixels_mut() {
+            *pixel = image::Rgba([100, 50, 25, 255]);
+        }
+
+        // Create lookup with this color -> province 1
+        let lookup = eu4data::map::ProvinceLookup {
+            by_color: {
+                let mut map = std::collections::HashMap::new();
+                map.insert((100, 50, 25), 1);
+                map
+            },
+            by_id: {
+                let mut map = std::collections::HashMap::new();
+                map.insert(
+                    1,
+                    eu4data::map::ProvinceDefinition {
+                        id: 1,
+                        r: 100,
+                        g: 50,
+                        b: 25,
+                        name: "Test".to_string(),
+                        x: String::new(),
+                    },
+                );
+                map
+            },
+        };
+
+        let centers = compute_province_centers(&img, &Some(lookup));
+        assert_eq!(centers.len(), 1);
+        // Center of 10x10 image is (4.5, 4.5) -> (4, 4) when truncated
+        let center = centers.get(&1).unwrap();
+        assert_eq!(*center, (4, 4));
+    }
+
+    #[test]
+    fn test_compute_province_centers_multiple_provinces() {
+        // Create a 20x10 image: left half is province 1, right half is province 2
+        let mut img = image::RgbaImage::new(20, 10);
+        for (x, _y, pixel) in img.enumerate_pixels_mut() {
+            if x < 10 {
+                *pixel = image::Rgba([255, 0, 0, 255]); // Province 1 (red)
+            } else {
+                *pixel = image::Rgba([0, 255, 0, 255]); // Province 2 (green)
+            }
+        }
+
+        let lookup = eu4data::map::ProvinceLookup {
+            by_color: {
+                let mut map = std::collections::HashMap::new();
+                map.insert((255, 0, 0), 1);
+                map.insert((0, 255, 0), 2);
+                map
+            },
+            by_id: {
+                let mut map = std::collections::HashMap::new();
+                map.insert(
+                    1,
+                    eu4data::map::ProvinceDefinition {
+                        id: 1,
+                        r: 255,
+                        g: 0,
+                        b: 0,
+                        name: "Red".to_string(),
+                        x: String::new(),
+                    },
+                );
+                map.insert(
+                    2,
+                    eu4data::map::ProvinceDefinition {
+                        id: 2,
+                        r: 0,
+                        g: 255,
+                        b: 0,
+                        name: "Green".to_string(),
+                        x: String::new(),
+                    },
+                );
+                map
+            },
+        };
+
+        let centers = compute_province_centers(&img, &Some(lookup));
+        assert_eq!(centers.len(), 2);
+
+        // Province 1: x in [0,9], y in [0,9] -> center (4, 4)
+        let center1 = centers.get(&1).unwrap();
+        assert_eq!(*center1, (4, 4));
+
+        // Province 2: x in [10,19], y in [0,9] -> center (14, 4)
+        let center2 = centers.get(&2).unwrap();
+        assert_eq!(*center2, (14, 4));
+    }
+
+    #[test]
+    fn test_compute_province_centers_unrecognized_colors() {
+        // Create image with colors not in the lookup
+        let mut img = image::RgbaImage::new(10, 10);
+        for pixel in img.pixels_mut() {
+            *pixel = image::Rgba([123, 45, 67, 255]);
+        }
+
+        // Empty lookup
+        let lookup = eu4data::map::ProvinceLookup {
+            by_color: std::collections::HashMap::new(),
+            by_id: std::collections::HashMap::new(),
+        };
+
+        let centers = compute_province_centers(&img, &Some(lookup));
+        assert!(centers.is_empty());
+    }
+}
