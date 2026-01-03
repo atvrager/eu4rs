@@ -46,6 +46,8 @@ struct App {
     queue: wgpu::Queue,
     /// Surface configuration.
     config: wgpu::SurfaceConfiguration,
+    /// Flag to reconfigure surface on next frame (deferred from suboptimal present).
+    surface_needs_reconfigure: bool,
     /// Window size.
     size: PhysicalSize<u32>,
     /// Renderer holding pipelines and textures.
@@ -401,6 +403,7 @@ impl App {
             device,
             queue,
             config,
+            surface_needs_reconfigure: false,
             size,
             renderer,
             camera,
@@ -475,7 +478,19 @@ impl App {
 
     /// Renders a frame.
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        // Reconfigure surface if flagged from previous frame
+        if self.surface_needs_reconfigure {
+            self.reconfigure_surface();
+            self.surface_needs_reconfigure = false;
+        }
+
         let output = self.surface.get_current_texture()?;
+
+        // Flag for reconfiguration on next frame if suboptimal
+        if output.suboptimal {
+            self.surface_needs_reconfigure = true;
+        }
+
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());

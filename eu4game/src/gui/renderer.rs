@@ -1384,7 +1384,7 @@ impl GuiRenderer {
         self.ensure_font(device, queue, sprite_renderer);
         self.ensure_country_select_textures(device, queue, sprite_renderer);
 
-        log::info!(
+        log::debug!(
             "Rendering country selection panels: left={}, top={}, lobby={}",
             self.left_panel.is_some(),
             self.top_panel.is_some(),
