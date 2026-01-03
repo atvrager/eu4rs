@@ -23,11 +23,11 @@ use super::layout::{
     resolve_position,
 };
 use super::layout_types::{SpeedControlsLayout, TopBarLayout};
-use super::legacy_loaders::{
-    load_country_select_split, load_frontend_panels, load_speed_controls_split, load_topbar_split,
-};
 use super::lobby_controls::LobbyControlsPanel;
 use super::main_menu::MainMenuPanel;
+use super::panel_loaders::{
+    load_country_select_split, load_frontend_panels, load_speed_controls_split, load_topbar_split,
+};
 use super::primitives;
 use super::save_games::{SaveGameEntry, discover_save_games};
 use super::speed_controls;

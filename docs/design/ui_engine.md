@@ -589,7 +589,7 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [x] Load `LobbyControlsPanel` from frontend.gui (`right` window)
     - [x] Store panels in `FrontendUI` container
     - [x] Bind all panels during initialization (with CI-safe fallbacks)
-    - [x] Added `load_frontend_panels()` to `legacy_loaders.rs`
+    - [x] Added `load_frontend_panels()` to `panel_loaders.rs`
     - [x] Added panel fields to `GuiRenderer` struct
     - [x] Added `take_*` methods to transfer ownership to `FrontendUI`
     - [x] Updated `main.rs` to populate `FrontendUI` with loaded panels
@@ -824,7 +824,7 @@ This mirrors the authentic EU4 experience. The phases below are ordered to achie
     - [ ] Audit all `#![allow(dead_code)]` and `#[allow(dead_code)]` added during Phase 2-8
     - [ ] Ensure all primitives and binder methods are properly used
     - [ ] Delete unused placeholder code
-    - [ ] Rename `legacy_loaders.rs` to `panel_loaders.rs` (misnamed - not obsolete, just extracts layout metadata)
+    - [x] Renamed `legacy_loaders.rs` to `panel_loaders.rs` (misnamed - not obsolete, just extracts layout metadata)
 - [ ] **13.2. Performance Audit**
     - [ ] Profile `Binder::find_node_iterative` in large UI files (e.g. `frontend.gui`)
     - [ ] Verify `WindowDatabase` lookup costs are negligible

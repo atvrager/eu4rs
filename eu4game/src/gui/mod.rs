@@ -61,7 +61,7 @@ pub mod lobby_controls;
 
 // Refactored modules (moved from mod.rs to reduce file size)
 mod layout_types;
-mod legacy_loaders;
+mod panel_loaders;
 mod renderer;
 
 // ========================================
