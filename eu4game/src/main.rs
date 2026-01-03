@@ -21,6 +21,91 @@ use screen::Screen;
 use sim_thread::{SimEvent, SimHandle, SimSpeed};
 use std::sync::Arc;
 
+// =============================================================================
+// Pure helper functions (testable without GPU/window context)
+// =============================================================================
+
+/// Format a date for display (e.g., "11 November 1444").
+pub fn format_date(date: &eu4sim_core::state::Date) -> String {
+    format!("{} {} {}", date.day, month_name(date.month), date.year)
+}
+
+/// Get month name from month number (1-12).
+pub fn month_name(month: u8) -> &'static str {
+    match month {
+        1 => "January",
+        2 => "February",
+        3 => "March",
+        4 => "April",
+        5 => "May",
+        6 => "June",
+        7 => "July",
+        8 => "August",
+        9 => "September",
+        10 => "October",
+        11 => "November",
+        _ => "December",
+    }
+}
+
+/// Convert MapMode enum to shader uniform value.
+pub fn map_mode_to_shader_value(mode: gui::MapMode) -> f32 {
+    match mode {
+        gui::MapMode::Political => 0.0,
+        gui::MapMode::Terrain => 1.0,
+        gui::MapMode::Trade => 2.0,
+        gui::MapMode::Religion => 3.0,
+        gui::MapMode::Culture => 4.0,
+        gui::MapMode::Economy => 5.0,
+        gui::MapMode::Empire => 6.0,
+        gui::MapMode::Region => 7.0,
+        _ => 0.0, // Default to political
+    }
+}
+
+/// Normalize world X coordinate to [0, 1) range with wrapping.
+pub fn normalize_world_x(x: f64) -> f64 {
+    x.rem_euclid(1.0)
+}
+
+/// Check if world Y coordinate is within valid bounds [0, 1].
+pub fn is_valid_world_y(y: f64) -> bool {
+    (0.0..=1.0).contains(&y)
+}
+
+/// Convert world coordinates to pixel coordinates on the map.
+pub fn world_to_pixel(world_x: f64, world_y: f64, map_width: u32, map_height: u32) -> (u32, u32) {
+    let pixel_x = (world_x * map_width as f64) as u32;
+    let pixel_y = (world_y * map_height as f64) as u32;
+    // Clamp to valid range
+    let pixel_x = pixel_x.min(map_width.saturating_sub(1));
+    let pixel_y = pixel_y.min(map_height.saturating_sub(1));
+    (pixel_x, pixel_y)
+}
+
+/// Count provinces owned by a specific country tag.
+pub fn count_provinces_for_tag(
+    provinces: &std::collections::BTreeMap<u32, eu4sim_core::state::ProvinceState>,
+    tag: &str,
+) -> usize {
+    provinces
+        .values()
+        .filter(|p| p.owner.as_deref() == Some(tag))
+        .count()
+}
+
+/// Calculate total development for provinces owned by a tag.
+pub fn calculate_total_development(
+    provinces: &std::collections::BTreeMap<u32, eu4sim_core::state::ProvinceState>,
+    tag: &str,
+) -> i32 {
+    provinces
+        .values()
+        .filter(|p| p.owner.as_deref() == Some(tag))
+        .map(|p| (p.base_tax + p.base_production + p.base_manpower).to_f32())
+        .sum::<f32>() as i32
+}
+
 use winit::{
     dpi::PhysicalSize,
     event::{ElementState, Event, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
@@ -2751,4 +2836,226 @@ fn main() {
         }
         _ => {}
     });
+}
+
+#[cfg(test)]
+#[allow(clippy::field_reassign_with_default)] // Clearer for test setup
+mod main_tests {
+    use super::*;
+    use eu4sim_core::Fixed;
+    use eu4sim_core::state::{Date, ProvinceState};
+    use std::collections::BTreeMap;
+
+    // -------------------------------------------------------------------------
+    // Date formatting tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_format_date_standard() {
+        let date = Date::new(1444, 11, 11);
+        assert_eq!(format_date(&date), "11 November 1444");
+    }
+
+    #[test]
+    fn test_format_date_january() {
+        let date = Date::new(1445, 1, 1);
+        assert_eq!(format_date(&date), "1 January 1445");
+    }
+
+    #[test]
+    fn test_format_date_december() {
+        let date = Date::new(1820, 12, 31);
+        assert_eq!(format_date(&date), "31 December 1820");
+    }
+
+    #[test]
+    fn test_month_name_all_months() {
+        assert_eq!(month_name(1), "January");
+        assert_eq!(month_name(2), "February");
+        assert_eq!(month_name(3), "March");
+        assert_eq!(month_name(4), "April");
+        assert_eq!(month_name(5), "May");
+        assert_eq!(month_name(6), "June");
+        assert_eq!(month_name(7), "July");
+        assert_eq!(month_name(8), "August");
+        assert_eq!(month_name(9), "September");
+        assert_eq!(month_name(10), "October");
+        assert_eq!(month_name(11), "November");
+        assert_eq!(month_name(12), "December");
+    }
+
+    #[test]
+    fn test_month_name_invalid() {
+        assert_eq!(month_name(0), "December");
+        assert_eq!(month_name(13), "December");
+    }
+
+    // -------------------------------------------------------------------------
+    // Map mode conversion tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_map_mode_to_shader_value_political() {
+        assert_eq!(map_mode_to_shader_value(gui::MapMode::Political), 0.0);
+    }
+
+    #[test]
+    fn test_map_mode_to_shader_value_terrain() {
+        assert_eq!(map_mode_to_shader_value(gui::MapMode::Terrain), 1.0);
+    }
+
+    #[test]
+    fn test_map_mode_to_shader_value_trade() {
+        assert_eq!(map_mode_to_shader_value(gui::MapMode::Trade), 2.0);
+    }
+
+    #[test]
+    fn test_map_mode_to_shader_value_religion() {
+        assert_eq!(map_mode_to_shader_value(gui::MapMode::Religion), 3.0);
+    }
+
+    #[test]
+    fn test_map_mode_to_shader_value_culture() {
+        assert_eq!(map_mode_to_shader_value(gui::MapMode::Culture), 4.0);
+    }
+
+    #[test]
+    fn test_map_mode_to_shader_value_economy() {
+        assert_eq!(map_mode_to_shader_value(gui::MapMode::Economy), 5.0);
+    }
+
+    #[test]
+    fn test_map_mode_to_shader_value_empire() {
+        assert_eq!(map_mode_to_shader_value(gui::MapMode::Empire), 6.0);
+    }
+
+    #[test]
+    fn test_map_mode_to_shader_value_region() {
+        assert_eq!(map_mode_to_shader_value(gui::MapMode::Region), 7.0);
+    }
+
+    // -------------------------------------------------------------------------
+    // World coordinate tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_normalize_world_x_in_range() {
+        assert_eq!(normalize_world_x(0.5), 0.5);
+    }
+
+    #[test]
+    fn test_normalize_world_x_wraps_positive() {
+        assert!((normalize_world_x(1.5) - 0.5).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_normalize_world_x_wraps_negative() {
+        assert!((normalize_world_x(-0.25) - 0.75).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_is_valid_world_y_in_range() {
+        assert!(is_valid_world_y(0.0));
+        assert!(is_valid_world_y(0.5));
+        assert!(is_valid_world_y(1.0));
+    }
+
+    #[test]
+    fn test_is_valid_world_y_out_of_range() {
+        assert!(!is_valid_world_y(-0.1));
+        assert!(!is_valid_world_y(1.1));
+    }
+
+    #[test]
+    fn test_world_to_pixel_center() {
+        let (px, py) = world_to_pixel(0.5, 0.5, 100, 100);
+        assert_eq!(px, 50);
+        assert_eq!(py, 50);
+    }
+
+    #[test]
+    fn test_world_to_pixel_origin() {
+        let (px, py) = world_to_pixel(0.0, 0.0, 100, 100);
+        assert_eq!(px, 0);
+        assert_eq!(py, 0);
+    }
+
+    #[test]
+    fn test_world_to_pixel_clamps() {
+        let (px, py) = world_to_pixel(1.0, 1.0, 100, 100);
+        assert_eq!(px, 99);
+        assert_eq!(py, 99);
+    }
+
+    // -------------------------------------------------------------------------
+    // Province counting tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_count_provinces_for_tag_empty() {
+        let provinces = BTreeMap::new();
+        assert_eq!(count_provinces_for_tag(&provinces, "TUR"), 0);
+    }
+
+    #[test]
+    fn test_count_provinces_for_tag_some_owned() {
+        let mut provinces = BTreeMap::new();
+
+        let mut p1 = ProvinceState::default();
+        p1.owner = Some("TUR".to_string());
+        provinces.insert(1, p1);
+
+        let mut p2 = ProvinceState::default();
+        p2.owner = Some("TUR".to_string());
+        provinces.insert(2, p2);
+
+        let mut p3 = ProvinceState::default();
+        p3.owner = Some("FRA".to_string());
+        provinces.insert(3, p3);
+
+        assert_eq!(count_provinces_for_tag(&provinces, "TUR"), 2);
+        assert_eq!(count_provinces_for_tag(&provinces, "FRA"), 1);
+        assert_eq!(count_provinces_for_tag(&provinces, "ENG"), 0);
+    }
+
+    #[test]
+    fn test_calculate_total_development_empty() {
+        let provinces = BTreeMap::new();
+        assert_eq!(calculate_total_development(&provinces, "TUR"), 0);
+    }
+
+    #[test]
+    fn test_calculate_total_development_single_province() {
+        let mut provinces = BTreeMap::new();
+
+        let mut p1 = ProvinceState::default();
+        p1.owner = Some("TUR".to_string());
+        p1.base_tax = Fixed::from_f32(5.0);
+        p1.base_production = Fixed::from_f32(4.0);
+        p1.base_manpower = Fixed::from_f32(3.0);
+        provinces.insert(1, p1);
+
+        assert_eq!(calculate_total_development(&provinces, "TUR"), 12);
+    }
+
+    #[test]
+    fn test_calculate_total_development_multiple_provinces() {
+        let mut provinces = BTreeMap::new();
+
+        let mut p1 = ProvinceState::default();
+        p1.owner = Some("TUR".to_string());
+        p1.base_tax = Fixed::from_f32(3.0);
+        p1.base_production = Fixed::from_f32(3.0);
+        p1.base_manpower = Fixed::from_f32(2.0);
+        provinces.insert(1, p1);
+
+        let mut p2 = ProvinceState::default();
+        p2.owner = Some("TUR".to_string());
+        p2.base_tax = Fixed::from_f32(5.0);
+        p2.base_production = Fixed::from_f32(4.0);
+        p2.base_manpower = Fixed::from_f32(3.0);
+        provinces.insert(2, p2);
+
+        assert_eq!(calculate_total_development(&provinces, "TUR"), 20);
+    }
 }

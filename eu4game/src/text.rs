@@ -11,6 +11,48 @@ const DEFAULT_FONT_SIZE: f32 = 24.0;
 /// Atlas texture dimensions (must be power of 2).
 const ATLAS_SIZE: u32 = 512;
 
+// =============================================================================
+// Pure coordinate conversion functions (testable without GPU)
+// =============================================================================
+
+/// Convert pixel X coordinate to clip space (-1 to 1).
+///
+/// Clip space X goes from -1 (left) to 1 (right).
+#[inline]
+pub fn pixel_x_to_clip(px: f32, screen_width: f32) -> f32 {
+    (px / screen_width) * 2.0 - 1.0
+}
+
+/// Convert pixel Y coordinate to clip space (-1 to 1).
+///
+/// Clip space Y goes from 1 (top) to -1 (bottom), so we flip.
+#[inline]
+pub fn pixel_y_to_clip(py: f32, screen_height: f32) -> f32 {
+    1.0 - (py / screen_height) * 2.0
+}
+
+/// Convert pixel width to clip space width.
+#[inline]
+pub fn width_to_clip(width: f32, screen_width: f32) -> f32 {
+    (width / screen_width) * 2.0
+}
+
+/// Convert pixel height to clip space height.
+#[inline]
+pub fn height_to_clip(height: f32, screen_height: f32) -> f32 {
+    (height / screen_height) * 2.0
+}
+
+/// Measure text width given a glyph lookup table.
+///
+/// Pure function that sums character advances without GPU access.
+pub fn measure_text_width(text: &str, glyphs: &HashMap<char, GlyphInfo>) -> f32 {
+    text.chars()
+        .filter_map(|c| glyphs.get(&c))
+        .map(|g| g.advance)
+        .sum()
+}
+
 /// Information about a cached glyph.
 #[derive(Debug, Clone, Copy)]
 pub struct GlyphInfo {
@@ -219,10 +261,7 @@ impl GlyphCache {
     /// Measures the width of a text string in pixels.
     #[allow(dead_code)]
     pub fn measure_width(&self, text: &str) -> f32 {
-        text.chars()
-            .filter_map(|c| self.glyphs.get(&c))
-            .map(|g| g.advance)
-            .sum()
+        measure_text_width(text, &self.glyphs)
     }
 }
 
@@ -423,14 +462,15 @@ impl TextRenderer {
                     let px = cursor_x + glyph.bearing_x;
                     let py = baseline_y + glyph.bearing_y;
 
-                    let clip_x = (px / screen_size.0) * 2.0 - 1.0;
-                    let clip_y = 1.0 - (py / screen_size.1) * 2.0;
-                    let clip_w = (glyph.size[0] / screen_size.0) * 2.0;
-                    let clip_h = (glyph.size[1] / screen_size.1) * 2.0;
-
                     quads.push(TextQuad {
-                        pos: [clip_x, clip_y],
-                        size: [clip_w, clip_h],
+                        pos: [
+                            pixel_x_to_clip(px, screen_size.0),
+                            pixel_y_to_clip(py, screen_size.1),
+                        ],
+                        size: [
+                            width_to_clip(glyph.size[0], screen_size.0),
+                            height_to_clip(glyph.size[1], screen_size.1),
+                        ],
                         uv_min: [glyph.uv[0], glyph.uv[1]],
                         uv_max: [glyph.uv[2], glyph.uv[3]],
                         color,
@@ -538,19 +578,19 @@ impl TextRenderer {
         for c in text.chars() {
             if let Some(glyph) = self.glyph_cache.get(c) {
                 if glyph.size[0] > 0.0 && glyph.size[1] > 0.0 {
-                    // Convert pixel position to clip space (-1 to 1)
                     // Apply scale to glyph offset and size
                     let px = cursor_x + glyph.bearing_x * scale;
                     let py = baseline_y + glyph.bearing_y * scale;
 
-                    let clip_x = (px / screen_size.0) * 2.0 - 1.0;
-                    let clip_y = 1.0 - (py / screen_size.1) * 2.0;
-                    let clip_w = (glyph.size[0] * scale / screen_size.0) * 2.0;
-                    let clip_h = (glyph.size[1] * scale / screen_size.1) * 2.0;
-
                     quads.push(TextQuad {
-                        pos: [clip_x, clip_y],
-                        size: [clip_w, clip_h],
+                        pos: [
+                            pixel_x_to_clip(px, screen_size.0),
+                            pixel_y_to_clip(py, screen_size.1),
+                        ],
+                        size: [
+                            width_to_clip(glyph.size[0] * scale, screen_size.0),
+                            height_to_clip(glyph.size[1] * scale, screen_size.1),
+                        ],
                         uv_min: [glyph.uv[0], glyph.uv[1]],
                         uv_max: [glyph.uv[2], glyph.uv[3]],
                         color,
@@ -573,5 +613,223 @@ impl TextRenderer {
     #[allow(dead_code)]
     pub fn measure_width(&self, text: &str) -> f32 {
         self.glyph_cache.measure_width(text)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -------------------------------------------------------------------------
+    // Coordinate conversion tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_pixel_x_to_clip_left_edge() {
+        // At x=0, clip space should be -1
+        assert_eq!(pixel_x_to_clip(0.0, 800.0), -1.0);
+    }
+
+    #[test]
+    fn test_pixel_x_to_clip_right_edge() {
+        // At x=screen_width, clip space should be 1
+        assert_eq!(pixel_x_to_clip(800.0, 800.0), 1.0);
+    }
+
+    #[test]
+    fn test_pixel_x_to_clip_center() {
+        // At x=screen_width/2, clip space should be 0
+        assert_eq!(pixel_x_to_clip(400.0, 800.0), 0.0);
+    }
+
+    #[test]
+    fn test_pixel_y_to_clip_top_edge() {
+        // At y=0 (top), clip space should be 1 (flipped)
+        assert_eq!(pixel_y_to_clip(0.0, 600.0), 1.0);
+    }
+
+    #[test]
+    fn test_pixel_y_to_clip_bottom_edge() {
+        // At y=screen_height (bottom), clip space should be -1
+        assert_eq!(pixel_y_to_clip(600.0, 600.0), -1.0);
+    }
+
+    #[test]
+    fn test_pixel_y_to_clip_center() {
+        // At y=screen_height/2, clip space should be 0
+        assert_eq!(pixel_y_to_clip(300.0, 600.0), 0.0);
+    }
+
+    #[test]
+    fn test_width_to_clip_full_width() {
+        // Full screen width = 2.0 in clip space
+        assert_eq!(width_to_clip(800.0, 800.0), 2.0);
+    }
+
+    #[test]
+    fn test_width_to_clip_half_width() {
+        // Half screen width = 1.0 in clip space
+        assert_eq!(width_to_clip(400.0, 800.0), 1.0);
+    }
+
+    #[test]
+    fn test_height_to_clip_full_height() {
+        // Full screen height = 2.0 in clip space
+        assert_eq!(height_to_clip(600.0, 600.0), 2.0);
+    }
+
+    #[test]
+    fn test_height_to_clip_quarter_height() {
+        // Quarter screen height = 0.5 in clip space
+        assert_eq!(height_to_clip(150.0, 600.0), 0.5);
+    }
+
+    // -------------------------------------------------------------------------
+    // Text measurement tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_measure_text_width_empty() {
+        let glyphs = HashMap::new();
+        assert_eq!(measure_text_width("", &glyphs), 0.0);
+    }
+
+    #[test]
+    fn test_measure_text_width_single_char() {
+        let mut glyphs = HashMap::new();
+        glyphs.insert(
+            'A',
+            GlyphInfo {
+                uv: [0.0, 0.0, 0.1, 0.1],
+                size: [10.0, 20.0],
+                advance: 12.0,
+                bearing_y: 0.0,
+                bearing_x: 0.0,
+            },
+        );
+        assert_eq!(measure_text_width("A", &glyphs), 12.0);
+    }
+
+    #[test]
+    fn test_measure_text_width_multiple_chars() {
+        let mut glyphs = HashMap::new();
+        glyphs.insert(
+            'H',
+            GlyphInfo {
+                uv: [0.0, 0.0, 0.1, 0.1],
+                size: [10.0, 20.0],
+                advance: 12.0,
+                bearing_y: 0.0,
+                bearing_x: 0.0,
+            },
+        );
+        glyphs.insert(
+            'i',
+            GlyphInfo {
+                uv: [0.0, 0.0, 0.1, 0.1],
+                size: [4.0, 20.0],
+                advance: 5.0,
+                bearing_y: 0.0,
+                bearing_x: 0.0,
+            },
+        );
+        // "Hi" = 12 + 5 = 17
+        assert_eq!(measure_text_width("Hi", &glyphs), 17.0);
+    }
+
+    #[test]
+    fn test_measure_text_width_missing_chars_skipped() {
+        let mut glyphs = HashMap::new();
+        glyphs.insert(
+            'A',
+            GlyphInfo {
+                uv: [0.0, 0.0, 0.1, 0.1],
+                size: [10.0, 20.0],
+                advance: 10.0,
+                bearing_y: 0.0,
+                bearing_x: 0.0,
+            },
+        );
+        // "ABC" but only 'A' is in glyphs - missing chars are skipped
+        assert_eq!(measure_text_width("ABC", &glyphs), 10.0);
+    }
+
+    // -------------------------------------------------------------------------
+    // GlyphInfo tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_glyph_info_debug() {
+        let glyph = GlyphInfo {
+            uv: [0.0, 0.0, 0.1, 0.1],
+            size: [10.0, 20.0],
+            advance: 12.0,
+            bearing_y: 2.0,
+            bearing_x: 1.0,
+        };
+        let debug_str = format!("{:?}", glyph);
+        assert!(debug_str.contains("GlyphInfo"));
+        assert!(debug_str.contains("advance"));
+    }
+
+    #[test]
+    fn test_glyph_info_clone() {
+        let glyph = GlyphInfo {
+            uv: [0.0, 0.0, 0.1, 0.1],
+            size: [10.0, 20.0],
+            advance: 12.0,
+            bearing_y: 2.0,
+            bearing_x: 1.0,
+        };
+        let cloned = glyph;
+        assert_eq!(cloned.advance, 12.0);
+        assert_eq!(cloned.bearing_x, 1.0);
+    }
+
+    // -------------------------------------------------------------------------
+    // TextQuad tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_text_quad_size() {
+        // TextQuad should be 48 bytes (2+2+2+2+4 floats = 12 floats * 4 bytes)
+        assert_eq!(std::mem::size_of::<TextQuad>(), 48);
+    }
+
+    #[test]
+    fn test_text_quad_alignment() {
+        // TextQuad should be properly aligned for GPU
+        assert!(std::mem::align_of::<TextQuad>() >= 4);
+    }
+
+    #[test]
+    fn test_text_quad_creation() {
+        let quad = TextQuad {
+            pos: [-0.5, 0.5],
+            size: [0.1, 0.2],
+            uv_min: [0.0, 0.0],
+            uv_max: [0.1, 0.1],
+            color: [1.0, 1.0, 1.0, 1.0],
+        };
+        assert_eq!(quad.pos[0], -0.5);
+        assert_eq!(quad.size[1], 0.2);
+        assert_eq!(quad.color[3], 1.0);
+    }
+
+    // -------------------------------------------------------------------------
+    // Constants tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_atlas_size_is_power_of_two() {
+        assert!(ATLAS_SIZE.is_power_of_two());
+    }
+
+    #[test]
+    fn test_default_font_size_reasonable() {
+        // Font size should be in a sensible range for UI text
+        let font_size = DEFAULT_FONT_SIZE;
+        assert!(font_size >= 8.0, "Font size {} too small", font_size);
+        assert!(font_size <= 72.0, "Font size {} too large", font_size);
     }
 }
