@@ -132,6 +132,37 @@ To enable proper symlink support on Windows:
 - **Location**: [`eu4viz/tests/goldens/`](eu4viz/tests/goldens/README.md)
 - **Updating**: Delete `.png` and run test, or `cargo xtask snapshot` for batch.
 
+## Test File Organization
+
+**Pattern**: Separate test code into `foo_tests.rs` files alongside `foo.rs`.
+
+```rust
+// In foo.rs - at the end of the file
+#[cfg(test)]
+#[path = "foo_tests.rs"]
+mod tests;
+
+// In foo_tests.rs - the test file
+use super::*;
+
+#[test]
+fn test_something() {
+    // ...
+}
+```
+
+**Benefits**:
+- Keeps source files smaller (better for token limits in AI tools)
+- Tests remain unit tests with access to private members via `use super::*`
+- Clear separation between production and test code
+
+**When to extract**:
+- Test module exceeds ~100 lines
+- Source file is already large (>500 lines)
+- New modules should start with separate test files
+
+**Naming**: `foo.rs` → `foo_tests.rs` (snake_case, `_tests` suffix)
+
 ## Git Workflow
 - **Commit reordering**: Consider reordering via interactive rebase rather than fixup/squash.
 - **Non-interactive rebase**: Use `GIT_SEQUENCE_EDITOR` and `GIT_EDITOR` with scripts:
