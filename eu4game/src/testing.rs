@@ -800,6 +800,497 @@ impl HeadlessApp {
     }
 }
 
+// ============================================================================
+// Map Rendering Test Harness (Phase 15.1)
+// ============================================================================
+
+#[allow(dead_code)]
+pub struct MapTestHarness {
+    /// Headless GPU context.
+    gpu: HeadlessGpu,
+    /// Map renderer with pipelines and textures.
+    renderer: crate::render::Renderer,
+    /// Camera for view/projection control.
+    camera: crate::camera::Camera,
+
+    /// Province map image (for dimensions).
+    province_map: image::RgbaImage,
+    /// Province lookup table.
+    province_lookup: eu4data::map::ProvinceLookup,
+    /// Heightmap for terrain shading.
+    heightmap: Option<image::GrayImage>,
+
+    /// Game world state.
+    world_state: eu4sim_core::WorldState,
+    /// Country colors for political mode.
+    country_colors: std::collections::HashMap<String, [u8; 3]>,
+    /// Trade network for trade mode.
+    trade_network: Option<eu4data::tradenodes::TradeNetwork>,
+    /// Religion definitions for religion mode.
+    religions: std::collections::HashMap<String, eu4data::religions::Religion>,
+    /// Culture definitions for culture mode.
+    cultures: std::collections::HashMap<String, eu4data::cultures::Culture>,
+    /// Province-to-region mapping for region mode.
+    region_mapping: Option<eu4data::regions::ProvinceRegionMapping>,
+    /// Sea provinces for economy mode.
+    sea_provinces: std::collections::HashSet<u32>,
+
+    /// Current map mode.
+    current_map_mode: crate::gui::MapMode,
+    /// Whether lookup texture needs updating.
+    lookup_dirty: bool,
+}
+
+#[allow(dead_code)]
+impl MapTestHarness {
+    /// Create a new map test harness.
+    ///
+    /// Returns `None` if:
+    /// - No GPU adapter available (CI waiver)
+    /// - EU4 game data not found (CI waiver)
+    pub fn new() -> Option<Self> {
+        use std::collections::{HashMap, HashSet};
+
+        // Create headless GPU
+        let gpu = pollster::block_on(HeadlessGpu::new())?;
+
+        // Load province map and data
+        let game_path = eu4data::path::detect_game_path()?;
+        log::info!("MapTestHarness: Loading from {}", game_path.display());
+
+        let provinces_path = game_path.join("map/provinces.bmp");
+        let definitions_path = game_path.join("map/definition.csv");
+        let heightmap_path = game_path.join("map/heightmap.bmp");
+
+        let province_map = image::open(&provinces_path).ok()?.to_rgba8();
+        let province_lookup = eu4data::map::ProvinceLookup::load(&definitions_path).ok()?;
+        let heightmap = image::open(&heightmap_path).ok().map(|h| h.to_luma8());
+
+        // Load world state (minimal - just for testing)
+        let start_date = eu4sim_core::state::Date::new(1444, 11, 11);
+        let (world_state, _adjacency) =
+            eu4sim::loader::load_initial_state(&game_path, start_date, 42).ok()?;
+
+        // Load country colors
+        let tags = eu4data::countries::load_tags(&game_path).ok()?;
+        let country_map = eu4data::countries::load_country_map(&game_path, &tags);
+        let country_colors: HashMap<String, [u8; 3]> = country_map
+            .into_iter()
+            .filter_map(|(tag, country)| {
+                if country.color.len() >= 3 {
+                    Some((tag, [country.color[0], country.color[1], country.color[2]]))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Load trade network
+        let trade_network = eu4data::tradenodes::load_trade_network(&game_path).ok();
+
+        // Load religions
+        let religions = eu4data::religions::load_religions(&game_path).ok()?;
+
+        // Load cultures
+        let cultures = eu4data::cultures::load_cultures(&game_path).ok()?;
+
+        // Load region mapping
+        let region_mapping = eu4data::regions::load_region_mapping(&game_path).ok();
+
+        // Build sea provinces set
+        let sea_provinces: HashSet<u32> = world_state
+            .provinces
+            .iter()
+            .filter(|(_, p)| p.is_sea)
+            .map(|(id, _)| *id)
+            .collect();
+
+        // Create lookup table for renderer
+        let lookup: HashMap<(u8, u8, u8), u32> = province_lookup
+            .by_color
+            .iter()
+            .map(|(color, id)| (*color, *id))
+            .collect();
+
+        // Create renderer
+        let renderer = crate::render::Renderer::new(
+            &gpu.device,
+            &gpu.queue,
+            gpu.format,
+            &province_map,
+            &lookup,
+            heightmap.as_ref(),
+        );
+
+        // Create camera centered on map
+        let map_width = province_map.width() as f32;
+        let map_height = province_map.height() as f32;
+        let content_aspect = map_width as f64 / map_height as f64;
+        let camera = crate::camera::Camera::new(content_aspect);
+
+        log::info!("MapTestHarness: Initialized successfully");
+
+        Some(Self {
+            gpu,
+            renderer,
+            camera,
+            province_map,
+            province_lookup,
+            heightmap,
+            world_state,
+            country_colors,
+            trade_network,
+            religions,
+            cultures,
+            region_mapping,
+            sea_provinces,
+            current_map_mode: crate::gui::MapMode::Political,
+            lookup_dirty: true,
+        })
+    }
+
+    /// Set camera position (in texture coordinates, 0.0-1.0).
+    pub fn set_camera_position(&mut self, x: f64, y: f64) {
+        self.camera.position = (x, y);
+    }
+
+    /// Set camera zoom level.
+    pub fn set_camera_zoom(&mut self, zoom: f64) {
+        self.camera.zoom = zoom.clamp(0.1, 10.0);
+    }
+
+    /// Set camera position and zoom at once.
+    pub fn set_camera(&mut self, position: (f64, f64), zoom: f64) {
+        self.set_camera_position(position.0, position.1);
+        self.set_camera_zoom(zoom);
+    }
+
+    /// Get current camera (for inspection).
+    pub fn camera(&self) -> &crate::camera::Camera {
+        &self.camera
+    }
+
+    /// Set the current map mode.
+    ///
+    /// This will mark the lookup texture as dirty, causing it to be
+    /// regenerated on the next render.
+    pub fn set_map_mode(&mut self, mode: crate::gui::MapMode) {
+        if self.current_map_mode != mode {
+            self.current_map_mode = mode;
+            self.lookup_dirty = true;
+        }
+    }
+
+    /// Get current map mode.
+    pub fn map_mode(&self) -> crate::gui::MapMode {
+        self.current_map_mode
+    }
+
+    /// Render the current map state to an image.
+    ///
+    /// This will:
+    /// 1. Update lookup texture if map mode changed
+    /// 2. Update camera uniforms
+    /// 3. Render map to offscreen texture
+    /// 4. Read back pixels from GPU
+    pub fn render_to_image(&mut self, size: (u32, u32)) -> RgbaImage {
+        let (width, height) = size;
+
+        // Update lookup texture if needed
+        if self.lookup_dirty {
+            self.update_lookup();
+            self.lookup_dirty = false;
+        }
+
+        // Update camera uniforms
+        let camera_uniform = self.camera.to_uniform(width as f32, height as f32);
+        self.renderer.update_camera(&self.gpu.queue, camera_uniform);
+
+        // Update map mode uniform
+        let map_mode_value = match self.current_map_mode {
+            crate::gui::MapMode::Political => 0.0,
+            crate::gui::MapMode::Terrain => 1.0,
+            crate::gui::MapMode::Trade => 2.0,
+            crate::gui::MapMode::Religion => 3.0,
+            crate::gui::MapMode::Culture => 4.0,
+            crate::gui::MapMode::Economy => 5.0,
+            crate::gui::MapMode::Empire => 6.0,
+            crate::gui::MapMode::Region => 7.0,
+            crate::gui::MapMode::Diplomacy => 8.0,
+            crate::gui::MapMode::Players => 9.0,
+        };
+        self.renderer
+            .update_map_mode(&self.gpu.queue, map_mode_value, (width, height));
+
+        // Create offscreen target
+        let target = OffscreenTarget::new(&self.gpu.device, width, height);
+
+        // Render to offscreen texture
+        let mut encoder = self
+            .gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Map Test Render Encoder"),
+            });
+
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Map Test Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &target.view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            // Draw map (fullscreen triangle)
+            render_pass.set_pipeline(&self.renderer.pipeline);
+            render_pass.set_bind_group(0, &self.renderer.bind_group, &[]);
+            render_pass.draw(0..3, 0..1);
+        }
+
+        self.gpu.queue.submit(std::iter::once(encoder.finish()));
+
+        // Read back pixels
+        target.read_pixels(&self.gpu.device, &self.gpu.queue)
+    }
+
+    /// Update the lookup texture based on current map mode.
+    ///
+    /// This generates the province color data and uploads it to the GPU.
+    fn update_lookup(&mut self) {
+        use crate::gui::MapMode;
+
+        match self.current_map_mode {
+            MapMode::Political => self.update_political_lookup(),
+            MapMode::Terrain => {
+                // Terrain mode uses heightmap shading, no lookup needed
+            }
+            MapMode::Trade => self.update_trade_lookup(),
+            MapMode::Religion => self.update_religion_lookup(),
+            MapMode::Culture => self.update_culture_lookup(),
+            MapMode::Economy => self.update_economy_lookup(),
+            MapMode::Empire => self.update_empire_lookup(),
+            MapMode::Region => self.update_region_lookup(),
+            MapMode::Diplomacy => {
+                // TODO: Implement diplomacy mode
+            }
+            MapMode::Players => {
+                // TODO: Implement players mode
+            }
+        }
+    }
+
+    fn update_political_lookup(&mut self) {
+        use crate::render::LOOKUP_SIZE;
+
+        let mut data = vec![[0u8; 4]; LOOKUP_SIZE as usize];
+
+        for (&province_id, province) in &self.world_state.provinces {
+            let id = province_id as usize;
+            if id >= LOOKUP_SIZE as usize {
+                continue;
+            }
+
+            if let Some(ref owner) = province.owner
+                && let Some(color) = self.country_colors.get(owner)
+            {
+                data[id] = [color[0], color[1], color[2], 255];
+            }
+        }
+
+        self.write_lookup_data(&data);
+    }
+
+    fn update_trade_lookup(&mut self) {
+        use crate::render::LOOKUP_SIZE;
+
+        let mut data = vec![[0u8; 4]; LOOKUP_SIZE as usize];
+
+        if let Some(ref network) = self.trade_network {
+            for (&province_id, _province) in &self.world_state.provinces {
+                let id = province_id as usize;
+                if id >= LOOKUP_SIZE as usize {
+                    continue;
+                }
+
+                if let Some(&trade_node_id) = self.world_state.province_trade_node.get(&province_id)
+                {
+                    // Find the trade node definition by ID (compare using .0 to access inner u16)
+                    if let Some(node_def) = network.nodes.iter().find(|n| n.id.0 == trade_node_id.0)
+                    {
+                        let color = &node_def.color;
+                        data[id] = [color[0], color[1], color[2], 255];
+                    }
+                }
+            }
+        }
+
+        self.write_lookup_data(&data);
+    }
+
+    fn update_religion_lookup(&mut self) {
+        use crate::render::LOOKUP_SIZE;
+
+        let mut data = vec![[0u8; 4]; LOOKUP_SIZE as usize];
+
+        for (&province_id, province) in &self.world_state.provinces {
+            let id = province_id as usize;
+            if id >= LOOKUP_SIZE as usize {
+                continue;
+            }
+
+            if let Some(ref religion_name) = province.religion
+                && let Some(religion) = self.religions.get(religion_name)
+            {
+                let color = &religion.color;
+                data[id] = [color[0], color[1], color[2], 255];
+            }
+        }
+
+        self.write_lookup_data(&data);
+    }
+
+    fn update_culture_lookup(&mut self) {
+        use crate::render::LOOKUP_SIZE;
+
+        let mut data = vec![[0u8; 4]; LOOKUP_SIZE as usize];
+
+        for (&province_id, province) in &self.world_state.provinces {
+            let id = province_id as usize;
+            if id >= LOOKUP_SIZE as usize {
+                continue;
+            }
+
+            if let Some(ref culture_name) = province.culture
+                && let Some(culture) = self.cultures.get(culture_name)
+            {
+                let color = &culture.color;
+                data[id] = [color[0], color[1], color[2], 255];
+            }
+        }
+
+        self.write_lookup_data(&data);
+    }
+
+    fn update_economy_lookup(&mut self) {
+        use crate::render::LOOKUP_SIZE;
+
+        let mut data = vec![[0u8; 4]; LOOKUP_SIZE as usize];
+
+        for (&province_id, province) in &self.world_state.provinces {
+            let id = province_id as usize;
+            if id >= LOOKUP_SIZE as usize {
+                continue;
+            }
+
+            if self.sea_provinces.contains(&province_id) {
+                data[id] = [40, 80, 120, 255];
+                continue;
+            }
+
+            let total_dev = province.base_tax.to_f32()
+                + province.base_production.to_f32()
+                + province.base_manpower.to_f32();
+
+            let intensity = ((total_dev / 30.0).min(1.0) * 200.0) as u8;
+            data[id] = [intensity, intensity / 2, 0, 255];
+        }
+
+        self.write_lookup_data(&data);
+    }
+
+    fn update_empire_lookup(&mut self) {
+        use crate::render::LOOKUP_SIZE;
+
+        let mut data = vec![[0u8; 4]; LOOKUP_SIZE as usize];
+
+        let emperor = self.world_state.global.hre.emperor.as_ref();
+
+        for (&province_id, province) in &self.world_state.provinces {
+            let id = province_id as usize;
+            if id >= LOOKUP_SIZE as usize {
+                continue;
+            }
+
+            if let Some(ref owner) = province.owner {
+                let is_emperor = emperor == Some(owner);
+                let is_hre_member = province.is_in_hre;
+
+                let color = if is_emperor {
+                    [255, 215, 0, 255] // Gold for emperor
+                } else if is_hre_member {
+                    [180, 180, 255, 255] // Light blue for HRE members
+                } else if let Some(country_color) = self.country_colors.get(owner) {
+                    [country_color[0], country_color[1], country_color[2], 255]
+                } else {
+                    [128, 128, 128, 255] // Gray for unknown
+                };
+                data[id] = color;
+            }
+        }
+
+        self.write_lookup_data(&data);
+    }
+
+    fn update_region_lookup(&mut self) {
+        use crate::render::LOOKUP_SIZE;
+
+        let mut data = vec![[0u8; 4]; LOOKUP_SIZE as usize];
+
+        if let Some(ref mapping) = self.region_mapping {
+            for (&province_id, region_name) in &mapping.province_to_region {
+                let id = province_id as usize;
+                if id >= LOOKUP_SIZE as usize {
+                    continue;
+                }
+
+                let hash = region_name
+                    .bytes()
+                    .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
+                let r = ((hash >> 16) & 0xFF) as u8;
+                let g = ((hash >> 8) & 0xFF) as u8;
+                let b = (hash & 0xFF) as u8;
+                data[id] = [r, g, b, 255];
+            }
+        }
+
+        self.write_lookup_data(&data);
+    }
+
+    fn write_lookup_data(&mut self, data: &[[u8; 4]]) {
+        use crate::render::LOOKUP_SIZE;
+
+        let bytes: Vec<u8> = data.iter().flat_map(|c| *c).collect();
+
+        self.gpu.queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &self.renderer.lookup_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &bytes,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(LOOKUP_SIZE * 4),
+                rows_per_image: Some(1),
+            },
+            wgpu::Extent3d {
+                width: LOOKUP_SIZE,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -944,5 +1435,77 @@ mod tests {
         // Should have correct dimensions
         assert_eq!(frame.width(), 64);
         assert_eq!(frame.height(), 64);
+    }
+
+    // ========================================================================
+    // Map Rendering Tests (Phase 15)
+    // ========================================================================
+
+    #[test]
+    fn test_map_harness_political_mode() {
+        let Some(mut harness) = MapTestHarness::new() else {
+            return;
+        };
+
+        // Set camera to center of map (0.5, 0.5 in texture coords) at 1:1 zoom
+        harness.set_camera((0.5, 0.5), 1.0);
+
+        // Set political mode
+        harness.set_map_mode(crate::gui::MapMode::Political);
+
+        // Render at 1920x1080 (consistent with other tests)
+        let image = harness.render_to_image((1920, 1080));
+
+        // Verify dimensions
+        assert_eq!(image.width(), 1920);
+        assert_eq!(image.height(), 1080);
+
+        // Save as golden snapshot
+        assert_snapshot(&image, "map_political_center");
+    }
+
+    #[test]
+    fn test_map_harness_mode_switching() {
+        let Some(mut harness) = MapTestHarness::new() else {
+            return;
+        };
+
+        // Start in political mode
+        assert_eq!(harness.map_mode(), crate::gui::MapMode::Political);
+
+        // Switch to terrain mode
+        harness.set_map_mode(crate::gui::MapMode::Terrain);
+        assert_eq!(harness.map_mode(), crate::gui::MapMode::Terrain);
+
+        // Switch to trade mode
+        harness.set_map_mode(crate::gui::MapMode::Trade);
+        assert_eq!(harness.map_mode(), crate::gui::MapMode::Trade);
+
+        // Render should work in trade mode at 1920x1080
+        let image = harness.render_to_image((1920, 1080));
+        assert_eq!(image.width(), 1920);
+        assert_eq!(image.height(), 1080);
+    }
+
+    #[test]
+    fn test_map_harness_camera_control() {
+        let Some(mut harness) = MapTestHarness::new() else {
+            return;
+        };
+
+        // Set specific camera position (texture coords)
+        harness.set_camera_position(0.3, 0.7);
+        assert_eq!(harness.camera().position.0, 0.3);
+        assert_eq!(harness.camera().position.1, 0.7);
+
+        // Set zoom
+        harness.set_camera_zoom(2.0);
+        assert_eq!(harness.camera().zoom, 2.0);
+
+        // Set both at once
+        harness.set_camera((0.8, 0.2), 0.5);
+        assert_eq!(harness.camera().position.0, 0.8);
+        assert_eq!(harness.camera().position.1, 0.2);
+        assert_eq!(harness.camera().zoom, 0.5);
     }
 }
