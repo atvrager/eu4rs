@@ -199,6 +199,51 @@ pub fn create_terrain_texture(
     (texture, view, sampler)
 }
 
+/// Helper to create an 8-bit index texture (R8Uint).
+pub fn create_index_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    image: &image::GrayImage,
+) -> (wgpu::Texture, wgpu::TextureView) {
+    let width = image.width();
+    let height = image.height();
+    let size = wgpu::Extent3d {
+        width,
+        height,
+        depth_or_array_layers: 1,
+    };
+
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Terrain Index Texture"),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::R8Uint,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+
+    queue.write_texture(
+        wgpu::ImageCopyTexture {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        image.as_raw(),
+        wgpu::ImageDataLayout {
+            offset: 0,
+            bytes_per_row: Some(width),
+            rows_per_image: Some(height),
+        },
+        size,
+    );
+
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    (texture, view)
+}
+
 /// Map settings uniform for shader.
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -213,8 +258,10 @@ pub struct MapSettings {
     pub map_mode: f32,
     /// Border thickness multiplier (1.0 = 1px, 2.0 = 2px, etc.).
     pub border_thickness: f32,
-    /// Padding to align to 16 bytes (wgpu requirement).
-    _padding: [f32; 2],
+    /// Padding to align to 16 bytes.
+    pub _padding: [f32; 2],
+    /// Mapping from terrain index to atlas tile index.
+    pub atlas_tiles: [[u32; 4]; 64],
 }
 
 impl Default for MapSettings {
@@ -226,6 +273,7 @@ impl Default for MapSettings {
             map_mode: 0.0, // Default to political mode
             border_thickness: 1.0,
             _padding: [0.0; 2],
+            atlas_tiles: [[0; 4]; 64],
         }
     }
 }
@@ -592,6 +640,14 @@ pub struct Renderer {
     /// Global color overlay texture.
     #[allow(dead_code)]
     pub color_texture: wgpu::Texture,
+    /// Terrain atlas texture.
+    #[allow(dead_code)]
+    pub atlas_texture: wgpu::Texture,
+    /// Terrain atlas normal texture.
+    #[allow(dead_code)]
+    pub atlas_normal_texture: wgpu::Texture,
+    /// Atlas tile mapping.
+    pub atlas_tiles: [u32; 256],
 }
 
 impl Renderer {
@@ -611,6 +667,10 @@ impl Renderer {
         normal_map: Option<&image::RgbaImage>,
         water_colormap: Option<&image::RgbaImage>,
         global_colormap: Option<&image::RgbaImage>,
+        terrain_indices: Option<&image::GrayImage>,
+        atlas_texture: Option<&image::RgbaImage>,
+        atlas_normal: Option<&image::RgbaImage>,
+        atlas_tiles: [u32; 256],
     ) -> Self {
         let map_size = (province_map.width(), province_map.height());
         log::info!(
@@ -636,6 +696,11 @@ impl Renderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
+        let mut atlas_tiles_vec4 = [[0u32; 4]; 64];
+        for i in 0..256 {
+            atlas_tiles_vec4[i / 4][i % 4] = atlas_tiles[i];
+        }
+
         // Create settings buffer
         let settings = MapSettings {
             texture_size: [map_size.0 as f32, map_size.1 as f32],
@@ -644,6 +709,7 @@ impl Renderer {
             map_mode: 0.0, // Default to political mode
             border_thickness: 1.0,
             _padding: [0.0; 2],
+            atlas_tiles: atlas_tiles_vec4,
         };
         let settings_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Settings Buffer"),
@@ -724,6 +790,69 @@ impl Renderer {
             let (tex, view, sampler) = create_terrain_texture(device, queue, &white);
             (tex, view, sampler)
         };
+
+        // Create terrain index texture (Binding 16)
+        let (_index_texture, index_view) = if let Some(indices) = terrain_indices {
+            log::info!(
+                "Creating terrain index texture ({}x{})",
+                indices.width(),
+                indices.height()
+            );
+            create_index_texture(device, queue, indices)
+        } else {
+            let dummy = image::GrayImage::from_raw(1, 1, vec![0]).unwrap();
+            create_index_texture(device, queue, &dummy)
+        };
+
+        // Create atlas texture (Binding 17-18)
+        let (atlas_texture, atlas_view, atlas_sampler) = if let Some(atlas) = atlas_texture {
+            log::info!(
+                "Creating terrain atlas ({}x{})",
+                atlas.width(),
+                atlas.height()
+            );
+            // Atlases should use Repeat tiling
+            let (tex, view, _sampler) = create_terrain_texture(device, queue, atlas);
+            let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("Atlas Sampler"),
+                address_mode_u: wgpu::AddressMode::Repeat,
+                address_mode_v: wgpu::AddressMode::Repeat,
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                mipmap_filter: wgpu::FilterMode::Linear,
+                ..Default::default()
+            });
+            (tex, view, sampler)
+        } else {
+            let gray = image::RgbaImage::from_pixel(1, 1, image::Rgba([128, 128, 128, 255]));
+            let (tex, view, sampler) = create_terrain_texture(device, queue, &gray);
+            (tex, view, sampler)
+        };
+
+        // Create atlas normal texture (Binding 19-20)
+        let (atlas_normal_texture, atlas_normal_view, atlas_normal_sampler) =
+            if let Some(atlas_n) = atlas_normal {
+                log::info!(
+                    "Creating terrain atlas normal ({}x{})",
+                    atlas_n.width(),
+                    atlas_n.height()
+                );
+                let (tex, view, _sampler) = create_terrain_texture(device, queue, atlas_n);
+                let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+                    label: Some("Atlas Normal Sampler"),
+                    address_mode_u: wgpu::AddressMode::Repeat,
+                    address_mode_v: wgpu::AddressMode::Repeat,
+                    mag_filter: wgpu::FilterMode::Linear,
+                    min_filter: wgpu::FilterMode::Linear,
+                    mipmap_filter: wgpu::FilterMode::Linear,
+                    ..Default::default()
+                });
+                (tex, view, sampler)
+            } else {
+                let flat = image::RgbaImage::from_pixel(1, 1, image::Rgba([128, 128, 255, 255]));
+                let (tex, view, sampler) = create_terrain_texture(device, queue, &flat);
+                (tex, view, sampler)
+            };
 
         // Bind group layout matching shader
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -877,6 +1006,53 @@ impl Renderer {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                // binding 16: terrain index texture (R8Uint)
+                wgpu::BindGroupLayoutEntry {
+                    binding: 16,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Uint,
+                    },
+                    count: None,
+                },
+                // binding 17: terrain atlas texture
+                wgpu::BindGroupLayoutEntry {
+                    binding: 17,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                // binding 18: terrain atlas sampler
+                wgpu::BindGroupLayoutEntry {
+                    binding: 18,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                // binding 19: terrain atlas normal texture
+                wgpu::BindGroupLayoutEntry {
+                    binding: 19,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                // binding 20: terrain atlas normal sampler
+                wgpu::BindGroupLayoutEntry {
+                    binding: 20,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
             ],
         });
 
@@ -948,6 +1124,26 @@ impl Renderer {
                 wgpu::BindGroupEntry {
                     binding: 15,
                     resource: wgpu::BindingResource::Sampler(&color_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 16,
+                    resource: wgpu::BindingResource::TextureView(&index_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 17,
+                    resource: wgpu::BindingResource::TextureView(&atlas_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 18,
+                    resource: wgpu::BindingResource::Sampler(&atlas_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 19,
+                    resource: wgpu::BindingResource::TextureView(&atlas_normal_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 20,
+                    resource: wgpu::BindingResource::Sampler(&atlas_normal_sampler),
                 },
             ],
         });
@@ -1191,6 +1387,9 @@ impl Renderer {
             normal_texture,
             water_texture,
             color_texture,
+            atlas_texture,
+            atlas_normal_texture,
+            atlas_tiles,
         }
     }
 
@@ -1212,6 +1411,11 @@ impl Renderer {
         zoom: f32,
         border_enabled: bool,
     ) {
+        let mut atlas_tiles_vec4 = [[0u32; 4]; 64];
+        for i in 0..256 {
+            atlas_tiles_vec4[i / 4][i % 4] = self.atlas_tiles[i];
+        }
+
         let settings = MapSettings {
             texture_size: [map_size.0 as f32, map_size.1 as f32],
             lookup_size: LOOKUP_SIZE as f32,
@@ -1219,6 +1423,7 @@ impl Renderer {
             map_mode,
             border_thickness: calculate_border_thickness(zoom),
             _padding: [0.0; 2],
+            atlas_tiles: atlas_tiles_vec4,
         };
         queue.write_buffer(&self.settings_buffer, 0, bytemuck::cast_slice(&[settings]));
     }
@@ -2263,11 +2468,11 @@ mod terrain_tests {
 
     #[test]
     fn test_map_settings_size() {
-        // 6 f32 fields + 2 f32 padding = 32 bytes
+        // 32 bytes (base) + 1024 bytes (atlas_tiles) = 1056 bytes
         assert_eq!(
             std::mem::size_of::<MapSettings>(),
-            32,
-            "MapSettings should be 32 bytes (8 f32s for GPU alignment)"
+            1056,
+            "MapSettings should be 1056 bytes (including atlas mapping)"
         );
     }
 
@@ -2529,11 +2734,15 @@ mod mode_switching_tests {
             gpu.format,
             &province_img,
             &province_lookup,
-            None, // no heightmap
-            None, // no terrain texture
-            None, // no normal map
-            None, // no water colormap
-            None, // no global colormap
+            None,     // no heightmap
+            None,     // no terrain texture
+            None,     // no normal map
+            None,     // no water colormap
+            None,     // no global colormap
+            None,     // no terrain indices
+            None,     // no atlas
+            None,     // no atlas normal
+            [0; 256], // default tiles
         );
 
         // Create offscreen texture
@@ -2614,11 +2823,15 @@ mod mode_switching_tests {
             gpu.format,
             &province_img,
             &province_lookup,
-            None, // no heightmap
-            None, // no terrain texture
-            None, // no normal map
-            None, // no water colormap
-            None, // no global colormap
+            None,     // no heightmap
+            None,     // no terrain texture
+            None,     // no normal map
+            None,     // no water colormap
+            None,     // no global colormap
+            None,     // no terrain indices
+            None,     // no atlas
+            None,     // no atlas normal
+            [0; 256], // default tiles
         );
 
         // Create offscreen texture
@@ -2699,11 +2912,15 @@ mod mode_switching_tests {
             gpu.format,
             &province_img,
             &province_lookup,
-            None, // no heightmap
-            None, // no terrain texture
-            None, // no normal map
-            None, // no water colormap
-            None, // no global colormap
+            None,     // no heightmap
+            None,     // no terrain texture
+            None,     // no normal map
+            None,     // no water colormap
+            None,     // no global colormap
+            None,     // no terrain indices
+            None,     // no atlas
+            None,     // no atlas normal
+            [0; 256], // default tiles
         );
 
         // Create offscreen texture

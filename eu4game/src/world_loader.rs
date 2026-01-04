@@ -344,6 +344,112 @@ pub fn load_seasonal_colormap(season: &str) -> Option<image::RgbaImage> {
     load_dds(&path).ok()
 }
 
+/// Loads terrain indices (raw palette indices) from terrain.bmp.
+pub fn load_terrain_indices() -> Option<image::GrayImage> {
+    let game_path = eu4data::path::detect_game_path()?;
+    let terrain_path = game_path.join("map/terrain.bmp");
+
+    let bytes = std::fs::read(&terrain_path).ok()?;
+
+    // Quick BMP header check
+    if bytes.len() < 54 || &bytes[0..2] != b"BM" {
+        return None;
+    }
+    let pixel_offset = u32::from_le_bytes(bytes[10..14].try_into().ok()?) as usize;
+    let width = u32::from_le_bytes(bytes[18..22].try_into().ok()?) as u32;
+    let height = u32::from_le_bytes(bytes[22..26].try_into().ok()?) as u32;
+    let bit_count = u16::from_le_bytes(bytes[28..30].try_into().ok()?);
+
+    if bit_count != 8 {
+        log::warn!("terrain.bmp is not 8-bit ({} bits)", bit_count);
+        return None;
+    }
+
+    let pixel_data = &bytes[pixel_offset..];
+    let mut indices = Vec::with_capacity((width * height) as usize);
+    let row_size = (width + 3) & !3; // BMP rows are 4-byte aligned
+
+    for y in (0..height).rev() {
+        let row_start = (y * row_size) as usize;
+        if row_start + width as usize <= pixel_data.len() {
+            indices.extend_from_slice(&pixel_data[row_start..row_start + width as usize]);
+        }
+    }
+
+    if indices.len() != (width * height) as usize {
+        log::warn!(
+            "terrain.bmp size mismatch: expected {}, got {}",
+            width * height,
+            indices.len()
+        );
+        return None;
+    }
+
+    image::GrayImage::from_raw(width, height, indices)
+}
+
+/// Loads the terrain atlas.
+pub fn load_terrain_atlas() -> Option<image::RgbaImage> {
+    let game_path = eu4data::path::detect_game_path()?;
+    let path = game_path.join("map/terrain/atlas0.dds");
+    if !path.exists() {
+        return None;
+    }
+    load_dds(&path).ok()
+}
+
+/// Loads the terrain atlas normals.
+pub fn load_terrain_atlas_normal() -> Option<image::RgbaImage> {
+    let game_path = eu4data::path::detect_game_path()?;
+    let path = game_path.join("map/terrain/atlas_normal0.dds");
+    if !path.exists() {
+        return None;
+    }
+    load_dds(&path).ok()
+}
+
+/// Loads atlas tile mapping.
+pub fn load_atlas_tile_mapping() -> [u32; 256] {
+    let mut mapping = [0u32; 256];
+
+    // Try to load from terrain.txt if available
+    if let Some(graphical_terrain) = eu4data::path::detect_game_path()
+        .and_then(|p| eu4data::terrain::load_graphical_terrain(&p).ok())
+    {
+        log::info!(
+            "Loaded {} graphical terrain definitions for atlas mapping",
+            graphical_terrain.len()
+        );
+        for (color_index, name) in graphical_terrain {
+            // Heuristic: map common names to known indices in vanilla atlas
+            let atlas_index = match name.as_str() {
+                "plains" => 0,
+                "forest" => 1,
+                "hills" => 2,
+                "mountain" => 3,
+                "woods" => 4,
+                "marsh" => 5,
+                "desert" => 6,
+                "jungle" => 7,
+                "steppes" => 8,
+                "tundra" => 9,
+                "savannah" => 10,
+                "tropical_wood" => 1, // Fallback to forest
+                "farmland" => 0,      // Fallback to plains
+                _ => (color_index % 16) as u32,
+            };
+            mapping[color_index as usize] = atlas_index;
+        }
+        return mapping;
+    }
+
+    // Default mapping: index maps directly to tile index 0-15
+    for (i, item) in mapping.iter_mut().enumerate() {
+        *item = (i % 16) as u32;
+    }
+    mapping
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

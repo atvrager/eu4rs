@@ -328,11 +328,17 @@ impl App {
             world_loader::compute_province_centers(&province_map, &province_lookup);
         log::info!("Computed {} province centers", province_centers.len());
 
-        // Load terrain texture for RealTerrain map mode
+        // Load terrain assets for RealTerrain map mode
         let terrain_texture = world_loader::load_terrain_texture();
         let normal_map = world_loader::load_normal_map();
         let water_colormap = world_loader::load_water_colormap();
         let global_colormap = world_loader::load_seasonal_colormap("autumn");
+
+        // Phase 2: Splatting assets
+        let terrain_indices = world_loader::load_terrain_indices();
+        let atlas_texture = world_loader::load_terrain_atlas();
+        let atlas_normal = world_loader::load_terrain_atlas_normal();
+        let atlas_tiles = world_loader::load_atlas_tile_mapping();
 
         // Create GPU renderer with province lookup for shader-based coloring
         let lookup_map = province_lookup.as_ref().map(|l| &l.by_color);
@@ -347,6 +353,10 @@ impl App {
             normal_map.as_ref(),
             water_colormap.as_ref(),
             global_colormap.as_ref(),
+            terrain_indices.as_ref(),
+            atlas_texture.as_ref(),
+            atlas_normal.as_ref(),
+            atlas_tiles,
         );
 
         // Create camera centered on Europe (like EU4's main menu)
@@ -682,7 +692,7 @@ impl App {
         self.renderer.update_map_mode(
             &self.queue,
             map_mode_value,
-            (self.config.width, self.config.height),
+            self.renderer.map_size, // Use map dimensions, not window size
             current_zoom,
             self.current_map_mode != gui::MapMode::RealTerrain,
         );

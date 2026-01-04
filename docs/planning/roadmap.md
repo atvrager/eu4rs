@@ -295,7 +295,7 @@ Decoupled UI system for moddable interface management.
 - [ ] **10.4: Event Handling & Focus**: Interactive controls and focus management (Phase 5)
 - [x] **Phase 11: RealTerrain Graphics Improvement**: Authentic EU4 map rendering
   - [x] **11.1: Foundations**: Normal mapping, water colormap, seasonal tints (Phase 1)
-  - [ ] **11.2: Terrain Splatting**: Detailed textures (forest, desert, etc.) using splat maps (Phase 2)
+  - [x] **11.2: Terrain Splatting**: Detailed textures (forest, desert, etc.) using splat maps (Phase 2)
   - [ ] **11.3: Borders & FX**: High-quality borders, rivers, and seasonal transitions (Phase 3)
 
 **Key Files**: [mod.rs](../eu4game/src/gui/mod.rs), [nine_slice.rs](../eu4game/src/gui/nine_slice.rs), [sprite_cache.rs](../eu4game/src/gui/sprite_cache.rs)

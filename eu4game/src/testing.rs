@@ -13,6 +13,7 @@ use crate::dds::load_dds;
 use crate::gui::{GuiRenderer, GuiState};
 use crate::render::{SpriteRenderer, create_depth_texture};
 use crate::screen::{Screen, ScreenManager};
+use crate::world_loader;
 
 /// Assert that an image matches the golden snapshot.
 ///
@@ -997,6 +998,12 @@ impl MapTestHarness {
         let color_path = game_path.join("map/terrain/colormap_autumn.dds");
         let global_colormap = load_dds(&color_path).ok();
 
+        // Phase 2: Splatting assets
+        let terrain_indices = world_loader::load_terrain_indices();
+        let atlas_texture = world_loader::load_terrain_atlas();
+        let atlas_normal = world_loader::load_terrain_atlas_normal();
+        let atlas_tiles = world_loader::load_atlas_tile_mapping();
+
         // Load world state (minimal - just for testing)
         let start_date = eu4sim_core::state::Date::new(1444, 11, 11);
         let (world_state, _adjacency) =
@@ -1055,6 +1062,10 @@ impl MapTestHarness {
             normal_map.as_ref(),
             water_colormap.as_ref(),
             global_colormap.as_ref(),
+            terrain_indices.as_ref(),
+            atlas_texture.as_ref(),
+            atlas_normal.as_ref(),
+            atlas_tiles,
         );
 
         // Create camera centered on map
@@ -1164,7 +1175,14 @@ impl MapTestHarness {
         self.map_renderer.update_map_mode(
             self.headless.queue(),
             map_mode_value,
-            (width, height),
+            // Only RealTerrain needs the full map size for correct UV mapping.
+            // Other modes (Political, etc.) use this for border calculation, so they should
+            // use the screen/window size to maintain consistent border thickness.
+            if self.current_map_mode == crate::gui::MapMode::RealTerrain {
+                self.map_renderer.map_size
+            } else {
+                (width, height)
+            },
             8.0,
             self.current_map_mode != crate::gui::MapMode::RealTerrain,
         );

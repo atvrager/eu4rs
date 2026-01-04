@@ -30,6 +30,8 @@ struct MapSettings {
     border_enabled: f32,        // 1.0 = show borders, 0.0 = hide
     map_mode: f32,              // 0.0 = political, 1.0 = terrain, 2.0 = trade, 3.0 = religion, 4.0 = culture, 5.0 = economy, 6.0 = empire, 7.0 = region
     border_thickness: f32,      // Border thickness multiplier (1.0 = 1px, 2.0 = 2px, etc.)
+    _padding: vec2<f32>,
+    atlas_tiles: array<vec4<u32>, 64>, // Mapping terrain index -> atlas tile index (packed in vec4 for alignment)
 };
 
 // Province ID texture (RG8 encoded: R = low byte, G = high byte)
@@ -79,6 +81,18 @@ var s_water: sampler;
 var t_color: texture_2d<f32>;
 @group(0) @binding(15)
 var s_color: sampler;
+
+// Phase 2: Splatting bindings
+@group(0) @binding(16)
+var t_indices: texture_2d<u32>;
+@group(0) @binding(17)
+var t_atlas: texture_2d<f32>;
+@group(0) @binding(18)
+var s_atlas: sampler;
+@group(0) @binding(19)
+var t_atlas_normal: texture_2d<f32>;
+@group(0) @binding(20)
+var s_atlas_normal: sampler;
 
 // Decode province ID from RG channels (R = low byte, G = high byte)
 fn decode_province_id(color: vec4<f32>) -> u32 {
@@ -188,7 +202,7 @@ fn compute_terrain_color(uv: vec2<f32>) -> vec4<f32> {
     return vec4<f32>(color, 1.0);
 }
 
-// Helper for RealTerrain map mode (Phase 11.1)
+// Helper for RealTerrain map mode (Phase 11.2 - Texture Splatting)
 fn compute_realterrain_color(uv: vec2<f32>) -> vec4<f32> {
     let height = textureSample(t_heightmap, s_heightmap, uv).r;
     var color: vec4<f32>;
@@ -196,16 +210,73 @@ fn compute_realterrain_color(uv: vec2<f32>) -> vec4<f32> {
     if height < 0.368 { // Sea level (approx 94/255)
         // Water: sample from colormap_water
         color = textureSample(t_water, s_water, uv);
+        
+        // Apply world normal shading to water
+        let terrain_shade = compute_terrain_shading(uv);
+        color = vec4<f32>(color.rgb * terrain_shade, color.a);
     } else {
-        // Land: sample terrain type and apply global colormap (seasonal)
-        let base_terrain = textureSample(t_terrain, s_terrain, uv);
+        // Land: Phase 2 Texture Splatting
+        // 1. Sample terrain index from terrain.bmp
+        // textureLoad does not support wrapping/clamping automatically, so we must calculate valid coords manually
+        let width = u32(settings.texture_size.x);
+        let height = u32(settings.texture_size.y);
+        
+        // Wrap X (longitude) for seamless map: (x % w + w) % w
+        let x_raw = i32(uv.x * settings.texture_size.x);
+        let w_int = i32(width);
+        let px = u32((x_raw % w_int + w_int) % w_int);
+
+        // Clamp Y (latitude) to prevent out-of-bounds
+        let py = min(u32(uv.y * settings.texture_size.y), height - 1u);
+
+        let pixel_coords = vec2<u32>(px, py);
+        let raw_terrain_index = textureLoad(t_indices, pixel_coords, 0).r;
+        // Clamp to valid range (0-255) to prevent out-of-bounds array access
+        let terrain_index = min(raw_terrain_index, 255u);
+        
+        // 2. Get atlas tile index (vec4 lookup for alignment)
+        let tile_vec = settings.atlas_tiles[terrain_index / 4u];
+        let atlas_tile_index = tile_vec[terrain_index % 4u];
+        
+        // 3. Calculate UVs within the atlas
+        let atlas_x = atlas_tile_index % 4u;
+        let atlas_y = (atlas_tile_index / 4u) % 4u;
+        
+        // Tiling factor: dynamic based on texture size (approx 16 world units per tile)
+        // Global width (5632) / 16 = ~352 repeats
+        let tiling = settings.texture_size.x / 16.0;
+        let tile_uv = fract(uv * vec2<f32>(tiling, tiling * (settings.texture_size.y / settings.texture_size.x) * 2.0));
+        let final_atlas_uv = (vec2<f32>(f32(atlas_x), f32(atlas_y)) + tile_uv) * 0.25;
+        
+        // 4. Sample splat and detail normal
+        let splat_color = textureSample(t_atlas, s_atlas, final_atlas_uv);
+        let splat_normal_raw = textureSample(t_atlas_normal, s_atlas_normal, final_atlas_uv).rgb;
+        let splat_normal = normalize(splat_normal_raw * 2.0 - 1.0);
+        
+        // DEBUG: Visualize terrain index directly (comment out for production)
+        // return vec4<f32>(f32(terrain_index) / 255.0, 0.0, 0.0, 1.0);
+        
+        // DEBUG: Visualize atlas tile index (should be 0-15)
+        // return vec4<f32>(f32(atlas_tile_index) / 16.0, 0.0, 0.0, 1.0);
+        
+        // 5. Tint and shade
         let global_color = textureSample(t_color, s_color, uv);
-        color = vec4<f32>(base_terrain.rgb * global_color.rgb * 1.5, base_terrain.a);
+        
+        // Combine world normal and detail normal
+        let world_normal_raw = textureSample(t_normal, s_normal, uv).rgb;
+        let world_normal = normalize(world_normal_raw * 2.0 - 1.0);
+        
+        // Perturb world normal - detail normal xy affects world normal xy
+        let combined_normal = normalize(world_normal + vec3<f32>(splat_normal.xy * 0.4, 0.0));
+
+        let light_dir = normalize(vec3<f32>(-0.5, -0.7, 0.5));
+        let diffuse = max(dot(combined_normal, light_dir), 0.0);
+        let terrain_shade = diffuse * 0.7 + 0.3; // Ambient shift
+
+        color = vec4<f32>(splat_color.rgb * global_color.rgb * 2.0 * terrain_shade, 1.0);
     }
 
-    // Apply high-detail normal shading for depth
-    let terrain_shade = compute_terrain_shading(uv);
-    return vec4<f32>(color.rgb * terrain_shade, color.a);
+    return color;
 }
 
 @fragment

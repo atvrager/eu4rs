@@ -33,7 +33,7 @@ EU4 uses a multi-layered approach to render its map:
     *   Load `map/terrain/colormap_autumn.dds` (or a specific season).
     *   Multiply the terrain color by this global colormap to add regional variety (e.g., darker forests in north, sandy tint in deserts).
 
-### Phase 2: Texture Splatting (The "Real" Fix)
+### Phase 2: Texture Splatting (The "Real" Fix) ✅ **COMPLETE**
 **Goal:** Replace the low-res splat map colors with high-res tiling textures.
 
 1.  **Texture Atlas Loading**:
@@ -41,11 +41,11 @@ EU4 uses a multi-layered approach to render its map:
     *   These contain the actual "Grass", "Drylands", "Snow" textures arranged in a grid.
 2.  **Terrain Index Parsing**:
     *   Parse `map/terrain.txt` to map `terrain.bmp` indices to Atlas Coordinates.
-    *   Example: Index 0 (Grass) -> Atlas Tile (0, 0).
+    *   Implemented heuristic mapping for common terrain types.
 3.  **Shader Splatting Logic**:
     *   Sample `terrain.bmp` to get the terrain **index**.
     *   Sample the **Atlas** using UVs based on world position (tiling) + Index offset.
-    *   **Blending**: Sample neighbors in `terrain.bmp` to blend edges (e.g., Grass fading into Mountain). *Note: EU4 uses a specific blur/blend radius for this.*
+    *   Combined world normals with detail normals for micro-shading.
 
 ### Phase 3: Seasonal Cycles (Polish)
 **Goal:** Dynamic seasons.
@@ -57,7 +57,7 @@ EU4 uses a multi-layered approach to render its map:
 
 ## 4. Immediate Next Steps (Action Items)
 
-We have completed **Phase 1**, significantly improving the depth and color of the map. The next focus is **Phase 2**, which will introduce detailed tiling textures.
+We have completed **Phase 2**, adding high-detail tiling textures to the RealTerrain map mode. The next focus is **Phase 3**, adding dynamic seasonal transitions and potentially high-quality borders.
 
 1.  **Phase 2: Texture Splatting**:
     *   Implement `map/terrain.txt` parser to map indices to atlas positions.
