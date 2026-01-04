@@ -925,6 +925,8 @@ pub struct MapTestHarness {
     province_lookup: eu4data::map::ProvinceLookup,
     /// Heightmap for terrain shading.
     heightmap: Option<image::GrayImage>,
+    /// Terrain texture for RealTerrain mode.
+    terrain_texture: Option<image::RgbaImage>,
 
     /// Game world state.
     world_state: eu4sim_core::WorldState,
@@ -971,6 +973,10 @@ impl MapTestHarness {
         let province_map = image::open(&provinces_path).ok()?.to_rgba8();
         let province_lookup = eu4data::map::ProvinceLookup::load(&definitions_path).ok()?;
         let heightmap = image::open(&heightmap_path).ok().map(|h| h.to_luma8());
+
+        // Load terrain texture for RealTerrain mode
+        let terrain_path = game_path.join("map/terrain.bmp");
+        let terrain_texture = image::open(&terrain_path).ok().map(|img| img.to_rgba8());
 
         // Load world state (minimal - just for testing)
         let start_date = eu4sim_core::state::Date::new(1444, 11, 11);
@@ -1026,7 +1032,7 @@ impl MapTestHarness {
             &province_map,
             &lookup,
             heightmap.as_ref(),
-            None, // No terrain texture for tests
+            terrain_texture.as_ref(),
         );
 
         // Create camera centered on map
@@ -1044,6 +1050,7 @@ impl MapTestHarness {
             province_map,
             province_lookup,
             heightmap,
+            terrain_texture,
             world_state,
             country_colors,
             trade_network,
