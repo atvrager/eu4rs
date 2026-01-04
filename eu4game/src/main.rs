@@ -653,10 +653,20 @@ impl App {
             gui::MapMode::Region => 7.0,
             _ => 0.0, // Other modes default to political for now
         };
+        // Use appropriate zoom depending on which camera mode is active
+        let current_zoom = if self.use_3d_terrain {
+            // For 3D mode, derive zoom from camera distance
+            // Closer camera = higher zoom (more zoomed in)
+            let distance = self.camera_3d.distance();
+            (1000.0 / distance).clamp(1.0, 50.0)
+        } else {
+            self.camera.zoom as f32
+        };
         self.renderer.update_map_mode(
             &self.queue,
             map_mode_value,
             (self.config.width, self.config.height),
+            current_zoom,
         );
 
         // Create command encoder

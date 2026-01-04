@@ -1126,8 +1126,13 @@ impl MapTestHarness {
             crate::gui::MapMode::Diplomacy => 8.0,
             crate::gui::MapMode::Players => 9.0,
         };
-        self.map_renderer
-            .update_map_mode(self.headless.queue(), map_mode_value, (width, height));
+        // Use zoom of 10.0 for test harness (gives border_thickness of 1.0, matching original behavior)
+        self.map_renderer.update_map_mode(
+            self.headless.queue(),
+            map_mode_value,
+            (width, height),
+            10.0,
+        );
 
         // Create offscreen target
         let target = OffscreenTarget::new(self.headless.device(), width, height);

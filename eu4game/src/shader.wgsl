@@ -29,6 +29,7 @@ struct MapSettings {
     lookup_size: f32,           // Lookup texture width (e.g., 8192)
     border_enabled: f32,        // 1.0 = show borders, 0.0 = hide
     map_mode: f32,              // 0.0 = political, 1.0 = terrain, 2.0 = trade, 3.0 = religion, 4.0 = culture, 5.0 = economy, 6.0 = empire, 7.0 = region
+    border_thickness: f32,      // Border thickness multiplier (1.0 = 1px, 2.0 = 2px, etc.)
 };
 
 // Province ID texture (RG8 encoded: R = low byte, G = high byte)
@@ -77,7 +78,8 @@ fn lookup_color(province_id: u32) -> vec4<f32> {
 
 // Check if this pixel is on a province border
 fn is_border(uv: vec2<f32>, center_id: u32) -> bool {
-    let pixel_size = 1.0 / settings.texture_size;
+    // Scale pixel size by border_thickness for zoom-dependent borders
+    let pixel_size = (1.0 / settings.texture_size) * settings.border_thickness;
 
     // Sample 4 neighbors
     let left_id = sample_province_id(uv + vec2<f32>(-pixel_size.x, 0.0));

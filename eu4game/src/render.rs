@@ -154,8 +154,10 @@ pub struct MapSettings {
     pub border_enabled: f32,
     /// Map mode (0.0 = political, 1.0 = terrain).
     pub map_mode: f32,
+    /// Border thickness multiplier (1.0 = 1px, 2.0 = 2px, etc.).
+    pub border_thickness: f32,
     /// Padding to align to 16 bytes (wgpu requirement).
-    _padding: [f32; 3],
+    _padding: [f32; 2],
 }
 
 impl Default for MapSettings {
@@ -165,9 +167,20 @@ impl Default for MapSettings {
             lookup_size: LOOKUP_SIZE as f32,
             border_enabled: 1.0,
             map_mode: 0.0, // Default to political mode
-            _padding: [0.0; 3],
+            border_thickness: 1.0,
+            _padding: [0.0; 2],
         }
     }
+}
+
+/// Calculate border thickness based on zoom level.
+/// At high zoom (zoomed in), borders are thinner so they don't dominate.
+/// At low zoom (zoomed out), borders are thicker so they remain visible.
+pub fn calculate_border_thickness(zoom: f32) -> f32 {
+    // zoom ranges from ~1 (zoomed out) to ~50 (zoomed in)
+    // We want thickness from 2.0 (zoomed out) to 0.3 (zoomed in)
+    // Invert the relationship: divide constant by zoom
+    (10.0 / zoom).clamp(0.3, 2.0)
 }
 
 /// Army marker instance data for GPU instanced rendering.
@@ -557,7 +570,8 @@ impl Renderer {
             lookup_size: LOOKUP_SIZE as f32,
             border_enabled: 1.0,
             map_mode: 0.0, // Default to political mode
-            _padding: [0.0; 3],
+            border_thickness: 1.0,
+            _padding: [0.0; 2],
         };
         let settings_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Settings Buffer"),
@@ -953,13 +967,21 @@ impl Renderer {
     ///
     /// # Arguments
     /// * `map_mode` - 0.0 for political mode, 1.0 for terrain mode
-    pub fn update_map_mode(&self, queue: &wgpu::Queue, map_mode: f32, map_size: (u32, u32)) {
+    /// * `zoom` - Current camera zoom level (used for border thickness)
+    pub fn update_map_mode(
+        &self,
+        queue: &wgpu::Queue,
+        map_mode: f32,
+        map_size: (u32, u32),
+        zoom: f32,
+    ) {
         let settings = MapSettings {
             texture_size: [map_size.0 as f32, map_size.1 as f32],
             lookup_size: LOOKUP_SIZE as f32,
             border_enabled: 1.0,
             map_mode,
-            _padding: [0.0; 3],
+            border_thickness: calculate_border_thickness(zoom),
+            _padding: [0.0; 2],
         };
         queue.write_buffer(&self.settings_buffer, 0, bytemuck::cast_slice(&[settings]));
     }
@@ -2000,6 +2022,31 @@ mod terrain_tests {
             16,
             "TerrainSettings should be 16 bytes"
         );
+    }
+
+    #[test]
+    fn test_map_settings_size() {
+        // 6 f32 fields + 2 f32 padding = 32 bytes
+        assert_eq!(
+            std::mem::size_of::<MapSettings>(),
+            32,
+            "MapSettings should be 32 bytes (8 f32s for GPU alignment)"
+        );
+    }
+
+    #[test]
+    fn test_border_thickness_calculation() {
+        // Zoomed out (low zoom) → thick borders (so they remain visible)
+        assert_eq!(calculate_border_thickness(1.0), 2.0); // Clamped to max
+        assert_eq!(calculate_border_thickness(5.0), 2.0);
+
+        // Normal zoom → 1.0 thickness
+        assert_eq!(calculate_border_thickness(10.0), 1.0);
+
+        // Zoomed in (high zoom) → thin borders (so they don't dominate)
+        assert_eq!(calculate_border_thickness(20.0), 0.5);
+        assert_eq!(calculate_border_thickness(50.0), 0.3); // Clamped to min
+        assert_eq!(calculate_border_thickness(100.0), 0.3); // Clamped to min
     }
 }
 

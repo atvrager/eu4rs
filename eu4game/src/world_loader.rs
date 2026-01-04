@@ -268,6 +268,39 @@ pub fn load_province_data() -> (
     (image::DynamicImage::ImageRgba8(img), None, None)
 }
 
+/// Loads terrain texture from EU4 game files.
+///
+/// This loads terrain.bmp (palette texture) and converts it to RGB.
+/// The palette colors represent terrain types (green for forest, tan for desert, etc.)
+#[allow(dead_code)] // Will be used for RealTerrain map mode
+pub fn load_terrain_texture() -> Option<image::RgbaImage> {
+    let game_path = eu4data::path::detect_game_path()?;
+    let terrain_path = game_path.join("map/terrain.bmp");
+
+    if !terrain_path.exists() {
+        log::warn!("Terrain texture not found at: {}", terrain_path.display());
+        return None;
+    }
+
+    log::info!("Loading terrain texture from: {}", terrain_path.display());
+    match image::open(&terrain_path) {
+        Ok(img) => {
+            // Convert from palette to RGBA
+            let rgba = img.to_rgba8();
+            log::info!(
+                "Loaded terrain texture ({}x{})",
+                rgba.width(),
+                rgba.height()
+            );
+            Some(rgba)
+        }
+        Err(e) => {
+            log::warn!("Failed to load terrain texture: {}", e);
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
