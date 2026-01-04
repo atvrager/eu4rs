@@ -234,6 +234,8 @@ pub enum MapMode {
     Culture,
     /// Multiplayer player nations
     Players,
+    /// Real terrain texture (forests, deserts, etc.)
+    RealTerrain,
 }
 
 /// Buttons and other interactive widgets return these actions to indicate

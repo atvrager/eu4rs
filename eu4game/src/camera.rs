@@ -24,6 +24,18 @@ impl Camera {
         }
     }
 
+    /// Centers the camera on Europe/Mediterranean area.
+    ///
+    /// This is the default view for EU4's main menu and country selection.
+    /// Shows Britain, France, Iberia, Italy, Scandinavia and the Mediterranean.
+    pub fn center_on_europe(&mut self) {
+        // EU4 map: Europe is centered around UV (0.52, 0.38)
+        // X=0.52 centers on France/Germany, Y=0.38 shows Med and Scandinavia
+        self.position = (0.52, 0.38);
+        // Zoom 2.5x for a nice tight view of Europe like the real main menu
+        self.zoom = 2.5;
+    }
+
     /// Pans the camera by screen pixel deltas.
     pub fn pan(&mut self, dx: f64, dy: f64, screen_width: f64, screen_height: f64) {
         if screen_width == 0.0 || screen_height == 0.0 {
@@ -298,6 +310,30 @@ impl Camera3D {
         CameraUniform3D {
             view_proj: self.view_projection_matrix(aspect_ratio).to_cols_array_2d(),
         }
+    }
+
+    /// Centers the camera on a specific UV position (0.0-1.0 range).
+    ///
+    /// Moves both camera position and target to look at the given map location.
+    pub fn center_on_uv(&mut self, u: f32, v: f32) {
+        let world_x = u * self.map_width;
+        let world_z = v * self.map_height;
+
+        // Keep the same relative offset from target
+        let offset = self.position - self.target;
+
+        self.target = Vec3::new(world_x, 0.0, world_z);
+        self.position = self.target + offset;
+    }
+
+    /// Centers the camera on Europe/Mediterranean area.
+    ///
+    /// This is the default view for EU4's main menu - looking down at
+    /// the Mediterranean with Europe visible.
+    pub fn center_on_europe(&mut self) {
+        // EU4 map: Europe is centered around UV (0.52, 0.38)
+        // Shows Britain, France, Iberia, Italy, Scandinavia and the Med
+        self.center_on_uv(0.52, 0.38);
     }
 
     /// Returns the view frustum for culling (Phase 8).

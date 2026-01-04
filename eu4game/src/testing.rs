@@ -1018,7 +1018,7 @@ impl MapTestHarness {
             .map(|(color, id)| (*color, *id))
             .collect();
 
-        // Create map renderer
+        // Create map renderer (no terrain texture for tests)
         let map_renderer = crate::render::Renderer::new(
             headless.device(),
             headless.queue(),
@@ -1026,6 +1026,7 @@ impl MapTestHarness {
             &province_map,
             &lookup,
             heightmap.as_ref(),
+            None, // No terrain texture for tests
         );
 
         // Create camera centered on map
@@ -1123,15 +1124,16 @@ impl MapTestHarness {
             crate::gui::MapMode::Economy => 5.0,
             crate::gui::MapMode::Empire => 6.0,
             crate::gui::MapMode::Region => 7.0,
-            crate::gui::MapMode::Diplomacy => 8.0,
-            crate::gui::MapMode::Players => 9.0,
+            crate::gui::MapMode::RealTerrain => 8.0,
+            crate::gui::MapMode::Diplomacy => 9.0,
+            crate::gui::MapMode::Players => 10.0,
         };
-        // Use zoom of 10.0 for test harness (gives border_thickness of 1.0, matching original behavior)
+        // Use zoom of 8.0 for test harness (gives border_thickness of 1.0, matching original behavior)
         self.map_renderer.update_map_mode(
             self.headless.queue(),
             map_mode_value,
             (width, height),
-            10.0,
+            8.0,
         );
 
         // Create offscreen target
@@ -1203,6 +1205,9 @@ impl MapTestHarness {
             MapMode::Economy => self.update_economy_lookup(),
             MapMode::Empire => self.update_empire_lookup(),
             MapMode::Region => self.update_region_lookup(),
+            MapMode::RealTerrain => {
+                // RealTerrain mode uses terrain.bmp texture, no lookup needed
+            }
             MapMode::Diplomacy => {
                 // TODO: Implement diplomacy mode
             }
@@ -1863,5 +1868,81 @@ mod tests {
 
         let image = harness.render_to_image((1920, 1080));
         assert_snapshot(&image, "map_region_center");
+    }
+
+    // ========================================================================
+    // RealTerrain Map Mode Tests (Phase 14)
+    // ========================================================================
+
+    #[test]
+    fn test_map_realterrain_europe() {
+        let Some(mut harness) = MapTestHarness::new() else {
+            return;
+        };
+
+        // Center on Europe/Mediterranean (matches main menu view)
+        harness.set_camera((0.52, 0.38), 2.5);
+        harness.set_map_mode(crate::gui::MapMode::RealTerrain);
+
+        let image = harness.render_to_image((1920, 1080));
+        assert_snapshot(&image, "map_realterrain_europe");
+    }
+
+    #[test]
+    fn test_map_realterrain_center() {
+        let Some(mut harness) = MapTestHarness::new() else {
+            return;
+        };
+
+        harness.set_camera((0.5, 0.5), 1.0);
+        harness.set_map_mode(crate::gui::MapMode::RealTerrain);
+
+        let image = harness.render_to_image((1920, 1080));
+        assert_snapshot(&image, "map_realterrain_center");
+    }
+
+    #[test]
+    fn test_map_mode_realterrain_value() {
+        // Verify RealTerrain mode is assigned value 8.0
+        use crate::gui::MapMode;
+
+        let map_mode_value = |mode: MapMode| -> f32 {
+            match mode {
+                MapMode::Political => 0.0,
+                MapMode::Terrain => 1.0,
+                MapMode::Trade => 2.0,
+                MapMode::Religion => 3.0,
+                MapMode::Culture => 4.0,
+                MapMode::Economy => 5.0,
+                MapMode::Empire => 6.0,
+                MapMode::Region => 7.0,
+                MapMode::RealTerrain => 8.0,
+                MapMode::Diplomacy => 9.0,
+                MapMode::Players => 10.0,
+            }
+        };
+
+        assert_eq!(map_mode_value(MapMode::RealTerrain), 8.0);
+        assert_eq!(map_mode_value(MapMode::Terrain), 1.0);
+        assert_eq!(map_mode_value(MapMode::Political), 0.0);
+    }
+
+    #[test]
+    fn test_map_harness_realterrain_mode() {
+        let Some(mut harness) = MapTestHarness::new() else {
+            return;
+        };
+
+        // Start in default mode (Political)
+        assert_eq!(harness.map_mode(), crate::gui::MapMode::Political);
+
+        // Switch to RealTerrain mode
+        harness.set_map_mode(crate::gui::MapMode::RealTerrain);
+        assert_eq!(harness.map_mode(), crate::gui::MapMode::RealTerrain);
+
+        // Render should work in RealTerrain mode
+        let image = harness.render_to_image((1920, 1080));
+        assert_eq!(image.width(), 1920);
+        assert_eq!(image.height(), 1080);
     }
 }

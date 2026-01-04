@@ -73,7 +73,7 @@ impl CountrySelectTopPanel {
         // Poll all map mode buttons and return action if clicked
         // Each button represents a specific map mode
         if self.mapmode_terrain.poll_click().is_some() {
-            return Some(UiAction::SetMapMode(MapMode::Terrain));
+            return Some(UiAction::SetMapMode(MapMode::RealTerrain));
         }
         if self.mapmode_political.poll_click().is_some() {
             return Some(UiAction::SetMapMode(MapMode::Political));

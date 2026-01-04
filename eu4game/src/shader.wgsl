@@ -56,6 +56,12 @@ var t_heightmap: texture_2d<f32>;
 @group(0) @binding(7)
 var s_heightmap: sampler;
 
+// Terrain color texture (terrain.bmp converted to RGB, for RealTerrain mode)
+@group(0) @binding(8)
+var t_terrain: texture_2d<f32>;
+@group(0) @binding(9)
+var s_terrain: sampler;
+
 // Decode province ID from RG channels (R = low byte, G = high byte)
 fn decode_province_id(color: vec4<f32>) -> u32 {
     let low = u32(color.r * 255.0 + 0.5);
@@ -245,6 +251,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         // Apply subtle terrain shading to region colors
         let terrain_shade = compute_terrain_shading(final_uv);
         color = vec4<f32>(color.rgb * terrain_shade, color.a);
+    } else if (settings.map_mode < 8.5) {
+        // RealTerrain mode: sample from terrain.bmp texture (shows forest, desert, etc.)
+        color = textureSample(t_terrain, s_terrain, final_uv);
+        // Apply heightmap shading for depth
+        let terrain_shade = compute_terrain_shading(final_uv);
+        color = vec4<f32>(color.rgb * terrain_shade, color.a);
     } else {
         // Future map modes
         color = lookup_color(province_id);
@@ -344,6 +356,11 @@ fn fs_terrain(in: TerrainVertexOutput) -> @location(0) vec4<f32> {
     } else if (settings.map_mode < 1.5) {
         // Terrain mode
         color = compute_terrain_color(final_uv);
+    } else if (settings.map_mode > 7.5 && settings.map_mode < 8.5) {
+        // RealTerrain mode: sample from terrain.bmp texture
+        color = textureSample(t_terrain, s_terrain, final_uv);
+        let terrain_shade = compute_terrain_shading(final_uv);
+        color = vec4<f32>(color.rgb * terrain_shade, color.a);
     } else {
         // Other map modes
         color = lookup_color(province_id);

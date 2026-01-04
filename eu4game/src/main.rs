@@ -328,6 +328,9 @@ impl App {
             world_loader::compute_province_centers(&province_map, &province_lookup);
         log::info!("Computed {} province centers", province_centers.len());
 
+        // Load terrain texture for RealTerrain map mode
+        let terrain_texture = world_loader::load_terrain_texture();
+
         // Create GPU renderer with province lookup for shader-based coloring
         let lookup_map = province_lookup.as_ref().map(|l| &l.by_color);
         let renderer = render::Renderer::new(
@@ -337,10 +340,12 @@ impl App {
             &province_map,
             lookup_map.unwrap_or(&std::collections::HashMap::new()),
             heightmap.as_ref(),
+            terrain_texture.as_ref(),
         );
 
-        // Create camera
-        let camera = camera::Camera::new(content_aspect);
+        // Create camera centered on Europe (like EU4's main menu)
+        let mut camera = camera::Camera::new(content_aspect);
+        camera.center_on_europe();
 
         // Load world state from game files (or use default if unavailable)
         let (initial_state, playable_countries, country_colors, localisation) =
@@ -556,7 +561,7 @@ impl App {
             country_select_left: None,
             start_date: eu4data::Eu4Date::from_ymd(1444, 11, 11), // Default EU4 start
             year_range,
-            current_map_mode: gui::MapMode::Terrain, // MainMenu defaults to terrain (Phase 9.5.1)
+            current_map_mode: gui::MapMode::RealTerrain, // MainMenu shows real terrain textures
             trade_network,
             sea_provinces,
             religions,
@@ -565,7 +570,12 @@ impl App {
             localisation,
 
             // 3D terrain rendering (Phase 5)
-            camera_3d: camera::Camera3D::new(map_width as f32, map_height as f32),
+            camera_3d: {
+                let mut cam = camera::Camera3D::new(map_width as f32, map_height as f32);
+                cam.center_on_europe(); // Main menu centers on Europe/Mediterranean
+                cam.zoom(0.5); // Zoom out for wider main menu view
+                cam
+            },
             terrain_renderer: None, // Created lazily on first F3 toggle
             use_3d_terrain: false,
             held_keys: std::collections::HashSet::new(),
@@ -641,7 +651,7 @@ impl App {
             terrain_renderer.update_settings(&self.queue, camera::TerrainSettings::default());
         }
 
-        // Update map mode uniform (Phase 9.5.1, 9.5.2, 9.5.3, 9.5.4, 9.5.5)
+        // Update map mode uniform (Phase 9.5.1, 9.5.2, 9.5.3, 9.5.4, 9.5.5, Phase 14)
         let map_mode_value = match self.current_map_mode {
             gui::MapMode::Political => 0.0,
             gui::MapMode::Terrain => 1.0,
@@ -651,6 +661,7 @@ impl App {
             gui::MapMode::Economy => 5.0,
             gui::MapMode::Empire => 6.0,
             gui::MapMode::Region => 7.0,
+            gui::MapMode::RealTerrain => 8.0,
             _ => 0.0, // Other modes default to political for now
         };
         // Use appropriate zoom depending on which camera mode is active
@@ -710,16 +721,13 @@ impl App {
             log::debug!("=== RENDERING PHASE: {:?} ===", current_screen);
             match current_screen {
                 screen::Screen::MainMenu => {
-                    // Main menu: Just render the menu UI, no map
-                    log::debug!("MainMenu: Skipping all map/sprite rendering");
+                    // Main menu: Render terrain map as background (like real EU4)
+                    log::debug!("MainMenu: Rendering RealTerrain background");
 
-                    // DIAGNOSTIC: Draw a bright green test rectangle to verify rendering works
-                    // If you see a green box at (500,100), the pipeline works and something
-                    // else is drawing black over our text
-                    log::debug!("Drawing diagnostic green rectangle");
-                    // TODO: Actually draw a test rectangle here if needed
-
-                    // TODO: Render main menu panel
+                    // Render 2D map with RealTerrain mode as main menu background
+                    render_pass.set_pipeline(&self.renderer.pipeline);
+                    render_pass.set_bind_group(0, &self.renderer.bind_group, &[]);
+                    render_pass.draw(0..3, 0..1);
                 }
                 screen::Screen::SinglePlayer | screen::Screen::Playing => {
                     // Game screens: Render map and game elements
@@ -2907,7 +2915,7 @@ impl App {
                 // Parse the mode string to MapMode enum
                 use gui::MapMode;
                 let mode = match mode_str.as_str() {
-                    "mapmode_terrain" => MapMode::Terrain,
+                    "mapmode_terrain" => MapMode::RealTerrain, // Terrain button shows real textures
                     "mapmode_political" => MapMode::Political,
                     "mapmode_trade" => MapMode::Trade,
                     "mapmode_religion" => MapMode::Religion,
