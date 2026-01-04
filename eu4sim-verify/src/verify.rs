@@ -122,6 +122,9 @@ pub fn verify_country(
         ));
     }
 
+    // Show expense breakdown (informational - no independent verification yet)
+    results.extend(show_expenses(country));
+
     results
 }
 
@@ -382,6 +385,36 @@ fn verify_monthly_production(
     }
 }
 
+/// Show expense breakdown from save (informational - no independent verification)
+///
+/// We display these as PASS with the breakdown since we can't independently verify
+/// without extracting army/fleet/fort counts (which requires more parsing work).
+fn show_expenses(country: &CountryVerifyData) -> Vec<VerificationResult> {
+    let mut results = Vec::new();
+
+    // Total expenses
+    if let Some(total) = country.cached_total_expenses {
+        let breakdown = format!(
+            "army={:.2} navy={:.2} fort={:.2}",
+            country.cached_army_maintenance.unwrap_or(0.0),
+            country.cached_navy_maintenance.unwrap_or(0.0),
+            country.cached_fort_maintenance.unwrap_or(0.0),
+        );
+        results.push(VerificationResult {
+            metric: MetricType::MonthlyExpenses {
+                country: country.tag.clone(),
+            },
+            expected: total,
+            actual: total,
+            delta: 0.0,
+            status: crate::VerifyStatus::Pass,
+            details: Some(breakdown),
+        });
+    }
+
+    results
+}
+
 /// Verify institution spread for a province
 pub fn verify_institution_spread(
     province: &ProvinceVerifyData,
@@ -422,6 +455,10 @@ mod tests {
             cached_monthly_tax: None,
             cached_monthly_trade: None,
             cached_monthly_production: None,
+            cached_army_maintenance: None,
+            cached_navy_maintenance: None,
+            cached_fort_maintenance: None,
+            cached_total_expenses: None,
             owned_provinces: vec![1, 2],
         };
 

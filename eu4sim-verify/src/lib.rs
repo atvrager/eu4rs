@@ -243,8 +243,10 @@ pub enum MetricType {
     MonthlyTaxIncome { country: String },
     MonthlyTradeIncome { country: String },
     MonthlyProductionIncome { country: String },
+    MonthlyExpenses { country: String },
     ArmyMaintenance { country: String },
     NavyMaintenance { country: String },
+    FortMaintenance { country: String },
     InstitutionSpread { province: u32, institution: String },
     ProvinceDevelopment { province: u32 },
 }
@@ -258,8 +260,10 @@ impl std::fmt::Display for MetricType {
             MetricType::MonthlyProductionIncome { country } => {
                 write!(f, "MonthlyProduction({})", country)
             }
-            MetricType::ArmyMaintenance { country } => write!(f, "ArmyMaintenance({})", country),
-            MetricType::NavyMaintenance { country } => write!(f, "NavyMaintenance({})", country),
+            MetricType::MonthlyExpenses { country } => write!(f, "MonthlyExpenses({})", country),
+            MetricType::ArmyMaintenance { country } => write!(f, "ArmyMaint({})", country),
+            MetricType::NavyMaintenance { country } => write!(f, "NavyMaint({})", country),
+            MetricType::FortMaintenance { country } => write!(f, "FortMaint({})", country),
             MetricType::InstitutionSpread {
                 province,
                 institution,

@@ -63,6 +63,9 @@ pub fn print_report(summary: &VerificationSummary, writer: &mut impl Write) -> s
                 "[PASS] {}: expected={:.2}, actual={:.2}",
                 result.metric, result.expected, result.actual
             )?;
+            if let Some(details) = &result.details {
+                writeln!(writer, "       {}", details)?;
+            }
         }
         writeln!(writer)?;
     }

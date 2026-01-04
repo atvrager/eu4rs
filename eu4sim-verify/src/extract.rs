@@ -34,6 +34,12 @@ pub struct CountryVerifyData {
     pub cached_monthly_trade: Option<f64>,
     pub cached_monthly_production: Option<f64>,
 
+    // Expense breakdown (from game ledger)
+    pub cached_army_maintenance: Option<f64>,
+    pub cached_navy_maintenance: Option<f64>,
+    pub cached_fort_maintenance: Option<f64>,
+    pub cached_total_expenses: Option<f64>,
+
     // Input data for recalculation
     pub owned_provinces: Vec<u32>,
 }
@@ -69,6 +75,10 @@ fn extract_country_data(country: &ExtractedCountry) -> CountryVerifyData {
         cached_monthly_tax: country.monthly_income.as_ref().map(|i| i.tax),
         cached_monthly_trade: country.monthly_income.as_ref().map(|i| i.trade),
         cached_monthly_production: country.monthly_income.as_ref().map(|i| i.production),
+        cached_army_maintenance: country.army_maintenance,
+        cached_navy_maintenance: country.navy_maintenance,
+        cached_fort_maintenance: country.fort_maintenance,
+        cached_total_expenses: country.total_monthly_expenses,
         owned_provinces: country.owned_province_ids.clone(),
     }
 }
