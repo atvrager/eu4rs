@@ -229,6 +229,7 @@ fn parse_binary_gamestate(data: &[u8]) -> Result<ExtractedState> {
             institutions: HashMap::new(), // TODO: Extract institution progress
             local_autonomy: Some(province.local_autonomy.into()),
             buildings,
+            trade_good: province.trade_goods.clone(),
         };
 
         provinces.insert(id_u32, extracted);
@@ -636,6 +637,7 @@ fn parse_with_query(query: eu4save::query::Query) -> Result<ExtractedState> {
             institutions: HashMap::new(),
             local_autonomy: Some(province.local_autonomy.into()),
             buildings,
+            trade_good: province.trade_goods.clone(),
         };
 
         provinces.insert(id_u32, extracted);
@@ -1281,7 +1283,7 @@ fn extract_ideas(content: &str, tag: &str) -> crate::ExtractedIdeas {
 /// Extract active country modifiers from save file content
 ///
 /// Modifiers are stored in blocks like:
-/// ```
+/// ```text
 /// modifier={
 ///     modifier="tripitaka_koreana"
 ///     date=-1.1.1
@@ -1544,6 +1546,14 @@ fn parse_province_block(id: u32, content: &str) -> crate::ExtractedProvince {
 
     // Extract buildings - look for building_name=yes patterns
     province.buildings = extract_buildings(content);
+
+    // Extract trade goods - pattern: trade_goods="grain" or trade_goods=grain
+    if let Some(caps) = regex::Regex::new(r#"trade_goods="?([a-z_]+)"?"#)
+        .ok()
+        .and_then(|re| re.captures(content))
+    {
+        province.trade_good = caps.get(1).map(|m| m.as_str().to_string());
+    }
 
     province
 }

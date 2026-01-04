@@ -54,6 +54,12 @@ pub struct ProvinceVerifyData {
 
     // Institutions
     pub institution_progress: std::collections::HashMap<String, f64>,
+
+    // Trade good produced (for production income calculation)
+    pub trade_good: Option<String>,
+
+    // Buildings present (for efficiency calculation)
+    pub buildings: Vec<String>,
 }
 
 fn extract_country_data(country: &ExtractedCountry) -> CountryVerifyData {
@@ -76,5 +82,7 @@ fn extract_province_data(province: &ExtractedProvince) -> ProvinceVerifyData {
         base_manpower: province.base_manpower.unwrap_or(0.0),
         local_autonomy: province.local_autonomy.unwrap_or(0.0),
         institution_progress: province.institutions.clone(),
+        trade_good: province.trade_good.clone(),
+        buildings: province.buildings.clone(),
     }
 }

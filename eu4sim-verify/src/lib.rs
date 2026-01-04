@@ -172,6 +172,9 @@ pub struct ExtractedProvince {
 
     // Buildings present in province
     pub buildings: Vec<String>,
+
+    // Trade good produced (e.g., "grain", "cloth", "silk")
+    pub trade_good: Option<String>,
 }
 
 /// Result of verifying a single metric

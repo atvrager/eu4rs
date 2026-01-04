@@ -42,6 +42,10 @@ enum Commands {
         /// Write report to file instead of stdout
         #[arg(short, long)]
         output: Option<PathBuf>,
+
+        /// Path to EU4 game directory (optional, auto-detects if not provided)
+        #[arg(long, env = "EU4_GAME_PATH")]
+        game_path: Option<PathBuf>,
     },
 
     /// Show save file metadata without verification
@@ -133,6 +137,7 @@ fn main() -> Result<()> {
             country,
             json,
             output,
+            game_path,
         } => {
             log::info!("Loading save file: {}", save_path.display());
 
@@ -150,11 +155,36 @@ fn main() -> Result<()> {
                 state.provinces.len()
             );
 
+            // Load game data if path available (optional for backward compatibility)
+            let game_data = match game_path.or_else(eu4data::path::detect_game_path) {
+                Some(path) => {
+                    log::info!("Loading game data from: {}", path.display());
+                    match verify::GameData::load(&path) {
+                        Ok(gd) => {
+                            log::info!(
+                                "Loaded {} goods prices, {} building efficiency values",
+                                gd.goods_prices.len(),
+                                gd.building_efficiency.len()
+                            );
+                            Some(gd)
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to load game data: {}. Using estimates.", e);
+                            None
+                        }
+                    }
+                }
+                None => {
+                    log::info!("No game path provided, using estimated goods prices");
+                    None
+                }
+            };
+
             // Extract verification data
             let verify_data = extract::extract_for_verification(&state);
 
             // Run verification
-            let mut summary = verify::verify_all(&verify_data, tolerance);
+            let mut summary = verify::verify_all(&verify_data, tolerance, game_data.as_ref());
 
             // Filter by country if specified
             if let Some(ref tag) = country {
