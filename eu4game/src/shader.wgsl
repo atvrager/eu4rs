@@ -62,6 +62,24 @@ var t_terrain: texture_2d<f32>;
 @group(0) @binding(9)
 var s_terrain: sampler;
 
+// World normal map texture (world_normal.bmp)
+@group(0) @binding(10)
+var t_normal: texture_2d<f32>;
+@group(0) @binding(11)
+var s_normal: sampler;
+
+// Water colormap texture (colormap_water.dds)
+@group(0) @binding(12)
+var t_water: texture_2d<f32>;
+@group(0) @binding(13)
+var s_water: sampler;
+
+// Global colormap texture (e.g. colormap_autumn.dds)
+@group(0) @binding(14)
+var t_color: texture_2d<f32>;
+@group(0) @binding(15)
+var s_color: sampler;
+
 // Decode province ID from RG channels (R = low byte, G = high byte)
 fn decode_province_id(color: vec4<f32>) -> u32 {
     let low = u32(color.r * 255.0 + 0.5);
@@ -93,34 +111,19 @@ fn is_border(uv: vec2<f32>, center_id: u32) -> bool {
     let up_id = sample_province_id(uv + vec2<f32>(0.0, -pixel_size.y));
     let down_id = sample_province_id(uv + vec2<f32>(0.0, pixel_size.y));
 
-    return left_id != center_id || right_id != center_id ||
-           up_id != center_id || down_id != center_id;
+    return left_id != center_id || right_id != center_id || up_id != center_id || down_id != center_id;
 }
 
-// Compute terrain shading from heightmap using directional lighting
-// Returns a multiplier in range [0.6, 1.4] to darken/lighten the base color
+// Compute terrain shading from normal map and heightmap
 fn compute_terrain_shading(uv: vec2<f32>) -> f32 {
-    let pixel_size = 1.0 / settings.texture_size;
-
-    // Sample heightmap at current position and neighbors
-    let h_center = textureSample(t_heightmap, s_heightmap, uv).r;
-    let h_left = textureSample(t_heightmap, s_heightmap, uv + vec2<f32>(-pixel_size.x, 0.0)).r;
-    let h_right = textureSample(t_heightmap, s_heightmap, uv + vec2<f32>(pixel_size.x, 0.0)).r;
-    let h_up = textureSample(t_heightmap, s_heightmap, uv + vec2<f32>(0.0, -pixel_size.y)).r;
-    let h_down = textureSample(t_heightmap, s_heightmap, uv + vec2<f32>(0.0, pixel_size.y)).r;
-
-    // Compute gradient (approximates surface normal)
-    let dx = (h_right - h_left) * 0.5;
-    let dy = (h_down - h_up) * 0.5;
+    // Sample normal map [0, 1] -> [-1, 1]
+    let normal_raw = textureSample(t_normal, s_normal, uv).rgb;
+    // world_normal.bmp is often (X=R, Y=G, Z=B), but we need to normalize
+    let normal = normalize(normal_raw * 2.0 - 1.0);
 
     // Light direction: from upper-left (NW), simulating sun position
     // Negative X (from left), negative Y (from top)
     let light_dir = normalize(vec3<f32>(-0.5, -0.7, 0.5));
-
-    // Approximate surface normal from gradient
-    // Scale gradient to control shading intensity
-    let gradient_scale = 8.0;
-    let normal = normalize(vec3<f32>(-dx * gradient_scale, -dy * gradient_scale, 1.0));
 
     // Lambertian diffuse lighting
     let diffuse = max(dot(normal, light_dir), 0.0);
@@ -129,8 +132,9 @@ fn compute_terrain_shading(uv: vec2<f32>) -> f32 {
     let ambient = 0.5;
     let shading = ambient + diffuse * 0.5;
 
-    // Also add subtle height-based tinting (higher = slightly lighter)
-    let height_boost = (h_center - 0.3) * 0.15;
+    // Also add subtle height-based tinting from heightmap
+    let height = textureSample(t_heightmap, s_heightmap, uv).r;
+    let height_boost = (height - 0.3) * 0.15;
 
     return clamp(shading + height_boost, 0.6, 1.3);
 }
@@ -155,19 +159,19 @@ fn compute_terrain_color(uv: vec2<f32>) -> vec4<f32> {
 
     var color: vec3<f32>;
 
-    if (height < 0.2) {
+    if height < 0.2 {
         // Ocean: dark blue -> light blue
         let t = height / 0.2;
         color = mix(vec3<f32>(0.1, 0.2, 0.4), vec3<f32>(0.3, 0.5, 0.7), t);
-    } else if (height < 0.3) {
+    } else if height < 0.3 {
         // Coastal/lowlands: light blue -> light green
         let t = (height - 0.2) / 0.1;
         color = mix(vec3<f32>(0.3, 0.5, 0.7), vec3<f32>(0.5, 0.7, 0.4), t);
-    } else if (height < 0.5) {
+    } else if height < 0.5 {
         // Plains: light green -> yellow-green
         let t = (height - 0.3) / 0.2;
         color = mix(vec3<f32>(0.5, 0.7, 0.4), vec3<f32>(0.6, 0.7, 0.3), t);
-    } else if (height < 0.7) {
+    } else if height < 0.7 {
         // Hills: yellow-green -> brown
         let t = (height - 0.5) / 0.2;
         color = mix(vec3<f32>(0.6, 0.7, 0.3), vec3<f32>(0.6, 0.5, 0.3), t);
@@ -184,6 +188,26 @@ fn compute_terrain_color(uv: vec2<f32>) -> vec4<f32> {
     return vec4<f32>(color, 1.0);
 }
 
+// Helper for RealTerrain map mode (Phase 11.1)
+fn compute_realterrain_color(uv: vec2<f32>) -> vec4<f32> {
+    let height = textureSample(t_heightmap, s_heightmap, uv).r;
+    var color: vec4<f32>;
+
+    if height < 0.368 { // Sea level (approx 94/255)
+        // Water: sample from colormap_water
+        color = textureSample(t_water, s_water, uv);
+    } else {
+        // Land: sample terrain type and apply global colormap (seasonal)
+        let base_terrain = textureSample(t_terrain, s_terrain, uv);
+        let global_color = textureSample(t_color, s_color, uv);
+        color = vec4<f32>(base_terrain.rgb * global_color.rgb * 1.5, base_terrain.a);
+    }
+
+    // Apply high-detail normal shading for depth
+    let terrain_shade = compute_terrain_shading(uv);
+    return vec4<f32>(color.rgb * terrain_shade, color.a);
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Transform UV to world space using camera
@@ -194,7 +218,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let u = (world_uv.x % 1.0 + 1.0) % 1.0;
 
     // Black border for Y out of bounds
-    if (world_uv.y < 0.0 || world_uv.y > 1.0) {
+    if world_uv.y < 0.0 || world_uv.y > 1.0 {
         return vec4<f32>(0.0, 0.0, 0.0, 1.0);
     }
 
@@ -206,57 +230,54 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var color: vec4<f32>;
 
     // Branch based on map mode
-    if (settings.map_mode < 0.5) {
+    if settings.map_mode < 0.5 {
         // Political mode: use political color lookup
         color = lookup_color(province_id);
         // Apply subtle terrain shading to political colors
         let terrain_shade = compute_terrain_shading(final_uv);
         color = vec4<f32>(color.rgb * terrain_shade, color.a);
-    } else if (settings.map_mode < 1.5) {
+    } else if settings.map_mode < 1.5 {
         // Terrain mode: use heightmap-based coloring
         color = compute_terrain_color(final_uv);
-    } else if (settings.map_mode < 2.5) {
+    } else if settings.map_mode < 2.5 {
         // Trade mode: use trade node color lookup
         color = lookup_color(province_id);
         // Apply subtle terrain shading to trade colors
         let terrain_shade = compute_terrain_shading(final_uv);
         color = vec4<f32>(color.rgb * terrain_shade, color.a);
-    } else if (settings.map_mode < 3.5) {
+    } else if settings.map_mode < 3.5 {
         // Religion mode: use religion color lookup
         color = lookup_color(province_id);
         // Apply subtle terrain shading to religion colors
         let terrain_shade = compute_terrain_shading(final_uv);
         color = vec4<f32>(color.rgb * terrain_shade, color.a);
-    } else if (settings.map_mode < 4.5) {
+    } else if settings.map_mode < 4.5 {
         // Culture mode: use culture color lookup
         color = lookup_color(province_id);
         // Apply subtle terrain shading to culture colors
         let terrain_shade = compute_terrain_shading(final_uv);
         color = vec4<f32>(color.rgb * terrain_shade, color.a);
-    } else if (settings.map_mode < 5.5) {
+    } else if settings.map_mode < 5.5 {
         // Economy mode: use development gradient lookup
         color = lookup_color(province_id);
         // Apply subtle terrain shading to economy colors
         let terrain_shade = compute_terrain_shading(final_uv);
         color = vec4<f32>(color.rgb * terrain_shade, color.a);
-    } else if (settings.map_mode < 6.5) {
+    } else if settings.map_mode < 6.5 {
         // Empire mode: use HRE membership lookup
         color = lookup_color(province_id);
         // Apply subtle terrain shading to empire colors
         let terrain_shade = compute_terrain_shading(final_uv);
         color = vec4<f32>(color.rgb * terrain_shade, color.a);
-    } else if (settings.map_mode < 7.5) {
+    } else if settings.map_mode < 7.5 {
         // Region mode: use geographic region lookup
         color = lookup_color(province_id);
         // Apply subtle terrain shading to region colors
         let terrain_shade = compute_terrain_shading(final_uv);
         color = vec4<f32>(color.rgb * terrain_shade, color.a);
-    } else if (settings.map_mode < 8.5) {
-        // RealTerrain mode: sample from terrain.bmp texture (shows forest, desert, etc.)
-        color = textureSample(t_terrain, s_terrain, final_uv);
-        // Apply heightmap shading for depth
-        let terrain_shade = compute_terrain_shading(final_uv);
-        color = vec4<f32>(color.rgb * terrain_shade, color.a);
+    } else if settings.map_mode < 8.5 {
+        // RealTerrain mode (8.0): sample from terrain.bmp and apply colormaps
+        color = compute_realterrain_color(final_uv);
     } else {
         // Future map modes
         color = lookup_color(province_id);
@@ -265,8 +286,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     // Apply border darkening if enabled
-    if (settings.border_enabled > 0.5 && is_border(final_uv, province_id)) {
-        color = vec4<f32>(0.08, 0.08, 0.08, 1.0);
+    if settings.border_enabled > 0.5 && is_border(final_uv, province_id) {
+        color = vec4<f32>(color.rgb * 0.25, color.a);
     }
 
     return color;
@@ -348,19 +369,17 @@ fn fs_terrain(in: TerrainVertexOutput) -> @location(0) vec4<f32> {
     var color: vec4<f32>;
 
     // Branch based on map mode (same logic as fs_main)
-    if (settings.map_mode < 0.5) {
+    if settings.map_mode < 0.5 {
         // Political mode
         color = lookup_color(province_id);
         let terrain_shade = compute_terrain_shading(final_uv);
         color = vec4<f32>(color.rgb * terrain_shade, color.a);
-    } else if (settings.map_mode < 1.5) {
+    } else if settings.map_mode < 1.5 {
         // Terrain mode
         color = compute_terrain_color(final_uv);
-    } else if (settings.map_mode > 7.5 && settings.map_mode < 8.5) {
+    } else if settings.map_mode > 7.5 && settings.map_mode < 8.5 {
         // RealTerrain mode: sample from terrain.bmp texture
-        color = textureSample(t_terrain, s_terrain, final_uv);
-        let terrain_shade = compute_terrain_shading(final_uv);
-        color = vec4<f32>(color.rgb * terrain_shade, color.a);
+        color = compute_realterrain_color(final_uv);
     } else {
         // Other map modes
         color = lookup_color(province_id);
@@ -369,8 +388,8 @@ fn fs_terrain(in: TerrainVertexOutput) -> @location(0) vec4<f32> {
     }
 
     // Apply border darkening if enabled
-    if (settings.border_enabled > 0.5 && is_border(final_uv, province_id)) {
-        color = vec4<f32>(0.08, 0.08, 0.08, 1.0);
+    if settings.border_enabled > 0.5 && is_border(final_uv, province_id) {
+        color = vec4<f32>(color.rgb * 0.25, color.a);
     }
 
     return color;
@@ -451,7 +470,7 @@ fn fs_army(in: ArmyVertexOutput) -> @location(0) vec4<f32> {
     // Square with black border
     let edge = max(abs(in.local_pos.x), abs(in.local_pos.y));
 
-    if (edge > 0.75) {
+    if edge > 0.75 {
         // Black border
         return vec4<f32>(0.0, 0.0, 0.0, 1.0);
     }
@@ -528,12 +547,12 @@ fn fs_fleet(in: FleetVertexOutput) -> @location(0) vec4<f32> {
     // Diamond shape: check if inside diamond (|x| + |y| <= 1)
     let diamond_dist = abs(in.local_pos.x) + abs(in.local_pos.y);
 
-    if (diamond_dist > 1.0) {
+    if diamond_dist > 1.0 {
         // Outside diamond - transparent
         discard;
     }
 
-    if (diamond_dist > 0.75) {
+    if diamond_dist > 0.75 {
         // Black border
         return vec4<f32>(0.0, 0.0, 0.0, 1.0);
     }
@@ -618,7 +637,7 @@ fn fs_masked_flag(in: SpriteVertexOutput) -> @location(0) vec4<f32> {
     let mask_alpha = mask_value.a;
 
     // Discard pixels where mask alpha is low (outside shield shape)
-    if (mask_alpha < 0.5) {
+    if mask_alpha < 0.5 {
         discard;
     }
 

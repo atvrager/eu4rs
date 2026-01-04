@@ -9,6 +9,7 @@
 use image::RgbaImage;
 use std::path::{Path, PathBuf};
 
+use crate::dds::load_dds;
 use crate::gui::{GuiRenderer, GuiState};
 use crate::render::{SpriteRenderer, create_depth_texture};
 use crate::screen::{Screen, ScreenManager};
@@ -927,6 +928,12 @@ pub struct MapTestHarness {
     heightmap: Option<image::GrayImage>,
     /// Terrain texture for RealTerrain mode.
     terrain_texture: Option<image::RgbaImage>,
+    /// Normal map for terrain shading.
+    normal_map: Option<image::RgbaImage>,
+    /// Water colormap.
+    water_colormap: Option<image::RgbaImage>,
+    /// Global colormap.
+    global_colormap: Option<image::RgbaImage>,
 
     /// Game world state.
     world_state: eu4sim_core::WorldState,
@@ -978,6 +985,18 @@ impl MapTestHarness {
         let terrain_path = game_path.join("map/terrain.bmp");
         let terrain_texture = image::open(&terrain_path).ok().map(|img| img.to_rgba8());
 
+        // Load normal map
+        let normal_path = game_path.join("map/world_normal.bmp");
+        let normal_map = image::open(&normal_path).ok().map(|img| img.to_rgba8());
+
+        // Load water colormap
+        let water_path = game_path.join("map/terrain/colormap_water.dds");
+        let water_colormap = load_dds(&water_path).ok();
+
+        // Load global colormap (autumn by default for testing)
+        let color_path = game_path.join("map/terrain/colormap_autumn.dds");
+        let global_colormap = load_dds(&color_path).ok();
+
         // Load world state (minimal - just for testing)
         let start_date = eu4sim_core::state::Date::new(1444, 11, 11);
         let (world_state, _adjacency) =
@@ -1024,7 +1043,7 @@ impl MapTestHarness {
             .map(|(color, id)| (*color, *id))
             .collect();
 
-        // Create map renderer (no terrain texture for tests)
+        // Create map renderer
         let map_renderer = crate::render::Renderer::new(
             headless.device(),
             headless.queue(),
@@ -1033,6 +1052,9 @@ impl MapTestHarness {
             &lookup,
             heightmap.as_ref(),
             terrain_texture.as_ref(),
+            normal_map.as_ref(),
+            water_colormap.as_ref(),
+            global_colormap.as_ref(),
         );
 
         // Create camera centered on map
@@ -1051,6 +1073,9 @@ impl MapTestHarness {
             province_lookup,
             heightmap,
             terrain_texture,
+            normal_map,
+            water_colormap,
+            global_colormap,
             world_state,
             country_colors,
             trade_network,
@@ -1141,6 +1166,7 @@ impl MapTestHarness {
             map_mode_value,
             (width, height),
             8.0,
+            self.current_map_mode != crate::gui::MapMode::RealTerrain,
         );
 
         // Create offscreen target

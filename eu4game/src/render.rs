@@ -583,6 +583,15 @@ pub struct Renderer {
     pub fleet_instance_buffer: wgpu::Buffer,
     /// Current number of fleet instances.
     pub fleet_count: u32,
+    /// Normal map texture.
+    #[allow(dead_code)]
+    pub normal_texture: wgpu::Texture,
+    /// Water colormap texture.
+    #[allow(dead_code)]
+    pub water_texture: wgpu::Texture,
+    /// Global color overlay texture.
+    #[allow(dead_code)]
+    pub color_texture: wgpu::Texture,
 }
 
 impl Renderer {
@@ -590,6 +599,7 @@ impl Renderer {
     ///
     /// If `heightmap` is provided, terrain shading will be enabled.
     /// If `terrain_texture` is provided, RealTerrain map mode will be available.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -598,6 +608,9 @@ impl Renderer {
         province_lookup: &HashMap<(u8, u8, u8), u32>,
         heightmap: Option<&image::GrayImage>,
         terrain_texture: Option<&image::RgbaImage>,
+        normal_map: Option<&image::RgbaImage>,
+        water_colormap: Option<&image::RgbaImage>,
+        global_colormap: Option<&image::RgbaImage>,
     ) -> Self {
         let map_size = (province_map.width(), province_map.height());
         log::info!(
@@ -670,6 +683,46 @@ impl Renderer {
             let gray = image::RgbaImage::from_pixel(1, 1, image::Rgba([128, 128, 128, 255]));
             let (_tex, view, sampler) = create_terrain_texture(device, queue, &gray);
             (view, sampler)
+        };
+
+        // Create normal map texture (or fallback to flat normal [128, 128, 255] if not provided)
+        let (normal_texture, normal_view, normal_sampler) = if let Some(nm) = normal_map {
+            log::info!(
+                "Creating normal map texture ({}x{})",
+                nm.width(),
+                nm.height()
+            );
+            let (tex, view, sampler) = create_terrain_texture(device, queue, nm); // Use same helper for now
+            (tex, view, sampler)
+        } else {
+            log::info!("No normal map provided, using flat normal");
+            let flat = image::RgbaImage::from_pixel(1, 1, image::Rgba([128, 128, 255, 255]));
+            let (tex, view, sampler) = create_terrain_texture(device, queue, &flat);
+            (tex, view, sampler)
+        };
+
+        // Create water colormap (or fallback to blue if not provided)
+        let (water_texture, water_view, water_sampler) = if let Some(wm) = water_colormap {
+            log::info!("Creating water colormap ({}x{})", wm.width(), wm.height());
+            let (tex, view, sampler) = create_terrain_texture(device, queue, wm);
+            (tex, view, sampler)
+        } else {
+            log::info!("No water colormap provided");
+            let blue = image::RgbaImage::from_pixel(1, 1, image::Rgba([30, 60, 100, 255]));
+            let (tex, view, sampler) = create_terrain_texture(device, queue, &blue);
+            (tex, view, sampler)
+        };
+
+        // Create global colormap (or fallback to white if not provided)
+        let (color_texture, color_view, color_sampler) = if let Some(cm) = global_colormap {
+            log::info!("Creating global colormap ({}x{})", cm.width(), cm.height());
+            let (tex, view, sampler) = create_terrain_texture(device, queue, cm);
+            (tex, view, sampler)
+        } else {
+            log::info!("No global colormap provided");
+            let white = image::RgbaImage::from_pixel(1, 1, image::Rgba([255, 255, 255, 255]));
+            let (tex, view, sampler) = create_terrain_texture(device, queue, &white);
+            (tex, view, sampler)
         };
 
         // Bind group layout matching shader
@@ -770,6 +823,60 @@ impl Renderer {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                // binding 10: world normal texture
+                wgpu::BindGroupLayoutEntry {
+                    binding: 10,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                // binding 11: world normal sampler
+                wgpu::BindGroupLayoutEntry {
+                    binding: 11,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                // binding 12: water colormap texture
+                wgpu::BindGroupLayoutEntry {
+                    binding: 12,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                // binding 13: water colormap sampler
+                wgpu::BindGroupLayoutEntry {
+                    binding: 13,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                // binding 14: global colormap texture
+                wgpu::BindGroupLayoutEntry {
+                    binding: 14,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                // binding 15: global colormap sampler
+                wgpu::BindGroupLayoutEntry {
+                    binding: 15,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
             ],
         });
 
@@ -817,6 +924,30 @@ impl Renderer {
                 wgpu::BindGroupEntry {
                     binding: 9,
                     resource: wgpu::BindingResource::Sampler(&terrain_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 10,
+                    resource: wgpu::BindingResource::TextureView(&normal_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 11,
+                    resource: wgpu::BindingResource::Sampler(&normal_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 12,
+                    resource: wgpu::BindingResource::TextureView(&water_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 13,
+                    resource: wgpu::BindingResource::Sampler(&water_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 14,
+                    resource: wgpu::BindingResource::TextureView(&color_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 15,
+                    resource: wgpu::BindingResource::Sampler(&color_sampler),
                 },
             ],
         });
@@ -1057,6 +1188,9 @@ impl Renderer {
             fleet_bind_group,
             fleet_instance_buffer,
             fleet_count: 0,
+            normal_texture,
+            water_texture,
+            color_texture,
         }
     }
 
@@ -1076,11 +1210,12 @@ impl Renderer {
         map_mode: f32,
         map_size: (u32, u32),
         zoom: f32,
+        border_enabled: bool,
     ) {
         let settings = MapSettings {
             texture_size: [map_size.0 as f32, map_size.1 as f32],
             lookup_size: LOOKUP_SIZE as f32,
-            border_enabled: 1.0,
+            border_enabled: if border_enabled { 1.0 } else { 0.0 },
             map_mode,
             border_thickness: calculate_border_thickness(zoom),
             _padding: [0.0; 2],
@@ -2396,6 +2531,9 @@ mod mode_switching_tests {
             &province_lookup,
             None, // no heightmap
             None, // no terrain texture
+            None, // no normal map
+            None, // no water colormap
+            None, // no global colormap
         );
 
         // Create offscreen texture
@@ -2478,6 +2616,9 @@ mod mode_switching_tests {
             &province_lookup,
             None, // no heightmap
             None, // no terrain texture
+            None, // no normal map
+            None, // no water colormap
+            None, // no global colormap
         );
 
         // Create offscreen texture
@@ -2560,6 +2701,9 @@ mod mode_switching_tests {
             &province_lookup,
             None, // no heightmap
             None, // no terrain texture
+            None, // no normal map
+            None, // no water colormap
+            None, // no global colormap
         );
 
         // Create offscreen texture

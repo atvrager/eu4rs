@@ -293,6 +293,10 @@ Decoupled UI system for moddable interface management.
 - [x] **10.2: The Generic UI Binder**: Decoupling Rust code from .gui files (Phase 2)
 - [ ] **10.3: Macro & Data Binding**: Procedural macros for UI sync (Phase 3)
 - [ ] **10.4: Event Handling & Focus**: Interactive controls and focus management (Phase 5)
+- [x] **Phase 11: RealTerrain Graphics Improvement**: Authentic EU4 map rendering
+  - [x] **11.1: Foundations**: Normal mapping, water colormap, seasonal tints (Phase 1)
+  - [ ] **11.2: Terrain Splatting**: Detailed textures (forest, desert, etc.) using splat maps (Phase 2)
+  - [ ] **11.3: Borders & FX**: High-quality borders, rivers, and seasonal transitions (Phase 3)
 
 **Key Files**: [mod.rs](../eu4game/src/gui/mod.rs), [nine_slice.rs](../eu4game/src/gui/nine_slice.rs), [sprite_cache.rs](../eu4game/src/gui/sprite_cache.rs)
 
@@ -470,4 +474,4 @@ Play EU4 in your terminal! A text-based interface using `ratatui` or similar:
 
 ---
 
-*Last updated: 2025-12-31*
+*Last updated: 2025-01-01*

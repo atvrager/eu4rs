@@ -6,6 +6,7 @@
 //! - Heightmap for terrain shading
 //! - Province center calculations
 
+use crate::dds::load_dds;
 use crate::gui;
 use std::collections::HashMap;
 
@@ -299,6 +300,48 @@ pub fn load_terrain_texture() -> Option<image::RgbaImage> {
             None
         }
     }
+}
+
+/// Loads normal map from EU4 game files.
+pub fn load_normal_map() -> Option<image::RgbaImage> {
+    let game_path = eu4data::path::detect_game_path()?;
+    let normal_path = game_path.join("map/world_normal.bmp");
+
+    if !normal_path.exists() {
+        log::warn!("Normal map not found at: {}", normal_path.display());
+        return None;
+    }
+
+    log::info!("Loading normal map from: {}", normal_path.display());
+    image::open(&normal_path).ok().map(|img| img.to_rgba8())
+}
+
+/// Loads water colormap from EU4 game files.
+pub fn load_water_colormap() -> Option<image::RgbaImage> {
+    let game_path = eu4data::path::detect_game_path()?;
+    let water_path = game_path.join("map/terrain/colormap_water.dds");
+
+    if !water_path.exists() {
+        log::warn!("Water colormap not found at: {}", water_path.display());
+        return None;
+    }
+
+    log::info!("Loading water colormap from: {}", water_path.display());
+    load_dds(&water_path).ok()
+}
+
+/// Loads seasonal colormap from EU4 game files.
+pub fn load_seasonal_colormap(season: &str) -> Option<image::RgbaImage> {
+    let game_path = eu4data::path::detect_game_path()?;
+    let path = game_path.join(format!("map/terrain/colormap_{}.dds", season));
+
+    if !path.exists() {
+        log::warn!("Seasonal colormap not found at: {}", path.display());
+        return None;
+    }
+
+    log::info!("Loading {} colormap from: {}", season, path.display());
+    load_dds(&path).ok()
 }
 
 #[cfg(test)]
