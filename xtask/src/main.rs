@@ -6,6 +6,7 @@ use std::env;
 use std::process::{Command, Stdio};
 
 mod personalize;
+mod profile;
 mod train;
 
 #[derive(Parser)]
@@ -141,6 +142,17 @@ enum Commands {
         #[arg(long)]
         no_cuda: bool,
     },
+
+    /// Profile eu4game with Tracy and generate report
+    Profile {
+        /// Duration to run profiling session in seconds
+        #[arg(short, long, default_value_t = 60)]
+        duration: u64,
+
+        /// Output directory (default: profiling/YYYYMMDD_HHMMSS)
+        #[arg(short, long)]
+        output: Option<String>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -191,6 +203,9 @@ fn main() -> Result<()> {
             ticks,
             no_cuda,
         } => run_llm(&base, adapter.as_deref(), ticks, no_cuda),
+        Commands::Profile { duration, output } => {
+            profile::run_profile(duration, output.map(std::path::PathBuf::from))
+        }
     }
 }
 

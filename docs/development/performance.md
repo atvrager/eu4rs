@@ -73,7 +73,25 @@ The simulation speed is now **3.0 years/sec**, which translates to a full game r
 
 When simulation speed drops or sub-system costs rise unexpectedly, the following techniques should be used:
 
-### 1. Sampling Profilers
+### 1. Tracy Profiling (Recommended)
+Real-time profiler with frame-aware analysis, perfect for game/GUI applications.
+
+```bash
+# Quick start - see .agent/workflows/profile.md for full guide
+cargo xtask profile --duration 60
+```
+
+**Features:**
+- Real-time CPU + GPU profiling
+- Frame time analysis and FPS tracking
+- Zero overhead when not enabled
+- Automatic report generation
+
+**Output:** Markdown report in `profiling/<timestamp>/report.md` that I can analyze directly.
+
+See [Profiling Workflow](../../.agent/workflows/profile.md) for complete guide.
+
+### 2. Sampling Profilers (Ad-hoc Analysis)
 Use `samply` (Web-based profiler for Rust/Firefox) or `flamegraph` to identify hotspots in the simulation loop.
 
 **Recommended: Samply** (Easy interactive traces)
@@ -93,7 +111,7 @@ Generates `flamegraph.svg` in current directory.
 
 *Note: Always use `--release` for accurate bottlenecks (debug builds are dominated by non-inlined method calls).*
 
-### 2. Micro-benchmarking (Criterion)
+### 3. Micro-benchmarking (Criterion)
 For critical algorithms like pathfinding or CAS calculations, use `criterion` to measure performance in isolation and detect regressions.
 
 ### 3. CPU Cache Optimization

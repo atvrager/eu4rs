@@ -33,5 +33,11 @@ env_logger = "0.11.8"
 # Random number generation
 rand = "0.8.5"
 
+# Profiling (optional)
+tracy-client = { workspace = true, optional = true }
+
+[features]
+tracy = ["tracy-client/enable"]
+
 [dev-dependencies]
 tempfile = "3.21"

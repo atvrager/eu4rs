@@ -46,3 +46,8 @@ assets/tokens/
 
 # Agent scratchpad
 .antigravity/
+
+# Profiling data
+profiling/
+*.tracy
+profile.csv

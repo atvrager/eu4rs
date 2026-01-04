@@ -3104,6 +3104,10 @@ impl App {
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
+    // Initialize Tracy profiler
+    #[cfg(feature = "tracy")]
+    let _client = tracy_client::Client::start();
+
     log::info!("EU4 Source Port starting...");
 
     let event_loop = EventLoop::new().unwrap();
