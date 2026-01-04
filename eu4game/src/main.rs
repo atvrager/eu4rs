@@ -12,6 +12,7 @@ mod input;
 mod render;
 mod screen;
 mod sim_thread;
+mod terrain_mesh;
 #[cfg(test)]
 mod testing;
 mod text;
@@ -228,6 +229,23 @@ struct App {
 
     /// Localization data for UI text lookup (e.g., "HAB_ideas" → "Austrian Ideas").
     localisation: eu4data::localisation::Localisation,
+
+    // =========================================================================
+    // 3D Terrain Rendering (Phase 5)
+    // =========================================================================
+    /// 3D camera for terrain mesh rendering.
+    camera_3d: camera::Camera3D,
+    /// Terrain renderer with chunked mesh and depth buffer.
+    terrain_renderer: Option<render::TerrainRenderer>,
+    /// Whether to use 3D terrain rendering (toggle with F3).
+    use_3d_terrain: bool,
+    /// Currently held keys for continuous camera panning (Phase 6).
+    held_keys: std::collections::HashSet<KeyCode>,
+    /// Depth texture for render pass (required for all pipelines).
+    #[allow(dead_code)]
+    depth_texture: wgpu::Texture,
+    /// Depth texture view for render pass.
+    depth_view: wgpu::TextureView,
 }
 
 impl App {
@@ -294,10 +312,16 @@ impl App {
         };
         surface.configure(&device, &config);
 
+        // Create depth texture (required for all render pipelines)
+        let (depth_texture, depth_view) =
+            render::create_depth_texture(&device, config.width, config.height);
+
         // Load province map, lookup table, and heightmap
         let (province_img, province_lookup, heightmap) = world_loader::load_province_data();
         let province_map = province_img.to_rgba8();
-        let content_aspect = province_img.width() as f64 / province_img.height() as f64;
+        let map_width = province_map.width();
+        let map_height = province_map.height();
+        let content_aspect = map_width as f64 / map_height as f64;
 
         // Compute province centers (for army markers)
         let province_centers =
@@ -539,6 +563,14 @@ impl App {
             cultures,
             region_mapping,
             localisation,
+
+            // 3D terrain rendering (Phase 5)
+            camera_3d: camera::Camera3D::new(map_width as f32, map_height as f32),
+            terrain_renderer: None, // Created lazily on first F3 toggle
+            use_3d_terrain: false,
+            held_keys: std::collections::HashSet::new(),
+            depth_texture,
+            depth_view,
         }
     }
 
@@ -562,6 +594,17 @@ impl App {
                 self.shield_clip_rect =
                     gui_renderer.get_player_shield_clip_rect(screen_size, self.shield_overlay_size);
             }
+
+            // Resize terrain renderer's depth texture (Phase 5)
+            if let Some(terrain_renderer) = &mut self.terrain_renderer {
+                terrain_renderer.resize(&self.device, new_size.width, new_size.height);
+            }
+
+            // Recreate depth texture for new size
+            let (depth_texture, depth_view) =
+                render::create_depth_texture(&self.device, new_size.width, new_size.height);
+            self.depth_texture = depth_texture;
+            self.depth_view = depth_view;
         }
     }
 
@@ -584,11 +627,19 @@ impl App {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        // Update camera uniform
+        // Update camera uniform (2D)
         let camera_uniform = self
             .camera
             .to_uniform(self.config.width as f32, self.config.height as f32);
         self.renderer.update_camera(&self.queue, camera_uniform);
+
+        // Update 3D camera and terrain settings (Phase 5)
+        if let Some(terrain_renderer) = &self.terrain_renderer {
+            let aspect_ratio = self.config.width as f32 / self.config.height as f32;
+            let camera_3d_uniform = self.camera_3d.to_uniform(aspect_ratio);
+            terrain_renderer.update_camera(&self.queue, camera_3d_uniform);
+            terrain_renderer.update_settings(&self.queue, camera::TerrainSettings::default());
+        }
 
         // Update map mode uniform (Phase 9.5.1, 9.5.2, 9.5.3, 9.5.4, 9.5.5)
         let map_mode_value = match self.current_map_mode {
@@ -615,7 +666,7 @@ impl App {
                 label: Some("Render Encoder"),
             });
 
-        // Render pass
+        // Render pass (always uses depth attachment - required for all pipelines)
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -627,7 +678,14 @@ impl App {
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
@@ -655,13 +713,29 @@ impl App {
                 }
                 screen::Screen::SinglePlayer | screen::Screen::Playing => {
                     // Game screens: Render map and game elements
-                    // Draw map (big triangle)
-                    render_pass.set_pipeline(&self.renderer.pipeline);
-                    render_pass.set_bind_group(0, &self.renderer.bind_group, &[]);
-                    render_pass.draw(0..3, 0..1);
+
+                    // Choose between 2D and 3D rendering (Phase 5)
+                    if self.use_3d_terrain {
+                        // 3D terrain rendering with heightmap displacement
+                        if let Some(terrain_renderer) = &self.terrain_renderer {
+                            let aspect_ratio = self.config.width as f32 / self.config.height as f32;
+                            let frustum = self.camera_3d.frustum(aspect_ratio);
+                            terrain_renderer.render(
+                                &mut render_pass,
+                                &self.renderer.bind_group,
+                                &frustum,
+                            );
+                        }
+                    } else {
+                        // 2D map rendering (original big triangle)
+                        render_pass.set_pipeline(&self.renderer.pipeline);
+                        render_pass.set_bind_group(0, &self.renderer.bind_group, &[]);
+                        render_pass.draw(0..3, 0..1);
+                    }
 
                     // Draw army markers (instanced squares)
-                    if self.renderer.army_count > 0 {
+                    // TODO(Phase 5): Army markers need to work with 3D terrain
+                    if !self.use_3d_terrain && self.renderer.army_count > 0 {
                         render_pass.set_pipeline(&self.renderer.army_pipeline);
                         render_pass.set_bind_group(0, &self.renderer.army_bind_group, &[]);
                         render_pass
@@ -671,7 +745,8 @@ impl App {
                     }
 
                     // Draw fleet markers (instanced diamonds)
-                    if self.renderer.fleet_count > 0 {
+                    // TODO(Phase 5): Fleet markers need to work with 3D terrain
+                    if !self.use_3d_terrain && self.renderer.fleet_count > 0 {
                         render_pass.set_pipeline(&self.renderer.fleet_pipeline);
                         render_pass.set_bind_group(0, &self.renderer.fleet_bind_group, &[]);
                         render_pass
@@ -889,8 +964,15 @@ impl App {
 
     /// Handles keyboard input. Returns true if should exit.
     fn handle_key(&mut self, key: KeyCode, state: ElementState) -> bool {
-        if state != ElementState::Pressed {
-            return false;
+        // Track arrow key state for continuous camera panning (Phase 6)
+        match state {
+            ElementState::Pressed => {
+                self.held_keys.insert(key);
+            }
+            ElementState::Released => {
+                self.held_keys.remove(&key);
+                return false; // No other action on key release
+            }
         }
 
         // Phase 8.1: Handle main menu input
@@ -1035,6 +1117,10 @@ impl App {
                 self.lookup_dirty = true;
                 log::info!("Refreshing map lookup texture");
             }
+            KeyCode::F3 => {
+                // Toggle 3D terrain rendering (Phase 5)
+                self.toggle_3d_terrain();
+            }
             _ => {}
         }
         false
@@ -1044,6 +1130,138 @@ impl App {
     fn set_speed(&mut self, speed: SimSpeed) {
         self.sim_handle.set_speed(speed);
         log::info!("Set speed to {:?}", speed);
+    }
+
+    /// Toggles between 2D and 3D terrain rendering modes (Phase 5).
+    fn toggle_3d_terrain(&mut self) {
+        self.use_3d_terrain = !self.use_3d_terrain;
+
+        if self.use_3d_terrain {
+            // Create terrain renderer on first use (lazy initialization)
+            if self.terrain_renderer.is_none() {
+                log::info!("Creating terrain renderer...");
+
+                // We need to get the bind group layout from the 2D renderer
+                // to share map textures. For now, create a new bind group layout
+                // that matches the existing one.
+                let bind_group_layout =
+                    self.device
+                        .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                            label: Some("Map Bind Group Layout (shared)"),
+                            entries: &[
+                                // binding 0: province texture
+                                wgpu::BindGroupLayoutEntry {
+                                    binding: 0,
+                                    visibility: wgpu::ShaderStages::FRAGMENT,
+                                    ty: wgpu::BindingType::Texture {
+                                        multisampled: false,
+                                        view_dimension: wgpu::TextureViewDimension::D2,
+                                        sample_type: wgpu::TextureSampleType::Float {
+                                            filterable: true,
+                                        },
+                                    },
+                                    count: None,
+                                },
+                                // binding 1: province sampler
+                                wgpu::BindGroupLayoutEntry {
+                                    binding: 1,
+                                    visibility: wgpu::ShaderStages::FRAGMENT,
+                                    ty: wgpu::BindingType::Sampler(
+                                        wgpu::SamplerBindingType::Filtering,
+                                    ),
+                                    count: None,
+                                },
+                                // binding 2: lookup texture
+                                wgpu::BindGroupLayoutEntry {
+                                    binding: 2,
+                                    visibility: wgpu::ShaderStages::FRAGMENT,
+                                    ty: wgpu::BindingType::Texture {
+                                        multisampled: false,
+                                        view_dimension: wgpu::TextureViewDimension::D2,
+                                        sample_type: wgpu::TextureSampleType::Float {
+                                            filterable: true,
+                                        },
+                                    },
+                                    count: None,
+                                },
+                                // binding 3: lookup sampler
+                                wgpu::BindGroupLayoutEntry {
+                                    binding: 3,
+                                    visibility: wgpu::ShaderStages::FRAGMENT,
+                                    ty: wgpu::BindingType::Sampler(
+                                        wgpu::SamplerBindingType::Filtering,
+                                    ),
+                                    count: None,
+                                },
+                                // binding 4: camera uniform (2D - not used in terrain shader)
+                                wgpu::BindGroupLayoutEntry {
+                                    binding: 4,
+                                    visibility: wgpu::ShaderStages::FRAGMENT,
+                                    ty: wgpu::BindingType::Buffer {
+                                        ty: wgpu::BufferBindingType::Uniform,
+                                        has_dynamic_offset: false,
+                                        min_binding_size: None,
+                                    },
+                                    count: None,
+                                },
+                                // binding 5: settings uniform
+                                wgpu::BindGroupLayoutEntry {
+                                    binding: 5,
+                                    visibility: wgpu::ShaderStages::FRAGMENT,
+                                    ty: wgpu::BindingType::Buffer {
+                                        ty: wgpu::BufferBindingType::Uniform,
+                                        has_dynamic_offset: false,
+                                        min_binding_size: None,
+                                    },
+                                    count: None,
+                                },
+                                // binding 6: heightmap texture (VERTEX stage for terrain)
+                                wgpu::BindGroupLayoutEntry {
+                                    binding: 6,
+                                    visibility: wgpu::ShaderStages::FRAGMENT
+                                        | wgpu::ShaderStages::VERTEX,
+                                    ty: wgpu::BindingType::Texture {
+                                        multisampled: false,
+                                        view_dimension: wgpu::TextureViewDimension::D2,
+                                        sample_type: wgpu::TextureSampleType::Float {
+                                            filterable: true,
+                                        },
+                                    },
+                                    count: None,
+                                },
+                                // binding 7: heightmap sampler
+                                wgpu::BindGroupLayoutEntry {
+                                    binding: 7,
+                                    visibility: wgpu::ShaderStages::FRAGMENT
+                                        | wgpu::ShaderStages::VERTEX,
+                                    ty: wgpu::BindingType::Sampler(
+                                        wgpu::SamplerBindingType::Filtering,
+                                    ),
+                                    count: None,
+                                },
+                            ],
+                        });
+
+                let config = terrain_mesh::TerrainMeshConfig::EU4_DEFAULT;
+                self.terrain_renderer = Some(render::TerrainRenderer::new(
+                    &self.device,
+                    self.config.format,
+                    &bind_group_layout,
+                    self.config.width,
+                    self.config.height,
+                    &config,
+                ));
+                log::info!(
+                    "Terrain renderer created with {} chunks",
+                    config.total_chunks()
+                );
+            }
+            log::info!("Switched to 3D terrain mode (F3 to toggle back)");
+        } else {
+            log::info!("Switched to 2D map mode (F3 to toggle back)");
+        }
+
+        self.update_window_title();
     }
 
     /// Logs the current country selection to console.
@@ -1260,6 +1478,47 @@ impl App {
             gui::MapMode::Region => self.update_lookup_region(),
             _ => self.update_lookup_political(),
         }
+    }
+
+    /// Applies continuous camera panning based on held arrow keys (Phase 6).
+    /// Called each frame from AboutToWait to support smooth keyboard panning.
+    fn update_keyboard_pan(&mut self) {
+        // Only pan in 3D mode and when in Playing screen (not country selection)
+        if !self.use_3d_terrain {
+            return;
+        }
+        if self.screen_manager.current() == screen::Screen::SinglePlayer {
+            // Arrow keys used for country selection in this mode
+            return;
+        }
+
+        // Calculate pan direction from held keys
+        let mut dx = 0.0f32;
+        let mut dz = 0.0f32;
+
+        // Arrow keys for camera panning
+        if self.held_keys.contains(&KeyCode::ArrowUp) {
+            dz -= 1.0; // Forward (camera moves up in screen = terrain moves toward camera)
+        }
+        if self.held_keys.contains(&KeyCode::ArrowDown) {
+            dz += 1.0; // Backward
+        }
+        if self.held_keys.contains(&KeyCode::ArrowLeft) {
+            dx -= 1.0; // Left
+        }
+        if self.held_keys.contains(&KeyCode::ArrowRight) {
+            dx += 1.0; // Right
+        }
+
+        if dx == 0.0 && dz == 0.0 {
+            return;
+        }
+
+        // Scale by camera distance (faster pan when zoomed out)
+        let distance = self.camera_3d.distance();
+        let pan_speed = distance * 0.02; // Base speed factor
+
+        self.camera_3d.pan(dx * pan_speed, dz * pan_speed);
     }
 
     /// Update lookup texture for political mode (country colors).
@@ -1988,13 +2247,15 @@ impl App {
                 } else {
                     String::new()
                 };
+                let terrain_info = if self.use_3d_terrain { " [3D]" } else { "" };
                 format!(
-                    "EU4 Source Port - {} - {}{}{}{}",
+                    "EU4 Source Port - {} - {}{}{}{}{}",
                     self.current_date,
                     self.sim_speed.name(),
                     player_info,
                     province_info,
-                    mode_info
+                    mode_info,
+                    terrain_info
                 )
             }
         };
@@ -2162,6 +2423,30 @@ impl App {
         }
 
         self.lookup_dirty = true;
+    }
+
+    /// Gets world UV coordinates at current cursor position.
+    ///
+    /// Uses 3D raycasting when in 3D terrain mode, 2D camera transformation otherwise.
+    /// Returns None if the cursor doesn't hit the terrain (e.g., clicking sky in 3D mode).
+    fn get_world_uv_at_cursor(&self) -> Option<(f64, f64)> {
+        if self.use_3d_terrain {
+            // 3D mode: raycast to terrain (Phase 6)
+            self.camera_3d.screen_to_terrain_uv(
+                self.cursor_pos.0,
+                self.cursor_pos.1,
+                self.config.width as f64,
+                self.config.height as f64,
+            )
+        } else {
+            // 2D mode: simple camera transformation
+            Some(self.camera.screen_to_world(
+                self.cursor_pos.0,
+                self.cursor_pos.1,
+                self.config.width as f64,
+                self.config.height as f64,
+            ))
+        }
     }
 
     fn select_province_at(&mut self, world_x: f64, world_y: f64) {
@@ -2430,14 +2715,21 @@ impl App {
             zoom_factor,
             self.cursor_pos
         );
-        self.camera.zoom(
-            zoom_factor,
-            self.cursor_pos.0,
-            self.cursor_pos.1,
-            self.config.width as f64,
-            self.config.height as f64,
-        );
-        log::debug!("New camera zoom: {}", self.camera.zoom);
+
+        // Use appropriate camera based on 3D mode (Phase 6)
+        if self.use_3d_terrain {
+            self.camera_3d.zoom(zoom_factor);
+            log::debug!("3D camera distance: {}", self.camera_3d.distance());
+        } else {
+            self.camera.zoom(
+                zoom_factor as f64,
+                self.cursor_pos.0,
+                self.cursor_pos.1,
+                self.config.width as f64,
+                self.config.height as f64,
+            );
+            log::debug!("2D camera zoom: {}", self.camera.zoom);
+        }
     }
 
     /// Handles mouse button input. Returns true if should exit.
@@ -2487,26 +2779,21 @@ impl App {
                     }
 
                     // Map clicks: different behavior per screen
+                    // Use 3D raycasting when in 3D mode, 2D camera otherwise (Phase 6)
                     match current_screen {
                         screen::Screen::Playing => {
                             // Playing mode: select provinces for viewing info
-                            let world_pos = self.camera.screen_to_world(
-                                self.cursor_pos.0,
-                                self.cursor_pos.1,
-                                self.config.width as f64,
-                                self.config.height as f64,
-                            );
-                            self.select_province_at(world_pos.0, world_pos.1);
+                            let world_pos = self.get_world_uv_at_cursor();
+                            if let Some((u, v)) = world_pos {
+                                self.select_province_at(u, v);
+                            }
                         }
                         screen::Screen::SinglePlayer => {
                             // SinglePlayer mode: select countries for game start
-                            let world_pos = self.camera.screen_to_world(
-                                self.cursor_pos.0,
-                                self.cursor_pos.1,
-                                self.config.width as f64,
-                                self.config.height as f64,
-                            );
-                            self.select_country_at(world_pos.0, world_pos.1);
+                            let world_pos = self.get_world_uv_at_cursor();
+                            if let Some((u, v)) = world_pos {
+                                self.select_country_at(u, v);
+                            }
                         }
                         _ => {}
                     }
@@ -2766,8 +3053,19 @@ impl App {
             let dy = y - self.last_cursor_pos.1;
             self.last_cursor_pos = (x, y);
 
-            self.camera
-                .pan(dx, dy, self.config.width as f64, self.config.height as f64);
+            // Use appropriate camera based on 3D mode (Phase 6)
+            if self.use_3d_terrain {
+                // Scale pan speed based on camera distance (closer = smaller movement)
+                let distance = self.camera_3d.distance();
+                let pan_scale = distance / 500.0; // Base scale at default height
+                // Note: screen Y drag corresponds to world Z movement (forward/back)
+                // Negative because dragging right should move camera left (opposite direction)
+                self.camera_3d
+                    .pan(-(dx as f32) * pan_scale, -(dy as f32) * pan_scale);
+            } else {
+                self.camera
+                    .pan(dx, dy, self.config.width as f64, self.config.height as f64);
+            }
             true
         } else {
             // Handle button hover states (Phase 9.7.4)
@@ -2847,6 +3145,7 @@ fn main() {
         Event::AboutToWait => {
             app.poll_sim_events();
             app.update_lookup();
+            app.update_keyboard_pan();
 
             // Poll frontend UI for button clicks (Phase 6.1.3)
             if app.poll_frontend_ui() {

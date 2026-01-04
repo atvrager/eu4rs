@@ -5,6 +5,8 @@
 use ab_glyph::{Font, FontRef, PxScale, ScaleFont};
 use std::collections::HashMap;
 
+use crate::render::DEPTH_FORMAT;
+
 /// Default font size for the glyph cache.
 const DEFAULT_FONT_SIZE: f32 = 24.0;
 
@@ -416,7 +418,15 @@ impl TextRenderer {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 ..Default::default()
             },
-            depth_stencil: None,
+            // Depth stencil required for compatibility with 3D terrain render pass.
+            // Text renders on top of everything (Always pass, no depth write).
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Always,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
         });

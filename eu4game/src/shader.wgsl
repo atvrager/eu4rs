@@ -259,6 +259,105 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 
 // =============================================================================
+// 3D Terrain Mesh Rendering (Phase 3)
+// =============================================================================
+//
+// Renders the map as actual 3D geometry using heightmap displacement.
+// This allows the camera to move closer to the terrain for zoom instead
+// of just scaling UV coordinates.
+
+// 3D camera uniform with view-projection matrix
+struct Camera3DUniform {
+    view_proj: mat4x4<f32>,
+};
+
+// Terrain-specific settings
+struct TerrainSettings {
+    height_scale: f32,      // Multiplier for heightmap displacement (50-100)
+    x_offset: f32,          // X-axis offset for horizontal wrapping (Phase 7)
+    _padding: vec2<f32>,    // Alignment padding
+};
+
+// Terrain vertex input from mesh
+struct TerrainVertexInput {
+    @location(0) position: vec3<f32>,
+    @location(1) tex_coords: vec2<f32>,
+};
+
+struct TerrainVertexOutput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) tex_coords: vec2<f32>,
+    @location(1) world_pos: vec3<f32>,
+};
+
+// Bind group 1 for 3D terrain rendering
+@group(1) @binding(0)
+var<uniform> camera_3d: Camera3DUniform;
+
+@group(1) @binding(1)
+var<uniform> terrain_settings: TerrainSettings;
+
+// NOTE: Uses same textures from bind group 0 (t_heightmap at binding 6)
+
+@vertex
+fn vs_terrain(in: TerrainVertexInput) -> TerrainVertexOutput {
+    var out: TerrainVertexOutput;
+
+    // Sample heightmap at vertex UV to get height
+    // Using textureSampleLevel to avoid gradient issues in vertex shader
+    let height = textureSampleLevel(t_heightmap, s_heightmap, in.tex_coords, 0.0).r;
+
+    // Displace Y by height * scale, apply x_offset for horizontal wrapping
+    let world_pos = vec3<f32>(
+        in.position.x + terrain_settings.x_offset,
+        height * terrain_settings.height_scale,
+        in.position.z
+    );
+
+    // Transform to clip space
+    out.clip_position = camera_3d.view_proj * vec4<f32>(world_pos, 1.0);
+    out.tex_coords = in.tex_coords;
+    out.world_pos = world_pos;
+
+    return out;
+}
+
+// Fragment shader for 3D terrain (reuses map coloring logic)
+@fragment
+fn fs_terrain(in: TerrainVertexOutput) -> @location(0) vec4<f32> {
+    // Use tex_coords directly (already in 0-1 range from mesh generation)
+    let final_uv = in.tex_coords;
+
+    // Sample province ID
+    let province_id = sample_province_id(final_uv);
+
+    var color: vec4<f32>;
+
+    // Branch based on map mode (same logic as fs_main)
+    if (settings.map_mode < 0.5) {
+        // Political mode
+        color = lookup_color(province_id);
+        let terrain_shade = compute_terrain_shading(final_uv);
+        color = vec4<f32>(color.rgb * terrain_shade, color.a);
+    } else if (settings.map_mode < 1.5) {
+        // Terrain mode
+        color = compute_terrain_color(final_uv);
+    } else {
+        // Other map modes
+        color = lookup_color(province_id);
+        let terrain_shade = compute_terrain_shading(final_uv);
+        color = vec4<f32>(color.rgb * terrain_shade, color.a);
+    }
+
+    // Apply border darkening if enabled
+    if (settings.border_enabled > 0.5 && is_border(final_uv, province_id)) {
+        color = vec4<f32>(0.08, 0.08, 0.08, 1.0);
+    }
+
+    return color;
+}
+
+// =============================================================================
 // Army Marker Instanced Rendering
 // =============================================================================
 

@@ -644,10 +644,10 @@ impl Renderer {
                     },
                     count: None,
                 },
-                // binding 6: heightmap texture
+                // binding 6: heightmap texture (VERTEX for terrain displacement, FRAGMENT for shading)
                 wgpu::BindGroupLayoutEntry {
                     binding: 6,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
                         view_dimension: wgpu::TextureViewDimension::D2,
@@ -655,10 +655,10 @@ impl Renderer {
                     },
                     count: None,
                 },
-                // binding 7: heightmap sampler
+                // binding 7: heightmap sampler (VERTEX for terrain displacement, FRAGMENT for shading)
                 wgpu::BindGroupLayoutEntry {
                     binding: 7,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
@@ -747,7 +747,15 @@ impl Renderer {
                 unclipped_depth: false,
                 conservative: false,
             },
-            depth_stencil: None,
+            // Depth stencil required for compatibility with render pass.
+            // Map renders at full depth (always visible).
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Always,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
@@ -830,7 +838,14 @@ impl Renderer {
                 unclipped_depth: false,
                 conservative: false,
             },
-            depth_stencil: None,
+            // Depth stencil required for compatibility with render pass.
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Always,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
@@ -892,7 +907,14 @@ impl Renderer {
                 unclipped_depth: false,
                 conservative: false,
             },
-            depth_stencil: None,
+            // Depth stencil required for compatibility with render pass.
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Always,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
@@ -1113,7 +1135,15 @@ impl SpriteRenderer {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 ..Default::default()
             },
-            depth_stencil: None,
+            // Depth stencil required for compatibility with 3D terrain render pass.
+            // Sprites render on top of everything (Always pass, no depth write).
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Always,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
         });
@@ -1209,7 +1239,15 @@ impl SpriteRenderer {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 ..Default::default()
             },
-            depth_stencil: None,
+            // Depth stencil required for compatibility with 3D terrain render pass.
+            // UI elements render on top of everything (Always pass, no depth write).
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Always,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
         });
@@ -1534,5 +1572,900 @@ impl SpriteRenderer {
             tex_h,
             screen_size,
         );
+    }
+}
+
+// =============================================================================
+// 3D Terrain Renderer (Phase 4)
+// =============================================================================
+
+use crate::camera::{CameraUniform3D, Frustum, TerrainSettings};
+use crate::terrain_mesh::{TerrainChunk, TerrainMeshConfig, TerrainVertex};
+
+/// Depth texture format for terrain rendering.
+pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
+/// Creates a depth texture for terrain rendering.
+pub fn create_depth_texture(
+    device: &wgpu::Device,
+    width: u32,
+    height: u32,
+) -> (wgpu::Texture, wgpu::TextureView) {
+    let size = wgpu::Extent3d {
+        width,
+        height,
+        depth_or_array_layers: 1,
+    };
+
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Depth Texture"),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: DEPTH_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+    (texture, view)
+}
+
+/// GPU buffers for a terrain chunk.
+pub struct TerrainChunkBuffers {
+    /// Vertex buffer.
+    pub vertex_buffer: wgpu::Buffer,
+    /// Index buffer.
+    pub index_buffer: wgpu::Buffer,
+    /// Number of indices to draw.
+    pub index_count: u32,
+    /// Chunk position for debugging.
+    #[allow(dead_code)]
+    pub chunk_pos: (u32, u32),
+    /// Axis-aligned bounding box for frustum culling.
+    pub aabb_min: glam::Vec3,
+    pub aabb_max: glam::Vec3,
+}
+
+impl TerrainChunkBuffers {
+    /// Creates GPU buffers from a terrain chunk.
+    pub fn from_chunk(device: &wgpu::Device, chunk: &TerrainChunk) -> Self {
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(&format!(
+                "Terrain Vertex Buffer ({}, {})",
+                chunk.chunk_pos.0, chunk.chunk_pos.1
+            )),
+            contents: bytemuck::cast_slice(&chunk.vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(&format!(
+                "Terrain Index Buffer ({}, {})",
+                chunk.chunk_pos.0, chunk.chunk_pos.1
+            )),
+            contents: bytemuck::cast_slice(&chunk.indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        Self {
+            vertex_buffer,
+            index_buffer,
+            index_count: chunk.indices.len() as u32,
+            chunk_pos: chunk.chunk_pos,
+            aabb_min: chunk.aabb.min,
+            aabb_max: chunk.aabb.max,
+        }
+    }
+}
+
+/// 3D terrain renderer using heightmap displacement.
+pub struct TerrainRenderer {
+    /// Render pipeline for terrain.
+    pub pipeline: wgpu::RenderPipeline,
+    /// Bind group layout for terrain-specific uniforms (group 1).
+    /// Kept for potential future use when recreating bind groups.
+    #[allow(dead_code)]
+    pub bind_group_layout: wgpu::BindGroupLayout,
+    /// Bind groups for each horizontal copy (left, center, right).
+    /// Each has a different x_offset for horizontal wrapping.
+    pub bind_groups: [wgpu::BindGroup; 3],
+    /// Camera uniform buffer (shared across all copies).
+    pub camera_buffer: wgpu::Buffer,
+    /// Terrain settings buffers for each copy.
+    /// Index 0: left copy (-map_width), 1: center (0), 2: right (+map_width).
+    pub settings_buffers: [wgpu::Buffer; 3],
+    /// Terrain chunk buffers.
+    pub chunks: Vec<TerrainChunkBuffers>,
+    /// Depth texture.
+    pub depth_texture: wgpu::Texture,
+    /// Depth texture view.
+    pub depth_view: wgpu::TextureView,
+    /// Map width for horizontal wrapping calculations.
+    pub map_width: f32,
+}
+
+impl TerrainRenderer {
+    /// Creates a new terrain renderer.
+    ///
+    /// # Arguments
+    /// * `device` - GPU device
+    /// * `surface_format` - Render target format
+    /// * `map_bind_group_layout` - Bind group layout from main map renderer (group 0)
+    /// * `width` - Initial viewport width
+    /// * `height` - Initial viewport height
+    /// * `config` - Terrain mesh configuration
+    pub fn new(
+        device: &wgpu::Device,
+        surface_format: wgpu::TextureFormat,
+        map_bind_group_layout: &wgpu::BindGroupLayout,
+        width: u32,
+        height: u32,
+        config: &TerrainMeshConfig,
+    ) -> Self {
+        // Create depth texture
+        let (depth_texture, depth_view) = create_depth_texture(device, width, height);
+
+        let map_width = config.map_width;
+
+        // Create camera buffer (shared across all 3 copies)
+        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Terrain Camera Buffer"),
+            contents: bytemuck::cast_slice(&[CameraUniform3D::default()]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        // Create 3 settings buffers with different x_offsets for horizontal wrapping
+        // Index 0: left copy (-map_width), 1: center (0), 2: right (+map_width)
+        let x_offsets = [-map_width, 0.0, map_width];
+        let settings_buffers: [wgpu::Buffer; 3] = std::array::from_fn(|i| {
+            let settings =
+                TerrainSettings::with_x_offset(TerrainSettings::DEFAULT_HEIGHT_SCALE, x_offsets[i]);
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(&format!("Terrain Settings Buffer (offset {})", i)),
+                contents: bytemuck::cast_slice(&[settings]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            })
+        });
+
+        // Bind group layout for terrain-specific uniforms (group 1)
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Terrain Bind Group Layout"),
+            entries: &[
+                // binding 0: camera uniform (view_proj matrix)
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // binding 1: terrain settings (height_scale, x_offset)
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        // Create 3 bind groups (one per x_offset copy)
+        let bind_groups: [wgpu::BindGroup; 3] = std::array::from_fn(|i| {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some(&format!("Terrain Bind Group (offset {})", i)),
+                layout: &bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: camera_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: settings_buffers[i].as_entire_binding(),
+                    },
+                ],
+            })
+        });
+
+        // Load shader
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Terrain Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+        });
+
+        // Pipeline layout: group 0 = map textures, group 1 = terrain uniforms
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Terrain Pipeline Layout"),
+            bind_group_layouts: &[map_bind_group_layout, &bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        // Create render pipeline with depth test
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Terrain Render Pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_terrain",
+                buffers: &[TerrainVertex::desc()],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_terrain",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: surface_format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back), // Cull back faces for terrain
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        });
+
+        // Generate terrain chunks
+        let terrain_chunks = crate::terrain_mesh::generate_all_chunks(config);
+        let chunks: Vec<TerrainChunkBuffers> = terrain_chunks
+            .iter()
+            .map(|c| TerrainChunkBuffers::from_chunk(device, c))
+            .collect();
+
+        log::info!(
+            "Created terrain renderer with {} chunks ({} total triangles)",
+            chunks.len(),
+            chunks.iter().map(|c| c.index_count / 3).sum::<u32>()
+        );
+
+        Self {
+            pipeline,
+            bind_group_layout,
+            bind_groups,
+            camera_buffer,
+            settings_buffers,
+            chunks,
+            depth_texture,
+            depth_view,
+            map_width,
+        }
+    }
+
+    /// Resizes the depth texture for a new viewport size.
+    pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
+        let (depth_texture, depth_view) = create_depth_texture(device, width, height);
+        self.depth_texture = depth_texture;
+        self.depth_view = depth_view;
+    }
+
+    /// Updates the camera uniform buffer.
+    pub fn update_camera(&self, queue: &wgpu::Queue, uniform: CameraUniform3D) {
+        queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[uniform]));
+    }
+
+    /// Updates the height scale in all terrain settings buffers.
+    ///
+    /// Preserves the x_offsets that were set during construction.
+    pub fn update_settings(&self, queue: &wgpu::Queue, settings: TerrainSettings) {
+        let x_offsets = [-self.map_width, 0.0, self.map_width];
+        for (i, buffer) in self.settings_buffers.iter().enumerate() {
+            let adjusted = TerrainSettings::with_x_offset(settings.height_scale, x_offsets[i]);
+            queue.write_buffer(buffer, 0, bytemuck::cast_slice(&[adjusted]));
+        }
+    }
+
+    /// Renders all terrain chunks with horizontal wrapping.
+    ///
+    /// Renders 3 copies of the terrain at different X offsets:
+    /// - Left copy at x - map_width
+    /// - Center copy at x (original position)
+    /// - Right copy at x + map_width
+    ///
+    /// This creates seamless horizontal wrapping as the camera pans.
+    /// Frustum culling ensures only visible copies are drawn.
+    ///
+    /// # Arguments
+    /// * `render_pass` - Active render pass with depth attachment
+    /// * `map_bind_group` - Bind group 0 with map textures
+    /// * `frustum` - View frustum for culling
+    pub fn render<'a>(
+        &'a self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        map_bind_group: &'a wgpu::BindGroup,
+        frustum: &Frustum,
+    ) {
+        render_pass.set_pipeline(&self.pipeline);
+        render_pass.set_bind_group(0, map_bind_group, &[]);
+
+        // X-offsets for horizontal wrapping: left copy, center, right copy
+        let x_offsets = [-self.map_width, 0.0, self.map_width];
+        let mut chunks_drawn = 0u32;
+        let mut chunks_culled = 0u32;
+
+        // Render 3 copies with different x_offsets for horizontal wrapping
+        for (copy_idx, bind_group) in self.bind_groups.iter().enumerate() {
+            let x_offset = x_offsets[copy_idx];
+
+            for chunk in &self.chunks {
+                // Offset the chunk's AABB by the copy's x_offset
+                let min = glam::Vec3::new(
+                    chunk.aabb_min.x + x_offset,
+                    chunk.aabb_min.y,
+                    chunk.aabb_min.z,
+                );
+                let max = glam::Vec3::new(
+                    chunk.aabb_max.x + x_offset,
+                    chunk.aabb_max.y,
+                    chunk.aabb_max.z,
+                );
+
+                // Frustum cull: skip chunks outside the view
+                if !frustum.intersects_aabb(min, max) {
+                    chunks_culled += 1;
+                    continue;
+                }
+
+                chunks_drawn += 1;
+                render_pass.set_bind_group(1, bind_group, &[]);
+                render_pass.set_vertex_buffer(0, chunk.vertex_buffer.slice(..));
+                render_pass
+                    .set_index_buffer(chunk.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..chunk.index_count, 0, 0..1);
+            }
+        }
+
+        // Log culling stats occasionally (every ~60 frames would be ideal, but we don't track)
+        if chunks_culled > 0 {
+            log::trace!(
+                "Frustum culling: {} chunks drawn, {} culled",
+                chunks_drawn,
+                chunks_culled
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod terrain_tests {
+    use super::*;
+
+    #[test]
+    fn test_depth_format() {
+        // Verify we're using Depth32Float as planned
+        assert_eq!(
+            DEPTH_FORMAT,
+            wgpu::TextureFormat::Depth32Float,
+            "Depth format should be Depth32Float for precision"
+        );
+    }
+
+    #[test]
+    fn test_terrain_vertex_buffer_layout() {
+        let layout = TerrainVertex::desc();
+        assert_eq!(
+            layout.array_stride, 20,
+            "TerrainVertex stride should be 20 bytes"
+        );
+        assert_eq!(
+            layout.attributes.len(),
+            2,
+            "TerrainVertex should have 2 attributes (position, tex_coords)"
+        );
+    }
+
+    #[test]
+    fn test_camera_uniform_3d_size() {
+        // 4x4 f32 matrix = 64 bytes
+        assert_eq!(
+            std::mem::size_of::<CameraUniform3D>(),
+            64,
+            "CameraUniform3D should be 64 bytes"
+        );
+    }
+
+    #[test]
+    fn test_terrain_settings_size() {
+        // f32 + vec3 padding = 16 bytes
+        assert_eq!(
+            std::mem::size_of::<TerrainSettings>(),
+            16,
+            "TerrainSettings should be 16 bytes"
+        );
+    }
+}
+
+#[cfg(test)]
+mod mode_switching_tests {
+    use super::*;
+    use crate::testing::HeadlessGpu;
+
+    /// Test that sprite pipeline works with depth stencil attachment (3D mode).
+    ///
+    /// This is a critical test to prevent regressions where pipelines become
+    /// incompatible with render passes that use depth buffers.
+    #[test]
+    fn test_sprite_pipeline_with_depth_attachment() {
+        let Some(gpu) = pollster::block_on(HeadlessGpu::new()) else {
+            eprintln!("Skipping test: no GPU available");
+            return;
+        };
+
+        // Create sprite renderer
+        let sprite_renderer = SpriteRenderer::new(&gpu.device, gpu.format);
+
+        // Create offscreen texture
+        let width = 64u32;
+        let height = 64u32;
+        let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Test Color Texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: gpu.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let color_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // Create depth texture
+        let (_, depth_view) = create_depth_texture(&gpu.device, width, height);
+
+        // Create render pass WITH depth attachment (simulating 3D terrain mode)
+        let mut encoder = gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Test Encoder"),
+            });
+
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("3D Mode Test Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &color_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Discard,
+                    }),
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+
+            // Set the sprite pipeline - this should NOT panic
+            render_pass.set_pipeline(&sprite_renderer.pipeline);
+            // We don't actually draw, just verify the pipeline is compatible
+        }
+
+        gpu.queue.submit(std::iter::once(encoder.finish()));
+    }
+
+    /// Test that sprite pipeline also works WITHOUT depth stencil (2D mode).
+    ///
+    /// This ensures the pipeline is compatible with both 2D and 3D render passes.
+    #[test]
+    fn test_sprite_pipeline_without_depth_attachment() {
+        let Some(gpu) = pollster::block_on(HeadlessGpu::new()) else {
+            eprintln!("Skipping test: no GPU available");
+            return;
+        };
+
+        // Create sprite renderer
+        let sprite_renderer = SpriteRenderer::new(&gpu.device, gpu.format);
+
+        // Create offscreen texture
+        let width = 64u32;
+        let height = 64u32;
+        let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Test Color Texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: gpu.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let color_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // Create depth texture (needed even for 2D mode now)
+        let (_, depth_view) = create_depth_texture(&gpu.device, width, height);
+
+        // Create render pass with depth attachment (all modes now use depth)
+        let mut encoder = gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Test Encoder"),
+            });
+
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("2D Mode Test Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &color_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Discard,
+                    }),
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+
+            // Set the sprite pipeline - this should NOT panic
+            render_pass.set_pipeline(&sprite_renderer.pipeline);
+        }
+
+        gpu.queue.submit(std::iter::once(encoder.finish()));
+    }
+
+    /// Test that masked flag pipeline works with depth attachment.
+    #[test]
+    fn test_masked_flag_pipeline_with_depth_attachment() {
+        let Some(gpu) = pollster::block_on(HeadlessGpu::new()) else {
+            eprintln!("Skipping test: no GPU available");
+            return;
+        };
+
+        // Create sprite renderer (contains masked flag pipeline)
+        let sprite_renderer = SpriteRenderer::new(&gpu.device, gpu.format);
+
+        // Create offscreen texture
+        let width = 64u32;
+        let height = 64u32;
+        let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Test Color Texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: gpu.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let color_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // Create depth texture
+        let (_, depth_view) = create_depth_texture(&gpu.device, width, height);
+
+        // Create render pass WITH depth attachment
+        let mut encoder = gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Test Encoder"),
+            });
+
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Masked Flag Test Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &color_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Discard,
+                    }),
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+
+            // Set the masked flag pipeline - this should NOT panic
+            render_pass.set_pipeline(&sprite_renderer.masked_flag_pipeline);
+        }
+
+        gpu.queue.submit(std::iter::once(encoder.finish()));
+    }
+
+    /// Test that map pipeline works with depth attachment.
+    ///
+    /// Tests the Renderer's main map pipeline.
+    #[test]
+    fn test_map_pipeline_with_depth_attachment() {
+        let Some(gpu) = pollster::block_on(HeadlessGpu::new()) else {
+            eprintln!("Skipping test: no GPU available");
+            return;
+        };
+
+        // Create minimal test textures for Renderer
+        let province_img = image::RgbaImage::new(64, 64);
+        let province_lookup = std::collections::HashMap::new();
+
+        // Create renderer
+        let renderer = Renderer::new(
+            &gpu.device,
+            &gpu.queue,
+            gpu.format,
+            &province_img,
+            &province_lookup,
+            None, // no heightmap
+        );
+
+        // Create offscreen texture
+        let width = 64u32;
+        let height = 64u32;
+        let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Test Color Texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: gpu.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let color_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // Create depth texture
+        let (_, depth_view) = create_depth_texture(&gpu.device, width, height);
+
+        // Create render pass WITH depth attachment
+        let mut encoder = gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Test Encoder"),
+            });
+
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Map Pipeline Test Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &color_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Discard,
+                    }),
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+
+            // Set the map pipeline - this should NOT panic
+            render_pass.set_pipeline(&renderer.pipeline);
+        }
+
+        gpu.queue.submit(std::iter::once(encoder.finish()));
+    }
+
+    /// Test that army pipeline works with depth attachment.
+    #[test]
+    fn test_army_pipeline_with_depth_attachment() {
+        let Some(gpu) = pollster::block_on(HeadlessGpu::new()) else {
+            eprintln!("Skipping test: no GPU available");
+            return;
+        };
+
+        // Create minimal test textures for Renderer
+        let province_img = image::RgbaImage::new(64, 64);
+        let province_lookup = std::collections::HashMap::new();
+
+        // Create renderer
+        let renderer = Renderer::new(
+            &gpu.device,
+            &gpu.queue,
+            gpu.format,
+            &province_img,
+            &province_lookup,
+            None,
+        );
+
+        // Create offscreen texture
+        let width = 64u32;
+        let height = 64u32;
+        let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Test Color Texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: gpu.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let color_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // Create depth texture
+        let (_, depth_view) = create_depth_texture(&gpu.device, width, height);
+
+        // Create render pass WITH depth attachment
+        let mut encoder = gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Test Encoder"),
+            });
+
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Army Pipeline Test Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &color_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Discard,
+                    }),
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+
+            // Set the army pipeline - this should NOT panic
+            render_pass.set_pipeline(&renderer.army_pipeline);
+        }
+
+        gpu.queue.submit(std::iter::once(encoder.finish()));
+    }
+
+    /// Test that fleet pipeline works with depth attachment.
+    #[test]
+    fn test_fleet_pipeline_with_depth_attachment() {
+        let Some(gpu) = pollster::block_on(HeadlessGpu::new()) else {
+            eprintln!("Skipping test: no GPU available");
+            return;
+        };
+
+        // Create minimal test textures for Renderer
+        let province_img = image::RgbaImage::new(64, 64);
+        let province_lookup = std::collections::HashMap::new();
+
+        // Create renderer
+        let renderer = Renderer::new(
+            &gpu.device,
+            &gpu.queue,
+            gpu.format,
+            &province_img,
+            &province_lookup,
+            None,
+        );
+
+        // Create offscreen texture
+        let width = 64u32;
+        let height = 64u32;
+        let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Test Color Texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: gpu.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let color_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // Create depth texture
+        let (_, depth_view) = create_depth_texture(&gpu.device, width, height);
+
+        // Create render pass WITH depth attachment
+        let mut encoder = gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Test Encoder"),
+            });
+
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Fleet Pipeline Test Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &color_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Discard,
+                    }),
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+
+            // Set the fleet pipeline - this should NOT panic
+            render_pass.set_pipeline(&renderer.fleet_pipeline);
+        }
+
+        gpu.queue.submit(std::iter::once(encoder.finish()));
     }
 }

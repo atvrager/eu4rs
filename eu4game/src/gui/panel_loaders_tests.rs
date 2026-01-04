@@ -2,7 +2,7 @@
 use super::*;
 use crate::gui::parser::count_raw_gui_elements;
 use crate::gui::{CountryResources, GuiRenderer, GuiState, SelectedCountryState};
-use crate::render::SpriteRenderer;
+use crate::render::{SpriteRenderer, create_depth_texture};
 use crate::testing::{HeadlessGpu, assert_snapshot};
 use image::RgbaImage;
 
@@ -50,6 +50,10 @@ fn render_component_to_image(
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
+    // Create depth texture for pipelines that require depth stencil
+    let (_depth_texture, depth_view) =
+        create_depth_texture(&gpu.device, screen_size.0, screen_size.1);
+
     // Create readback buffer with proper alignment
     // wgpu requires COPY_BYTES_PER_ROW_ALIGNMENT (256 bytes)
     let bytes_per_pixel = 4u32;
@@ -87,7 +91,14 @@ fn render_component_to_image(
                     store: wgpu::StoreOp::Store,
                 },
             })],
-            depth_stencil_attachment: None,
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Discard,
+                }),
+                stencil_ops: None,
+            }),
             occlusion_query_set: None,
             timestamp_writes: None,
         });
@@ -197,6 +208,10 @@ fn render_country_select_to_image(
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
+    // Create depth texture for pipelines that require depth stencil
+    let (_depth_texture, depth_view) =
+        create_depth_texture(&gpu.device, screen_size.0, screen_size.1);
+
     let bytes_per_pixel = 4u32;
     let unpadded_bytes_per_row = bytes_per_pixel * screen_size.0;
     let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
@@ -231,7 +246,14 @@ fn render_country_select_to_image(
                     store: wgpu::StoreOp::Store,
                 },
             })],
-            depth_stencil_attachment: None,
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Discard,
+                }),
+                stencil_ops: None,
+            }),
             occlusion_query_set: None,
             timestamp_writes: None,
         });

@@ -9,6 +9,7 @@ description = "EU4 source port - playable game binary"
 wgpu = "0.20.0"
 winit = "0.29.15"
 bytemuck = { version = "1.24.0", features = ["derive"] }
+glam = "0.29"
 pollster = "0.4.0"
 
 # Image handling
