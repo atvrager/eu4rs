@@ -209,6 +209,7 @@ fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGra
         // Trade system
         trade_nodes: Default::default(),
         province_trade_node: Default::default(),
+        trade_node_name_to_id: Default::default(),
         trade_topology: Default::default(),
         // Building system
         building_name_to_id: Default::default(),

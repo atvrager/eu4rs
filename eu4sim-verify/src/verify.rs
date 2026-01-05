@@ -114,7 +114,12 @@ pub fn verify_country(
 
     // Verify monthly trade
     if let Some(cached) = country.cached_monthly_trade {
-        results.push(verify_monthly_trade(country, trade_nodes, cached, tolerance));
+        results.push(verify_monthly_trade(
+            country,
+            trade_nodes,
+            cached,
+            tolerance,
+        ));
     }
 
     // Verify monthly production

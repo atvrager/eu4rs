@@ -1861,7 +1861,10 @@ fn extract_trade_nodes(text: &str, state: &mut ExtractedState) {
 
             // Only process if has val field (skip empty entries with just max_demand)
             let power = match val_re.captures(country_block) {
-                Some(c) => c.get(1).and_then(|m| m.as_str().parse::<f64>().ok()).unwrap_or(0.0),
+                Some(c) => c
+                    .get(1)
+                    .and_then(|m| m.as_str().parse::<f64>().ok())
+                    .unwrap_or(0.0),
                 None => continue,
             };
 

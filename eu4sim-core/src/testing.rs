@@ -41,6 +41,7 @@ impl WorldStateBuilder {
                 // Trade system
                 trade_nodes: HashMap::default(),
                 province_trade_node: HashMap::default(),
+                trade_node_name_to_id: HashMap::default(),
                 trade_topology: TradeTopology::default(),
                 // Building system
                 building_name_to_id: HashMap::default(),

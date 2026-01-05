@@ -5,11 +5,13 @@
 //! 2. Overriding provinces/countries with save file values
 //! 3. Stubbing out armies/fleets for passive simulation
 
-use crate::ExtractedState;
+use crate::{ExtractedState, ExtractedTradeNode};
 use anyhow::Result;
 use eu4data::adjacency::AdjacencyGraph;
 use eu4sim_core::state::Date;
+use eu4sim_core::trade::{MerchantAction, MerchantState};
 use eu4sim_core::{Fixed, WorldState};
+use std::collections::HashMap;
 use std::path::Path;
 
 /// Hydrate a WorldState from save data, using game files for static data
@@ -391,6 +393,9 @@ pub fn hydrate_from_save(
         fleets_cleared
     );
 
+    // Hydrate trade state from save (merchants, power, node values)
+    hydrate_trade_state(&mut world, &save.trade_nodes);
+
     // Hydrate celestial empire state from save
     if let Some(ref ce) = save.celestial_empire {
         if let Some(ref emperor_tag) = ce.emperor {
@@ -454,6 +459,82 @@ fn map_celestial_reform_name_to_id(name: &str) -> Option<eu4sim_core::state::Cel
         "reform_civil_registration_decision" => Some(reforms::REFORM_CIVIL_REGISTRATION),
         _ => None,
     }
+}
+
+/// Hydrate trade node state from save data.
+///
+/// This function:
+/// 1. Sets node values (local_value, total_value, total_power)
+/// 2. Adds merchants with their actions (collect/steer)
+/// 3. Sets per-country trade power in each node
+fn hydrate_trade_state(world: &mut WorldState, trade_nodes: &HashMap<String, ExtractedTradeNode>) {
+    let mut merchants_hydrated = 0;
+    let mut nodes_hydrated = 0;
+
+    for (node_name, extracted_node) in trade_nodes {
+        // Look up node ID by name
+        let node_id = match world.trade_node_name_to_id.get(node_name) {
+            Some(&id) => id,
+            None => {
+                log::trace!("Trade node '{}' not found in game data", node_name);
+                continue;
+            }
+        };
+
+        if let Some(node_state) = world.trade_nodes.get_mut(&node_id) {
+            // Set node values from save
+            node_state.local_value = Fixed::from_f32(extracted_node.local_value as f32);
+            node_state.total_value = Fixed::from_f32(extracted_node.current_value as f32);
+            node_state.total_power = Fixed::from_f32(extracted_node.total_power as f32);
+            nodes_hydrated += 1;
+
+            // Clear existing merchants (will be populated from save)
+            node_state.merchants.clear();
+
+            // Hydrate merchants and country power
+            for (tag, country_data) in &extracted_node.country_data {
+                // Set trade power for this country
+                node_state
+                    .country_power
+                    .insert(tag.clone(), Fixed::from_f32(country_data.power as f32));
+
+                // Add merchant if present
+                if country_data.has_trader {
+                    // Determine action from type field
+                    // type=0 or absent -> collect
+                    // type=1 -> steer (default to first downstream since target not explicit)
+                    let action = match country_data.action {
+                        Some(1) => {
+                            // Get first downstream node as steer target
+                            if let Some(downstream) = world.trade_topology.edges.get(&node_id) {
+                                if let Some(&target) = downstream.first() {
+                                    MerchantAction::Steer { target }
+                                } else {
+                                    // End node, can only collect
+                                    MerchantAction::Collect
+                                }
+                            } else {
+                                MerchantAction::Collect
+                            }
+                        }
+                        _ => MerchantAction::Collect,
+                    };
+
+                    node_state.merchants.push(MerchantState {
+                        owner: tag.clone(),
+                        action,
+                    });
+                    merchants_hydrated += 1;
+                }
+            }
+        }
+    }
+
+    log::info!(
+        "Hydrated {} trade nodes with {} merchants from save",
+        nodes_hydrated,
+        merchants_hydrated
+    );
 }
 
 /// Parse date string "YYYY.MM.DD" into Date

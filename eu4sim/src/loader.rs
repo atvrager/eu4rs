@@ -247,6 +247,13 @@ pub fn load_initial_state(
         .map(|(&prov_id, &node_id)| (prov_id, TradeNodeId(node_id.0)))
         .collect();
 
+    // Trade node name to ID mapping (for save hydration)
+    let trade_node_name_to_id: StdHashMap<String, TradeNodeId> = trade_network
+        .name_to_id
+        .iter()
+        .map(|(name, &id)| (name.clone(), TradeNodeId(id.0)))
+        .collect();
+
     // 3. Load default map (for sea province detection)
     log::info!("Loading default map...");
     let default_map = eu4data::map::load_default_map(game_path)
@@ -961,6 +968,7 @@ pub fn load_initial_state(
             // Trade system
             trade_nodes: trade_nodes.into(),
             province_trade_node: province_trade_node.into(),
+            trade_node_name_to_id: trade_node_name_to_id.into(),
             trade_topology,
             // Building system
             building_name_to_id: ImHashMap::default(),

@@ -483,6 +483,10 @@ pub struct WorldState {
     /// Province to trade node mapping (which node a province belongs to).
     pub province_trade_node: HashMap<ProvinceId, TradeNodeId>,
 
+    /// Trade node name to ID mapping (for save hydration).
+    #[serde(skip)]
+    pub trade_node_name_to_id: HashMap<String, TradeNodeId>,
+
     /// Cached topological order for trade propagation (computed once at init).
     #[serde(skip)]
     pub trade_topology: TradeTopology,
