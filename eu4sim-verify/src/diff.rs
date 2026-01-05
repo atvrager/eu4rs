@@ -571,6 +571,7 @@ mod tests {
             provinces: HashMap::new(),
             subjects: HashMap::new(),
             celestial_empire: None,
+            trade_nodes: HashMap::new(),
         }
     }
 

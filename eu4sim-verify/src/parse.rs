@@ -356,6 +356,7 @@ fn parse_binary_gamestate(data: &[u8]) -> Result<ExtractedState> {
         provinces,
         subjects,
         celestial_empire,
+        trade_nodes: HashMap::new(), // TODO: Extract from Query API
     })
 }
 
@@ -742,6 +743,7 @@ fn parse_with_query(query: eu4save::query::Query) -> Result<ExtractedState> {
         provinces,
         subjects,
         celestial_empire,
+        trade_nodes: HashMap::new(), // TODO: Extract from binary save
     })
 }
 
@@ -761,6 +763,7 @@ fn parse_text_content(text: &str) -> Result<ExtractedState> {
         provinces: HashMap::new(),
         subjects: HashMap::new(),
         celestial_empire: None,
+        trade_nodes: HashMap::new(),
     };
 
     // Extract country data
@@ -775,11 +778,15 @@ fn parse_text_content(text: &str) -> Result<ExtractedState> {
     // Extract celestial empire from text
     state.celestial_empire = extract_celestial_empire_from_text(text);
 
+    // Extract trade node data
+    extract_trade_nodes(text, &mut state);
+
     log::info!(
-        "Extracted {} countries, {} provinces, {} subjects",
+        "Extracted {} countries, {} provinces, {} subjects, {} trade nodes",
         state.countries.len(),
         state.provinces.len(),
-        state.subjects.len()
+        state.subjects.len(),
+        state.trade_nodes.len()
     );
 
     Ok(state)
@@ -1757,6 +1764,156 @@ fn extract_celestial_empire_from_text(text: &str) -> Option<crate::ExtractedCele
         dismantled: false,
         reforms_passed,
     })
+}
+
+/// Extract trade node data from text save
+///
+/// Trade data appears in a block like:
+/// ```text
+/// trade={
+///     node={
+///         definitions="girin"
+///         current=3.481
+///         local_value=4.439
+///         total=332.638
+///         KOR={
+///             val=126.4
+///             money=1.23
+///             has_trader=yes
+///             type=1
+///         }
+///     }
+/// }
+/// ```
+fn extract_trade_nodes(text: &str, state: &mut ExtractedState) {
+    use regex::Regex;
+
+    // Find the trade section
+    let trade_start = match text.find("\ntrade={") {
+        Some(pos) => pos + "\ntrade={".len(),
+        None => {
+            log::debug!("No trade section found in save");
+            return;
+        }
+    };
+
+    // Get the trade section (may be very large, so limit search)
+    let trade_section = &text[trade_start..];
+
+    // Compile regex patterns
+    let node_start_re = Regex::new(r"(?m)^\s*node=\{").unwrap();
+    let definitions_re = Regex::new(r#"definitions="([^"]+)""#).unwrap();
+    let current_re = Regex::new(r"current=(-?\d+\.?\d*)").unwrap();
+    let local_value_re = Regex::new(r"local_value=(-?\d+\.?\d*)").unwrap();
+    let total_re = Regex::new(r"(?m)^\s*total=(-?\d+\.?\d*)").unwrap();
+
+    // Country data patterns
+    let country_block_re = Regex::new(r"(?m)^\s*([A-Z]{3})=\{").unwrap();
+    let val_re = Regex::new(r"(?m)^\s*val=(-?\d+\.?\d*)").unwrap();
+    let money_re = Regex::new(r"(?m)^\s*money=(-?\d+\.?\d*)").unwrap();
+    let has_trader_re = Regex::new(r"has_trader=yes").unwrap();
+    let has_capital_re = Regex::new(r"has_capital=yes").unwrap();
+    let type_re = Regex::new(r"(?m)^\s*type=(\d+)").unwrap();
+
+    for node_match in node_start_re.find_iter(trade_section) {
+        let block_start = node_match.end();
+        let node_block = match extract_block(&trade_section[block_start..]) {
+            Some(b) => b,
+            None => continue,
+        };
+
+        // Extract node name
+        let node_name = match definitions_re.captures(node_block) {
+            Some(c) => c.get(1).unwrap().as_str().to_string(),
+            None => continue,
+        };
+
+        // Extract node-level values
+        let current_value = current_re
+            .captures(node_block)
+            .and_then(|c: regex::Captures<'_>| c.get(1))
+            .and_then(|m: regex::Match<'_>| m.as_str().parse::<f64>().ok())
+            .unwrap_or(0.0);
+
+        let local_value = local_value_re
+            .captures(node_block)
+            .and_then(|c: regex::Captures<'_>| c.get(1))
+            .and_then(|m: regex::Match<'_>| m.as_str().parse::<f64>().ok())
+            .unwrap_or(0.0);
+
+        let total_power = total_re
+            .captures(node_block)
+            .and_then(|c: regex::Captures<'_>| c.get(1))
+            .and_then(|m: regex::Match<'_>| m.as_str().parse::<f64>().ok())
+            .unwrap_or(0.0);
+
+        // Extract per-country data
+        let mut country_data = HashMap::new();
+        for country_match in country_block_re.find_iter(node_block) {
+            let tag = &node_block[country_match.start()..country_match.end() - 2];
+            let tag = tag.trim();
+
+            let country_block_start = country_match.end();
+            let country_block = match extract_block(&node_block[country_block_start..]) {
+                Some(b) => b,
+                None => continue,
+            };
+
+            // Only process if has val field (skip empty entries with just max_demand)
+            let power = match val_re.captures(country_block) {
+                Some(c) => c.get(1).and_then(|m| m.as_str().parse::<f64>().ok()).unwrap_or(0.0),
+                None => continue,
+            };
+
+            let money = money_re
+                .captures(country_block)
+                .and_then(|c: regex::Captures<'_>| c.get(1))
+                .and_then(|m: regex::Match<'_>| m.as_str().parse::<f64>().ok())
+                .unwrap_or(0.0);
+
+            let has_trader = has_trader_re.is_match(country_block);
+            let has_capital = has_capital_re.is_match(country_block);
+
+            let action = type_re
+                .captures(country_block)
+                .and_then(|c: regex::Captures<'_>| c.get(1))
+                .and_then(|m: regex::Match<'_>| m.as_str().parse::<u8>().ok());
+
+            country_data.insert(
+                tag.to_string(),
+                crate::ExtractedCountryTradeData {
+                    power,
+                    money,
+                    has_trader,
+                    has_capital,
+                    action,
+                },
+            );
+        }
+
+        if !country_data.is_empty() {
+            log::trace!(
+                "Trade node '{}': current={:.2}, power={:.2}, {} countries",
+                node_name,
+                current_value,
+                total_power,
+                country_data.len()
+            );
+
+            state.trade_nodes.insert(
+                node_name.clone(),
+                crate::ExtractedTradeNode {
+                    name: node_name,
+                    current_value,
+                    local_value,
+                    total_power,
+                    country_data,
+                },
+            );
+        }
+    }
+
+    log::debug!("Extracted {} trade nodes", state.trade_nodes.len());
 }
 
 #[cfg(test)]

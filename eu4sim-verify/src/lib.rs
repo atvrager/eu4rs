@@ -22,6 +22,8 @@ pub struct ExtractedState {
     pub subjects: HashMap<String, ExtractedSubject>,
     /// Celestial Empire (Emperor of China) state
     pub celestial_empire: Option<ExtractedCelestialEmpire>,
+    /// Trade node data from save
+    pub trade_nodes: HashMap<String, ExtractedTradeNode>,
 }
 
 /// Celestial Empire (Emperor of China) state extracted from save
@@ -48,6 +50,36 @@ pub struct ExtractedSubject {
     pub subject_type: String,
     /// When the relationship started (YYYY.M.D format)
     pub start_date: Option<String>,
+}
+
+/// Trade node data extracted from save
+#[derive(Debug, Clone, Default)]
+pub struct ExtractedTradeNode {
+    /// Node name (e.g., "girin", "nippon")
+    pub name: String,
+    /// Current total node value (ducats)
+    pub current_value: f64,
+    /// Local value from production in node
+    pub local_value: f64,
+    /// Total trade power in node
+    pub total_power: f64,
+    /// Per-country trade data in this node
+    pub country_data: HashMap<String, ExtractedCountryTradeData>,
+}
+
+/// Per-country trade data within a trade node
+#[derive(Debug, Clone, Default)]
+pub struct ExtractedCountryTradeData {
+    /// Trade power (val field)
+    pub power: f64,
+    /// Trade income from this node (money field)
+    pub money: f64,
+    /// Whether this country has a merchant in this node
+    pub has_trader: bool,
+    /// Whether this is the country's home/capital trade node
+    pub has_capital: bool,
+    /// Merchant action type (0=collect, 1=steer)
+    pub action: Option<u8>,
 }
 
 /// Save file metadata

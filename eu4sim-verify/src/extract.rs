@@ -1,4 +1,4 @@
-use crate::{ExtractedCountry, ExtractedProvince, ExtractedState};
+use crate::{ExtractedCountry, ExtractedProvince, ExtractedState, ExtractedTradeNode};
 
 /// Extract verification-relevant data from parsed state
 pub fn extract_for_verification(state: &ExtractedState) -> VerificationData {
@@ -13,6 +13,7 @@ pub fn extract_for_verification(state: &ExtractedState) -> VerificationData {
             .iter()
             .map(|(id, p)| (*id, extract_province_data(p)))
             .collect(),
+        trade_nodes: state.trade_nodes.clone(),
     }
 }
 
@@ -21,6 +22,7 @@ pub fn extract_for_verification(state: &ExtractedState) -> VerificationData {
 pub struct VerificationData {
     pub countries: std::collections::HashMap<String, CountryVerifyData>,
     pub provinces: std::collections::HashMap<u32, ProvinceVerifyData>,
+    pub trade_nodes: std::collections::HashMap<String, ExtractedTradeNode>,
 }
 
 /// Country data needed for verification

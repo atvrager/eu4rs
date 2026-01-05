@@ -82,6 +82,7 @@ pub fn verify_all(
         results.extend(verify_country(
             country,
             &data.provinces,
+            &data.trade_nodes,
             tolerance,
             game_data,
         ));
@@ -95,6 +96,7 @@ pub fn verify_all(
 pub fn verify_country(
     country: &CountryVerifyData,
     provinces: &std::collections::HashMap<u32, ProvinceVerifyData>,
+    trade_nodes: &std::collections::HashMap<String, crate::ExtractedTradeNode>,
     tolerance: f64,
     game_data: Option<&GameData>,
 ) -> Vec<VerificationResult> {
@@ -112,7 +114,7 @@ pub fn verify_country(
 
     // Verify monthly trade
     if let Some(cached) = country.cached_monthly_trade {
-        results.push(verify_monthly_trade(country, cached, tolerance));
+        results.push(verify_monthly_trade(country, trade_nodes, cached, tolerance));
     }
 
     // Verify monthly production
@@ -260,17 +262,65 @@ fn verify_monthly_tax(
 }
 
 /// Verify monthly trade income calculation
+///
+/// Trade income is calculated by summing the `money` field from all trade nodes
+/// where this country has data. The `money` field represents income from that node.
 fn verify_monthly_trade(
     country: &CountryVerifyData,
-    _cached: f64,
-    _tolerance: f64,
+    trade_nodes: &std::collections::HashMap<String, crate::ExtractedTradeNode>,
+    cached: f64,
+    tolerance: f64,
 ) -> VerificationResult {
     let metric = MetricType::MonthlyTradeIncome {
         country: country.tag.clone(),
     };
 
-    // Trade income requires trade node data which we don't have yet
-    VerificationResult::skip(metric, "Trade verification not yet implemented")
+    // Sum money from all trade nodes for this country
+    let mut calculated = 0.0;
+    let mut nodes_with_income = 0;
+
+    for node in trade_nodes.values() {
+        if let Some(data) = node.country_data.get(&country.tag) {
+            if data.money > 0.0 {
+                calculated += data.money;
+                nodes_with_income += 1;
+            }
+        }
+    }
+
+    if nodes_with_income == 0 && cached > 0.0 {
+        return VerificationResult::skip(metric, "No trade node data for country");
+    }
+
+    let delta = (calculated - cached).abs();
+    let error_pct = if cached.abs() > 0.001 {
+        (delta / cached.abs()) * 100.0
+    } else {
+        0.0
+    };
+    let threshold = tolerance * cached.abs().max(1.0);
+    let threshold_pct = tolerance * 100.0;
+
+    if delta <= threshold {
+        VerificationResult::pass(metric, cached, calculated)
+    } else {
+        let closeness = if delta <= threshold * 2.0 {
+            "close"
+        } else if delta <= threshold * 5.0 {
+            "moderate"
+        } else {
+            "far"
+        };
+        VerificationResult::fail(
+            metric,
+            cached,
+            calculated,
+            format!(
+                "error {:.1}% (threshold {:.1}%) - {} [{} nodes]",
+                error_pct, threshold_pct, closeness, nodes_with_income
+            ),
+        )
+    }
 }
 
 /// Base goods produced per point of base_production (EU4 constant from defines)
