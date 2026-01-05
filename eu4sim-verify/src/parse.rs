@@ -319,6 +319,8 @@ fn parse_binary_gamestate(data: &[u8]) -> Result<ExtractedState> {
             fort_maintenance: Some(expense_ledger.fort_maintenance as f64),
             state_maintenance: None, // TODO: Extract when ledger has detailed breakdown
             root_out_corruption: None, // TODO: Extract when ledger has detailed breakdown
+            land_force_limit: None,  // TODO: Extract when eu4save exposes this field
+            naval_force_limit: None, // TODO: Extract when eu4save exposes this field
             advisors,
             ideas,
             active_modifiers: vec![], // TODO: Extract from eu4save when deserialization works
@@ -710,6 +712,8 @@ fn parse_with_query(query: eu4save::query::Query) -> Result<ExtractedState> {
             fort_maintenance: Some(expense_ledger.fort_maintenance as f64),
             state_maintenance: None, // TODO: Extract when ledger has detailed breakdown
             root_out_corruption: None, // TODO: Extract when ledger has detailed breakdown
+            land_force_limit: None,  // TODO: Extract when eu4save exposes this field
+            naval_force_limit: None, // TODO: Extract when eu4save exposes this field
             advisors,
             ideas,
             active_modifiers: vec![], // TODO: Extract from eu4save when deserialization works
@@ -957,6 +961,8 @@ fn parse_country_block(tag: &str, content: &str) -> crate::ExtractedCountry {
     country.treasury = extract_float_value(content, "treasury=");
     country.current_manpower = extract_float_value(content, "manpower=");
     country.max_manpower = extract_float_value(content, "max_manpower=");
+    country.land_force_limit = extract_float_value(content, "land_force_limit=");
+    country.naval_force_limit = extract_float_value(content, "naval_force_limit=");
 
     // Extract monarch power points from powers={ADM DIP MIL} array
     // This is stored as an array of 3 integers: powers={\n\t\tADM DIP MIL\n\t}

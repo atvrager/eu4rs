@@ -128,6 +128,10 @@ pub struct ExtractedCountry {
     pub state_maintenance: Option<f64>,
     pub root_out_corruption: Option<f64>,
 
+    // Force limits (cached values from save)
+    pub land_force_limit: Option<f64>,
+    pub naval_force_limit: Option<f64>,
+
     // Advisors (type -> skill level)
     pub advisors: Vec<ExtractedAdvisor>,
 
@@ -279,6 +283,8 @@ pub enum MetricType {
     ArmyMaintenance { country: String },
     NavyMaintenance { country: String },
     FortMaintenance { country: String },
+    LandForceLimit { country: String },
+    NavalForceLimit { country: String },
     InstitutionSpread { province: u32, institution: String },
     ProvinceDevelopment { province: u32 },
 }
@@ -296,6 +302,8 @@ impl std::fmt::Display for MetricType {
             MetricType::ArmyMaintenance { country } => write!(f, "ArmyMaint({})", country),
             MetricType::NavyMaintenance { country } => write!(f, "NavyMaint({})", country),
             MetricType::FortMaintenance { country } => write!(f, "FortMaint({})", country),
+            MetricType::LandForceLimit { country } => write!(f, "LandFL({})", country),
+            MetricType::NavalForceLimit { country } => write!(f, "NavalFL({})", country),
             MetricType::InstitutionSpread {
                 province,
                 institution,

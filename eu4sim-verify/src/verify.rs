@@ -129,6 +129,11 @@ pub fn verify_country(
         ));
     }
 
+    // Calculate and show force limits
+    // Note: Force limits aren't stored in save files - EU4 calculates them on-the-fly
+    // So we always show calculated values (informational, like expenses)
+    results.extend(show_force_limits(country, provinces));
+
     // Show expense breakdown (informational - no independent verification yet)
     results.extend(show_expenses(country));
 
@@ -440,6 +445,82 @@ fn verify_monthly_production(
     }
 }
 
+/// Show calculated force limits (informational - no save comparison)
+///
+/// Force limits aren't stored in EU4 save files - the game calculates them on-the-fly.
+/// We calculate them using the same formula and display as informational PASS results.
+fn show_force_limits(
+    country: &CountryVerifyData,
+    provinces: &std::collections::HashMap<u32, ProvinceVerifyData>,
+) -> Vec<VerificationResult> {
+    let mut results = Vec::new();
+
+    if country.owned_provinces.is_empty() {
+        return results;
+    }
+
+    // Convert to the input format expected by the shared calculation
+    let prov_inputs: std::collections::HashMap<u32, eu4sim_core::systems::ProvinceVerifyInput> =
+        provinces
+            .iter()
+            .map(|(&id, p)| {
+                (
+                    id,
+                    eu4sim_core::systems::ProvinceVerifyInput {
+                        base_tax: p.base_tax,
+                        base_production: p.base_production,
+                        base_manpower: p.base_manpower,
+                        local_autonomy: p.local_autonomy,
+                        trade_good: p.trade_good.clone(),
+                        buildings: p.buildings.clone(),
+                    },
+                )
+            })
+            .collect();
+
+    // Calculate land force limit
+    let land_fl = eu4sim_core::systems::calculate_land_force_limit_simple(
+        &country.owned_provinces,
+        &prov_inputs,
+    );
+
+    results.push(VerificationResult {
+        metric: MetricType::LandForceLimit {
+            country: country.tag.clone(),
+        },
+        expected: land_fl,
+        actual: land_fl,
+        delta: 0.0,
+        status: crate::VerifyStatus::Pass,
+        details: Some(format!(
+            "calculated (base=6, dev_contrib={:.1})",
+            land_fl - 6.0
+        )),
+    });
+
+    // Calculate naval force limit
+    let naval_fl = eu4sim_core::systems::calculate_naval_force_limit_simple(
+        &country.owned_provinces,
+        &prov_inputs,
+    );
+
+    results.push(VerificationResult {
+        metric: MetricType::NavalForceLimit {
+            country: country.tag.clone(),
+        },
+        expected: naval_fl,
+        actual: naval_fl,
+        delta: 0.0,
+        status: crate::VerifyStatus::Pass,
+        details: Some(format!(
+            "calculated (base=12, dev_contrib={:.1})",
+            naval_fl - 12.0
+        )),
+    });
+
+    results
+}
+
 /// Show expense breakdown from save (informational - no independent verification)
 ///
 /// We display these as PASS with the breakdown since we can't independently verify
@@ -498,15 +579,10 @@ pub fn verify_institution_spread(
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_verify_max_manpower_pass() {
-        // Test the base calculation formula:
-        // base_national (10k) + sum(base_manpower * 250 / 1000)
-        // With 2 provinces of 5 base_manpower each:
-        // 10.0 + (5 * 250 / 1000) + (5 * 250 / 1000) = 10.0 + 1.25 + 1.25 = 12.5
-        let country = CountryVerifyData {
-            tag: "FRA".to_string(),
-            cached_max_manpower: Some(12.5), // Expected value in thousands
+    fn make_country(tag: &str, provinces: Vec<u32>) -> CountryVerifyData {
+        CountryVerifyData {
+            tag: tag.to_string(),
+            cached_max_manpower: None,
             cached_monthly_tax: None,
             cached_monthly_trade: None,
             cached_monthly_production: None,
@@ -514,40 +590,136 @@ mod tests {
             cached_navy_maintenance: None,
             cached_fort_maintenance: None,
             cached_total_expenses: None,
-            owned_provinces: vec![1, 2],
-        };
+            cached_land_force_limit: None,
+            cached_naval_force_limit: None,
+            owned_provinces: provinces,
+        }
+    }
+
+    fn make_province(
+        id: u32,
+        base_tax: f64,
+        base_prod: f64,
+        base_mp: f64,
+        autonomy: f64,
+        trade_good: Option<&str>,
+        buildings: Vec<&str>,
+    ) -> ProvinceVerifyData {
+        ProvinceVerifyData {
+            id,
+            owner: Some("TST".to_string()),
+            base_tax,
+            base_production: base_prod,
+            base_manpower: base_mp,
+            local_autonomy: autonomy,
+            institution_progress: std::collections::HashMap::new(),
+            trade_good: trade_good.map(String::from),
+            buildings: buildings.into_iter().map(String::from).collect(),
+        }
+    }
+
+    #[test]
+    fn test_verify_max_manpower_pass() {
+        // Test the base calculation formula:
+        // base_national (10k) + sum(base_manpower * 250 / 1000)
+        // With 2 provinces of 5 base_manpower each:
+        // 10.0 + (5 * 250 / 1000) + (5 * 250 / 1000) = 10.0 + 1.25 + 1.25 = 12.5
+        let mut country = make_country("FRA", vec![1, 2]);
+        country.cached_max_manpower = Some(12.5);
 
         let mut provinces = std::collections::HashMap::new();
         provinces.insert(
             1,
-            ProvinceVerifyData {
-                id: 1,
-                owner: Some("FRA".to_string()),
-                base_tax: 5.0,
-                base_production: 5.0,
-                base_manpower: 5.0,
-                local_autonomy: 0.0,
-                institution_progress: std::collections::HashMap::new(),
-                trade_good: Some("grain".to_string()),
-                buildings: vec![],
-            },
+            make_province(1, 5.0, 5.0, 5.0, 0.0, Some("grain"), vec![]),
         );
         provinces.insert(
             2,
-            ProvinceVerifyData {
-                id: 2,
-                owner: Some("FRA".to_string()),
-                base_tax: 5.0,
-                base_production: 5.0,
-                base_manpower: 5.0,
-                local_autonomy: 0.0,
-                institution_progress: std::collections::HashMap::new(),
-                trade_good: Some("grain".to_string()),
-                buildings: vec![],
-            },
+            make_province(2, 5.0, 5.0, 5.0, 0.0, Some("grain"), vec![]),
         );
 
         let result = verify_max_manpower(&country, &provinces, 12.5, 0.01);
         assert_eq!(result.status, crate::VerifyStatus::Pass);
+    }
+
+    #[test]
+    fn test_show_force_limits_basic() {
+        // Base land: 6 + 30 dev * 0.1 = 9
+        // Base naval: 12 + 30 dev * 0.1 = 15
+        let country = make_country("TST", vec![1]);
+        let mut provinces = std::collections::HashMap::new();
+        provinces.insert(1, make_province(1, 10.0, 10.0, 10.0, 0.0, None, vec![]));
+
+        let results = show_force_limits(&country, &provinces);
+        assert_eq!(results.len(), 2);
+
+        // Land FL
+        assert_eq!(results[0].status, crate::VerifyStatus::Pass);
+        assert!((results[0].actual - 9.0).abs() < 0.01);
+
+        // Naval FL
+        assert_eq!(results[1].status, crate::VerifyStatus::Pass);
+        assert!((results[1].actual - 15.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_show_force_limits_with_trade_goods() {
+        // Land: 6 + 30 dev * 0.1 + 0.5 grain = 9.5
+        // Naval: 12 + 30 dev * 0.1 = 15 (no naval supplies)
+        let country = make_country("TST", vec![1]);
+        let mut provinces = std::collections::HashMap::new();
+        provinces.insert(
+            1,
+            make_province(1, 10.0, 10.0, 10.0, 0.0, Some("grain"), vec![]),
+        );
+
+        let results = show_force_limits(&country, &provinces);
+        assert!((results[0].actual - 9.5).abs() < 0.01);
+        assert!((results[1].actual - 15.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_show_force_limits_with_autonomy() {
+        // Land: 6 + (30 dev * 0.1) * 0.5 = 7.5
+        // Naval: 12 + (30 dev * 0.1) * 0.5 = 13.5
+        let country = make_country("TST", vec![1]);
+        let mut provinces = std::collections::HashMap::new();
+        provinces.insert(1, make_province(1, 10.0, 10.0, 10.0, 50.0, None, vec![]));
+
+        let results = show_force_limits(&country, &provinces);
+        assert!((results[0].actual - 7.5).abs() < 0.01);
+        assert!((results[1].actual - 13.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_show_force_limits_with_buildings() {
+        // Land: 6 + 30 dev * 0.1 + 1 camp + 3 center = 13
+        // Naval: 12 + 30 dev * 0.1 + 2 shipyard = 17
+        let country = make_country("TST", vec![1]);
+        let mut provinces = std::collections::HashMap::new();
+        provinces.insert(
+            1,
+            make_province(
+                1,
+                10.0,
+                10.0,
+                10.0,
+                0.0,
+                None,
+                vec!["regimental_camp", "conscription_center", "shipyard"],
+            ),
+        );
+
+        let results = show_force_limits(&country, &provinces);
+        assert!((results[0].actual - 13.0).abs() < 0.01);
+        assert!((results[1].actual - 17.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_show_force_limits_empty_provinces() {
+        let country = make_country("TST", vec![]);
+        let provinces = std::collections::HashMap::new();
+
+        let results = show_force_limits(&country, &provinces);
+        assert!(results.is_empty());
     }
 }

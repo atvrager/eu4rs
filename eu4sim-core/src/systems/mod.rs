@@ -11,6 +11,7 @@ pub mod coring;
 pub mod development;
 pub mod estates;
 pub mod expenses;
+pub mod force_limits;
 pub mod hre;
 pub mod ideas;
 pub mod institutions;
@@ -55,6 +56,11 @@ pub use estates::{
     PrivilegeError,
 };
 pub use expenses::run_expenses_tick;
+pub use force_limits::{
+    calculate_force_limits, calculate_land_force_limit_simple, calculate_naval_force_limit_simple,
+    ForceLimitTradeGoods, ProvinceVerifyInput, BASE_LAND_FORCE_LIMIT, BASE_NAVAL_FORCE_LIMIT,
+    FL_PER_DEV, GRAIN_LAND_FL_BONUS, NAVAL_SUPPLIES_NAVAL_FL_BONUS,
+};
 pub use hre::run_hre_tick;
 pub use ideas::{
     apply_modifier, print_modifier_report, recalculate_idea_modifiers, scan_all_modifiers,

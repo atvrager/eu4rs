@@ -42,6 +42,10 @@ pub struct CountryVerifyData {
     pub cached_fort_maintenance: Option<f64>,
     pub cached_total_expenses: Option<f64>,
 
+    // Force limits (cached values from game)
+    pub cached_land_force_limit: Option<f64>,
+    pub cached_naval_force_limit: Option<f64>,
+
     // Input data for recalculation
     pub owned_provinces: Vec<u32>,
 }
@@ -81,6 +85,8 @@ fn extract_country_data(country: &ExtractedCountry) -> CountryVerifyData {
         cached_navy_maintenance: country.navy_maintenance,
         cached_fort_maintenance: country.fort_maintenance,
         cached_total_expenses: country.total_monthly_expenses,
+        cached_land_force_limit: country.land_force_limit,
+        cached_naval_force_limit: country.naval_force_limit,
         owned_provinces: country.owned_province_ids.clone(),
     }
 }
