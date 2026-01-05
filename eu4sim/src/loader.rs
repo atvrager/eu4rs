@@ -374,6 +374,45 @@ pub fn load_initial_state(
         ch_fail
     );
 
+    // Update country_capitals from country history (overriding naive first-province assignment)
+    for (tag, hist) in &country_history {
+        if let Some(cap_id) = hist.capital {
+            country_capitals.insert(tag.clone(), cap_id);
+        }
+    }
+
+    // Set is_capital on provinces based on actual country capitals
+    let mut capitals_set = 0;
+    for (&prov_id, prov) in provinces.iter_mut() {
+        if let Some(ref owner) = prov.owner {
+            if let Some(&cap_id) = country_capitals.get(owner) {
+                if cap_id == prov_id {
+                    prov.is_capital = true;
+                    capitals_set += 1;
+                }
+            }
+        }
+    }
+    log::info!("Set is_capital=true on {} capital provinces", capitals_set);
+
+    // Collect HRE electors from country history
+    let hre_electors: Vec<String> = country_history
+        .iter()
+        .filter(|(_, hist)| hist.elector)
+        .map(|(tag, _)| tag.clone())
+        .collect();
+    log::info!(
+        "Found {} HRE electors in country history",
+        hre_electors.len()
+    );
+
+    // Load diplomacy history for HRE emperor
+    let diplomacy_state = eu4data::history::load_diplomacy_history(game_path)
+        .map_err(|e| anyhow::anyhow!("Failed to load diplomacy history: {}", e))?;
+    if let Some(ref emperor) = diplomacy_state.hre_emperor {
+        log::info!("Loaded HRE emperor from history: {}", emperor);
+    }
+
     // Second pass: Set country data from history, manpower, and home trade nodes
     for (tag, country) in &mut countries {
         // Apply country history data if available
@@ -934,59 +973,171 @@ pub fn load_initial_state(
         );
     }
 
+    // 7b. Initialize HRE state
+    let hre_state = eu4sim_core::state::HREState {
+        emperor: diplomacy_state.hre_emperor.clone(),
+        electors: hre_electors,
+        official_religion: "catholic".to_string(),
+        ..Default::default()
+    };
+    if let Some(ref emperor) = hre_state.emperor {
+        log::info!(
+            "HRE initialized: emperor={}, {} electors",
+            emperor,
+            hre_state.electors.len()
+        );
+    } else {
+        log::info!(
+            "HRE initialized: no emperor (will trigger election), {} electors",
+            hre_state.electors.len()
+        );
+    }
+
+    let global_state = eu4sim_core::state::GlobalState {
+        hre: hre_state,
+        ..Default::default()
+    };
+
     // 8. Assemble State
-    Ok((
-        WorldState {
-            date: start_date,
-            rng_seed: _rng_seed,
-            rng_state: 0, // Initialize RNG state
-            provinces: provinces.into(),
-            countries: countries.into(),
-            base_goods_prices: base_prices.into(),
-            modifiers,
-            diplomacy: eu4sim_core::state::DiplomacyState {
-                subjects: subjects.into(),
-                ..Default::default()
-            },
-            global: Default::default(),
-            armies: armies.into(),
-            next_army_id,
-            fleets: fleets.into(),
-            next_fleet_id,
-            colonies: ImHashMap::default(),
-            // Combat system
-            generals: ImHashMap::default(),
-            next_general_id: 1,
-            admirals: ImHashMap::default(),
-            next_admiral_id: 1,
-            battles: ImHashMap::default(),
-            next_battle_id: 1,
-            naval_battles: ImHashMap::default(),
-            next_naval_battle_id: 1,
-            sieges: ImHashMap::default(),
-            next_siege_id: 1,
-            // Trade system
-            trade_nodes: trade_nodes.into(),
-            province_trade_node: province_trade_node.into(),
-            trade_node_name_to_id: trade_node_name_to_id.into(),
-            trade_topology,
-            // Building system
-            building_name_to_id: ImHashMap::default(),
-            building_defs: ImHashMap::default(),
-            building_upgraded_by: ImHashMap::default(),
-            // Subject type system
-            subject_types,
-            // Idea system
-            idea_groups,
-            // Policy system
-            policies: policy_registry,
-            // Event modifier system
-            event_modifiers,
-            // Government type system
-            government_types: eu4sim_core::government::GovernmentRegistry::new(),
-            // Estate system
-            estates: estate_registry,
+    let mut state = WorldState {
+        date: start_date,
+        rng_seed: _rng_seed,
+        rng_state: 0, // Initialize RNG state
+        provinces: provinces.into(),
+        countries: countries.into(),
+        base_goods_prices: base_prices.into(),
+        modifiers,
+        diplomacy: eu4sim_core::state::DiplomacyState {
+            subjects: subjects.into(),
+            ..Default::default()
         },
-        adjacency,
-    ))
+        global: global_state,
+        armies: armies.into(),
+        next_army_id,
+        fleets: fleets.into(),
+        next_fleet_id,
+        colonies: ImHashMap::default(),
+        // Combat system
+        generals: ImHashMap::default(),
+        next_general_id: 1,
+        admirals: ImHashMap::default(),
+        next_admiral_id: 1,
+        battles: ImHashMap::default(),
+        next_battle_id: 1,
+        naval_battles: ImHashMap::default(),
+        next_naval_battle_id: 1,
+        sieges: ImHashMap::default(),
+        next_siege_id: 1,
+        // Trade system
+        trade_nodes: trade_nodes.into(),
+        province_trade_node: province_trade_node.into(),
+        trade_node_name_to_id: trade_node_name_to_id.into(),
+        trade_topology,
+        // Building system
+        building_name_to_id: ImHashMap::default(),
+        building_defs: ImHashMap::default(),
+        building_upgraded_by: ImHashMap::default(),
+        // Subject type system
+        subject_types,
+        // Idea system
+        idea_groups,
+        // Policy system
+        policies: policy_registry,
+        // Event modifier system
+        event_modifiers,
+        // Government type system
+        government_types: eu4sim_core::government::GovernmentRegistry::new(),
+        // Estate system
+        estates: estate_registry,
+    };
+
+    // 9. Run initial HRE election if no emperor
+    if state.global.hre.emperor.is_none() && !state.global.hre.dismantled {
+        log::info!("No HRE emperor set from history - triggering initial election");
+        eu4sim_core::systems::hre::check_and_run_election(&mut state);
+        if let Some(ref emperor) = state.global.hre.emperor {
+            log::info!("HRE election result: emperor={}", emperor);
+        } else {
+            log::warn!("HRE election produced no emperor - HRE may be misconfigured");
+        }
+    }
+
+    Ok((state, adjacency))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Integration test that verifies HRE state is properly loaded from game files.
+    ///
+    /// This test ensures that:
+    /// 1. Capital provinces are correctly marked (is_capital = true)
+    /// 2. HRE electors are loaded from country history
+    /// 3. HRE emperor is loaded from diplomacy history (HAB in 1444)
+    /// 4. HRE members exist (countries with capitals in HRE)
+    /// 5. Elections can find eligible candidates
+    #[test]
+    fn test_hre_initialization_from_game_files() {
+        // Skip if EU4 not installed
+        let game_path = match std::env::var("EU4_GAME_PATH") {
+            Ok(p) => std::path::PathBuf::from(p),
+            Err(_) => {
+                // Try default Steam path
+                let default = std::path::PathBuf::from(
+                    "/home/atv/.steam/steam/steamapps/common/Europa Universalis IV",
+                );
+                if !default.exists() {
+                    eprintln!("Skipping HRE test: EU4 not found");
+                    return;
+                }
+                default
+            }
+        };
+
+        let start_date = eu4sim_core::state::Date::new(1444, 11, 11);
+        let (state, _) =
+            load_initial_state(&game_path, start_date, 0).expect("Failed to load game state");
+
+        // 1. Check capitals are set
+        let capitals_count = state.provinces.values().filter(|p| p.is_capital).count();
+        assert!(
+            capitals_count > 100,
+            "Expected >100 capital provinces, got {}",
+            capitals_count
+        );
+
+        // 2. Check HRE electors are loaded (should be 7 in 1444)
+        assert!(
+            !state.global.hre.electors.is_empty(),
+            "HRE should have electors loaded"
+        );
+        assert_eq!(
+            state.global.hre.electors.len(),
+            7,
+            "HRE should have 7 electors in 1444"
+        );
+
+        // 3. Check HRE emperor is loaded (HAB in 1444)
+        assert_eq!(
+            state.global.hre.emperor,
+            Some("HAB".to_string()),
+            "HRE emperor should be HAB in 1444"
+        );
+
+        // 4. Check HRE has members
+        let members = state.global.hre.get_members(&state.provinces);
+        assert!(
+            members.len() > 20,
+            "HRE should have >20 member countries, got {}",
+            members.len()
+        );
+
+        // 5. Check elections can find candidates
+        let candidates = eu4sim_core::systems::hre::get_eligible_candidates(&state);
+        assert!(
+            !candidates.is_empty(),
+            "HRE should have eligible emperor candidates"
+        );
+    }
 }

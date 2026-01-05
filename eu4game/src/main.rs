@@ -2107,30 +2107,12 @@ impl App {
             return;
         };
 
-        // Build lookup data: province ID -> HRE color
-        let mut lookup_data: Vec<u8> = Vec::with_capacity((render::LOOKUP_SIZE * 4) as usize);
-
-        let hre_color = [220u8, 180, 50, 255]; // Gold for HRE provinces
-        let non_hre_color = [100u8, 100, 100, 255]; // Gray for non-HRE
-        let wasteland_color = [60u8, 60, 60, 255];
-        let water_color = [30u8, 60, 100, 255];
-
-        for province_id in 0..render::LOOKUP_SIZE {
-            let color = if province_id == 0 {
-                wasteland_color
-            } else if self.sea_provinces.contains(&province_id) {
-                water_color
-            } else if let Some(province) = world_state.provinces.get(&province_id) {
-                if province.is_in_hre {
-                    hre_color
-                } else {
-                    non_hre_color
-                }
-            } else {
-                wasteland_color
-            };
-            lookup_data.extend_from_slice(&color);
-        }
+        // Use shared function for empire lookup data
+        let lookup_array = render::generate_empire_lookup(world_state, &self.sea_provinces);
+        let lookup_data: Vec<u8> = lookup_array
+            .iter()
+            .flat_map(|c| c.iter().copied())
+            .collect();
 
         // Write directly to texture
         self.queue.write_texture(

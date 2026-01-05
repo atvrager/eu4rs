@@ -78,6 +78,63 @@ const MAX_FLEETS: usize = 512;
 /// Size of the color lookup texture (must be power of 2, >= max province ID).
 pub const LOOKUP_SIZE: u32 = 8192;
 
+/// Generate empire map mode lookup data.
+///
+/// Colors provinces based on HRE membership:
+/// - Emperor's provinces: Red
+/// - Elector provinces: Purple
+/// - HRE member provinces: Muted gold
+/// - Non-HRE provinces: Very dark (almost invisible)
+/// - Sea provinces: Dark blue
+/// - Wasteland: Dark
+pub fn generate_empire_lookup(
+    world_state: &eu4sim_core::state::WorldState,
+    sea_provinces: &std::collections::HashSet<u32>,
+) -> Vec<[u8; 4]> {
+    use std::collections::HashSet;
+
+    let mut data = vec![[0u8; 4]; LOOKUP_SIZE as usize];
+
+    // Colors: only HRE members get real colors, non-HRE is dark
+    let emperor_color = [180u8, 50, 50, 255]; // Red for emperor
+    let elector_color = [100u8, 80, 160, 255]; // Purple for electors
+    let hre_member_color = [180u8, 160, 80, 255]; // Muted gold for HRE members
+    let non_hre_color = [40u8, 40, 40, 255]; // Very dark for non-HRE
+    let wasteland_color = [30u8, 30, 30, 255]; // Dark for wasteland
+    let water_color = [20u8, 40, 60, 255]; // Dark blue for water
+
+    let hre = &world_state.global.hre;
+    let emperor = hre.emperor.as_ref();
+    let electors: HashSet<&String> = hre.electors.iter().collect();
+
+    for province_id in 0..LOOKUP_SIZE {
+        let id = province_id as usize;
+
+        data[id] = if sea_provinces.contains(&province_id) {
+            water_color
+        } else if let Some(province) = world_state.provinces.get(&province_id) {
+            if !province.is_in_hre {
+                non_hre_color
+            } else if let Some(ref owner) = province.owner {
+                // Province is in HRE - determine owner's role
+                if emperor == Some(owner) {
+                    emperor_color
+                } else if electors.contains(owner) {
+                    elector_color
+                } else {
+                    hre_member_color
+                }
+            } else {
+                hre_member_color // Unowned HRE province
+            }
+        } else {
+            wasteland_color
+        };
+    }
+
+    data
+}
+
 /// Creates a heightmap texture from a grayscale image.
 /// The heightmap is used for terrain shading in the fragment shader.
 pub fn create_heightmap_texture(

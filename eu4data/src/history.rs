@@ -191,6 +191,8 @@ pub struct CountryHistory {
     pub capital: Option<i32>,
     /// Government type (e.g., "monarchy", "republic").
     pub government: Option<String>,
+    /// Whether this country is an HRE elector.
+    pub elector: Option<bool>,
     // Monarch data is complex (Vec<serde_json::Value> in generated types).
     // We'll parse the first monarch separately after loading.
 }
@@ -227,6 +229,8 @@ pub struct ParsedCountryHistory {
     pub government: Option<String>,
     /// First monarch at game start.
     pub monarch: Option<MonarchData>,
+    /// Whether this country is an HRE elector.
+    pub elector: bool,
 }
 
 /// Loads all country history files from the `history/countries` directory.
@@ -297,6 +301,7 @@ pub fn load_country_history(base_path: &Path) -> Result<CountryHistoryLoadResult
                 capital: hist.capital.map(|c| c as u32),
                 government: hist.government,
                 monarch,
+                elector: hist.elector.unwrap_or(false),
             };
 
             Ok((tag, parsed))
@@ -457,6 +462,152 @@ fn parse_monarch_block(block: &eu4txt::EU4TxtParseNode) -> Option<MonarchData> {
     } else {
         None
     }
+}
+
+// ============================================================================
+// Diplomacy History
+// ============================================================================
+
+/// HRE and Celestial Empire state from diplomacy history.
+#[derive(Debug, Default, Clone)]
+pub struct DiplomacyHistoryState {
+    /// Initial HRE emperor tag (from history/diplomacy/hre.txt).
+    pub hre_emperor: Option<String>,
+    /// Initial Celestial Emperor tag (from history/diplomacy/celestial_empire.txt).
+    pub celestial_emperor: Option<String>,
+}
+
+/// Loads diplomacy history to get initial HRE emperor and other diplomatic state.
+///
+/// Parses files in `history/diplomacy/` directory.
+/// Note: Files use dated entries like `1437.12.9 = { emperor = HAB }`.
+/// We select the most recent entry before 1444.11.11 (game start).
+pub fn load_diplomacy_history(base_path: &Path) -> Result<DiplomacyHistoryState, std::io::Error> {
+    let mut state = DiplomacyHistoryState::default();
+
+    // Load HRE emperor from history/diplomacy/hre.txt
+    let hre_path = base_path.join("history/diplomacy/hre.txt");
+    if hre_path.exists()
+        && let Ok(tokens) = DefaultEU4Txt::open_txt(hre_path.to_str().unwrap_or_default())
+        && let Ok(ast) = DefaultEU4Txt::parse(tokens)
+    {
+        // Parse dated entries and find emperor at game start
+        state.hre_emperor = find_emperor_at_date(&ast, 14_441_111);
+        if let Some(ref emperor) = state.hre_emperor {
+            log::debug!("Loaded HRE emperor from history: {}", emperor);
+        }
+    }
+
+    // Load Celestial Emperor from history/diplomacy/celestial_empire.txt
+    let ce_path = base_path.join("history/diplomacy/celestial_empire.txt");
+    if ce_path.exists()
+        && let Ok(tokens) = DefaultEU4Txt::open_txt(ce_path.to_str().unwrap_or_default())
+        && let Ok(ast) = DefaultEU4Txt::parse(tokens)
+    {
+        state.celestial_emperor = find_celestial_emperor_at_date(&ast, 14_441_111);
+        if let Some(ref emperor) = state.celestial_emperor {
+            log::debug!("Loaded Celestial Emperor from history: {}", emperor);
+        }
+    }
+
+    Ok(state)
+}
+
+/// Find the HRE emperor at a given date by parsing dated entries.
+/// Format: `1437.12.9 = { emperor = HAB }`
+fn find_emperor_at_date(ast: &eu4txt::EU4TxtParseNode, target_date: u32) -> Option<String> {
+    use eu4txt::EU4TxtAstItem;
+
+    let mut emperors_with_dates: Vec<(u32, String)> = Vec::new();
+
+    for child in &ast.children {
+        if let EU4TxtAstItem::Assignment = &child.entry
+            && child.children.len() >= 2
+        {
+            let lhs = &child.children[0];
+            let rhs = &child.children[1];
+
+            // Check if LHS is a date
+            if let EU4TxtAstItem::Identifier(date_str) = &lhs.entry
+                && let Some(date) = parse_date_key(date_str)
+            {
+                // RHS is a block containing emperor = TAG
+                if let EU4TxtAstItem::AssignmentList = &rhs.entry {
+                    for inner in &rhs.children {
+                        if let EU4TxtAstItem::Assignment = &inner.entry
+                            && inner.children.len() >= 2
+                        {
+                            let inner_lhs = &inner.children[0];
+                            let inner_rhs = &inner.children[1];
+                            if let EU4TxtAstItem::Identifier(key) = &inner_lhs.entry
+                                && key == "emperor"
+                                && let EU4TxtAstItem::Identifier(tag) = &inner_rhs.entry
+                            {
+                                emperors_with_dates.push((date, tag.clone()));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Find the most recent emperor before target_date
+    emperors_with_dates
+        .into_iter()
+        .filter(|(date, _)| *date <= target_date)
+        .max_by_key(|(date, _)| *date)
+        .map(|(_, tag)| tag)
+}
+
+/// Find the Celestial Emperor at a given date by parsing dated entries.
+/// Format: `1402.5.13 = { celestial_emperor = MNG }`
+fn find_celestial_emperor_at_date(
+    ast: &eu4txt::EU4TxtParseNode,
+    target_date: u32,
+) -> Option<String> {
+    use eu4txt::EU4TxtAstItem;
+
+    let mut emperors_with_dates: Vec<(u32, String)> = Vec::new();
+
+    for child in &ast.children {
+        if let EU4TxtAstItem::Assignment = &child.entry
+            && child.children.len() >= 2
+        {
+            let lhs = &child.children[0];
+            let rhs = &child.children[1];
+
+            // Check if LHS is a date
+            if let EU4TxtAstItem::Identifier(date_str) = &lhs.entry
+                && let Some(date) = parse_date_key(date_str)
+            {
+                // RHS is a block containing celestial_emperor = TAG
+                if let EU4TxtAstItem::AssignmentList = &rhs.entry {
+                    for inner in &rhs.children {
+                        if let EU4TxtAstItem::Assignment = &inner.entry
+                            && inner.children.len() >= 2
+                        {
+                            let inner_lhs = &inner.children[0];
+                            let inner_rhs = &inner.children[1];
+                            if let EU4TxtAstItem::Identifier(key) = &inner_lhs.entry
+                                && key == "celestial_emperor"
+                                && let EU4TxtAstItem::Identifier(tag) = &inner_rhs.entry
+                            {
+                                emperors_with_dates.push((date, tag.clone()));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Find the most recent emperor before target_date
+    emperors_with_dates
+        .into_iter()
+        .filter(|(date, _)| *date <= target_date)
+        .max_by_key(|(date, _)| *date)
+        .map(|(_, tag)| tag)
 }
 
 #[cfg(test)]

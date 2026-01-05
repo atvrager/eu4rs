@@ -1388,35 +1388,8 @@ impl MapTestHarness {
     }
 
     fn update_empire_lookup(&mut self) {
-        use crate::render::LOOKUP_SIZE;
-
-        let mut data = vec![[0u8; 4]; LOOKUP_SIZE as usize];
-
-        let emperor = self.world_state.global.hre.emperor.as_ref();
-
-        for (&province_id, province) in &self.world_state.provinces {
-            let id = province_id as usize;
-            if id >= LOOKUP_SIZE as usize {
-                continue;
-            }
-
-            if let Some(ref owner) = province.owner {
-                let is_emperor = emperor == Some(owner);
-                let is_hre_member = province.is_in_hre;
-
-                let color = if is_emperor {
-                    [255, 215, 0, 255] // Gold for emperor
-                } else if is_hre_member {
-                    [180, 180, 255, 255] // Light blue for HRE members
-                } else if let Some(country_color) = self.country_colors.get(owner) {
-                    [country_color[0], country_color[1], country_color[2], 255]
-                } else {
-                    [128, 128, 128, 255] // Gray for unknown
-                };
-                data[id] = color;
-            }
-        }
-
+        // Use shared function for consistent rendering between main and tests
+        let data = crate::render::generate_empire_lookup(&self.world_state, &self.sea_provinces);
         self.write_lookup_data(&data);
     }
 
