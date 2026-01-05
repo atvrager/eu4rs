@@ -1,81 +1,140 @@
 use crate::fixed::Fixed;
-use crate::state::{Tag, WorldState};
+use crate::state::{ProvinceId, ProvinceState, Tag, WorldState};
 use eu4data::defines::economy as defines;
+use rayon::prelude::*;
 use std::collections::HashMap;
 use tracing::instrument;
+
+/// Result of calculating taxation for a single province
+struct ProvinceTaxResult {
+    owner: Tag,
+    income: Fixed,
+    base_tax: Fixed,
+}
+
+/// Calculate tax income for a single province (pure function)
+#[instrument(skip_all, name = "province_tax")]
+fn calculate_province_tax(
+    province_id: ProvinceId,
+    province: &ProvinceState,
+    owner: &Tag,
+    local_mod: Fixed,
+    national_mod: Fixed,
+    base_autonomy: Fixed,
+) -> ProvinceTaxResult {
+    // Apply coring-based floor: uncored = max(base, 75%)
+    let floor = crate::systems::coring::effective_autonomy(province, owner);
+    let raw_autonomy = base_autonomy.max(floor);
+    let autonomy = raw_autonomy.clamp(Fixed::ZERO, Fixed::ONE);
+
+    // Efficiency = 100% + National% + Local%
+    let efficiency = Fixed::ONE + national_mod + local_mod;
+    let autonomy_factor = Fixed::ONE - autonomy;
+
+    // Yearly Income
+    let yearly_income = province.base_tax.mul(efficiency).mul(autonomy_factor);
+
+    // Monthly Income = Yearly / 12
+    let monthly_income = yearly_income.div(Fixed::from_int(defines::MONTHS_PER_YEAR));
+
+    // Ensure non-negative income just in case efficiency < -100%
+    let safe_income = monthly_income.max(Fixed::ZERO);
+
+    // Detailed logging for Korea
+    if owner == "KOR" && safe_income > Fixed::ZERO {
+        log::trace!(
+            "Province {}: base_tax={:.1}, efficiency={:.2}, autonomy={:.2}, monthly={:.3}",
+            province_id,
+            province.base_tax.to_f32(),
+            efficiency.to_f32(),
+            autonomy.to_f32(),
+            safe_income.to_f32()
+        );
+    }
+
+    ProvinceTaxResult {
+        owner: owner.clone(),
+        income: safe_income,
+        base_tax: province.base_tax,
+    }
+}
 
 /// Runs monthly taxation calculations.
 ///
 /// Formula: (Base Tax) * (1 + National Mod + Local Mod) * (1 - Autonomy) / 12
 #[instrument(skip_all, name = "taxation")]
 pub fn run_taxation_tick(state: &mut WorldState) {
-    let mut income_deltas: HashMap<Tag, Fixed> = HashMap::new();
+    // PHASE 1: Extract province data for parallel processing
+    let province_inputs: Vec<_> = state
+        .provinces
+        .iter()
+        .filter_map(|(&province_id, province)| {
+            province.owner.as_ref().map(|owner| {
+                let local_mod = state
+                    .modifiers
+                    .province_tax_modifier
+                    .get(&province_id)
+                    .copied()
+                    .unwrap_or(Fixed::ZERO);
 
-    // 1. Calculate Province Income
+                let national_mod = state
+                    .modifiers
+                    .country_tax_modifier
+                    .get(owner)
+                    .copied()
+                    .unwrap_or(Fixed::ZERO);
+
+                let base_autonomy = state
+                    .modifiers
+                    .province_autonomy
+                    .get(&province_id)
+                    .copied()
+                    .unwrap_or(Fixed::ZERO);
+
+                (
+                    province_id,
+                    province,
+                    owner.clone(),
+                    local_mod,
+                    national_mod,
+                    base_autonomy,
+                )
+            })
+        })
+        .collect();
+
+    // PHASE 2: Calculate income in parallel
+    let tax_results: Vec<ProvinceTaxResult> = {
+        let _span =
+            tracing::info_span!("provinces_parallel", count = province_inputs.len()).entered();
+        province_inputs
+            .into_par_iter()
+            .map(
+                |(province_id, province, owner, local_mod, national_mod, base_autonomy)| {
+                    calculate_province_tax(
+                        province_id,
+                        province,
+                        &owner,
+                        local_mod,
+                        national_mod,
+                        base_autonomy,
+                    )
+                },
+            )
+            .collect()
+    };
+
+    // PHASE 3: Aggregate results (sequential)
+    let mut income_deltas: HashMap<Tag, Fixed> = HashMap::new();
     let mut province_count: HashMap<Tag, usize> = HashMap::new();
     let mut total_base_tax: HashMap<Tag, Fixed> = HashMap::new();
 
-    for (&province_id, province) in state.provinces.iter() {
-        if let Some(owner) = &province.owner {
-            // Modifiers
-            let local_mod = state
-                .modifiers
-                .province_tax_modifier
-                .get(&province_id)
-                .copied()
-                .unwrap_or(Fixed::ZERO);
-
-            let national_mod = state
-                .modifiers
-                .country_tax_modifier
-                .get(owner)
-                .copied()
-                .unwrap_or(Fixed::ZERO);
-
-            // Clamp autonomy to [0, 1] to prevent negative income or over-production
-            // Uncored provinces have a 75% autonomy floor
-            let base_autonomy = state
-                .modifiers
-                .province_autonomy
-                .get(&province_id)
-                .copied()
-                .unwrap_or(Fixed::ZERO);
-
-            // Apply coring-based floor: uncored = max(base, 75%)
-            let floor = crate::systems::coring::effective_autonomy(province, owner);
-            let raw_autonomy = base_autonomy.max(floor);
-
-            let autonomy = raw_autonomy.clamp(Fixed::ZERO, Fixed::ONE);
-
-            // Efficiency = 100% + National% + Local%
-            let efficiency = Fixed::ONE + national_mod + local_mod;
-            let autonomy_factor = Fixed::ONE - autonomy;
-
-            // Yearly Income
-            let yearly_income = province.base_tax.mul(efficiency).mul(autonomy_factor);
-
-            // Monthly Income = Yearly / 12
-            let monthly_income = yearly_income.div(Fixed::from_int(defines::MONTHS_PER_YEAR));
-
-            // Ensure non-negative income just in case efficiency < -100%
-            let safe_income = monthly_income.max(Fixed::ZERO);
-
-            *income_deltas.entry(owner.clone()).or_insert(Fixed::ZERO) += safe_income;
-            *province_count.entry(owner.clone()).or_insert(0) += 1;
-            *total_base_tax.entry(owner.clone()).or_insert(Fixed::ZERO) += province.base_tax;
-
-            // Detailed logging for Korea
-            if owner == "KOR" && safe_income > Fixed::ZERO {
-                log::trace!(
-                    "Province {}: base_tax={:.1}, efficiency={:.2}, autonomy={:.2}, monthly={:.3}",
-                    province_id,
-                    province.base_tax.to_f32(),
-                    efficiency.to_f32(),
-                    autonomy.to_f32(),
-                    safe_income.to_f32()
-                );
-            }
-        }
+    for result in tax_results {
+        *income_deltas
+            .entry(result.owner.clone())
+            .or_insert(Fixed::ZERO) += result.income;
+        *province_count.entry(result.owner.clone()).or_insert(0) += 1;
+        *total_base_tax.entry(result.owner).or_insert(Fixed::ZERO) += result.base_tax;
     }
 
     // 2. Add base income for all countries with provinces

@@ -1,147 +1,284 @@
 use crate::fixed::Fixed;
 use crate::state::{ProvinceId, WorldState};
 use eu4data::adjacency::AdjacencyGraph;
+use rayon::prelude::*;
 use tracing::instrument;
 
 const BASE_SPEED: i64 = 1;
 
+/// Result of processing a single unit's movement
+struct MovementResult {
+    unit_id: u32,
+    new_location: Option<ProvinceId>,
+    new_previous_location: Option<ProvinceId>,
+    new_progress: Fixed,
+    path_consumed: bool, // Did we pop from the path?
+    completed: bool,
+    cost_update: Option<(ProvinceId, ProvinceId)>, // (from, to) for next leg
+}
+
+/// Process a single fleet's movement (pure function, no mutation)
+#[instrument(skip_all, name = "fleet_move")]
+fn process_fleet_movement(
+    fleet_id: u32,
+    location: ProvinceId,
+    movement_progress: Fixed,
+    movement_required: Fixed,
+    path_front: Option<ProvinceId>,
+    path_next: Option<ProvinceId>,
+    path_len: usize,
+) -> MovementResult {
+    let new_progress = movement_progress + Fixed::from_int(BASE_SPEED);
+
+    if new_progress >= movement_required {
+        if let Some(next_province) = path_front {
+            let cost_update = path_next.map(|next_next| (next_province, next_next));
+            let completed = path_len == 1; // Only one item in path, will be empty after pop
+
+            log::trace!(
+                "Fleet {} moved from {} to {}",
+                fleet_id,
+                location,
+                next_province
+            );
+
+            return MovementResult {
+                unit_id: fleet_id,
+                new_location: Some(next_province),
+                new_previous_location: None,
+                new_progress: Fixed::ZERO,
+                path_consumed: true,
+                completed,
+                cost_update,
+            };
+        }
+    }
+
+    MovementResult {
+        unit_id: fleet_id,
+        new_location: None,
+        new_previous_location: None,
+        new_progress,
+        path_consumed: false,
+        completed: false,
+        cost_update: None,
+    }
+}
+
+/// Process a single army's movement (pure function, no mutation)
+#[instrument(skip_all, name = "army_move")]
+fn process_army_movement(
+    army_id: u32,
+    location: ProvinceId,
+    movement_progress: Fixed,
+    movement_required: Fixed,
+    path_front: Option<ProvinceId>,
+    path_next: Option<ProvinceId>,
+    path_len: usize,
+) -> MovementResult {
+    let new_progress = movement_progress + Fixed::from_int(BASE_SPEED);
+
+    if new_progress >= movement_required {
+        if let Some(next_province) = path_front {
+            let cost_update = path_next.map(|next_next| (next_province, next_next));
+            let completed = path_len == 1;
+
+            log::trace!(
+                "Army {} moved from {} to {}",
+                army_id,
+                location,
+                next_province
+            );
+
+            return MovementResult {
+                unit_id: army_id,
+                new_location: Some(next_province),
+                new_previous_location: Some(location),
+                new_progress: Fixed::ZERO,
+                path_consumed: true,
+                completed,
+                cost_update,
+            };
+        }
+    }
+
+    MovementResult {
+        unit_id: army_id,
+        new_location: None,
+        new_previous_location: None,
+        new_progress,
+        path_consumed: false,
+        completed: false,
+        cost_update: None,
+    }
+}
+
 /// Runs daily movement tick for all armies with queued movement paths.
 #[instrument(skip_all, name = "movement")]
 pub fn run_movement_tick(state: &mut WorldState, _graph: Option<&AdjacencyGraph>) {
-    // === PASS 1: Collect units that transitioned and need cost recalculation ===
-    enum UnitType {
-        Army,
-        Fleet,
-    }
-    struct CostUpdate {
-        unit_type: UnitType,
-        unit_id: u32,
-        from: ProvinceId,
-        to: ProvinceId,
-    }
+    // === PHASE 1: Extract fleet data for parallel processing ===
+    let fleet_inputs: Vec<_> = state
+        .fleets
+        .iter()
+        .filter_map(|(&fleet_id, fleet)| {
+            fleet.movement.as_ref().map(|m| {
+                (
+                    fleet_id,
+                    fleet.location,
+                    m.progress,
+                    m.required_progress,
+                    m.path.front().copied(),
+                    m.path.get(1).copied(),
+                    m.path.len(),
+                )
+            })
+        })
+        .collect();
 
-    let mut cost_updates: Vec<CostUpdate> = Vec::new();
-    let mut completed_army_movements: Vec<u32> = Vec::new();
+    // Process fleets in parallel
+    let fleet_results: Vec<MovementResult> = {
+        let _span = tracing::info_span!("fleets_parallel", count = fleet_inputs.len()).entered();
+        fleet_inputs
+            .into_par_iter()
+            .map(|(id, loc, prog, req, front, next, len)| {
+                process_fleet_movement(id, loc, prog, req, front, next, len)
+            })
+            .collect()
+    };
+
+    // Apply fleet results
+    let mut fleet_cost_updates: Vec<(u32, ProvinceId, ProvinceId)> = Vec::new();
     let mut completed_fleet_movements: Vec<u32> = Vec::new();
 
-    // Process fleets
-    let fleet_ids: Vec<_> = state.fleets.keys().cloned().collect();
-    for fleet_id in fleet_ids {
+    for result in fleet_results {
+        if let Some(fleet) = state.fleets.get_mut(&result.unit_id) {
+            if let Some(movement) = &mut fleet.movement {
+                movement.progress = result.new_progress;
+
+                if result.path_consumed {
+                    movement.path.pop_front();
+                }
+
+                if let Some(new_loc) = result.new_location {
+                    fleet.location = new_loc;
+                }
+
+                if result.completed {
+                    completed_fleet_movements.push(result.unit_id);
+                }
+
+                if let Some((from, to)) = result.cost_update {
+                    fleet_cost_updates.push((result.unit_id, from, to));
+                }
+            }
+        }
+    }
+
+    // Update embarked armies (must happen after fleets move)
+    let embarked_updates: Vec<_> = state
+        .armies
+        .iter()
+        .filter_map(|(&army_id, army)| {
+            army.embarked_on.and_then(|fleet_id| {
+                state
+                    .fleets
+                    .get(&fleet_id)
+                    .map(|fleet| (army_id, fleet.location))
+            })
+        })
+        .collect();
+
+    for (army_id, new_location) in embarked_updates {
+        if let Some(army) = state.armies.get_mut(&army_id) {
+            army.location = new_location;
+        }
+    }
+
+    // === PHASE 2: Extract army data for parallel processing ===
+    let army_inputs: Vec<_> = state
+        .armies
+        .iter()
+        .filter_map(|(&army_id, army)| {
+            // Skip embarked armies
+            if army.embarked_on.is_some() {
+                return None;
+            }
+            army.movement.as_ref().map(|m| {
+                (
+                    army_id,
+                    army.location,
+                    m.progress,
+                    m.required_progress,
+                    m.path.front().copied(),
+                    m.path.get(1).copied(),
+                    m.path.len(),
+                )
+            })
+        })
+        .collect();
+
+    // Process armies in parallel
+    let army_results: Vec<MovementResult> = {
+        let _span = tracing::info_span!("armies_parallel", count = army_inputs.len()).entered();
+        army_inputs
+            .into_par_iter()
+            .map(|(id, loc, prog, req, front, next, len)| {
+                process_army_movement(id, loc, prog, req, front, next, len)
+            })
+            .collect()
+    };
+
+    // Apply army results
+    let mut army_cost_updates: Vec<(u32, ProvinceId, ProvinceId)> = Vec::new();
+    let mut completed_army_movements: Vec<u32> = Vec::new();
+
+    for result in army_results {
+        if let Some(army) = state.armies.get_mut(&result.unit_id) {
+            if let Some(movement) = &mut army.movement {
+                movement.progress = result.new_progress;
+
+                if result.path_consumed {
+                    movement.path.pop_front();
+                }
+
+                if let Some(new_loc) = result.new_location {
+                    army.previous_location = result.new_previous_location;
+                    army.location = new_loc;
+                }
+
+                if result.completed {
+                    completed_army_movements.push(result.unit_id);
+                }
+
+                if let Some((from, to)) = result.cost_update {
+                    army_cost_updates.push((result.unit_id, from, to));
+                }
+            }
+        }
+    }
+
+    // === PHASE 3: Apply dynamic costs ===
+    use eu4data::adjacency::CostCalculator;
+
+    for (fleet_id, from, to) in fleet_cost_updates {
+        let cost = state.calculate_cost(from, to);
         if let Some(fleet) = state.fleets.get_mut(&fleet_id) {
             if let Some(movement) = &mut fleet.movement {
-                movement.progress += Fixed::from_int(BASE_SPEED); // Add daily progress
-
-                if movement.progress >= movement.required_progress {
-                    // Move to next province
-                    if let Some(next_province) = movement.path.pop_front() {
-                        let prev_location = fleet.location;
-                        fleet.location = next_province;
-                        movement.progress = Fixed::ZERO;
-
-                        // Calculate cost for next step if path continues
-                        if let Some(&next_next) = movement.path.front() {
-                            cost_updates.push(CostUpdate {
-                                unit_type: UnitType::Fleet,
-                                unit_id: fleet_id,
-                                from: next_province,
-                                to: next_next,
-                            });
-                        }
-
-                        log::trace!(
-                            "Fleet {} moved from {} to {}",
-                            fleet_id,
-                            prev_location,
-                            next_province
-                        );
-
-                        if movement.path.is_empty() {
-                            completed_fleet_movements.push(fleet_id);
-                        }
-                    }
-                }
+                movement.required_progress = Fixed::from_int(cost as i64);
             }
         }
     }
 
-    // Update embarked armies
-    let army_ids: Vec<_> = state.armies.keys().cloned().collect();
-    for army_id in army_ids.clone() {
+    for (army_id, from, to) in army_cost_updates {
+        let cost = state.calculate_cost(from, to);
         if let Some(army) = state.armies.get_mut(&army_id) {
-            if let Some(fleet_id) = army.embarked_on {
-                if let Some(fleet) = state.fleets.get(&fleet_id) {
-                    army.location = fleet.location;
-                }
-            }
-        }
-    }
-
-    // Process armies
-    for army_id in army_ids {
-        if let Some(army) = state.armies.get_mut(&army_id) {
-            if army.embarked_on.is_some() {
-                continue;
-            }
-
             if let Some(movement) = &mut army.movement {
-                movement.progress += Fixed::from_int(BASE_SPEED);
-
-                if movement.progress >= movement.required_progress {
-                    if let Some(next_province) = movement.path.pop_front() {
-                        let prev_location = army.location;
-                        army.previous_location = Some(prev_location);
-                        army.location = next_province;
-                        movement.progress = Fixed::ZERO;
-
-                        // Calculate cost for next step if path continues
-                        if let Some(&next_next) = movement.path.front() {
-                            cost_updates.push(CostUpdate {
-                                unit_type: UnitType::Army,
-                                unit_id: army_id,
-                                from: next_province,
-                                to: next_next,
-                            });
-                        }
-
-                        log::trace!(
-                            "Army {} moved from {} to {}",
-                            army_id,
-                            prev_location,
-                            next_province
-                        );
-
-                        if movement.path.is_empty() {
-                            completed_army_movements.push(army_id);
-                        }
-                    }
-                }
+                movement.required_progress = Fixed::from_int(cost as i64);
             }
         }
     }
 
-    // === PASS 2: Apply dynamic costs ===
-    for update in cost_updates {
-        use eu4data::adjacency::CostCalculator;
-        let cost = state.calculate_cost(update.from, update.to);
-        match update.unit_type {
-            UnitType::Fleet => {
-                if let Some(fleet) = state.fleets.get_mut(&update.unit_id) {
-                    if let Some(movement) = &mut fleet.movement {
-                        movement.required_progress = Fixed::from_int(cost as i64);
-                    }
-                }
-            }
-            UnitType::Army => {
-                if let Some(army) = state.armies.get_mut(&update.unit_id) {
-                    if let Some(movement) = &mut army.movement {
-                        movement.required_progress = Fixed::from_int(cost as i64);
-                    }
-                }
-            }
-        }
-    }
-
-    // Cleanup
+    // === PHASE 4: Cleanup completed movements ===
     for army_id in completed_army_movements {
         if let Some(army) = state.armies.get_mut(&army_id) {
             army.movement = None;
