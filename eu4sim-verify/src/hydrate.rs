@@ -555,7 +555,7 @@ fn parse_date(date_str: &str) -> Result<Date> {
 ///
 /// EU4 has many specific advisor types (philosopher, treasurer, etc.).
 /// This maps them to the three main categories for the simulation.
-fn categorize_advisor_type(advisor_type_str: &str) -> eu4sim_core::state::AdvisorType {
+pub fn categorize_advisor_type(advisor_type_str: &str) -> eu4sim_core::state::AdvisorType {
     use eu4sim_core::state::AdvisorType;
 
     match advisor_type_str {

@@ -48,6 +48,14 @@ pub struct CountryVerifyData {
 
     // Input data for recalculation
     pub owned_provinces: Vec<u32>,
+
+    // Ruler stats for mana calculation
+    pub ruler_adm: Option<u16>,
+    pub ruler_dip: Option<u16>,
+    pub ruler_mil: Option<u16>,
+
+    // Advisors for mana calculation
+    pub advisors: Vec<crate::ExtractedAdvisor>,
 }
 
 /// Province data needed for verification
@@ -88,6 +96,10 @@ fn extract_country_data(country: &ExtractedCountry) -> CountryVerifyData {
         cached_land_force_limit: country.land_force_limit,
         cached_naval_force_limit: country.naval_force_limit,
         owned_provinces: country.owned_province_ids.clone(),
+        ruler_adm: country.ruler_adm,
+        ruler_dip: country.ruler_dip,
+        ruler_mil: country.ruler_mil,
+        advisors: country.advisors.clone(),
     }
 }
 

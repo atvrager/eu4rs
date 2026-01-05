@@ -275,18 +275,47 @@ pub enum VerifyStatus {
 /// Type of metric being verified
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MetricType {
-    MaxManpower { country: String },
-    MonthlyTaxIncome { country: String },
-    MonthlyTradeIncome { country: String },
-    MonthlyProductionIncome { country: String },
-    MonthlyExpenses { country: String },
-    ArmyMaintenance { country: String },
-    NavyMaintenance { country: String },
-    FortMaintenance { country: String },
-    LandForceLimit { country: String },
-    NavalForceLimit { country: String },
-    InstitutionSpread { province: u32, institution: String },
-    ProvinceDevelopment { province: u32 },
+    MaxManpower {
+        country: String,
+    },
+    MonthlyTaxIncome {
+        country: String,
+    },
+    MonthlyTradeIncome {
+        country: String,
+    },
+    MonthlyProductionIncome {
+        country: String,
+    },
+    MonthlyExpenses {
+        country: String,
+    },
+    ArmyMaintenance {
+        country: String,
+    },
+    NavyMaintenance {
+        country: String,
+    },
+    FortMaintenance {
+        country: String,
+    },
+    LandForceLimit {
+        country: String,
+    },
+    NavalForceLimit {
+        country: String,
+    },
+    InstitutionSpread {
+        province: u32,
+        institution: String,
+    },
+    ProvinceDevelopment {
+        province: u32,
+    },
+    /// Monthly monarch power generation (informational - not verified against game)
+    MonthlyManaGeneration {
+        country: String,
+    },
 }
 
 impl std::fmt::Display for MetricType {
@@ -309,6 +338,7 @@ impl std::fmt::Display for MetricType {
                 institution,
             } => write!(f, "Institution({}, {})", province, institution),
             MetricType::ProvinceDevelopment { province } => write!(f, "Development({})", province),
+            MetricType::MonthlyManaGeneration { country } => write!(f, "ManaGen({})", country),
         }
     }
 }

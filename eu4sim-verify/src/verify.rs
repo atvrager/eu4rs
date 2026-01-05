@@ -137,6 +137,9 @@ pub fn verify_country(
     // Show expense breakdown (informational - no independent verification yet)
     results.extend(show_expenses(country));
 
+    // Show mana generation (informational - base + ruler + advisor only)
+    results.extend(show_mana_generation(country));
+
     results
 }
 
@@ -551,6 +554,82 @@ fn show_expenses(country: &CountryVerifyData) -> Vec<VerificationResult> {
     results
 }
 
+/// Show calculated monthly mana generation (informational).
+///
+/// Displays monarch power generation based on:
+/// - Base: +3 per category
+/// - Ruler stats: +0-6 per category
+/// - Advisor skills: +1-5 per hired advisor of matching type
+///
+/// Note: This is informational only - EU4 doesn't cache this value in saves.
+/// Missing modifiers: national focus, power projection, estate privileges, etc.
+fn show_mana_generation(country: &CountryVerifyData) -> Vec<VerificationResult> {
+    let mut results = Vec::new();
+
+    // Need ruler stats to calculate
+    let (ruler_adm, ruler_dip, ruler_mil) =
+        match (country.ruler_adm, country.ruler_dip, country.ruler_mil) {
+            (Some(a), Some(d), Some(m)) => (a as i64, d as i64, m as i64),
+            _ => return results, // Skip if no ruler stats
+        };
+
+    const BASE: i64 = 3;
+
+    // Sum advisor skill levels by category (skill level = mana contribution)
+    let (adm_skill, dip_skill, mil_skill) = sum_hired_advisor_skills(&country.advisors);
+
+    let adm_gain = BASE + ruler_adm + adm_skill;
+    let dip_gain = BASE + ruler_dip + dip_skill;
+    let mil_gain = BASE + ruler_mil + mil_skill;
+    let total = adm_gain + dip_gain + mil_gain;
+
+    // Create informational metric
+    results.push(VerificationResult {
+        metric: MetricType::MonthlyManaGeneration {
+            country: country.tag.clone(),
+        },
+        expected: total as f64,
+        actual: total as f64,
+        delta: 0.0,
+        status: crate::VerifyStatus::Pass,
+        details: Some(format!(
+            "ADM={} DIP={} MIL={} (base=3, ruler={}/{}/{}, adv_skill={}/{}/{})",
+            adm_gain,
+            dip_gain,
+            mil_gain,
+            ruler_adm,
+            ruler_dip,
+            ruler_mil,
+            adm_skill,
+            dip_skill,
+            mil_skill
+        )),
+    });
+
+    results
+}
+
+/// Sum skill levels of hired advisors by category
+fn sum_hired_advisor_skills(advisors: &[crate::ExtractedAdvisor]) -> (i64, i64, i64) {
+    use crate::hydrate::categorize_advisor_type;
+    use eu4sim_core::state::AdvisorType;
+
+    let mut adm = 0;
+    let mut dip = 0;
+    let mut mil = 0;
+
+    for adv in advisors.iter().filter(|a| a.is_hired) {
+        let skill = adv.skill as i64;
+        match categorize_advisor_type(&adv.advisor_type) {
+            AdvisorType::Administrative => adm += skill,
+            AdvisorType::Diplomatic => dip += skill,
+            AdvisorType::Military => mil += skill,
+        }
+    }
+
+    (adm, dip, mil)
+}
+
 /// Verify institution spread for a province
 pub fn verify_institution_spread(
     province: &ProvinceVerifyData,
@@ -593,6 +672,10 @@ mod tests {
             cached_land_force_limit: None,
             cached_naval_force_limit: None,
             owned_provinces: provinces,
+            ruler_adm: None,
+            ruler_dip: None,
+            ruler_mil: None,
+            advisors: Vec::new(),
         }
     }
 
