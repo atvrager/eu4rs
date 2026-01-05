@@ -1,10 +1,12 @@
 use crate::fixed::Fixed;
 use crate::state::{ProvinceId, WorldState};
 use eu4data::adjacency::AdjacencyGraph;
+use tracing::instrument;
 
 const BASE_SPEED: i64 = 1;
 
 /// Runs daily movement tick for all armies with queued movement paths.
+#[instrument(skip_all, name = "movement")]
 pub fn run_movement_tick(state: &mut WorldState, _graph: Option<&AdjacencyGraph>) {
     // === PASS 1: Collect units that transitioned and need cost recalculation ===
     enum UnitType {

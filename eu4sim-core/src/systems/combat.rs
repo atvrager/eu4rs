@@ -12,6 +12,7 @@ use crate::state::{
 };
 use eu4data::defines::combat as defines;
 use std::collections::HashMap;
+use tracing::instrument;
 
 // ============================================================================
 // Main Entry Point
@@ -20,6 +21,7 @@ use std::collections::HashMap;
 /// Runs daily combat resolution for all active battles and detects new engagements.
 ///
 /// Called once per day in the simulation tick.
+#[instrument(skip_all, name = "combat")]
 pub fn run_combat_tick(
     state: &mut WorldState,
     adjacency: Option<&eu4data::adjacency::AdjacencyGraph>,

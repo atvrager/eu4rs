@@ -1,12 +1,14 @@
 use crate::fixed::Fixed;
 use crate::input::{Command, DevType, PlayerInputs};
 use crate::metrics::SimMetrics;
+use crate::profiling::{frame_mark_daily, frame_mark_monthly};
 use crate::state::{
     ArmyId, DiplomacyState, GeneralId, MovementState, PeaceTerms, PendingPeace, ProvinceId,
     Regiment, RelationType, TechType, WorldState,
 };
 use std::time::Instant;
 use thiserror::Error;
+use tracing::instrument;
 
 #[derive(Error, Debug)]
 pub enum ActionError {
@@ -117,6 +119,7 @@ pub enum ActionError {
 }
 
 /// Advance the world by one tick.
+#[instrument(skip_all, name = "step_world")]
 pub fn step_world(
     state: &WorldState,
     inputs: &[PlayerInputs],
@@ -182,6 +185,9 @@ pub fn step_world(
     if let Some(m) = metrics.as_mut() {
         m.occupation_time += occ_start.elapsed();
     }
+
+    // Mark end of daily tick for Tracy
+    frame_mark_daily();
 
     // Economic systems run monthly (on 1st of each month)
     if new_state.date.day == 1 {
@@ -279,6 +285,9 @@ pub fn step_world(
         if let Some(m) = metrics.as_mut() {
             m.economy_time += econ_start.elapsed();
         }
+
+        // Mark end of monthly tick for Tracy
+        frame_mark_monthly();
     }
 
     // 4. Compute checksum (if enabled)

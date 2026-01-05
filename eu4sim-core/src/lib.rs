@@ -67,6 +67,7 @@ pub mod metrics;
 pub mod observer;
 pub use ai::{AiPlayer, GreedyAI, RandomAi, VisibilityMode, VisibleWorldState};
 pub mod modifiers;
+pub mod profiling;
 pub mod state;
 pub mod step;
 pub mod subjects;

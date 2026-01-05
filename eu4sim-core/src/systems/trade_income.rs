@@ -19,6 +19,7 @@ use crate::fixed::Fixed;
 use crate::state::{Tag, WorldState};
 use crate::trade::{MerchantAction, TradeNodeId};
 use std::collections::HashMap;
+use tracing::instrument;
 
 /// Merchant collection efficiency bonus (+10%)
 const MERCHANT_COLLECTION_BONUS: f32 = 0.1;
@@ -32,6 +33,7 @@ const MERCHANT_COLLECTION_BONUS: f32 = 0.1;
 /// 2. Calculates power share in each collecting node
 /// 3. Applies efficiency bonuses
 /// 4. Adds income to country treasury
+#[instrument(skip_all, name = "trade_income")]
 pub fn run_trade_income_tick(state: &mut WorldState) {
     // Skip if trade network isn't initialized
     if state.trade_topology.order.is_empty() {

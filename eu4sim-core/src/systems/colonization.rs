@@ -1,8 +1,10 @@
 use crate::state::WorldState;
+use tracing::instrument;
 
 /// Monthly colonization tick.
 ///
 /// Progresses all active colonies.
+#[instrument(skip_all, name = "colonization")]
 pub fn run_colonization_tick(state: &mut WorldState) {
     let mut completed = Vec::new();
 

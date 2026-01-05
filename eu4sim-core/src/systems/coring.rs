@@ -11,6 +11,7 @@
 
 use crate::fixed::Fixed;
 use crate::state::{CoringProgress, Date, ProvinceId, ProvinceState, Tag, WorldState};
+use tracing::instrument;
 
 /// Cost to core a province: 10 ADM per development point.
 pub const CORING_COST_PER_DEV: i64 = 10;
@@ -130,6 +131,7 @@ pub fn start_coring(
 }
 
 /// Advance coring progress for all provinces (called monthly in step_world).
+#[instrument(skip_all, name = "coring")]
 pub fn tick_coring(state: &mut WorldState) {
     let mut completions = Vec::new();
     let mut cancellations = Vec::new();

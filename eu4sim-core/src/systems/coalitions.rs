@@ -5,6 +5,7 @@
 
 use crate::fixed::Fixed;
 use crate::state::{Coalition, WorldState};
+use tracing::instrument;
 
 /// Threshold for coalition membership (countries with this much AE can join)
 const COALITION_THRESHOLD: f32 = 50.0;
@@ -19,6 +20,7 @@ const AE_DECAY_PER_YEAR: f32 = 2.0;
 const AE_DECAY_PER_MONTH: f32 = AE_DECAY_PER_YEAR / 12.0;
 
 /// Run monthly coalition tick (formation check and AE decay).
+#[instrument(skip_all, name = "coalitions")]
 pub fn run_coalition_tick(state: &mut WorldState) {
     // First decay AE for all countries
     decay_aggressive_expansion(state);

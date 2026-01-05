@@ -9,8 +9,10 @@ use crate::fixed::Fixed;
 use crate::state::{CombatPhase, FleetId, NavalBattle, NavalBattleId, ShipType, WorldState};
 use eu4data::defines::naval as defines;
 use std::collections::HashMap;
+use tracing::instrument;
 
 /// Run daily naval combat tick - execute one combat day for all ongoing naval battles.
+#[instrument(skip_all, name = "naval_combat")]
 pub fn run_naval_combat_tick(state: &mut WorldState) {
     // 1. Check for reinforcements joining existing naval battles
     process_reinforcements(state);

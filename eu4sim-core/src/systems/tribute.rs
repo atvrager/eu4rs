@@ -11,6 +11,7 @@
 
 use crate::fixed::Fixed;
 use crate::state::{TributeType, WorldState};
+use tracing::instrument;
 
 /// Tribute rate as fraction of annual income (12.5%)
 const TRIBUTE_INCOME_RATE: f32 = 0.125;
@@ -51,6 +52,7 @@ enum TributeTransfer {
 ///
 /// Note: The first year (1444) is prorated since the game starts Nov 11.
 /// Proration factor = months_elapsed / 12
+#[instrument(skip_all, name = "tribute")]
 pub fn run_tribute_payments(state: &mut WorldState) {
     // Collect tribute transfers to apply (to avoid borrow issues)
     let mut transfers: Vec<TributeTransfer> = Vec::new();

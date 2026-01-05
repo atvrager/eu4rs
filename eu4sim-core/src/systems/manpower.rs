@@ -2,6 +2,7 @@ use crate::fixed::Fixed;
 use crate::state::WorldState;
 use eu4data::defines::manpower as defines;
 use std::collections::HashMap;
+use tracing::instrument;
 
 /// Runs monthly manpower recovery.
 ///
@@ -9,6 +10,7 @@ use std::collections::HashMap;
 /// 1. Calculate Max Manpower = Base(10k) + Sum(Province Manpower * 1000 * (1-Autonomy))
 /// 2. Recovery = Max / 120 (10 years to fill)
 /// 3. Cap at Max.
+#[instrument(skip_all, name = "manpower")]
 pub fn run_manpower_tick(state: &mut WorldState) {
     let mut country_max_manpower: HashMap<String, Fixed> = HashMap::default();
 

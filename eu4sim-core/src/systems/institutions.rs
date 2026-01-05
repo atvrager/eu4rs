@@ -2,12 +2,14 @@ use crate::fixed::Fixed;
 use crate::state::{InstitutionId, Tag, WorldState};
 use anyhow::{anyhow, Result};
 use std::collections::HashSet;
+use tracing::instrument;
 
 /// Executes the monthly institution spread tick.
 ///
 /// Simplified institution spread:
 /// 1. Institutions grow in high-dev provinces adjacent to embraced provinces.
 /// 2. If a province has 100% presence, it becomes "present" in that province.
+#[instrument(skip_all, name = "institutions")]
 pub fn tick_institution_spread(state: &mut WorldState) {
     // For the mid-term goal, we'll implement a very simple spread mechanism.
     // In a real EU4 simulation, this would depend on many factors (trade, adjacency, etc.)

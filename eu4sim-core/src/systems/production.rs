@@ -6,6 +6,7 @@
 use crate::fixed::Fixed;
 use crate::state::{Tag, WorldState};
 use std::collections::HashMap;
+use tracing::instrument;
 
 /// Configuration for economy simulation.
 /// Externalized constants that can be adjusted without recompiling.
@@ -35,6 +36,7 @@ impl Default for EconomyConfig {
 /// monthly_income = (goods_produced × goods_price × (1 + efficiency) × (1 - autonomy)) / 12
 /// where: goods_produced = base_production × 0.2
 /// ```
+#[instrument(skip_all, name = "production")]
 pub fn run_production_tick(state: &mut WorldState, config: &EconomyConfig) {
     // Aggregate income per country first, then apply
     let mut income_deltas: HashMap<Tag, Fixed> = HashMap::new();

@@ -15,6 +15,7 @@
 
 use crate::fixed::Fixed;
 use crate::state::{ReformId, WorldState};
+use tracing::instrument;
 
 /// HRE constants from defines.
 pub mod defines {
@@ -109,6 +110,7 @@ impl crate::state::HREState {
 /// Updates Imperial Authority and checks for elections:
 /// - Check if emperor election needed (death, ineligibility)
 /// - Calculate monthly IA change
+#[instrument(skip_all, name = "hre")]
 pub fn run_hre_tick(state: &mut WorldState) {
     // Only run on first of month
     if state.date.day != 1 {

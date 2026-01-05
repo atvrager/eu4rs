@@ -2,6 +2,7 @@ use crate::fixed::Fixed;
 use crate::state::{Tag, WorldState};
 use eu4data::defines::economy as defines;
 use std::collections::HashMap;
+use tracing::instrument;
 
 /// Calculate maintenance costs for a country's armies and fleets.
 ///
@@ -89,6 +90,7 @@ pub fn calculate_maintenance_costs(state: &WorldState) -> HashMap<Tag, Fixed> {
 /// Runs monthly expense calculations.
 ///
 /// Deducts costs from treasury.
+#[instrument(skip_all, name = "expenses")]
 pub fn run_expenses_tick(state: &mut WorldState) {
     // 1. Army Maintenance
     // Iterate armies, sum cost per country

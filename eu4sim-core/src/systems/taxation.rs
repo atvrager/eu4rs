@@ -2,10 +2,12 @@ use crate::fixed::Fixed;
 use crate::state::{Tag, WorldState};
 use eu4data::defines::economy as defines;
 use std::collections::HashMap;
+use tracing::instrument;
 
 /// Runs monthly taxation calculations.
 ///
 /// Formula: (Base Tax) * (1 + National Mod + Local Mod) * (1 - Autonomy) / 12
+#[instrument(skip_all, name = "taxation")]
 pub fn run_taxation_tick(state: &mut WorldState) {
     let mut income_deltas: HashMap<Tag, Fixed> = HashMap::new();
 

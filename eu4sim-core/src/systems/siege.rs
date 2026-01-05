@@ -9,6 +9,7 @@
 use crate::fixed::Fixed;
 use crate::state::{ArmyId, ProvinceId, RegimentType, Siege, WorldState};
 use eu4data::defines::siege as defines;
+use tracing::instrument;
 
 // ============================================================================
 // Public API
@@ -18,6 +19,7 @@ use eu4data::defines::siege as defines;
 /// Called once per day in the simulation tick.
 ///
 /// The adjacency graph is optional - if provided, blockade detection will be enabled.
+#[instrument(skip_all, name = "siege")]
 pub fn run_siege_tick(
     state: &mut WorldState,
     adjacency: Option<&eu4data::adjacency::AdjacencyGraph>,

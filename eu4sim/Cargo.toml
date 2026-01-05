@@ -11,6 +11,10 @@ path = "src/lib.rs"
 name = "eu4sim"
 path = "src/main.rs"
 
+[features]
+default = []
+tracy = ["eu4sim-core/tracy", "dep:tracy-client"]
+
 [dependencies]
 eu4sim-core = { path = "../eu4sim-core" }
 eu4sim-ai = { path = "../eu4sim-ai" }
@@ -24,6 +28,9 @@ image = "0.25"
 ratatui = "0.29"
 rayon = "1.10"
 dotenvy = "0.15"
+
+# Tracy memory profiling (optional)
+tracy-client = { version = "0.18", optional = true }
 
 [dev-dependencies]
 assert_cmd = "2.0"

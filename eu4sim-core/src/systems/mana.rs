@@ -1,5 +1,6 @@
 use crate::fixed::Fixed;
 use crate::state::{Advisor, AdvisorType, WorldState};
+use tracing::instrument;
 
 /// Generates monarch power for all countries based on ruler stats and advisors.
 ///
@@ -10,6 +11,7 @@ use crate::state::{Advisor, AdvisorType, WorldState};
 /// - Total: base + ruler + advisor = 3 to 14 per month per category (vanilla)
 ///
 /// Power is capped at 999 by default (can be higher with unembraced institutions).
+#[instrument(skip_all, name = "mana")]
 pub fn run_mana_tick(state: &mut WorldState) {
     // Default cap is 999, but increases with unembraced institutions
     // TODO: Calculate dynamic cap based on tech penalty from institutions

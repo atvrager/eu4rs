@@ -1,5 +1,6 @@
 target/
 *.profraw
+*.tracy
 /map_*.png
 *_actual.png
 /*.jpg

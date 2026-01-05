@@ -6,6 +6,7 @@ use crate::buildings::{BuildingConstruction, BuildingDef};
 use crate::fixed::Fixed;
 use crate::modifiers::{BuildingId, GameModifiers, TradegoodId};
 use crate::state::{CountryState, HashMap, ProvinceId, ProvinceState, Tag, Terrain, WorldState};
+use tracing::instrument;
 
 /// Error returned when a building action cannot be performed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -442,6 +443,7 @@ pub fn validate_manufactory_on_goods_change(
 /// Tick construction progress for all provinces.
 ///
 /// Called each month. Completes buildings when progress reaches required time.
+#[instrument(skip_all, name = "buildings")]
 pub fn tick_building_construction(state: &mut WorldState) {
     let province_ids: Vec<_> = state.provinces.keys().copied().collect();
 

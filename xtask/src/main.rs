@@ -141,6 +141,60 @@ enum Commands {
         #[arg(long)]
         no_cuda: bool,
     },
+
+    /// Profile simulation with Tracy (automated capture)
+    ///
+    /// Builds eu4sim with Tracy support and runs a simulation while
+    /// capturing profiling data to a .tracy file.
+    ///
+    /// Requires: tracy-capture CLI tool installed
+    Profile {
+        /// Number of ticks to simulate
+        #[arg(short, long, default_value_t = 365)]
+        ticks: u32,
+
+        /// Output file for trace data
+        #[arg(short, long, default_value = "profile.tracy")]
+        output: String,
+
+        /// Path to EU4 game data (uses auto-detection if not specified)
+        #[arg(long)]
+        game_path: Option<String>,
+
+        /// Use mock state instead of real game data (for quick tests)
+        #[arg(long)]
+        test_mode: bool,
+
+        /// AI type: "random", "greedy", "hybrid", or "gp-only"
+        #[arg(long, default_value = "hybrid")]
+        ai: String,
+
+        /// Number of top countries to use GreedyAI in hybrid/gp-only mode
+        #[arg(long, default_value_t = 8)]
+        greedy_count: usize,
+
+        /// Use LLM AI for top Great Power (path to LoRA adapter)
+        #[arg(long)]
+        llm_ai: Option<String>,
+
+        /// Base model for LLM AI: "smollm" or "gemma3"
+        #[arg(long)]
+        llm_ai_base: Option<String>,
+
+        /// Random seed for reproducibility
+        #[arg(long, default_value_t = 12345)]
+        seed: u64,
+    },
+
+    /// Open Tracy GUI to view profiling data
+    ///
+    /// Launches the Tracy profiler GUI, optionally opening a .tracy file.
+    ///
+    /// Requires: Tracy GUI installed (tracy or Tracy-release)
+    Tracy {
+        /// Optional .tracy file to open
+        file: Option<String>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -191,6 +245,28 @@ fn main() -> Result<()> {
             ticks,
             no_cuda,
         } => run_llm(&base, adapter.as_deref(), ticks, no_cuda),
+        Commands::Profile {
+            ticks,
+            output,
+            game_path,
+            test_mode,
+            ai,
+            greedy_count,
+            llm_ai,
+            llm_ai_base,
+            seed,
+        } => run_profile(ProfileArgs {
+            ticks,
+            output,
+            game_path,
+            test_mode,
+            ai,
+            greedy_count,
+            llm_ai,
+            llm_ai_base,
+            seed,
+        }),
+        Commands::Tracy { file } => run_tracy(file.as_deref()),
     }
 }
 
@@ -1855,4 +1931,222 @@ mod geolocation {
         }
         out
     }
+}
+
+// ============================================================================
+// Tracy Profiling
+// ============================================================================
+
+/// Find tracy-capture executable (tries multiple names)
+fn find_tracy_capture() -> Option<String> {
+    for name in ["tracy-capture", "capture", "tracy-capture.exe"] {
+        if Command::new("which")
+            .arg(name)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+        {
+            return Some(name.to_string());
+        }
+        // Also try direct execution test
+        if Command::new(name)
+            .arg("--help")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+        {
+            return Some(name.to_string());
+        }
+    }
+    None
+}
+
+/// Find tracy GUI executable (tries multiple names)
+fn find_tracy_gui() -> Option<String> {
+    for name in ["tracy", "Tracy", "tracy-profiler", "Tracy-release"] {
+        if Command::new("which")
+            .arg(name)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+        {
+            return Some(name.to_string());
+        }
+        // Also try direct execution test
+        if Command::new(name)
+            .arg("--help")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok()
+        {
+            return Some(name.to_string());
+        }
+    }
+    None
+}
+
+struct ProfileArgs {
+    ticks: u32,
+    output: String,
+    game_path: Option<String>,
+    test_mode: bool,
+    ai: String,
+    greedy_count: usize,
+    llm_ai: Option<String>,
+    llm_ai_base: Option<String>,
+    seed: u64,
+}
+
+fn run_profile(args: ProfileArgs) -> Result<()> {
+    println!("=== Tracy Profile Capture ===\n");
+
+    // Check for tracy-capture
+    let capture_cmd = find_tracy_capture().context(
+        "tracy-capture not found. Install Tracy profiler tools:\n\
+         - Linux: Build from https://github.com/wolfpld/tracy or use package manager\n\
+         - Windows: Download from Tracy releases",
+    )?;
+
+    println!("[1/4] Building eu4sim with Tracy support...");
+    let build_status = Command::new("cargo")
+        .args(["build", "--release", "-p", "eu4sim", "--features", "tracy"])
+        .status()
+        .context("Failed to run cargo build")?;
+
+    if !build_status.success() {
+        anyhow::bail!("Build failed");
+    }
+
+    // Tracy architecture: tracy-capture listens for UDP broadcasts from clients.
+    // When the app starts, it broadcasts discovery packets. tracy-capture finds it and connects.
+    //
+    // Strategy: Start tracy-capture FIRST (waits for discovery), then start the app.
+
+    println!("[2/4] Starting Tracy capture (waiting for client)...");
+
+    // Start tracy-capture first - it will wait for a client to broadcast
+    let mut capture = Command::new(&capture_cmd)
+        .args(["-o", &args.output, "-f"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("Failed to start tracy-capture")?;
+
+    // Give tracy-capture time to start listening for broadcasts
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    // Build simulation arguments
+    let mut sim_args = vec![
+        "--headless".to_string(),
+        "--ticks".to_string(),
+        args.ticks.to_string(),
+        "--ai".to_string(),
+        args.ai.clone(),
+        "--greedy-count".to_string(),
+        args.greedy_count.to_string(),
+        "--seed".to_string(),
+        args.seed.to_string(),
+    ];
+
+    if args.test_mode {
+        sim_args.push("--test-mode".to_string());
+        println!(
+            "[3/4] Running simulation ({} ticks, test-mode, ai={})...",
+            args.ticks, args.ai
+        );
+    } else {
+        if let Some(ref path) = args.game_path {
+            sim_args.push("--game-path".to_string());
+            sim_args.push(path.clone());
+        }
+        println!(
+            "[3/4] Running simulation ({} ticks, ai={}, greedy-count={})...",
+            args.ticks, args.ai, args.greedy_count
+        );
+    }
+
+    if let Some(ref llm_path) = args.llm_ai {
+        sim_args.push("--llm-ai".to_string());
+        sim_args.push(llm_path.clone());
+    }
+
+    if let Some(ref base) = args.llm_ai_base {
+        sim_args.push("--llm-ai-base".to_string());
+        sim_args.push(base.clone());
+    }
+
+    // Start simulation - Tracy client will broadcast and tracy-capture will discover it
+    let sim_status = Command::new("./target/release/eu4sim")
+        .args(&sim_args)
+        .status()
+        .context("Failed to run eu4sim")?;
+
+    // Give capture time to finish receiving data after app exits
+    println!("      Waiting for capture to finish...");
+
+    // Wait for tracy-capture to finish (it should exit when client disconnects)
+    // Give it a few seconds, then kill if still running
+    for _ in 0..30 {
+        match capture.try_wait() {
+            Ok(Some(_)) => break, // Process exited
+            Ok(None) => {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Err(_) => break,
+        }
+    }
+
+    // Force kill if still running
+    let _ = capture.kill();
+    let _ = capture.wait();
+
+    println!("[4/4] Capture complete!\n");
+
+    // Check if file was created
+    let output_path = std::path::Path::new(&args.output);
+    if output_path.exists() {
+        let size = std::fs::metadata(output_path).map(|m| m.len()).unwrap_or(0);
+        println!("Profile saved to: {} ({} bytes)", args.output, size);
+        println!("\nView with: cargo xtask tracy {}", args.output);
+    } else if sim_status.success() {
+        println!("Warning: No profile data captured.");
+        println!("This may happen if tracy-capture didn't connect in time.");
+        println!("\nTry running manually:");
+        println!("  Terminal 1: tracy-capture -o {} -f", args.output);
+        println!(
+            "  Terminal 2: ./target/release/eu4sim --headless --ticks {}",
+            args.ticks
+        );
+    } else {
+        println!("Warning: Simulation failed and no profile captured.");
+    }
+
+    Ok(())
+}
+
+fn run_tracy(file: Option<&str>) -> Result<()> {
+    let tracy_cmd = find_tracy_gui().context(
+        "Tracy GUI not found. Install Tracy profiler:\n\
+         - Linux: Build from https://github.com/wolfpld/tracy or use package manager\n\
+         - Windows: Download from Tracy releases\n\
+         - macOS: brew install tracy",
+    )?;
+
+    println!("Launching Tracy profiler...");
+
+    let mut cmd = Command::new(&tracy_cmd);
+    if let Some(f) = file {
+        cmd.arg(f);
+    }
+
+    cmd.spawn().context("Failed to launch Tracy")?;
+
+    Ok(())
 }

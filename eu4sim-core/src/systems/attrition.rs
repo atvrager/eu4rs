@@ -8,9 +8,11 @@ use crate::fixed::Fixed;
 use crate::state::{ArmyId, ProvinceId, WorldState};
 use eu4data::defines::attrition as defines;
 use std::collections::HashMap;
+use tracing::instrument;
 
 /// Run monthly attrition tick for all armies.
 /// Called once per month in the simulation.
+#[instrument(skip_all, name = "attrition")]
 pub fn run_attrition_tick(state: &mut WorldState) {
     // Group armies by province (skip embarked and in-battle armies)
     let mut province_armies: HashMap<ProvinceId, Vec<ArmyId>> = HashMap::new();

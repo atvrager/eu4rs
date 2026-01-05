@@ -1,3 +1,9 @@
+// Tracy memory profiling: wrap the global allocator to track all allocations
+#[cfg(feature = "tracy")]
+#[global_allocator]
+static ALLOC: tracy_client::ProfiledAllocator<std::alloc::System> =
+    tracy_client::ProfiledAllocator::new(std::alloc::System, 100);
+
 use anyhow::Result;
 use clap::Parser;
 use crossterm::{
@@ -703,22 +709,32 @@ fn main() -> Result<()> {
         &args.log_level
     };
 
-    let level = std::str::FromStr::from_str(log_level).unwrap_or(log::LevelFilter::Info);
+    // When tracy is enabled, use tracing subscriber instead of env_logger
+    // (they conflict if both try to set the global logger)
+    #[cfg(feature = "tracy")]
+    {
+        let _ = log_level; // silence unused warning
+        eu4sim_core::profiling::init_tracy();
+    }
 
-    if args.tui {
-        use std::fs::File;
-        // Simple file logger for TUI mode
-        let target = Box::new(File::create("eu4sim.log").expect("Failed to create log file"));
-        env_logger::Builder::new()
-            .filter_level(level)
-            .format_timestamp(None)
-            .target(env_logger::Target::Pipe(target))
-            .init();
-    } else {
-        env_logger::Builder::new()
-            .filter_level(level)
-            .format_timestamp(None)
-            .init();
+    #[cfg(not(feature = "tracy"))]
+    {
+        let level = std::str::FromStr::from_str(log_level).unwrap_or(log::LevelFilter::Info);
+        if args.tui {
+            use std::fs::File;
+            // Simple file logger for TUI mode
+            let target = Box::new(File::create("eu4sim.log").expect("Failed to create log file"));
+            env_logger::Builder::new()
+                .filter_level(level)
+                .format_timestamp(None)
+                .target(env_logger::Target::Pipe(target))
+                .init();
+        } else {
+            env_logger::Builder::new()
+                .filter_level(level)
+                .format_timestamp(None)
+                .init();
+        }
     }
 
     log::info!("Starting eu4sim...");

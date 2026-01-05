@@ -1,5 +1,6 @@
 use crate::fixed::Fixed;
 use crate::state::{Tag, War, WorldState};
+use tracing::instrument;
 
 /// Maximum war score from battles alone (40%)
 const MAX_BATTLE_SCORE: u8 = 40;
@@ -32,6 +33,7 @@ fn recalculate_total_score(_war: &mut War) {
 
 /// Recalculates war scores for all active wars based on occupation.
 /// Call this monthly or after significant territory changes.
+#[instrument(skip_all, name = "war_score")]
 pub fn recalculate_war_scores(state: &mut WorldState) {
     // Collect war data first to avoid borrow issues
     let war_ids: Vec<_> = state.diplomacy.wars.keys().copied().collect();
