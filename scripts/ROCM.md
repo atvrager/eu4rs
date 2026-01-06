@@ -23,7 +23,7 @@ The script will:
 3. Install PyTorch 2.9.0 with ROCm support
 4. Verify GPU detection
 
-## Usage
+## Training
 
 ```powershell
 # Activate the ROCm venv
@@ -33,6 +33,47 @@ The script will:
 python train_ai.py --data ..\data\run_10yr_1.cpb.zip --max-steps 1000
 
 # You should see: "Using device: ROCm (AMD Radeon RX 7900 XTX)"
+```
+
+## Inference (Bridge Mode)
+
+Since Candle doesn't support ROCm yet, we use a Python bridge for inference:
+
+**Terminal 1 - Start the inference server:**
+```powershell
+cd scripts
+.venv-rocm\Scripts\Activate.ps1
+python inference_server.py --adapter ../models/adapter
+
+# You should see:
+# Using device: ROCm (AMD Radeon RX 7900 XTX)
+# Loading base model: google/gemma-2-2b-it
+# Model ready for inference
+# Inference server listening on 127.0.0.1:9876
+```
+
+**Terminal 2 - Run the simulation:**
+```powershell
+cargo run -p eu4sim --release -- --observer --llm-ai bridge --ticks 100
+```
+
+### Bridge Options
+
+| Flag | Description |
+|------|-------------|
+| `--llm-ai bridge` | Use default server (127.0.0.1:9876) |
+| `--llm-ai bridge:HOST:PORT` | Custom server address |
+| `--llm-ai path/to/adapter` | Use Candle backend (CPU/CUDA) |
+
+### Server Arguments
+
+```powershell
+python inference_server.py --help
+
+  --base-model MODEL   HuggingFace model ID (default: google/gemma-2-2b-it)
+  --adapter PATH       Path to LoRA adapter directory
+  --host HOST          Host to bind (default: 127.0.0.1)
+  --port PORT          Port to bind (default: 9876)
 ```
 
 ## Why a Separate Venv?

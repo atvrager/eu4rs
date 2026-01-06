@@ -675,13 +675,19 @@ struct Args {
     #[arg(long)]
     test_mode: bool,
 
-    /// Use LLM AI for the top Great Power. Provide path to LoRA adapter directory.
-    /// Downloads base model from HuggingFace on first run (~700MB).
-    #[arg(long, value_name = "ADAPTER_PATH")]
-    llm_ai: Option<PathBuf>,
+    /// Use LLM AI for the top Great Power.
+    /// Options:
+    ///   - Path to LoRA adapter directory (Candle backend, downloads ~700MB on first run)
+    ///   - "bridge" to connect to running Python server (127.0.0.1:9876)
+    ///   - "bridge:HOST:PORT" for custom server address
+    ///   - "rocm" to auto-spawn Python server with ROCm (no adapter)
+    ///   - "rocm:path/to/adapter" to auto-spawn with adapter
+    #[arg(long, value_name = "ADAPTER_PATH_OR_BRIDGE")]
+    llm_ai: Option<String>,
 
-    /// Base model for LLM AI (default: SmolLM2-360M).
+    /// Base model for LLM AI when using Candle backend (default: SmolLM2-360M).
     /// Options: "smollm" (HuggingFaceTB/SmolLM2-360M), "gemma3" (google/gemma-3-270m)
+    /// Ignored when using bridge backend.
     #[arg(long, value_name = "MODEL")]
     llm_ai_base: Option<String>,
 
@@ -818,21 +824,61 @@ fn main() -> Result<()> {
 
         // Initialize LLM AI (in hybrid mode or if explicitly requested, but NOT for datagen)
         let llm_ai: Option<Box<dyn eu4sim_core::AiPlayer>> = if use_llm {
-            // Resolve base model name to HuggingFace repo
-            let base_model = match args.llm_ai_base.as_deref() {
-                Some("gemma3") | Some("gemma-3") => "google/gemma-3-270m",
-                Some("smollm") | Some("smollm2") | None => "HuggingFaceTB/SmolLM2-360M",
-                Some(other) => other, // Allow full repo IDs
-            };
-
-            let result = if let Some(adapter_path) = &args.llm_ai {
-                log::info!(
-                    "Loading LLM AI with adapter: {:?} (base: {})",
-                    adapter_path,
-                    base_model
-                );
-                eu4sim_ai::LlmAi::new(base_model, Some(adapter_path.clone()))
+            let result = if let Some(llm_spec) = &args.llm_ai {
+                // Check if using bridge mode (Python inference server for ROCm)
+                if llm_spec == "bridge" {
+                    log::info!("Loading LLM AI via bridge (default: 127.0.0.1:9876)");
+                    eu4sim_ai::LlmAi::with_default_bridge()
+                } else if let Some(addr) = llm_spec.strip_prefix("bridge:") {
+                    // Parse "bridge:HOST:PORT" format
+                    let parts: Vec<&str> = addr.splitn(2, ':').collect();
+                    let (host, port) = match parts.as_slice() {
+                        [host, port_str] => {
+                            let port = port_str.parse::<u16>().unwrap_or_else(|_| {
+                                log::warn!("Invalid port '{}', using default 9876", port_str);
+                                9876
+                            });
+                            (*host, port)
+                        }
+                        [host] => (*host, 9876),
+                        _ => ("127.0.0.1", 9876),
+                    };
+                    log::info!("Loading LLM AI via bridge ({}:{})", host, port);
+                    eu4sim_ai::LlmAi::with_bridge(host, port)
+                } else if llm_spec == "rocm" {
+                    // Auto-spawn ROCm inference server (no adapter)
+                    log::info!("Auto-spawning ROCm inference server (no adapter)");
+                    eu4sim_ai::LlmAi::with_auto_bridge(None)
+                } else if let Some(adapter_str) = llm_spec.strip_prefix("rocm:") {
+                    // Auto-spawn ROCm inference server with adapter
+                    let adapter_path = PathBuf::from(adapter_str);
+                    log::info!(
+                        "Auto-spawning ROCm inference server with adapter: {:?}",
+                        adapter_path
+                    );
+                    eu4sim_ai::LlmAi::with_auto_bridge(Some(adapter_path))
+                } else {
+                    // Candle backend with adapter path
+                    let adapter_path = PathBuf::from(llm_spec);
+                    let base_model = match args.llm_ai_base.as_deref() {
+                        Some("gemma3") | Some("gemma-3") => "google/gemma-3-270m",
+                        Some("smollm") | Some("smollm2") | None => "HuggingFaceTB/SmolLM2-360M",
+                        Some(other) => other, // Allow full repo IDs
+                    };
+                    log::info!(
+                        "Loading LLM AI with adapter: {:?} (base: {})",
+                        adapter_path,
+                        base_model
+                    );
+                    eu4sim_ai::LlmAi::new(base_model, Some(adapter_path))
+                }
             } else {
+                // No --llm-ai specified, use base model only
+                let base_model = match args.llm_ai_base.as_deref() {
+                    Some("gemma3") | Some("gemma-3") => "google/gemma-3-270m",
+                    Some("smollm") | Some("smollm2") | None => "HuggingFaceTB/SmolLM2-360M",
+                    Some(other) => other,
+                };
                 log::info!("Loading LLM AI with base model: {}", base_model);
                 eu4sim_ai::LlmAi::new(base_model, None)
             };

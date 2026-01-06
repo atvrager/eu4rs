@@ -1,8 +1,9 @@
 //! LLM-based AI player implementation.
 //!
-//! Wraps the Eu4AiModel to implement the AiPlayer trait,
+//! Wraps inference backends (Candle or Bridge) to implement the AiPlayer trait,
 //! allowing trained language models to control countries in the simulation.
 
+use crate::bridge::{BridgeClient, BridgeServer};
 use crate::model::{Eu4AiModel, ModelConfig};
 use crate::prompt::PromptBuilder;
 use anyhow::Result;
@@ -10,6 +11,56 @@ use eu4sim_core::Command;
 use eu4sim_core::ai::{AiPlayer, AvailableCommands, VisibleWorldState};
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
+
+/// Inference backend selection.
+#[derive(Debug, Clone)]
+pub enum InferenceBackend {
+    /// Use Candle for local inference (CPU/CUDA/Metal)
+    Candle {
+        base_model: String,
+        adapter_path: Option<PathBuf>,
+    },
+    /// Use Python bridge for ROCm inference (server must be running)
+    Bridge { host: String, port: u16 },
+    /// Auto-spawn Python inference server (ROCm)
+    AutoBridge { adapter_path: Option<PathBuf> },
+}
+
+impl Default for InferenceBackend {
+    fn default() -> Self {
+        Self::Candle {
+            base_model: "HuggingFaceTB/SmolLM2-360M".to_string(),
+            adapter_path: None,
+        }
+    }
+}
+
+/// Internal model wrapper supporting multiple backends.
+/// Size difference is acceptable - Candle variant is large due to model weights,
+/// and boxing would add indirection overhead on the hot inference path.
+#[allow(clippy::large_enum_variant)]
+enum ModelBackend {
+    Candle(Eu4AiModel),
+    Bridge(BridgeClient),
+    /// Managed server (auto-spawned, killed on drop)
+    AutoBridge(BridgeServer),
+}
+
+impl ModelBackend {
+    /// Run inference and return generated text.
+    fn generate(&mut self, prompt: &str, max_tokens: usize) -> Result<(String, u64)> {
+        match self {
+            ModelBackend::Candle(model) => {
+                let start = std::time::Instant::now();
+                let response = model.choose_multi_action(prompt, max_tokens)?;
+                let inference_ms = start.elapsed().as_millis() as u64;
+                Ok((response, inference_ms))
+            }
+            ModelBackend::Bridge(client) => client.generate(prompt, max_tokens),
+            ModelBackend::AutoBridge(server) => server.generate(prompt, max_tokens),
+        }
+    }
+}
 
 /// Message containing LLM prompt and response for TUI display.
 #[derive(Debug, Clone)]
@@ -32,33 +83,92 @@ pub struct LlmMessage {
 ///
 /// Uses a trained language model (SmolLM2, Gemma-3, or Gemma-2 with LoRA adapter)
 /// to make decisions based on game state.
+///
+/// Supports multiple inference backends:
+/// - **Candle**: Pure Rust, supports CPU/CUDA/Metal
+/// - **Bridge**: Python server, supports ROCm (AMD GPU)
 pub struct LlmAi {
-    model: Eu4AiModel,
+    backend: ModelBackend,
     prompt_builder: PromptBuilder,
     /// Optional sender for TUI display of prompt/response
     tui_tx: Option<Sender<LlmMessage>>,
 }
 
 impl LlmAi {
-    /// Create a new LLM AI with the given configuration.
+    /// Create a new LLM AI with the specified backend.
+    pub fn with_backend(backend: InferenceBackend) -> Result<Self> {
+        let model_backend = match backend {
+            InferenceBackend::Candle {
+                base_model,
+                adapter_path,
+            } => {
+                let config = ModelConfig {
+                    base_model,
+                    adapter_path: adapter_path.unwrap_or_default(),
+                    ..Default::default()
+                };
+                ModelBackend::Candle(Eu4AiModel::load(config)?)
+            }
+            InferenceBackend::Bridge { host, port } => {
+                let mut client = BridgeClient::with_address(host, port);
+                // Try to connect eagerly to fail fast
+                if !client.try_connect()? {
+                    anyhow::bail!(
+                        "Could not connect to inference server. \
+                        Start it with: cd scripts && python inference_server.py"
+                    );
+                }
+                ModelBackend::Bridge(client)
+            }
+            InferenceBackend::AutoBridge { adapter_path } => {
+                log::info!("Auto-spawning inference server...");
+                let server = BridgeServer::spawn(adapter_path)?;
+                ModelBackend::AutoBridge(server)
+            }
+        };
+
+        Ok(Self {
+            backend: model_backend,
+            prompt_builder: PromptBuilder::new(),
+            tui_tx: None,
+        })
+    }
+
+    /// Create a new LLM AI with the given configuration (Candle backend).
     ///
     /// # Arguments
     /// * `base_model` - HuggingFace model ID (e.g., "HuggingFaceTB/SmolLM2-360M", "google/gemma-3-270m")
     /// * `adapter_path` - Path to LoRA adapter directory (optional)
     pub fn new(base_model: &str, adapter_path: Option<PathBuf>) -> Result<Self> {
-        let config = ModelConfig {
+        Self::with_backend(InferenceBackend::Candle {
             base_model: base_model.to_string(),
-            adapter_path: adapter_path.unwrap_or_default(),
-            ..Default::default()
-        };
-
-        let model = Eu4AiModel::load(config)?;
-
-        Ok(Self {
-            model,
-            prompt_builder: PromptBuilder::new(),
-            tui_tx: None,
+            adapter_path,
         })
+    }
+
+    /// Create with Bridge backend (for ROCm inference).
+    ///
+    /// Connects to a Python inference server running at the specified address.
+    /// Default: 127.0.0.1:9876
+    pub fn with_bridge(host: impl Into<String>, port: u16) -> Result<Self> {
+        Self::with_backend(InferenceBackend::Bridge {
+            host: host.into(),
+            port,
+        })
+    }
+
+    /// Create with Bridge backend using default address.
+    pub fn with_default_bridge() -> Result<Self> {
+        use crate::bridge::{DEFAULT_HOST, DEFAULT_PORT};
+        Self::with_bridge(DEFAULT_HOST, DEFAULT_PORT)
+    }
+
+    /// Create with auto-spawned inference server (ROCm).
+    ///
+    /// Spawns the Python inference server as a subprocess. Server is automatically
+    /// killed when the `LlmAi` is dropped.
+    pub fn with_auto_bridge(adapter_path: Option<PathBuf>) -> Result<Self> {
+        Self::with_backend(InferenceBackend::AutoBridge { adapter_path })
     }
 
     /// Set a sender for TUI display of LLM I/O.
@@ -72,12 +182,12 @@ impl LlmAi {
         self.tui_tx = Some(tx);
     }
 
-    /// Create with SmolLM2 base model and LoRA adapter.
+    /// Create with SmolLM2 base model and LoRA adapter (Candle backend).
     pub fn with_adapter(adapter_path: PathBuf) -> Result<Self> {
         Self::new("HuggingFaceTB/SmolLM2-360M", Some(adapter_path))
     }
 
-    /// Create with Gemma-3-270M base model and LoRA adapter.
+    /// Create with Gemma-3-270M base model and LoRA adapter (Candle backend).
     pub fn with_gemma3_adapter(adapter_path: PathBuf) -> Result<Self> {
         Self::new("google/gemma-3-270m", Some(adapter_path))
     }
@@ -317,10 +427,8 @@ impl AiPlayer for LlmAi {
         );
 
         // Run inference (up to 50 tokens) with timing
-        let infer_start = std::time::Instant::now();
-        match self.model.choose_multi_action(prompt, 50) {
-            Ok(response) => {
-                let inference_ms = infer_start.elapsed().as_millis() as u64;
+        match self.backend.generate(prompt, 50) {
+            Ok((response, inference_ms)) => {
                 let commands =
                     Self::parse_multi_action_response(&response, available_commands, &index_map);
 
@@ -386,19 +494,18 @@ impl AiPlayer for LlmAi {
                 commands
             }
             Err(e) => {
-                let inference_ms = infer_start.elapsed().as_millis() as u64;
                 // Use {:#} for full error chain
-                log::error!("LlmAi inference failed ({}ms): {:#}", inference_ms, e);
+                log::error!("LlmAi inference failed: {:#}", e);
 
                 // Still send error to TUI so user can see what's happening
                 if let Some(ref tx) = self.tui_tx {
                     let msg = LlmMessage {
                         country: visible_state.observer.clone(),
                         date: date_str,
-                        prompt_excerpt: format!("(error after {}ms)", inference_ms),
+                        prompt_excerpt: "(error)".to_string(),
                         response: format!("{:#}", e), // Full error chain
                         commands: vec![],
-                        inference_ms,
+                        inference_ms: 0,
                     };
                     let _ = tx.send(msg);
                 }
