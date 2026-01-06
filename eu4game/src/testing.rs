@@ -63,11 +63,11 @@ fn assert_snapshot_at(actual: &RgbaImage, name: &str, golden_dir: &Path, update:
     let mut diff_pixels = 0;
     for (x, y, pixel) in actual.enumerate_pixels() {
         let golden_pixel = golden.get_pixel(x, y);
-        
-        let diff_r = (pixel[0] as i16 - golden_pixel[0] as i16).abs();
-        let diff_g = (pixel[1] as i16 - golden_pixel[1] as i16).abs();
-        let diff_b = (pixel[2] as i16 - golden_pixel[2] as i16).abs();
-        let diff_a = (pixel[3] as i16 - golden_pixel[3] as i16).abs();
+
+        let diff_r = pixel[0].abs_diff(golden_pixel[0]);
+        let diff_g = pixel[1].abs_diff(golden_pixel[1]);
+        let diff_b = pixel[2].abs_diff(golden_pixel[2]);
+        let diff_a = pixel[3].abs_diff(golden_pixel[3]);
 
         // Allow max difference of 3 per channel for cross-platform GPU variance
         if diff_r > 3 || diff_g > 3 || diff_b > 3 || diff_a > 3 {
