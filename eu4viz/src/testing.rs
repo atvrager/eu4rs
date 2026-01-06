@@ -44,10 +44,16 @@ fn assert_snapshot_at(actual: &RgbaImage, name: &str, golden_dir: &Path, update:
     }
 
     let mut diff_pixels = 0;
+    let mut max_channel_diff = 0;
+
     for (x, y, pixel) in actual.enumerate_pixels() {
         let golden_pixel = golden.get_pixel(x, y);
         if pixel != golden_pixel {
             diff_pixels += 1;
+            for c in 0..4 {
+                let diff = (pixel[c] as i16 - golden_pixel[c] as i16).abs() as u8;
+                max_channel_diff = max_channel_diff.max(diff);
+            }
         }
     }
 
@@ -55,9 +61,29 @@ fn assert_snapshot_at(actual: &RgbaImage, name: &str, golden_dir: &Path, update:
         // Save actual for debugging
         let actual_path = golden_dir.join(format!("{}_actual.png", name));
         let _ = actual.save(&actual_path);
+        
+        // Save diff image
+        let diff_path = golden_dir.join(format!("{}_diff.png", name));
+        let mut diff_image = actual.clone();
+        for (x, y, pixel) in diff_image.enumerate_pixels_mut() {
+            let golden_pixel = golden.get_pixel(x, y);
+             if *pixel != *golden_pixel {
+                *pixel = image::Rgba([255, 0, 255, 255]); // Highlight diffs in magenta
+            } else {
+                 // Dim match pixels to make diffs pop
+                 pixel[3] = pixel[3].saturating_sub(200);
+            }
+        }
+        let _ = diff_image.save(&diff_path);
+
         panic!(
-            "Snapshot mismatch for {}: {} pixels differ. Saved actual to {:?}",
-            name, diff_pixels, actual_path
+            "Snapshot mismatch for {}: {} pixels differ ({:.2}%), max channel diff: {}. Saved actual to {:?} and diff to {:?}",
+            name, 
+            diff_pixels, 
+            (diff_pixels as f64 / (actual.width() * actual.height()) as f64) * 100.0,
+            max_channel_diff,
+            actual_path,
+            diff_path
         );
     }
 }

@@ -59,7 +59,11 @@ mod tests {
         let game_path = env::var("EU4_GAME_PATH")
             .map(PathBuf::from)
             .unwrap_or_else(|_| {
-                let mut path = PathBuf::from(env!("HOME"));
+                let mut path = PathBuf::from(
+                    env::var("HOME")
+                        .or_else(|_| env::var("USERPROFILE"))
+                        .unwrap_or_else(|_| ".".to_string()),
+                );
                 path.push(".steam/steam/steamapps/common/Europa Universalis IV");
                 path
             });
