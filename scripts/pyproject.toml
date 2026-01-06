@@ -12,6 +12,7 @@ dependencies = [
     "torch>=2.5.0",  # PyTorch CUDA index has up to 2.6.0+cu124
     "transformers>=4.57.3",
     "trl>=0.26.2",
+    "python-dotenv",
 ]
 
 # NOTE: DirectML support is available but requires manual installation due to

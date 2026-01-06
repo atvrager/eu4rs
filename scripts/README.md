@@ -31,6 +31,16 @@ uv sync
 pip install -e .
 ```
 
+### GPU Backends
+
+| Backend | GPU | Setup |
+|---------|-----|-------|
+| **CUDA** | NVIDIA | Default with `uv sync` |
+| **ROCm** | AMD (RDNA3, RX 7000) | See [ROCM.md](ROCM.md) |
+| **DirectML** | AMD/Intel (legacy) | See [DIRECTML.md](DIRECTML.md) |
+
+The training script auto-detects the available backend.
+
 ## Training Data Formats
 
 The training pipeline supports two data formats:

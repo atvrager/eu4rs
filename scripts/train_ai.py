@@ -1,6 +1,32 @@
 import argparse
+import os
 from pathlib import Path
+from dotenv import load_dotenv, find_dotenv
+
+# Load environment variables from .env
+load_dotenv(find_dotenv())
+
+# On systems with integrated + discrete AMD GPUs, use only the discrete one.
+# This also suppresses the amdgpu-arch warning from ROCm SDK on Windows.
+# The discrete GPU is typically at index 1 (integrated at 0).
+if "CUDA_VISIBLE_DEVICES" not in os.environ:
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+
+# Enable experimental Flash/Mem Efficient Attention for ROCm (fixes warnings/slowness)
+os.environ.setdefault("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL", "1")
+
 import torch
+
+# Limit VRAM usage to ~16GB (0.7 of 24GB) or user specified fraction to prevent system freezes
+# This must be done BEFORE any CUDA/ROCm tensors are allocated
+if torch.cuda.is_available():
+    # Only applies to the visible device (index 0 after masking)
+    try:
+        # Reserve some VRAM for display/OS if running on a single GPU workstation
+        torch.cuda.set_per_process_memory_fraction(0.7, 0)
+    except Exception:
+        pass  # Ignore if not supported
+
 from datasets import load_dataset
 from transformers import (
     AutoModelForCausalLM,
@@ -15,20 +41,45 @@ OUTPUT_DIR = "models/adapter"
 
 
 def detect_device():
-    """Detect best available device: CUDA > DirectML > CPU.
+    """Detect best available device: CUDA > ROCm > DirectML > CPU.
+
+    For multi-GPU systems, prefers discrete GPUs over integrated (APU) graphics.
 
     Returns:
         Tuple of (device, device_name, use_cpu_flag)
-        - device: torch device or DirectML device object
+        - device: torch device string (e.g., "cuda:1")
         - device_name: human-readable name for logging
         - use_cpu_flag: whether to set use_cpu=True in SFTConfig
     """
-    # Try CUDA first (NVIDIA)
+    # Check for CUDA/ROCm first
+    # ROCm uses HIP which presents as CUDA via torch.cuda.* APIs
     if torch.cuda.is_available():
-        device_name = torch.cuda.get_device_name(0)
-        return "cuda", f"CUDA ({device_name})", False
+        device_count = torch.cuda.device_count()
 
-    # Try DirectML (AMD/Intel on Windows)
+        # Find best GPU (prefer discrete over integrated)
+        best_idx = 0
+        for i in range(device_count):
+            name = torch.cuda.get_device_name(i)
+            # Integrated GPUs usually have "Radeon(TM) Graphics" or "Intel" in name
+            # Discrete GPUs have model numbers like "RX 7900", "RTX 4090", etc.
+            if "Radeon(TM) Graphics" not in name and "Intel" not in name.lower():
+                best_idx = i
+                break
+
+        device_name = torch.cuda.get_device_name(best_idx)
+        device_str = f"cuda:{best_idx}"
+
+        # Set default device so model loading uses correct GPU
+        torch.cuda.set_device(best_idx)
+
+        # Distinguish ROCm from CUDA via torch.version.hip
+        hip_version = getattr(torch.version, "hip", None)
+        if hip_version:
+            return device_str, f"ROCm ({device_name})", False
+        else:
+            return device_str, f"CUDA ({device_name})", False
+
+    # Try DirectML (AMD/Intel on Windows, older fallback)
     try:
         import torch_directml
 
@@ -223,6 +274,44 @@ def main():
         help="Resume training from a checkpoint directory",
     )
 
+    parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=2e-4,
+        help="Initial learning rate (default: 2e-4)",
+    )
+    parser.add_argument(
+        "--lora-r",
+        type=int,
+        default=16,
+        help="LoRA attention dimension (rank). Higher = more parameters. (default: 16)",
+    )
+    parser.add_argument(
+        "--lora-alpha",
+        type=int,
+        default=32,
+        help="LoRA alpha scaling factor. usually 2x rank. (default: 32)",
+    )
+    parser.add_argument(
+        "--lora-dropout",
+        type=float,
+        default=0.05,
+        help="LoRA dropout probability (default: 0.05)",
+    )
+    parser.add_argument(
+        "--weight-decay",
+        type=float,
+        default=0.01,
+        help="Weight decay for optimizer (default: 0.01)",
+    )
+    parser.add_argument(
+        "--lr-scheduler",
+        type=str,
+        default="linear",
+        choices=["linear", "cosine", "cosine_with_restarts", "constant"],
+        help="Learning rate scheduler type (default: linear)",
+    )
+
     args = parser.parse_args()
 
     # Detect best available device
@@ -260,8 +349,8 @@ def main():
     # Configure LoRA
     peft_config = LoraConfig(
         task_type=TaskType.CAUSAL_LM,
-        r=16,
-        lora_alpha=32,
+        r=args.lora_r,
+        lora_alpha=args.lora_alpha,
         target_modules=[
             "q_proj",
             "v_proj",
@@ -269,7 +358,7 @@ def main():
             "up_proj",
             "down_proj",
         ],  # Gemma/Llama targets
-        lora_dropout=0.05,
+        lora_dropout=args.lora_dropout,
     )
 
     model = get_peft_model(model, peft_config)
@@ -295,8 +384,12 @@ def main():
         max_steps = args.max_steps
 
     # Configure SFT Args (inherits from TrainingArguments)
-    # CUDA supports bf16 mixed precision; DirectML and CPU do not
-    use_bf16 = device == "cuda"
+    # CUDA (NVIDIA) supports bf16; ROCm Windows has issues with bf16, use fp32 or fp16
+    is_cuda_device = isinstance(device, str) and device.startswith("cuda")
+    is_rocm = getattr(torch.version, "hip", None) is not None
+
+    use_bf16 = is_cuda_device and not is_rocm  # NVIDIA defaults to bf16
+    use_fp16 = is_rocm  # AMD defaults to fp16 for better performance/compat on Windows
 
     # Determine save_steps
     if args.save_steps:
@@ -306,29 +399,29 @@ def main():
     else:
         save_steps = 500
 
-    sft_config = SFTConfig(
+    training_args = SFTConfig(
         output_dir=args.output,
-        # Use max_steps for streaming/chunked, epochs for eager
-        num_train_epochs=args.epochs if not needs_max_steps else 1,
-        max_steps=max_steps if needs_max_steps else -1,
+        max_steps=max_steps if max_steps is not None else -1,
+        num_train_epochs=args.epochs,
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=args.grad_accum,
-        learning_rate=2e-4,
+        learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
+        lr_scheduler_type=args.lr_scheduler,
         logging_steps=10,
-        save_strategy="steps" if needs_max_steps else "epoch",
         save_steps=save_steps,
-        use_cpu=use_cpu,  # True only for CPU, False for CUDA and DirectML
-        # Mixed precision: bf16 for CUDA, fp32 for DirectML/CPU
         bf16=use_bf16,
-        fp16=False,  # Prefer bf16 over fp16 when available
-        dataloader_num_workers=args.workers,
+        fp16=use_fp16,
+        report_to="none",  # Disable wandb unless explicitly configured
         dataset_text_field="text",
+        max_length=2048,
+        dataset_num_proc=1,  # Streaming doesn't support multiprocessing well
     )
 
     trainer = SFTTrainer(
         model=model,
         train_dataset=dataset,
-        args=sft_config,
+        args=training_args,
     )
 
     print("Starting training...")

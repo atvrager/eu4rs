@@ -198,6 +198,14 @@ enum Commands {
 }
 
 fn main() -> Result<()> {
+    // Ensure we run from the workspace root (parent of xtask crate)
+    // This allows identifying resources like scripts/ and eu4data/ correctly
+    // regardless of where `cargo xtask` was invoked from.
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .context("Failed to find workspace root from xtask manifest")?;
+    env::set_current_dir(root)?;
+
     let cli = Cli::parse();
 
     // Try ensuring .env is loaded if present
