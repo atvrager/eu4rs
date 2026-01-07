@@ -65,6 +65,7 @@ pub mod ideas;
 pub mod input;
 pub mod metrics;
 pub mod observer;
+pub mod simd;
 pub use ai::{AiPlayer, GreedyAI, RandomAi, VisibilityMode, VisibleWorldState};
 pub mod modifiers;
 pub mod profiling;

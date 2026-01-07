@@ -255,6 +255,121 @@ See `eu4sim-core/src/systems/movement.rs` for a complete implementation:
 - `MovementResult`: Struct carrying computed changes
 - Phase-based processing: Extract → Parallel → Apply
 
+## SIMD Optimization
+
+### Overview
+
+SIMD (Single Instruction Multiple Data) processes multiple values in one CPU instruction. Modern x86-64 CPUs support:
+
+| ISA | Width | Values per op (i32) | Values per op (i64) |
+|-----|-------|---------------------|---------------------|
+| SSE4.1 | 128-bit | 4 | 2 |
+| AVX2 | 256-bit | 8 | 4 |
+| AVX-512 | 512-bit | 16 | 8 |
+
+### Runtime Dispatch with `multiversion`
+
+The `multiversion` crate generates multiple function versions and selects at runtime:
+
+```rust
+use multiversion::multiversion;
+
+#[multiversion(targets(
+    "x86_64+avx2+fma",  // Haswell+, Zen1+
+    "x86_64+avx2",      // AVX2 without FMA
+    "x86_64+sse4.1",    // Nehalem+
+))]
+pub fn calculate_batch(inputs: &[Input], outputs: &mut [Output]) {
+    // Same code, compiled for each target
+    for (input, output) in inputs.iter().zip(outputs.iter_mut()) {
+        *output = process(input);
+    }
+}
+```
+
+### Validation Pattern
+
+**Every SIMD implementation MUST have a scalar golden implementation:**
+
+```rust
+/// Scalar reference - source of truth
+pub fn process_scalar(input: &Input) -> Output { ... }
+
+/// SIMD batch - must match scalar exactly
+#[multiversion(targets(...))]
+pub fn process_batch(inputs: &[Input], outputs: &mut [Output]) { ... }
+
+#[cfg(test)]
+mod proptests {
+    proptest! {
+        #[test]
+        fn simd_matches_scalar(input in any_input()) {
+            let scalar = process_scalar(&input);
+            let batch = process_batch(&[input])[0];
+            prop_assert_eq!(scalar, batch); // Bit-exact!
+        }
+    }
+}
+```
+
+### Autovectorization Limitations
+
+LLVM autovectorization is fragile. It **cannot** vectorize:
+
+| Pattern | Why | Workaround |
+|---------|-----|------------|
+| i128 operations | No SIMD support for 128-bit ints | Use i32/i64, explicit SIMD |
+| Complex indexing | Can't prove bounds safety | Use iterators, `chunks_exact` |
+| Early returns | Branches break vectorization | Hoist conditions outside loop |
+| Function calls | Non-inlined calls are barriers | `#[inline(always)]` or LTO |
+
+**Current `Fixed` type uses i64 with i128 intermediates for multiplication, which prevents autovectorization.**
+
+### Checking Vectorization
+
+```bash
+# Install cargo-show-asm
+cargo install cargo-show-asm
+
+# View generated assembly
+cargo asm --lib eu4sim_core::simd::tax::calculate_taxes_batch
+
+# Look for:
+#   vmulps, vaddps  → Vectorized (good)
+#   vmulss, vaddss  → Scalar (bad)
+```
+
+### Future: Fixed32 for SIMD
+
+To enable effective SIMD, consider a smaller fixed-point type:
+
+```rust
+/// Fixed-point with i32 storage (SIMD-friendly)
+/// Max representable: ±214,748 with 0.0001 precision
+pub struct Fixed32(i32);
+
+impl Fixed32 {
+    const SCALE: i32 = 10000;
+
+    // i32 × i32 = i64, fits in SIMD without i128
+    fn mul(self, other: Fixed32) -> Fixed32 {
+        Fixed32(((self.0 as i64 * other.0 as i64) / Self::SCALE as i64) as i32)
+    }
+}
+```
+
+This would allow AVX2 to process 8 provinces per instruction.
+
+### Example: Tax SIMD Module
+
+See `eu4sim-core/src/simd/tax.rs`:
+
+- `TaxInput` / `TaxOutput`: Packed batch data
+- `calculate_tax_scalar`: Golden reference implementation
+- `calculate_taxes_batch`: Multiversion dispatch
+- Proptest validation: Ensures bit-exact results
+- Benchmark: `cargo test -p eu4sim-core --release bench_scalar_vs_batch -- --nocapture`
+
 ---
 
-*Last updated: 2026-01-05*
+*Last updated: 2026-01-06*
