@@ -95,7 +95,137 @@ impl std::fmt::Display for Date {
     }
 }
 
+/// Country tag as a string (e.g., "FRA", "ENG", "TUR").
+/// Used for serialization and display. For hot paths, use [`TagId`].
 pub type Tag = String;
+
+/// Interned country tag identifier.
+///
+/// A lightweight, Copy handle to a country tag string. Two TagIds are equal
+/// if and only if they refer to the same interned tag string. Copying a TagId
+/// is just copying a u16, avoiding heap allocations.
+///
+/// # Performance
+///
+/// - Clone/Copy: O(1), just copies 2 bytes
+/// - Hash: O(1), identity hash on u16
+/// - Comparison: O(1), integer comparison
+///
+/// Compare this to `Tag` (String):
+/// - Clone: O(n), heap allocation + memcpy
+/// - Hash: O(n), hashes all characters
+/// - Comparison: O(n), compares all characters
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct TagId(pub u16);
+
+impl TagId {
+    /// Create a TagId from a raw index. Only use this for deserialization.
+    #[inline]
+    pub const fn from_raw(id: u16) -> Self {
+        Self(id)
+    }
+
+    /// Get the raw index. Only use this for serialization.
+    #[inline]
+    pub const fn to_raw(self) -> u16 {
+        self.0
+    }
+}
+
+impl std::fmt::Display for TagId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "TagId({})", self.0)
+    }
+}
+
+/// Registry for interning country tag strings.
+///
+/// Provides bidirectional mapping between [`Tag`] strings and [`TagId`] handles.
+/// Built once when loading game data, then used for efficient tag operations.
+///
+/// Uses FxHashMap for faster hashing (country tags are short strings).
+///
+/// # Example
+///
+/// ```ignore
+/// let mut registry = TagRegistry::new();
+/// let fra = registry.intern("FRA");
+/// let eng = registry.intern("ENG");
+/// assert_eq!(registry.resolve(fra), "FRA");
+/// assert_ne!(fra, eng);
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct TagRegistry {
+    /// Mapping from tag string to TagId (FxHashMap for speed)
+    string_to_id: rustc_hash::FxHashMap<String, TagId>,
+    /// Mapping from TagId to tag string (index = id.0)
+    id_to_string: Vec<String>,
+}
+
+impl TagRegistry {
+    /// Create a new empty registry.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Intern a tag string, returning its TagId.
+    ///
+    /// If the tag has been interned before, returns the existing TagId.
+    /// Otherwise, allocates a new TagId.
+    pub fn intern(&mut self, tag: &str) -> TagId {
+        if let Some(&id) = self.string_to_id.get(tag) {
+            return id;
+        }
+
+        let id = TagId(self.id_to_string.len() as u16);
+        self.id_to_string.push(tag.to_string());
+        self.string_to_id.insert(tag.to_string(), id);
+        id
+    }
+
+    /// Get a TagId without interning (returns None if not already interned).
+    #[inline]
+    pub fn get(&self, tag: &str) -> Option<TagId> {
+        self.string_to_id.get(tag).copied()
+    }
+
+    /// Resolve a TagId back to its string.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the TagId is invalid (not from this registry).
+    #[inline]
+    pub fn resolve(&self, id: TagId) -> &str {
+        &self.id_to_string[id.0 as usize]
+    }
+
+    /// Try to resolve a TagId, returning None if invalid.
+    #[inline]
+    pub fn try_resolve(&self, id: TagId) -> Option<&str> {
+        self.id_to_string.get(id.0 as usize).map(|s| s.as_str())
+    }
+
+    /// Number of interned tags.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.id_to_string.len()
+    }
+
+    /// Returns true if no tags have been interned.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.id_to_string.is_empty()
+    }
+
+    /// Iterate over all (TagId, &str) pairs.
+    pub fn iter(&self) -> impl Iterator<Item = (TagId, &str)> {
+        self.id_to_string
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (TagId(i as u16), s.as_str()))
+    }
+}
+
 pub type ProvinceId = u32;
 pub type ArmyId = u32;
 pub type WarId = u32;
@@ -444,6 +574,10 @@ pub struct WorldState {
     pub rng_state: u64,
     pub provinces: HashMap<ProvinceId, ProvinceState>,
     pub countries: HashMap<Tag, CountryState>,
+    /// Interned tag registry for efficient tag operations.
+    /// Built once during state initialization from countries keys.
+    #[serde(skip)]
+    pub tags: TagRegistry,
     /// Base prices for trade goods (loaded from data model).
     pub base_goods_prices: HashMap<TradegoodId, Fixed>,
     /// Dynamic modifiers (mutated by events).
@@ -531,6 +665,36 @@ pub struct WorldState {
     /// Estate definitions (hardcoded for Phase 1, loaded from files in Phase 2).
     #[serde(skip)]
     pub estates: crate::estates::EstateRegistry,
+
+    // =========================================================================
+    // Performance Caches
+    // =========================================================================
+    /// Cache for taxation/production hot paths using SoA layout.
+    ///
+    /// Stores dense arrays of data needed for monthly calculations to avoid
+    /// expensive hash lookups and pointer chasing.
+    #[doc(hidden)]
+    #[serde(skip)]
+    pub owned_provinces_cache: OwnedProvinceSoA,
+
+    /// Dirty flag for owned_provinces_cache. When true, cache needs rebuild.
+    ///
+    /// **Do not access directly** - use cache API methods instead.
+    #[doc(hidden)]
+    #[serde(skip)]
+    pub owned_provinces_cache_valid: bool,
+}
+
+/// Structure-of-Arrays (SoA) cache for owned provinces.
+///
+/// Designed for SIMD-friendly linear iteration in hot paths (taxation, production).
+/// Pre-fetches commonly used data to avoid `ProvinceState` lookups.
+#[derive(Debug, Default, Clone)]
+pub struct OwnedProvinceSoA {
+    pub ids: Vec<ProvinceId>,
+    pub owners: Vec<TagId>,         // Interned TagId (removes String hashing)
+    pub base_tax: Vec<Mod32>,       // Pre-fetched (removes ProvinceState lookup)
+    pub autonomy_floor: Vec<Mod32>, // Pre-calc effective autonomy floor
 }
 
 impl WorldState {
@@ -542,6 +706,87 @@ impl WorldState {
         adjacency: Option<&eu4data::adjacency::AdjacencyGraph>,
     ) -> Vec<crate::input::Command> {
         crate::step::available_commands(self, tag, adjacency)
+    }
+
+    /// Invalidate the owned provinces cache (call when province ownership changes).
+    ///
+    /// This is a cheap O(1) operation. The cache will be rebuilt lazily
+    /// on next access via `get_owned_provinces()`.
+    #[inline]
+    pub fn invalidate_owned_provinces_cache(&mut self) {
+        self.owned_provinces_cache_valid = false;
+    }
+
+    /// Ensure the owned provinces cache is valid (rebuilds if dirty).
+    ///
+    /// Useful when you need to access fields separately to avoid borrow checker issues.
+    /// Call this, then access `owned_provinces_cache` and `provinces` directly.
+    pub fn ensure_owned_provinces_valid(&mut self) {
+        if !self.owned_provinces_cache_valid {
+            // Collect raw data first to avoid borrow conflicts between provinces and tags
+            // (Tag interning requires &mut self.tags, provinces iteration requires &self.provinces)
+            let mut raw_data: Vec<_> = self
+                .provinces
+                .iter()
+                .filter_map(|(&id, prov)| {
+                    prov.owner.as_ref().map(|owner| {
+                        let has_core = prov.cores.contains(owner);
+                        (id, prov.base_tax, has_core, owner.clone())
+                    })
+                })
+                .collect();
+
+            // Sort by owner to optimize downstream iteration (reduces country modifier lookups)
+            raw_data.sort_unstable_by(|a, b| a.3.cmp(&b.3));
+
+            // Clear cache arrays
+            let cache = &mut self.owned_provinces_cache;
+            cache.ids.clear();
+            cache.owners.clear();
+            cache.base_tax.clear();
+            cache.autonomy_floor.clear();
+
+            // Reserve capacity
+            let len = raw_data.len();
+            cache.ids.reserve(len);
+            cache.owners.reserve(len);
+            cache.base_tax.reserve(len);
+            cache.autonomy_floor.reserve(len);
+
+            // Populate SoA
+            for (id, base_tax, has_core, owner_str) in raw_data {
+                let tag_id = self.tags.intern(&owner_str);
+                // Hardcoded 75% floor for uncored (matches systems::coring::UNCORED_AUTONOMY_FLOOR)
+                // We use raw value to avoid dependency cycle with systems module
+                let floor = if has_core {
+                    Mod32::ZERO
+                } else {
+                    Mod32::from_raw(7500)
+                };
+
+                let cache = &mut self.owned_provinces_cache;
+                cache.ids.push(id);
+                cache.owners.push(tag_id);
+                cache.base_tax.push(base_tax);
+                cache.autonomy_floor.push(floor);
+            }
+
+            self.owned_provinces_cache_valid = true;
+        }
+    }
+
+    // get_owned_provinces removed - access public cache field directly after ensure_valid()
+
+    /// Set the owner of a province, automatically invalidating the cache.
+    ///
+    /// Use this instead of directly modifying `provinces` to ensure cache consistency.
+    pub fn set_province_owner(&mut self, province_id: ProvinceId, new_owner: Option<String>) {
+        if let Some(prov) = self.provinces.get_mut(&province_id) {
+            if prov.owner != new_owner {
+                prov.owner = new_owner;
+                self.invalidate_owned_provinces_cache();
+            }
+        }
     }
 
     /// Generate a random Fixed in [0, 1) using deterministic RNG.

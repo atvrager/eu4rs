@@ -1005,6 +1005,7 @@ pub fn load_initial_state(
         rng_state: 0, // Initialize RNG state
         provinces: provinces.into(),
         countries: countries.into(),
+        tags: eu4sim_core::state::TagRegistry::default(),
         base_goods_prices: base_prices.into(),
         modifiers,
         diplomacy: eu4sim_core::state::DiplomacyState {
@@ -1049,6 +1050,9 @@ pub fn load_initial_state(
         government_types: eu4sim_core::government::GovernmentRegistry::new(),
         // Estate system
         estates: estate_registry,
+        // Performance caches (initialized empty, rebuilt lazily on first access)
+        owned_provinces_cache: Default::default(),
+        owned_provinces_cache_valid: false,
     };
 
     // 9. Run initial HRE election if no emperor

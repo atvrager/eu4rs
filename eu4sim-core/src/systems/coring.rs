@@ -177,12 +177,18 @@ pub fn tick_coring(state: &mut WorldState) {
     }
 
     // Complete cores
+    let mut cache_invalidated = false;
     for (prov_id, country) in completions {
         if let Some(province) = state.provinces.get_mut(&prov_id) {
             province.cores.insert(country.clone());
             province.coring_progress = None;
             log::info!("{} completed coring province {}", country, prov_id);
+            cache_invalidated = true;
         }
+    }
+
+    if cache_invalidated {
+        state.invalidate_owned_provinces_cache();
     }
 }
 

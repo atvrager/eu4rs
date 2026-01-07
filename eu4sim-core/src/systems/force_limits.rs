@@ -74,11 +74,7 @@ pub fn calculate_force_limits(
         }
 
         // Get autonomy (clamped to [0, 1])
-        let raw_autonomy = modifiers
-            .province_autonomy
-            .get(&prov_id)
-            .copied()
-            .unwrap_or(Mod32::ZERO);
+        let raw_autonomy = modifiers.province_autonomy.get(prov_id);
 
         // Apply coring floor (uncored provinces have minimum 75% autonomy)
         let floor = crate::systems::coring::effective_autonomy(province, tag);

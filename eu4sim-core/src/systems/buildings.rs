@@ -1014,14 +1014,14 @@ mod tests {
 
         // No buildings yet
         recompute_province_modifiers(province_id, &province, &defs, &mut modifiers);
-        assert!(!modifiers.province_tax_modifier.contains_key(&province_id));
+        assert!(!modifiers.province_tax_modifier.contains(province_id));
 
         // Add temple
         province.buildings.insert(BuildingId(0));
         recompute_province_modifiers(province_id, &province, &defs, &mut modifiers);
         assert_eq!(
-            modifiers.province_tax_modifier.get(&province_id),
-            Some(&Mod32::from_f32(0.4))
+            modifiers.province_tax_modifier.get(province_id),
+            Mod32::from_f32(0.4)
         );
         assert_eq!(
             modifiers.province_production_efficiency.get(&province_id),

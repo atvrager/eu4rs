@@ -2,130 +2,148 @@
 use crate::fixed::Fixed;
 use crate::fixed_generic::Mod32;
 use crate::simd::tax32::{calculate_taxes_batch32, TaxInput32, TaxOutput32};
-use crate::state::{ProvinceId, Tag, WorldState};
-use rayon::prelude::*;
-use std::collections::HashMap;
+use crate::state::{TagId, WorldState};
 use tracing::instrument;
+
+/// Chunk size for SIMD batch processing.
+/// Chosen to balance SIMD efficiency with trace-level visibility.
+/// 256 provinces = ~32 AVX2 iterations, good cache locality.
+const CHUNK_SIZE: usize = 256;
 
 /// Runs monthly taxation calculations.
 ///
 /// Formula: (Base Tax) * (1 + National Mod + Local Mod) * (1 - Autonomy) / 12
 ///
-/// Uses SIMD-accelerated batch processing when provinces are grouped by owner.
+/// Uses SIMD-accelerated batch processing with a single flat batch for all provinces,
+/// then aggregates results by owner. This minimizes per-country overhead while
+/// maintaining efficient SIMD utilization.
+///
+/// # Performance
+///
+/// This function uses tag interning to avoid string cloning:
+/// - Phase 1: Build local TagId interner from owner strings (O(1) per province after first)
+/// - Phase 2: SIMD batch computation (unchanged)
+/// - Phase 3: Aggregate using TagId keys (u16 hash is trivial)
+/// - Phase 4: Resolve TagId back to strings only for country lookup
 #[instrument(skip_all, name = "taxation")]
 pub fn run_taxation_tick(state: &mut WorldState) {
-    // PHASE 1: Group provinces by owner for efficient SIMD batching
-    let mut provinces_by_owner: HashMap<Tag, Vec<(ProvinceId, TaxInput32, Mod32)>> = HashMap::new();
+    // PHASE 1: Collect all province inputs into a single flat batch
+    // Uses owned_provinces cache (Vec) for O(1) iteration without tree traversal.
+    // Cache is lazily rebuilt on first access if invalidated.
+    // PHASE 1: Collect all province inputs into a single flat batch
+    // Uses SoA cache for SIMD-friendly linear iteration.
+    // Cache is lazily rebuilt on first access if invalidated.
+    let province_data: Vec<(TagId, TaxInput32, Mod32)> = {
+        let _span = tracing::info_span!("taxation_prepare").entered();
 
-    for (&province_id, province) in state.provinces.iter() {
-        let Some(owner) = province.owner.as_ref() else {
-            continue;
-        };
+        // 1. Ensure cache is valid (rebuilds and sorts by owner if dirty)
+        state.ensure_owned_provinces_valid();
 
-        let local_mod = state
-            .modifiers
-            .province_tax_modifier
-            .get(&province_id)
-            .copied()
-            .unwrap_or(Mod32::ZERO);
+        // 2. Split borrows to access fields simultaneously without cloning
+        let cache = &state.owned_provinces_cache;
+        let count = cache.ids.len();
 
-        let national_mod = state
-            .modifiers
-            .country_tax_modifier
-            .get(owner)
-            .copied()
-            .unwrap_or(Mod32::ZERO);
+        let mut data = Vec::with_capacity(count);
 
-        let base_autonomy = state
-            .modifiers
-            .province_autonomy
-            .get(&province_id)
-            .copied()
-            .unwrap_or(Mod32::ZERO);
+        // Hoist references
+        let prov_tax_mod = &state.modifiers.province_tax_modifier;
+        let country_tax_mod = &state.modifiers.country_tax_modifier;
+        let prov_autonomy = &state.modifiers.province_autonomy;
 
-        // Pre-compute effective autonomy including coring floor
-        let floor = crate::systems::coring::effective_autonomy(province, owner);
-        let effective_autonomy = base_autonomy.max(floor);
+        // Optimization: Cache is sorted by owner, so we can hoist country modifier lookups
+        let mut current_owner_id = TagId(u16::MAX); // Sentinel
+        let mut current_national_mod = Mod32::ZERO;
 
-        let input = TaxInput32::new(
-            province.base_tax,
-            national_mod,
-            local_mod,
-            effective_autonomy,
-        );
+        for i in 0..count {
+            let id = cache.ids[i];
+            let owner_id = cache.owners[i];
+            let base_tax = cache.base_tax[i];
+            let auto_floor = cache.autonomy_floor[i];
 
-        provinces_by_owner.entry(owner.clone()).or_default().push((
-            province_id,
-            input,
-            province.base_tax,
-        ));
-    }
+            // Update national modifier only when owner changes (cache is sorted!)
+            if owner_id != current_owner_id {
+                let tag_str = state.tags.resolve(owner_id);
+                current_national_mod = country_tax_mod.get(tag_str).copied().unwrap_or(Mod32::ZERO);
+                current_owner_id = owner_id;
+            }
 
-    // PHASE 2: Calculate income per country using SIMD batches in parallel
-    let country_results: Vec<(Tag, Mod32, usize, Mod32)> = {
-        let _span =
-            tracing::info_span!("taxation_simd", countries = provinces_by_owner.len()).entered();
+            // O(1) array lookups for province modifiers
+            let local_mod = prov_tax_mod.get(id);
+            let base_autonomy = prov_autonomy.get(id);
 
-        provinces_by_owner
-            .into_par_iter()
-            .map(|(tag, province_data)| {
-                let province_count = province_data.len();
+            // Effective autonomy using pre-calculated floor from cache
+            let effective_autonomy = base_autonomy.max(auto_floor);
 
-                // Per-country span for tracing
-                let _country_span = tracing::trace_span!(
-                    "country_tax",
-                    country = %tag,
-                    provinces = province_count
-                )
-                .entered();
+            let input = TaxInput32::new(
+                base_tax,
+                current_national_mod,
+                local_mod,
+                effective_autonomy,
+            );
 
-                // Extract SIMD inputs and base_tax totals
-                let (inputs, base_taxes): (Vec<TaxInput32>, Vec<Mod32>) = province_data
-                    .iter()
-                    .map(|(_, input, base_tax)| (*input, *base_tax))
-                    .unzip();
+            data.push((owner_id, input, base_tax));
+        }
 
-                // SIMD batch calculation
-                let mut outputs = vec![TaxOutput32::default(); inputs.len()];
-                calculate_taxes_batch32(&inputs, &mut outputs);
-
-                // Sum results
-                let total_income: Mod32 = outputs
-                    .iter()
-                    .map(|o| Mod32::from_raw(o.monthly_income))
-                    .fold(Mod32::ZERO, |acc, x| acc + x);
-
-                let total_base_tax: Mod32 = base_taxes
-                    .iter()
-                    .copied()
-                    .fold(Mod32::ZERO, |acc, x| acc + x);
-
-                (tag, total_income, province_count, total_base_tax)
-            })
-            .collect()
+        data
     };
 
-    // PHASE 3: Apply results to country state
-    let base_monthly_income = Mod32::ONE;
+    let province_count = province_data.len();
+    if province_count == 0 {
+        return;
+    }
 
-    for (tag, provincial_income, prov_count, base_tax_total) in country_results {
-        // Add base income (every country with provinces gets 1 ducat/month)
-        let total_income = provincial_income + base_monthly_income;
+    // PHASE 2: Sequential SIMD batch processing
+    // Note: Rayon parallelism was tested but overhead dominated for ~10 chunks (2450/256).
+    // For modded games with 10k+ provinces, consider par_chunks.
+    let outputs: Vec<TaxOutput32> = {
+        let _span = tracing::info_span!("taxation_compute", provinces = province_count).entered();
 
-        if let Some(country) = state.countries.get_mut(&tag) {
-            let delta_fixed = total_income.to_fixed();
-            country.treasury += delta_fixed;
-            country.income.taxation += delta_fixed;
+        // Extract just the inputs for SIMD
+        let inputs: Vec<TaxInput32> = province_data.iter().map(|(_, input, _)| *input).collect();
+        let mut outputs = vec![TaxOutput32::default(); province_count];
 
-            if tag == "KOR" {
-                log::debug!(
-                    "Taxation: KOR +{:.2} ducats from {} provinces (total base_tax={:.1}, avg monthly={:.3}/province, treasury now: {:.2})",
-                    total_income.to_f32(),
-                    prov_count,
-                    base_tax_total.to_f32(),
-                    (total_income.to_f32() / prov_count as f32),
-                    country.treasury.to_f32()
-                );
+        // Process in chunks with trace-level spans for optional visibility
+        for (chunk_idx, (in_chunk, out_chunk)) in inputs
+            .chunks(CHUNK_SIZE)
+            .zip(outputs.chunks_mut(CHUNK_SIZE))
+            .enumerate()
+        {
+            let _chunk_span =
+                tracing::trace_span!("tax_chunk", n = chunk_idx, size = in_chunk.len()).entered();
+            calculate_taxes_batch32(in_chunk, out_chunk);
+        }
+
+        outputs
+    };
+
+    // PHASE 3: Aggregate results by owner
+    // Grouping by TagId allows using an integer key (fast aggregation)
+    let mut country_totals: std::collections::HashMap<TagId, Mod32> =
+        std::collections::HashMap::with_capacity(state.countries.len());
+
+    {
+        let _span = tracing::info_span!("taxation_aggregate").entered();
+        for ((owner_id, _, _), output) in province_data.iter().zip(outputs.iter()) {
+            *country_totals.entry(*owner_id).or_insert(Mod32::ZERO) +=
+                Mod32::from_raw(output.monthly_income);
+        }
+    }
+
+    // PHASE 4: Update World State (Treasury)
+    // Resolve TagId back to string just once per country
+    {
+        let _span = tracing::info_span!("taxation_apply").entered();
+        let base_monthly_income = Mod32::ONE;
+
+        for (owner_id, total_tax) in country_totals {
+            let tag_str = state.tags.resolve(owner_id);
+            if let Some(country) = state.countries.get_mut(tag_str) {
+                // Add base income (every country with provinces gets 1 ducat/month)
+                let total_income = total_tax + base_monthly_income;
+
+                // Tax income is added to treasury (converted to Fixed)
+                country.treasury += total_income.to_fixed();
+                country.income.taxation += total_income.to_fixed();
             }
         }
     }

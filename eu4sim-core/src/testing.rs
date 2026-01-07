@@ -1,9 +1,9 @@
 use crate::buildings::BuildingSet;
 use crate::fixed::Fixed;
 use crate::fixed_generic::Mod32;
-use crate::modifiers::{BuildingId, GameModifiers, TradegoodId};
+use crate::modifiers::TradegoodId;
 use crate::state::{CountryState, Date, HashMap, ProvinceId, ProvinceState, Terrain, WorldState};
-use crate::trade::{ProvinceTradeState, TradeTopology};
+use crate::trade::ProvinceTradeState;
 
 pub struct WorldStateBuilder {
     state: WorldState,
@@ -15,51 +15,14 @@ impl WorldStateBuilder {
         Self {
             state: WorldState {
                 date: Date::new(1444, 11, 11),
-                rng_seed: 0,
-                rng_state: 0,
-                provinces: HashMap::default(),
-                countries: HashMap::default(),
-                base_goods_prices: HashMap::default(),
-                modifiers: GameModifiers::default(),
-                diplomacy: Default::default(),
-                global: Default::default(),
-                armies: HashMap::default(),
                 next_army_id: 1,
-                fleets: HashMap::default(),
                 next_fleet_id: 1,
-                colonies: HashMap::default(),
-                // Combat system
-                generals: HashMap::default(),
                 next_general_id: 1,
-                admirals: HashMap::default(),
                 next_admiral_id: 1,
-                battles: HashMap::default(),
                 next_battle_id: 1,
-                naval_battles: HashMap::default(),
                 next_naval_battle_id: 1,
-                sieges: HashMap::default(),
                 next_siege_id: 1,
-                // Trade system
-                trade_nodes: HashMap::default(),
-                province_trade_node: HashMap::default(),
-                trade_node_name_to_id: HashMap::default(),
-                trade_topology: TradeTopology::default(),
-                // Building system
-                building_name_to_id: HashMap::default(),
-                building_defs: HashMap::default(),
-                building_upgraded_by: HashMap::<BuildingId, BuildingId>::default(),
-                // Subject type system
-                subject_types: Default::default(),
-                // Idea system
-                idea_groups: Default::default(),
-                // Policy system
-                policies: Default::default(),
-                // Event modifier system
-                event_modifiers: Default::default(),
-                // Government type system
-                government_types: Default::default(),
-                // Estate system
-                estates: Default::default(),
+                ..Default::default()
             },
         }
     }

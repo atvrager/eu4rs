@@ -184,6 +184,13 @@ enum Commands {
         /// Random seed for reproducibility
         #[arg(long, default_value_t = 12345)]
         seed: u64,
+
+        /// Enable trace-level spans (max detail, higher overhead)
+        ///
+        /// When enabled, per-chunk SIMD spans become visible in Tracy.
+        /// Without this flag, only info-level spans are captured.
+        #[arg(long)]
+        trace: bool,
     },
 
     /// Open Tracy GUI to view profiling data
@@ -263,6 +270,7 @@ fn main() -> Result<()> {
             llm_ai,
             llm_ai_base,
             seed,
+            trace,
         } => run_profile(ProfileArgs {
             ticks,
             output,
@@ -273,6 +281,7 @@ fn main() -> Result<()> {
             llm_ai,
             llm_ai_base,
             seed,
+            trace,
         }),
         Commands::Tracy { file } => run_tracy(file.as_deref()),
     }
@@ -2009,6 +2018,7 @@ struct ProfileArgs {
     llm_ai: Option<String>,
     llm_ai_base: Option<String>,
     seed: u64,
+    trace: bool,
 }
 
 fn run_profile(args: ProfileArgs) -> Result<()> {
@@ -2095,6 +2105,12 @@ fn run_profile(args: ProfileArgs) -> Result<()> {
     if let Some(ref base) = args.llm_ai_base {
         sim_args.push("--llm-ai-base".to_string());
         sim_args.push(base.clone());
+    }
+
+    if args.trace {
+        sim_args.push("--trace-level".to_string());
+        sim_args.push("trace".to_string());
+        println!("      Trace-level spans enabled (per-chunk SIMD visibility)");
     }
 
     // Start simulation - Tracy client will broadcast and tracy-capture will discover it

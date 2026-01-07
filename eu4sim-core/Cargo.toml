@@ -19,6 +19,7 @@ multiversion = "0.7"
 game_pathfinding = { version = "0.1.0", path = "../game_pathfinding" }
 rand = "0.8.5"
 im = { version = "15.1", features = ["serde"] }
+rustc-hash = "2.1"
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
 rayon = "1.10"
 capnp = "0.20"

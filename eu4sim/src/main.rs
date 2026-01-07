@@ -192,6 +192,7 @@ fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGra
         rng_state: 0,
         provinces: provinces.into(),
         countries: countries.into(),
+        tags: Default::default(),
         base_goods_prices: Default::default(),
         modifiers: Default::default(),
         diplomacy: Default::default(),
@@ -233,6 +234,9 @@ fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGra
         government_types: Default::default(),
         // Estate system
         estates: Default::default(),
+        // Performance caches (initialized empty, rebuilt lazily on first access)
+        owned_provinces_cache: Default::default(),
+        owned_provinces_cache_valid: false,
     };
 
     (state, adj)
@@ -694,6 +698,11 @@ struct Args {
     /// Enable TUI mode
     #[arg(long)]
     tui: bool,
+
+    /// Tracy trace level (info, debug, trace). Use "trace" for per-chunk SIMD visibility.
+    /// Only applies when built with --features tracy.
+    #[arg(long, default_value = "info")]
+    trace_level: String,
 }
 
 use eu4sim_core::SimMetrics;
@@ -720,7 +729,11 @@ fn main() -> Result<()> {
     #[cfg(feature = "tracy")]
     {
         let _ = log_level; // silence unused warning
-        eu4sim_core::profiling::init_tracy();
+        let trace_level = args
+            .trace_level
+            .parse()
+            .unwrap_or(eu4sim_core::profiling::TraceLevel::Info);
+        eu4sim_core::profiling::init_tracy(trace_level);
     }
 
     #[cfg(not(feature = "tracy"))]

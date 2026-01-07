@@ -91,12 +91,7 @@ pub fn run_production_tick(state: &mut WorldState, config: &EconomyConfig) {
         // Autonomy: (1 - autonomy)
         // Clamp to [0, 1] to prevent negative income
         // Uncored provinces have a 75% autonomy floor
-        let base_autonomy = state
-            .modifiers
-            .province_autonomy
-            .get(&province_id)
-            .copied()
-            .unwrap_or(Mod32::ZERO);
+        let base_autonomy = state.modifiers.province_autonomy.get(province_id);
 
         // Apply coring-based floor: uncored = max(base, 75%)
         let floor = crate::systems::coring::effective_autonomy(province, owner);

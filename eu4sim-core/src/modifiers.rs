@@ -31,6 +31,85 @@ impl BuildingId {
     }
 }
 
+/// Maximum province ID we support. EU4 has ~4000 provinces, this gives headroom for mods.
+const MAX_PROVINCE_ID: usize = 8192;
+
+/// Dense array for province-indexed modifiers.
+///
+/// Uses O(1) Vec indexing instead of HashMap lookups. Memory cost is ~32KB
+/// (8192 × 4 bytes) but eliminates hash computation and cache-unfriendly
+/// lookups in hot paths like taxation.
+///
+/// Unset provinces return [`Mod32::ZERO`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProvinceModifierArray {
+    values: Vec<Mod32>,
+}
+
+impl Default for ProvinceModifierArray {
+    fn default() -> Self {
+        Self {
+            values: vec![Mod32::ZERO; MAX_PROVINCE_ID],
+        }
+    }
+}
+
+impl ProvinceModifierArray {
+    /// Create a new array with all values set to zero.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Get the modifier for a province. Returns ZERO if not set or out of range.
+    #[inline]
+    pub fn get(&self, id: ProvinceId) -> Mod32 {
+        self.values.get(id as usize).copied().unwrap_or(Mod32::ZERO)
+    }
+
+    /// Set the modifier for a province.
+    #[inline]
+    pub fn set(&mut self, id: ProvinceId, value: Mod32) {
+        if (id as usize) < self.values.len() {
+            self.values[id as usize] = value;
+        }
+    }
+
+    /// Check if a province has a non-zero modifier.
+    #[inline]
+    pub fn contains(&self, id: ProvinceId) -> bool {
+        self.values
+            .get(id as usize)
+            .is_some_and(|&v| v != Mod32::ZERO)
+    }
+
+    /// Insert a modifier (alias for set, for HashMap compatibility).
+    #[inline]
+    pub fn insert(&mut self, id: ProvinceId, value: Mod32) {
+        self.set(id, value);
+    }
+
+    /// Remove a modifier by setting it to ZERO (for HashMap compatibility).
+    #[inline]
+    pub fn remove(&mut self, id: &ProvinceId) {
+        self.set(*id, Mod32::ZERO);
+    }
+
+    /// Iterate over non-zero entries as (ProvinceId, Mod32) pairs.
+    pub fn iter(&self) -> impl Iterator<Item = (ProvinceId, Mod32)> + '_ {
+        self.values
+            .iter()
+            .enumerate()
+            .filter(|(_, &v)| v != Mod32::ZERO)
+            .map(|(i, &v)| (i as ProvinceId, v))
+    }
+
+    /// Check if all modifiers are zero (for HashMap compatibility in tests).
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.values.iter().all(|&v| v == Mod32::ZERO)
+    }
+}
+
 /// Dynamic game state modifiable by events.
 ///
 /// Keys are typed IDs for safety; values are [`Mod32`] for SIMD-friendly determinism.
@@ -44,17 +123,17 @@ pub struct GameModifiers {
     /// Applied as: (1 + efficiency) multiplier.
     pub province_production_efficiency: HashMap<ProvinceId, Mod32>,
 
-    /// Province-level autonomy values.
+    /// Province-level autonomy values (dense array for O(1) lookup).
     /// Applied as: (1 - autonomy) multiplier.
-    pub province_autonomy: HashMap<ProvinceId, Mod32>,
+    pub province_autonomy: ProvinceModifierArray,
 
     /// Country-level tax efficiency (national tax modifier).
     /// Applied as: (1 + modifier) multiplier.
     pub country_tax_modifier: HashMap<Tag, Mod32>,
 
-    /// Province-level tax modifier.
+    /// Province-level tax modifier (dense array for O(1) lookup).
     /// Applied to base tax.
-    pub province_tax_modifier: HashMap<ProvinceId, Mod32>,
+    pub province_tax_modifier: ProvinceModifierArray,
 
     /// Province-level trade power modifier (from buildings like Marketplace).
     /// Applied as: (1 + modifier) multiplier to provincial trade power.
