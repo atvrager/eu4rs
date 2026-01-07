@@ -10,7 +10,7 @@ use anyhow::Result;
 use eu4data::adjacency::AdjacencyGraph;
 use eu4sim_core::state::Date;
 use eu4sim_core::trade::{MerchantAction, MerchantState};
-use eu4sim_core::{Fixed, WorldState};
+use eu4sim_core::{Fixed, Mod32, WorldState};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -49,13 +49,13 @@ pub fn hydrate_from_save(
 
             // Update development values
             if let Some(tax) = save_prov.base_tax {
-                prov.base_tax = Fixed::from_f32(tax as f32);
+                prov.base_tax = Mod32::from_f32(tax as f32);
             }
             if let Some(prod) = save_prov.base_production {
-                prov.base_production = Fixed::from_f32(prod as f32);
+                prov.base_production = Mod32::from_f32(prod as f32);
             }
             if let Some(mp) = save_prov.base_manpower {
-                prov.base_manpower = Fixed::from_f32(mp as f32);
+                prov.base_manpower = Mod32::from_f32(mp as f32);
             }
 
             // Hydrate buildings from save
@@ -210,11 +210,11 @@ pub fn hydrate_from_save(
                         .country_tax_modifier
                         .get(tag)
                         .copied()
-                        .unwrap_or(Fixed::ZERO);
+                        .unwrap_or(Mod32::ZERO);
                     world
                         .modifiers
                         .country_tax_modifier
-                        .insert(tag.clone(), current + Fixed::from_f32(tax_mod));
+                        .insert(tag.clone(), current + Mod32::from_f32(tax_mod));
                     log::debug!(
                         "Applied tax modifier {} to {}: +{:.3}",
                         modifier_name,
@@ -242,11 +242,11 @@ pub fn hydrate_from_save(
                         .country_trade_efficiency
                         .get(tag)
                         .copied()
-                        .unwrap_or(Fixed::ZERO);
+                        .unwrap_or(Mod32::ZERO);
                     world
                         .modifiers
                         .country_trade_efficiency
-                        .insert(tag.clone(), current + Fixed::from_f32(trade_eff));
+                        .insert(tag.clone(), current + Mod32::from_f32(trade_eff));
                     log::debug!(
                         "Applied trade_efficiency modifier {} to {}: +{:.3}",
                         modifier_name,
@@ -262,11 +262,11 @@ pub fn hydrate_from_save(
                         .country_goods_produced
                         .get(tag)
                         .copied()
-                        .unwrap_or(Fixed::ZERO);
+                        .unwrap_or(Mod32::ZERO);
                     world
                         .modifiers
                         .country_goods_produced
-                        .insert(tag.clone(), current + Fixed::from_f32(goods_mod));
+                        .insert(tag.clone(), current + Mod32::from_f32(goods_mod));
                     log::debug!(
                         "Applied goods_produced modifier {} to {}: +{:.3}",
                         modifier_name,

@@ -518,6 +518,7 @@ fn get_admiral_bonus(state: &WorldState, fleet_ids: &[FleetId], phase: CombatPha
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixed_generic::Mod32;
     use crate::state::{Admiral, Fleet, ProvinceId, Ship, War};
     use crate::testing::WorldStateBuilder;
 
@@ -604,9 +605,9 @@ mod tests {
                 religion: None,
                 culture: None,
                 trade_goods_id: None,
-                base_production: Fixed::ONE,
-                base_tax: Fixed::ONE,
-                base_manpower: Fixed::ONE,
+                base_production: Mod32::ONE,
+                base_tax: Mod32::ONE,
+                base_manpower: Mod32::ONE,
                 fort_level: 0,
                 is_capital: false,
                 is_mothballed: false,
@@ -621,7 +622,7 @@ mod tests {
                 buildings: Default::default(),
                 building_construction: None,
                 has_port: false,
-                devastation: Fixed::ZERO,
+                devastation: Mod32::ZERO,
             },
         );
 
@@ -743,9 +744,9 @@ mod tests {
                 religion: None,
                 culture: None,
                 trade_goods_id: None,
-                base_production: Fixed::ONE,
-                base_tax: Fixed::ONE,
-                base_manpower: Fixed::ONE,
+                base_production: Mod32::ONE,
+                base_tax: Mod32::ONE,
+                base_manpower: Mod32::ONE,
                 fort_level: 0,
                 is_capital: false,
                 is_mothballed: false,
@@ -760,7 +761,7 @@ mod tests {
                 buildings: Default::default(),
                 building_construction: None,
                 has_port: false,
-                devastation: Fixed::ZERO,
+                devastation: Mod32::ZERO,
             },
         );
 
@@ -817,9 +818,9 @@ mod tests {
                 religion: None,
                 culture: None,
                 trade_goods_id: None,
-                base_production: Fixed::ONE,
-                base_tax: Fixed::ONE,
-                base_manpower: Fixed::ONE,
+                base_production: Mod32::ONE,
+                base_tax: Mod32::ONE,
+                base_manpower: Mod32::ONE,
                 fort_level: 0,
                 is_capital: false,
                 is_mothballed: false,
@@ -834,7 +835,7 @@ mod tests {
                 buildings: Default::default(),
                 building_construction: None,
                 has_port: false,
-                devastation: Fixed::ZERO,
+                devastation: Mod32::ZERO,
             },
         );
 

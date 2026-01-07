@@ -2,6 +2,7 @@ use crate::bounded::{
     new_meritocracy, new_prestige, new_stability, new_tradition, BoundedFixed, BoundedInt,
 };
 use crate::fixed::Fixed;
+use crate::fixed_generic::Mod32;
 use crate::modifiers::{GameModifiers, TradegoodId};
 use crate::trade::{
     CountryTradeState, ProvinceTradeState, TradeNodeId, TradeNodeState, TradeTopology,
@@ -743,12 +744,12 @@ pub struct ProvinceState {
     pub culture: Option<String>,
     /// Trade good produced by this province
     pub trade_goods_id: Option<TradegoodId>,
-    /// Base production development (Fixed for determinism)
-    pub base_production: Fixed,
+    /// Base production development (Mod32 for SIMD-friendly calculations)
+    pub base_production: Mod32,
     /// Base tax development
-    pub base_tax: Fixed,
+    pub base_tax: Mod32,
     /// Base manpower development
-    pub base_manpower: Fixed,
+    pub base_manpower: Mod32,
     /// Fort level (0 = no fort, 1-8 = fort levels). Capital provinces get a free level-1 fort.
     pub fort_level: u8,
     /// Whether this province is the capital of its owner
@@ -791,7 +792,7 @@ pub struct ProvinceState {
     /// Reduces tax/production/manpower, causes unrest. Decays over time.
     /// Used in Celestial Empire mandate calculation.
     #[serde(default)]
-    pub devastation: Fixed,
+    pub devastation: Mod32,
 }
 
 /// Progress towards establishing a core on a province.
@@ -1590,9 +1591,9 @@ impl WorldState {
             p.religion.hash(&mut hasher);
             p.culture.hash(&mut hasher);
             p.trade_goods_id.hash(&mut hasher);
-            p.base_production.0.hash(&mut hasher);
-            p.base_tax.0.hash(&mut hasher);
-            p.base_manpower.0.hash(&mut hasher);
+            p.base_production.raw().hash(&mut hasher);
+            p.base_tax.raw().hash(&mut hasher);
+            p.base_manpower.raw().hash(&mut hasher);
             p.fort_level.hash(&mut hasher);
             p.is_capital.hash(&mut hasher);
             p.is_mothballed.hash(&mut hasher);

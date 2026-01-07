@@ -457,8 +457,8 @@ mod tests {
     /// Creates a minimal WorldState for testing country resource extraction.
     #[allow(clippy::field_reassign_with_default)] // Clearer for test setup
     fn create_test_world_state() -> eu4sim_core::WorldState {
-        use eu4sim_core::Fixed;
         use eu4sim_core::state::{CountryState, Date, ProvinceState};
+        use eu4sim_core::{Fixed, Mod32};
 
         let mut world = eu4sim_core::WorldState::default();
         world.date = Date::new(1444, 11, 11);
@@ -482,17 +482,17 @@ mod tests {
         // Add a test province owned by TST
         let mut province = ProvinceState::default();
         province.owner = Some("TST".to_string());
-        province.base_tax = Fixed::from_f32(3.0);
-        province.base_production = Fixed::from_f32(3.0);
-        province.base_manpower = Fixed::from_f32(2.0);
+        province.base_tax = Mod32::from_f32(3.0);
+        province.base_production = Mod32::from_f32(3.0);
+        province.base_manpower = Mod32::from_f32(2.0);
         world.provinces.insert(1, province);
 
         // Add another province for TST
         let mut province2 = ProvinceState::default();
         province2.owner = Some("TST".to_string());
-        province2.base_tax = Fixed::from_f32(5.0);
-        province2.base_production = Fixed::from_f32(4.0);
-        province2.base_manpower = Fixed::from_f32(3.0);
+        province2.base_tax = Mod32::from_f32(5.0);
+        province2.base_production = Mod32::from_f32(4.0);
+        province2.base_manpower = Mod32::from_f32(3.0);
         world.provinces.insert(2, province2);
 
         world

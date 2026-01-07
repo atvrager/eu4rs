@@ -16,6 +16,7 @@
 //! - `efficiency = 1.0 + merchant_bonus (0.1 if merchant collecting)`
 
 use crate::fixed::Fixed;
+use crate::fixed_generic::Mod32;
 use crate::state::{Tag, WorldState};
 use crate::trade::{MerchantAction, TradeNodeId};
 use std::collections::HashMap;
@@ -141,8 +142,8 @@ fn calculate_trade_income(state: &WorldState) -> HashMap<Tag, Fixed> {
             .country_trade_efficiency
             .get(&tag)
             .copied()
-            .unwrap_or(Fixed::ZERO);
-        let total_efficiency = merchant_efficiency.mul(Fixed::ONE + trade_eff_mod);
+            .unwrap_or(Mod32::ZERO);
+        let total_efficiency = merchant_efficiency.mul(Fixed::ONE + trade_eff_mod.to_fixed());
 
         // Yearly trade income
         let yearly_income = base_income.mul(total_efficiency);

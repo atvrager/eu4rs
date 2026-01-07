@@ -1,7 +1,7 @@
 //! Unit tests for main.rs pure helper functions.
 
 use super::*;
-use eu4sim_core::Fixed;
+use eu4sim_core::Mod32;
 use eu4sim_core::state::{Date, ProvinceState};
 use std::collections::BTreeMap;
 
@@ -193,9 +193,9 @@ fn test_calculate_total_development_single_province() {
 
     let mut p1 = ProvinceState::default();
     p1.owner = Some("TUR".to_string());
-    p1.base_tax = Fixed::from_f32(5.0);
-    p1.base_production = Fixed::from_f32(4.0);
-    p1.base_manpower = Fixed::from_f32(3.0);
+    p1.base_tax = Mod32::from_f32(5.0);
+    p1.base_production = Mod32::from_f32(4.0);
+    p1.base_manpower = Mod32::from_f32(3.0);
     provinces.insert(1, p1);
 
     assert_eq!(calculate_total_development(&provinces, "TUR"), 12);
@@ -208,16 +208,16 @@ fn test_calculate_total_development_multiple_provinces() {
 
     let mut p1 = ProvinceState::default();
     p1.owner = Some("TUR".to_string());
-    p1.base_tax = Fixed::from_f32(3.0);
-    p1.base_production = Fixed::from_f32(3.0);
-    p1.base_manpower = Fixed::from_f32(2.0);
+    p1.base_tax = Mod32::from_f32(3.0);
+    p1.base_production = Mod32::from_f32(3.0);
+    p1.base_manpower = Mod32::from_f32(2.0);
     provinces.insert(1, p1);
 
     let mut p2 = ProvinceState::default();
     p2.owner = Some("TUR".to_string());
-    p2.base_tax = Fixed::from_f32(5.0);
-    p2.base_production = Fixed::from_f32(4.0);
-    p2.base_manpower = Fixed::from_f32(3.0);
+    p2.base_tax = Mod32::from_f32(5.0);
+    p2.base_production = Mod32::from_f32(4.0);
+    p2.base_manpower = Mod32::from_f32(3.0);
     provinces.insert(2, p2);
 
     assert_eq!(calculate_total_development(&provinces, "TUR"), 20);

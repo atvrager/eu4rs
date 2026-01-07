@@ -6,7 +6,7 @@
 //!
 //! The stub tracker serves as a roadmap for future mechanics implementation.
 
-use crate::fixed::Fixed;
+use crate::fixed_generic::Mod32;
 use crate::ideas::{IdeaGroupRegistry, ModifierEntry};
 use crate::modifiers::GameModifiers;
 use crate::state::CountryState;
@@ -477,10 +477,10 @@ pub fn apply_modifier(
                 .country_tax_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_tax_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -490,10 +490,10 @@ pub fn apply_modifier(
                 .land_maintenance_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .land_maintenance_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "fort_maintenance_modifier" => {
@@ -501,10 +501,10 @@ pub fn apply_modifier(
                 .fort_maintenance_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .fort_maintenance_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -514,10 +514,10 @@ pub fn apply_modifier(
                 .country_discipline
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_discipline
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "morale_of_armies" | "land_morale" => {
@@ -525,10 +525,10 @@ pub fn apply_modifier(
                 .country_morale
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_morale
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "infantry_power" | "infantry_combat_ability" => {
@@ -536,10 +536,10 @@ pub fn apply_modifier(
                 .country_infantry_power
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_infantry_power
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "cavalry_power" | "cavalry_combat_ability" => {
@@ -547,10 +547,10 @@ pub fn apply_modifier(
                 .country_cavalry_power
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_cavalry_power
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "artillery_power" => {
@@ -558,10 +558,10 @@ pub fn apply_modifier(
                 .country_artillery_power
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_artillery_power
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -571,10 +571,10 @@ pub fn apply_modifier(
                 .country_goods_produced
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_goods_produced
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "trade_efficiency" => {
@@ -582,10 +582,10 @@ pub fn apply_modifier(
                 .country_trade_efficiency
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_trade_efficiency
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "global_trade_power" => {
@@ -593,10 +593,10 @@ pub fn apply_modifier(
                 .country_trade_power
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_trade_power
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "trade_steering" => {
@@ -604,10 +604,10 @@ pub fn apply_modifier(
                 .country_trade_steering
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_trade_steering
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -617,10 +617,10 @@ pub fn apply_modifier(
                 .country_development_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_development_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "core_creation" => {
@@ -628,10 +628,10 @@ pub fn apply_modifier(
                 .country_core_creation
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_core_creation
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "ae_impact" => {
@@ -639,10 +639,10 @@ pub fn apply_modifier(
                 .country_ae_impact
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_ae_impact
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "diplomatic_reputation" => {
@@ -650,10 +650,10 @@ pub fn apply_modifier(
                 .country_diplomatic_reputation
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_diplomatic_reputation
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -663,10 +663,10 @@ pub fn apply_modifier(
                 .country_infantry_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_infantry_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "cavalry_cost" => {
@@ -674,10 +674,10 @@ pub fn apply_modifier(
                 .country_cavalry_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_cavalry_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "mercenary_cost" | "mercenary_maintenance" => {
@@ -685,10 +685,10 @@ pub fn apply_modifier(
                 .country_mercenary_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_mercenary_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -698,10 +698,10 @@ pub fn apply_modifier(
                 .country_manpower
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_manpower
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "prestige" => {
@@ -709,10 +709,10 @@ pub fn apply_modifier(
                 .country_prestige
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_prestige
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "devotion" => {
@@ -720,10 +720,10 @@ pub fn apply_modifier(
                 .country_devotion
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_devotion
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "horde_unity" => {
@@ -731,10 +731,10 @@ pub fn apply_modifier(
                 .country_horde_unity
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_horde_unity
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "legitimacy" => {
@@ -742,10 +742,10 @@ pub fn apply_modifier(
                 .country_legitimacy
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_legitimacy
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "republican_tradition" => {
@@ -753,10 +753,10 @@ pub fn apply_modifier(
                 .country_republican_tradition
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_republican_tradition
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "meritocracy" => {
@@ -764,10 +764,10 @@ pub fn apply_modifier(
                 .country_meritocracy
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_meritocracy
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "defensiveness" => {
@@ -775,10 +775,10 @@ pub fn apply_modifier(
                 .country_defensiveness
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_defensiveness
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "global_unrest" => {
@@ -786,10 +786,10 @@ pub fn apply_modifier(
                 .country_unrest
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_unrest
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "stability_cost_modifier" => {
@@ -797,10 +797,10 @@ pub fn apply_modifier(
                 .country_stability_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_stability_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -810,10 +810,10 @@ pub fn apply_modifier(
                 .country_tolerance_own
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_tolerance_own
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -823,10 +823,10 @@ pub fn apply_modifier(
                 .country_trade_goods_size
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_trade_goods_size
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "build_cost" => {
@@ -834,10 +834,10 @@ pub fn apply_modifier(
                 .country_build_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_build_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -847,10 +847,10 @@ pub fn apply_modifier(
                 .country_manpower_recovery_speed
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_manpower_recovery_speed
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "hostile_attrition" => {
@@ -858,10 +858,10 @@ pub fn apply_modifier(
                 .country_hostile_attrition
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_hostile_attrition
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -871,10 +871,10 @@ pub fn apply_modifier(
                 .country_diplomatic_upkeep
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_diplomatic_upkeep
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "idea_cost" => {
@@ -882,10 +882,10 @@ pub fn apply_modifier(
                 .country_idea_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_idea_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "merchants" => {
@@ -893,10 +893,10 @@ pub fn apply_modifier(
                 .country_merchants
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_merchants
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "global_missionary_strength" => {
@@ -904,10 +904,10 @@ pub fn apply_modifier(
                 .country_missionary_strength
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_missionary_strength
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "num_accepted_cultures" => {
@@ -915,10 +915,10 @@ pub fn apply_modifier(
                 .country_num_accepted_cultures
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_num_accepted_cultures
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -928,10 +928,10 @@ pub fn apply_modifier(
                 .country_improve_relation_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_improve_relation_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "diplomats" => {
@@ -939,10 +939,10 @@ pub fn apply_modifier(
                 .country_diplomats
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_diplomats
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "diplomatic_annexation_cost" => {
@@ -950,10 +950,10 @@ pub fn apply_modifier(
                 .country_diplomatic_annexation_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_diplomatic_annexation_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "vassal_income" => {
@@ -961,10 +961,10 @@ pub fn apply_modifier(
                 .country_vassal_income
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_vassal_income
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "fabricate_claims_cost" => {
@@ -972,10 +972,10 @@ pub fn apply_modifier(
                 .country_fabricate_claims_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_fabricate_claims_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "spy_offence" => {
@@ -983,10 +983,10 @@ pub fn apply_modifier(
                 .country_spy_offence
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_spy_offence
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -996,10 +996,10 @@ pub fn apply_modifier(
                 .country_technology_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_technology_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "adm_tech_cost_modifier" => {
@@ -1007,10 +1007,10 @@ pub fn apply_modifier(
                 .country_adm_tech_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_adm_tech_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "governing_capacity_modifier" => {
@@ -1018,10 +1018,10 @@ pub fn apply_modifier(
                 .country_governing_capacity
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_governing_capacity
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1031,10 +1031,10 @@ pub fn apply_modifier(
                 .country_land_forcelimit
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_land_forcelimit
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "naval_forcelimit_modifier" => {
@@ -1042,10 +1042,10 @@ pub fn apply_modifier(
                 .country_naval_forcelimit
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_naval_forcelimit
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "global_sailors_modifier" => {
@@ -1053,10 +1053,10 @@ pub fn apply_modifier(
                 .country_global_sailors
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_sailors
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "sailor_maintenance_modifer" => {
@@ -1064,10 +1064,10 @@ pub fn apply_modifier(
                 .country_sailor_maintenance
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_sailor_maintenance
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1077,10 +1077,10 @@ pub fn apply_modifier(
                 .country_army_tradition
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_army_tradition
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "army_tradition_decay" => {
@@ -1088,10 +1088,10 @@ pub fn apply_modifier(
                 .country_army_tradition_decay
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_army_tradition_decay
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "navy_tradition" => {
@@ -1099,10 +1099,10 @@ pub fn apply_modifier(
                 .country_navy_tradition
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_navy_tradition
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "leader_land_shock" => {
@@ -1110,10 +1110,10 @@ pub fn apply_modifier(
                 .country_leader_land_shock
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_leader_land_shock
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "leader_land_manuever" => {
@@ -1121,10 +1121,10 @@ pub fn apply_modifier(
                 .country_leader_land_manuever
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_leader_land_manuever
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "prestige_decay" => {
@@ -1132,10 +1132,10 @@ pub fn apply_modifier(
                 .country_prestige_decay
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_prestige_decay
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1145,10 +1145,10 @@ pub fn apply_modifier(
                 .country_fire_damage
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_fire_damage
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "shock_damage" => {
@@ -1156,10 +1156,10 @@ pub fn apply_modifier(
                 .country_shock_damage
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_shock_damage
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "shock_damage_received" => {
@@ -1167,10 +1167,10 @@ pub fn apply_modifier(
                 .country_shock_damage_received
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_shock_damage_received
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "naval_morale" => {
@@ -1178,10 +1178,10 @@ pub fn apply_modifier(
                 .country_naval_morale
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_naval_morale
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "siege_ability" => {
@@ -1189,10 +1189,10 @@ pub fn apply_modifier(
                 .country_siege_ability
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_siege_ability
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "movement_speed" => {
@@ -1200,10 +1200,10 @@ pub fn apply_modifier(
                 .country_movement_speed
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_movement_speed
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1213,10 +1213,10 @@ pub fn apply_modifier(
                 .country_land_attrition
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_land_attrition
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "war_exhaustion" => {
@@ -1224,10 +1224,10 @@ pub fn apply_modifier(
                 .country_war_exhaustion
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_war_exhaustion
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1237,10 +1237,10 @@ pub fn apply_modifier(
                 .country_global_ship_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_ship_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "light_ship_cost" => {
@@ -1248,10 +1248,10 @@ pub fn apply_modifier(
                 .country_light_ship_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_light_ship_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "ship_durability" => {
@@ -1259,10 +1259,10 @@ pub fn apply_modifier(
                 .country_ship_durability
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_ship_durability
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "galley_power" => {
@@ -1270,10 +1270,10 @@ pub fn apply_modifier(
                 .country_galley_power
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_galley_power
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "privateer_efficiency" => {
@@ -1281,10 +1281,10 @@ pub fn apply_modifier(
                 .country_privateer_efficiency
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_privateer_efficiency
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "global_ship_trade_power" => {
@@ -1292,10 +1292,10 @@ pub fn apply_modifier(
                 .country_global_ship_trade_power
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_ship_trade_power
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "trade_range_modifier" => {
@@ -1303,10 +1303,10 @@ pub fn apply_modifier(
                 .country_trade_range
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_trade_range
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1316,10 +1316,10 @@ pub fn apply_modifier(
                 .country_global_own_trade_power
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_own_trade_power
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "global_prov_trade_power_modifier" => {
@@ -1327,10 +1327,10 @@ pub fn apply_modifier(
                 .country_global_prov_trade_power
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_prov_trade_power
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1340,10 +1340,10 @@ pub fn apply_modifier(
                 .country_merc_maintenance
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_merc_maintenance
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1353,10 +1353,10 @@ pub fn apply_modifier(
                 .country_colonists
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_colonists
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "global_colonial_growth" => {
@@ -1364,10 +1364,10 @@ pub fn apply_modifier(
                 .country_global_colonial_growth
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_colonial_growth
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "years_of_nationalism" => {
@@ -1375,10 +1375,10 @@ pub fn apply_modifier(
                 .country_years_of_nationalism
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_years_of_nationalism
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1388,10 +1388,10 @@ pub fn apply_modifier(
                 .country_tolerance_heretic
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_tolerance_heretic
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "tolerance_heathen" => {
@@ -1399,10 +1399,10 @@ pub fn apply_modifier(
                 .country_tolerance_heathen
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_tolerance_heathen
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "religious_unity" => {
@@ -1410,10 +1410,10 @@ pub fn apply_modifier(
                 .country_religious_unity
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_religious_unity
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "global_heretic_missionary_strength" => {
@@ -1421,10 +1421,10 @@ pub fn apply_modifier(
                 .country_global_heretic_missionary_strength
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_heretic_missionary_strength
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "papal_influence" => {
@@ -1432,10 +1432,10 @@ pub fn apply_modifier(
                 .country_papal_influence
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_papal_influence
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "church_power_modifier" => {
@@ -1443,10 +1443,10 @@ pub fn apply_modifier(
                 .country_church_power
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_church_power
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1456,10 +1456,10 @@ pub fn apply_modifier(
                 .country_advisor_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_advisor_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "advisor_pool" => {
@@ -1467,10 +1467,10 @@ pub fn apply_modifier(
                 .country_advisor_pool
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_advisor_pool
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "culture_conversion_cost" => {
@@ -1478,10 +1478,10 @@ pub fn apply_modifier(
                 .country_culture_conversion_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_culture_conversion_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1491,10 +1491,10 @@ pub fn apply_modifier(
                 .country_inflation_reduction
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_inflation_reduction
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "global_autonomy" => {
@@ -1502,10 +1502,10 @@ pub fn apply_modifier(
                 .country_global_autonomy
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_autonomy
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "state_maintenance_modifier" => {
@@ -1513,10 +1513,10 @@ pub fn apply_modifier(
                 .country_state_maintenance
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_state_maintenance
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "garrison_size" => {
@@ -1524,10 +1524,10 @@ pub fn apply_modifier(
                 .country_garrison_size
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_garrison_size
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1537,10 +1537,10 @@ pub fn apply_modifier(
                 .country_global_institution_spread
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_institution_spread
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "heir_chance" => {
@@ -1548,10 +1548,10 @@ pub fn apply_modifier(
                 .country_heir_chance
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_heir_chance
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "caravan_power" => {
@@ -1559,10 +1559,10 @@ pub fn apply_modifier(
                 .country_caravan_power
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_caravan_power
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1572,10 +1572,10 @@ pub fn apply_modifier(
                 .country_missionaries
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_missionaries
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1585,10 +1585,10 @@ pub fn apply_modifier(
                 .country_light_ship_power
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_light_ship_power
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "heavy_ship_power" => {
@@ -1596,10 +1596,10 @@ pub fn apply_modifier(
                 .country_heavy_ship_power
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_heavy_ship_power
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "naval_maintenance_modifier" => {
@@ -1607,10 +1607,10 @@ pub fn apply_modifier(
                 .country_naval_maintenance
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_naval_maintenance
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "naval_attrition" => {
@@ -1618,10 +1618,10 @@ pub fn apply_modifier(
                 .country_naval_attrition
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_naval_attrition
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1631,10 +1631,10 @@ pub fn apply_modifier(
                 .country_mercenary_discipline
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_mercenary_discipline
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "mercenary_manpower" => {
@@ -1642,10 +1642,10 @@ pub fn apply_modifier(
                 .country_mercenary_manpower
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_mercenary_manpower
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1655,10 +1655,10 @@ pub fn apply_modifier(
                 .country_unjustified_demands
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_unjustified_demands
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "province_warscore_cost" => {
@@ -1666,10 +1666,10 @@ pub fn apply_modifier(
                 .country_province_warscore_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_province_warscore_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1679,10 +1679,10 @@ pub fn apply_modifier(
                 .country_envoy_travel_time
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_envoy_travel_time
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "reduced_liberty_desire" => {
@@ -1690,10 +1690,10 @@ pub fn apply_modifier(
                 .country_reduced_liberty_desire
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_reduced_liberty_desire
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1703,10 +1703,10 @@ pub fn apply_modifier(
                 .country_global_regiment_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_regiment_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "global_regiment_recruit_speed" => {
@@ -1714,10 +1714,10 @@ pub fn apply_modifier(
                 .country_global_regiment_recruit_speed
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_regiment_recruit_speed
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1727,10 +1727,10 @@ pub fn apply_modifier(
                 .country_interest
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_interest
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "prestige_from_land" => {
@@ -1738,10 +1738,10 @@ pub fn apply_modifier(
                 .country_prestige_from_land
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_prestige_from_land
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "loot_amount" => {
@@ -1749,10 +1749,10 @@ pub fn apply_modifier(
                 .country_loot_amount
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_loot_amount
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1762,10 +1762,10 @@ pub fn apply_modifier(
                 .country_leader_land_fire
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_leader_land_fire
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "leader_siege" => {
@@ -1773,10 +1773,10 @@ pub fn apply_modifier(
                 .country_leader_siege
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_leader_siege
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "leader_naval_fire" => {
@@ -1784,10 +1784,10 @@ pub fn apply_modifier(
                 .country_leader_naval_fire
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_leader_naval_fire
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "leader_naval_manuever" => {
@@ -1795,10 +1795,10 @@ pub fn apply_modifier(
                 .country_leader_naval_manuever
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_leader_naval_manuever
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1808,10 +1808,10 @@ pub fn apply_modifier(
                 .country_galley_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_galley_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "global_ship_recruit_speed" => {
@@ -1819,10 +1819,10 @@ pub fn apply_modifier(
                 .country_global_ship_recruit_speed
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_ship_recruit_speed
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1832,10 +1832,10 @@ pub fn apply_modifier(
                 .country_reform_progress_growth
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_reform_progress_growth
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "administrative_efficiency" => {
@@ -1843,10 +1843,10 @@ pub fn apply_modifier(
                 .country_administrative_efficiency
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_administrative_efficiency
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "yearly_absolutism" => {
@@ -1854,10 +1854,10 @@ pub fn apply_modifier(
                 .country_yearly_absolutism
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_yearly_absolutism
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1867,10 +1867,10 @@ pub fn apply_modifier(
                 .country_monthly_fervor_increase
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_monthly_fervor_increase
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "monthly_piety" => {
@@ -1878,10 +1878,10 @@ pub fn apply_modifier(
                 .country_monthly_piety
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_monthly_piety
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1891,10 +1891,10 @@ pub fn apply_modifier(
                 .country_burghers_loyalty
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_burghers_loyalty
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "nobles_loyalty_modifier" => {
@@ -1902,10 +1902,10 @@ pub fn apply_modifier(
                 .country_nobles_loyalty
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_nobles_loyalty
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "church_loyalty_modifier" => {
@@ -1913,10 +1913,10 @@ pub fn apply_modifier(
                 .country_church_loyalty
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_church_loyalty
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -1926,10 +1926,10 @@ pub fn apply_modifier(
                 .country_clergy_loyalty_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_clergy_loyalty_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "dhimmi_loyalty_modifier" => {
@@ -1937,10 +1937,10 @@ pub fn apply_modifier(
                 .country_dhimmi_loyalty_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_dhimmi_loyalty_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "maratha_loyalty_modifier" => {
@@ -1948,10 +1948,10 @@ pub fn apply_modifier(
                 .country_maratha_loyalty_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_maratha_loyalty_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "rajput_loyalty_modifier" => {
@@ -1959,10 +1959,10 @@ pub fn apply_modifier(
                 .country_rajput_loyalty_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_rajput_loyalty_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "eunuchs_loyalty_modifier" => {
@@ -1970,10 +1970,10 @@ pub fn apply_modifier(
                 .country_eunuchs_loyalty_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_eunuchs_loyalty_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "ghulams_loyalty_modifier" => {
@@ -1981,10 +1981,10 @@ pub fn apply_modifier(
                 .country_ghulams_loyalty_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_ghulams_loyalty_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "janissaries_loyalty_modifier" => {
@@ -1992,10 +1992,10 @@ pub fn apply_modifier(
                 .country_janissaries_loyalty_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_janissaries_loyalty_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "qizilbash_loyalty_modifier" => {
@@ -2003,10 +2003,10 @@ pub fn apply_modifier(
                 .country_qizilbash_loyalty_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_qizilbash_loyalty_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "jains_loyalty_modifier" => {
@@ -2014,10 +2014,10 @@ pub fn apply_modifier(
                 .country_jains_loyalty_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_jains_loyalty_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "nomadic_tribes_loyalty_modifier" => {
@@ -2025,10 +2025,10 @@ pub fn apply_modifier(
                 .country_nomadic_tribes_loyalty_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_nomadic_tribes_loyalty_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2038,10 +2038,10 @@ pub fn apply_modifier(
                 .country_burghers_influence_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_burghers_influence_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "pr_captains_influence" => {
@@ -2049,10 +2049,10 @@ pub fn apply_modifier(
                 .country_pr_captains_influence
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_pr_captains_influence
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2062,10 +2062,10 @@ pub fn apply_modifier(
                 .country_all_estate_possible_privileges
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_all_estate_possible_privileges
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "estate_interaction_cooldown_modifier" => {
@@ -2073,10 +2073,10 @@ pub fn apply_modifier(
                 .country_estate_interaction_cooldown_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_estate_interaction_cooldown_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "cossacks_privilege_slots" => {
@@ -2084,10 +2084,10 @@ pub fn apply_modifier(
                 .country_cossacks_privilege_slots
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_cossacks_privilege_slots
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "ghulams_privilege_slots" => {
@@ -2095,10 +2095,10 @@ pub fn apply_modifier(
                 .country_ghulams_privilege_slots
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_ghulams_privilege_slots
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "qizilbash_privilege_slots" => {
@@ -2106,10 +2106,10 @@ pub fn apply_modifier(
                 .country_qizilbash_privilege_slots
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_qizilbash_privilege_slots
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2119,10 +2119,10 @@ pub fn apply_modifier(
                 .country_allowed_samurai_fraction
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_allowed_samurai_fraction
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "amount_of_banners" => {
@@ -2130,10 +2130,10 @@ pub fn apply_modifier(
                 .country_amount_of_banners
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_amount_of_banners
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2143,10 +2143,10 @@ pub fn apply_modifier(
                 .country_recover_army_morale_speed
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_recover_army_morale_speed
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "fire_damage_received" => {
@@ -2154,10 +2154,10 @@ pub fn apply_modifier(
                 .country_fire_damage_received
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_fire_damage_received
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "cavalry_flanking" => {
@@ -2165,10 +2165,10 @@ pub fn apply_modifier(
                 .country_cavalry_flanking
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_cavalry_flanking
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "cav_to_inf_ratio" => {
@@ -2176,10 +2176,10 @@ pub fn apply_modifier(
                 .country_cav_to_inf_ratio
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_cav_to_inf_ratio
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "reinforce_speed" => {
@@ -2187,10 +2187,10 @@ pub fn apply_modifier(
                 .country_reinforce_speed
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_reinforce_speed
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2200,10 +2200,10 @@ pub fn apply_modifier(
                 .country_global_spy_defence
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_spy_defence
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "rebel_support_efficiency" => {
@@ -2211,10 +2211,10 @@ pub fn apply_modifier(
                 .country_rebel_support_efficiency
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_rebel_support_efficiency
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2224,10 +2224,10 @@ pub fn apply_modifier(
                 .country_navy_tradition_decay
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_navy_tradition_decay
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "army_tradition_from_battle" => {
@@ -2235,10 +2235,10 @@ pub fn apply_modifier(
                 .country_army_tradition_from_battle
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_army_tradition_from_battle
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2248,10 +2248,10 @@ pub fn apply_modifier(
                 .country_embargo_efficiency
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_embargo_efficiency
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "allowed_marine_fraction" => {
@@ -2259,10 +2259,10 @@ pub fn apply_modifier(
                 .country_allowed_marine_fraction
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_allowed_marine_fraction
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "capture_ship_chance" => {
@@ -2270,10 +2270,10 @@ pub fn apply_modifier(
                 .country_capture_ship_chance
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_capture_ship_chance
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2283,10 +2283,10 @@ pub fn apply_modifier(
                 .country_vassal_forcelimit_bonus
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_vassal_forcelimit_bonus
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "same_culture_advisor_cost" => {
@@ -2294,10 +2294,10 @@ pub fn apply_modifier(
                 .country_same_culture_advisor_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_same_culture_advisor_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2307,10 +2307,10 @@ pub fn apply_modifier(
                 .country_global_garrison_growth
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_garrison_growth
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "war_exhaustion_cost" => {
@@ -2318,10 +2318,10 @@ pub fn apply_modifier(
                 .country_war_exhaustion_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_war_exhaustion_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2331,10 +2331,10 @@ pub fn apply_modifier(
                 .country_global_foreign_trade_power
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_foreign_trade_power
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "range" => {
@@ -2342,10 +2342,10 @@ pub fn apply_modifier(
                 .country_range
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_range
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2355,10 +2355,10 @@ pub fn apply_modifier(
                 .country_female_advisor_chance
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_female_advisor_chance
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "yearly_corruption" => {
@@ -2366,10 +2366,10 @@ pub fn apply_modifier(
                 .country_yearly_corruption
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_yearly_corruption
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "build_time" => {
@@ -2377,10 +2377,10 @@ pub fn apply_modifier(
                 .country_build_time
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_build_time
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "promote_culture_cost" => {
@@ -2388,10 +2388,10 @@ pub fn apply_modifier(
                 .country_promote_culture_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_promote_culture_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "liberty_desire_from_subject_development" => {
@@ -2399,10 +2399,10 @@ pub fn apply_modifier(
                 .country_liberty_desire_from_subject_development
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_liberty_desire_from_subject_development
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2412,10 +2412,10 @@ pub fn apply_modifier(
                 .country_sunk_ship_morale_hit_recieved
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_sunk_ship_morale_hit_recieved
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2425,10 +2425,10 @@ pub fn apply_modifier(
                 .country_sailors_recovery_speed
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_sailors_recovery_speed
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2438,10 +2438,10 @@ pub fn apply_modifier(
                 .country_mil_tech_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_mil_tech_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "dip_tech_cost_modifier" => {
@@ -2449,10 +2449,10 @@ pub fn apply_modifier(
                 .country_dip_tech_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_dip_tech_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2462,10 +2462,10 @@ pub fn apply_modifier(
                 .country_max_absolutism
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_max_absolutism
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "num_of_pronoiars" => {
@@ -2473,10 +2473,10 @@ pub fn apply_modifier(
                 .country_num_of_pronoiars
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_num_of_pronoiars
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "max_revolutionary_zeal" => {
@@ -2484,10 +2484,10 @@ pub fn apply_modifier(
                 .country_max_revolutionary_zeal
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_max_revolutionary_zeal
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "possible_policy" => {
@@ -2495,10 +2495,10 @@ pub fn apply_modifier(
                 .country_possible_policy
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_possible_policy
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2508,10 +2508,10 @@ pub fn apply_modifier(
                 .country_power_projection_from_insults
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_power_projection_from_insults
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2521,10 +2521,10 @@ pub fn apply_modifier(
                 .country_harsh_treatment_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_harsh_treatment_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2534,10 +2534,10 @@ pub fn apply_modifier(
                 .country_free_leader_pool
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_free_leader_pool
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2547,10 +2547,10 @@ pub fn apply_modifier(
                 .country_own_coast_naval_combat_bonus
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_own_coast_naval_combat_bonus
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2560,10 +2560,10 @@ pub fn apply_modifier(
                 .country_embracement_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_embracement_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2573,10 +2573,10 @@ pub fn apply_modifier(
                 .country_artillery_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_artillery_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2588,10 +2588,10 @@ pub fn apply_modifier(
                 .country_colonist_placement_chance
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_colonist_placement_chance
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "native_uprising_chance" => {
@@ -2599,10 +2599,10 @@ pub fn apply_modifier(
                 .country_native_uprising_chance
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_native_uprising_chance
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "native_assimilation" => {
@@ -2610,10 +2610,10 @@ pub fn apply_modifier(
                 .country_native_assimilation
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_native_assimilation
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2623,10 +2623,10 @@ pub fn apply_modifier(
                 .country_recover_navy_morale_speed
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_recover_navy_morale_speed
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "global_naval_engagement_modifier" => {
@@ -2634,10 +2634,10 @@ pub fn apply_modifier(
                 .country_global_naval_engagement_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_naval_engagement_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "naval_tradition_from_battle" => {
@@ -2645,10 +2645,10 @@ pub fn apply_modifier(
                 .country_naval_tradition_from_battle
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_naval_tradition_from_battle
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "prestige_from_naval" => {
@@ -2656,10 +2656,10 @@ pub fn apply_modifier(
                 .country_prestige_from_naval
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_prestige_from_naval
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "disengagement_chance" => {
@@ -2667,10 +2667,10 @@ pub fn apply_modifier(
                 .country_disengagement_chance
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_disengagement_chance
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "leader_naval_shock" => {
@@ -2678,10 +2678,10 @@ pub fn apply_modifier(
                 .country_leader_naval_shock
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_leader_naval_shock
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "movement_speed_in_fleet_modifier" => {
@@ -2689,10 +2689,10 @@ pub fn apply_modifier(
                 .country_movement_speed_in_fleet_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_movement_speed_in_fleet_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "morale_damage_received" => {
@@ -2700,10 +2700,10 @@ pub fn apply_modifier(
                 .country_morale_damage_received
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_morale_damage_received
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2713,10 +2713,10 @@ pub fn apply_modifier(
                 .country_artillery_fraction
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_artillery_fraction
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "cavalry_fraction" => {
@@ -2724,10 +2724,10 @@ pub fn apply_modifier(
                 .country_cavalry_fraction
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_cavalry_fraction
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "infantry_fraction" => {
@@ -2735,10 +2735,10 @@ pub fn apply_modifier(
                 .country_infantry_fraction
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_infantry_fraction
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2748,10 +2748,10 @@ pub fn apply_modifier(
                 .country_mercantilism_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_mercantilism_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "global_tariffs" => {
@@ -2759,10 +2759,10 @@ pub fn apply_modifier(
                 .country_global_tariffs
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_tariffs
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "monthly_favor_modifier" => {
@@ -2770,10 +2770,10 @@ pub fn apply_modifier(
                 .country_monthly_favor_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_monthly_favor_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2783,10 +2783,10 @@ pub fn apply_modifier(
                 .country_siege_blockade_progress
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_siege_blockade_progress
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "blockade_efficiency" => {
@@ -2794,10 +2794,10 @@ pub fn apply_modifier(
                 .country_blockade_efficiency
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_blockade_efficiency
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "garrison_damage" => {
@@ -2805,10 +2805,10 @@ pub fn apply_modifier(
                 .country_garrison_damage
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_garrison_damage
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "artillery_level_modifier" => {
@@ -2816,10 +2816,10 @@ pub fn apply_modifier(
                 .country_artillery_level_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_artillery_level_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "artillery_levels_available_vs_fort" => {
@@ -2827,10 +2827,10 @@ pub fn apply_modifier(
                 .country_artillery_levels_available_vs_fort
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_artillery_levels_available_vs_fort
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2840,10 +2840,10 @@ pub fn apply_modifier(
                 .country_morale_damage
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_morale_damage
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "reinforce_cost_modifier" => {
@@ -2851,10 +2851,10 @@ pub fn apply_modifier(
                 .country_reinforce_cost_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_reinforce_cost_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "drill_gain_modifier" => {
@@ -2862,10 +2862,10 @@ pub fn apply_modifier(
                 .country_drill_gain_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_drill_gain_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "yearly_army_professionalism" => {
@@ -2873,10 +2873,10 @@ pub fn apply_modifier(
                 .country_yearly_army_professionalism
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_yearly_army_professionalism
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "special_unit_forcelimit" => {
@@ -2884,10 +2884,10 @@ pub fn apply_modifier(
                 .country_special_unit_forcelimit
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_special_unit_forcelimit
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2897,10 +2897,10 @@ pub fn apply_modifier(
                 .country_development_cost_in_primary_culture
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_development_cost_in_primary_culture
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "colony_development_boost" => {
@@ -2908,10 +2908,10 @@ pub fn apply_modifier(
                 .country_colony_development_boost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_colony_development_boost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2921,10 +2921,10 @@ pub fn apply_modifier(
                 .country_rival_border_fort_maintenance
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_rival_border_fort_maintenance
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "reduced_liberty_desire_on_same_continent" => {
@@ -2932,10 +2932,10 @@ pub fn apply_modifier(
                 .country_reduced_liberty_desire_on_same_continent
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_reduced_liberty_desire_on_same_continent
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "years_to_integrate_personal_union" => {
@@ -2943,10 +2943,10 @@ pub fn apply_modifier(
                 .country_years_to_integrate_personal_union
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_years_to_integrate_personal_union
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "monthly_federation_favor_growth" => {
@@ -2954,10 +2954,10 @@ pub fn apply_modifier(
                 .country_monthly_federation_favor_growth
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_monthly_federation_favor_growth
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "all_estate_loyalty_equilibrium" => {
@@ -2965,10 +2965,10 @@ pub fn apply_modifier(
                 .country_all_estate_loyalty_equilibrium
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_all_estate_loyalty_equilibrium
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -2978,10 +2978,10 @@ pub fn apply_modifier(
                 .country_prestige_per_development_from_conversion
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_prestige_per_development_from_conversion
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "yearly_patriarch_authority" => {
@@ -2989,10 +2989,10 @@ pub fn apply_modifier(
                 .country_yearly_patriarch_authority
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_yearly_patriarch_authority
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "yearly_harmony" => {
@@ -3000,10 +3000,10 @@ pub fn apply_modifier(
                 .country_yearly_harmony
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_yearly_harmony
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "yearly_karma_decay" => {
@@ -3011,10 +3011,10 @@ pub fn apply_modifier(
                 .country_yearly_karma_decay
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_yearly_karma_decay
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -3024,10 +3024,10 @@ pub fn apply_modifier(
                 .country_innovativeness_gain
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_innovativeness_gain
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "raze_power_gain" => {
@@ -3035,10 +3035,10 @@ pub fn apply_modifier(
                 .country_raze_power_gain
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_raze_power_gain
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "monarch_lifespan" => {
@@ -3046,10 +3046,10 @@ pub fn apply_modifier(
                 .country_monarch_lifespan
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_monarch_lifespan
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "reelection_cost" => {
@@ -3057,10 +3057,10 @@ pub fn apply_modifier(
                 .country_reelection_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_reelection_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "mil_advisor_cost" => {
@@ -3068,10 +3068,10 @@ pub fn apply_modifier(
                 .country_mil_advisor_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_mil_advisor_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -3081,10 +3081,10 @@ pub fn apply_modifier(
                 .country_warscore_cost_vs_other_religion
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_warscore_cost_vs_other_religion
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "global_rebel_suppression_efficiency" => {
@@ -3092,10 +3092,10 @@ pub fn apply_modifier(
                 .country_global_rebel_suppression_efficiency
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_rebel_suppression_efficiency
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -3105,10 +3105,10 @@ pub fn apply_modifier(
                 .country_global_ship_repair
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_ship_repair
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "transport_attrition" => {
@@ -3116,10 +3116,10 @@ pub fn apply_modifier(
                 .country_transport_attrition
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_transport_attrition
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -3129,10 +3129,10 @@ pub fn apply_modifier(
                 .country_manpower_in_true_faith_provinces
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_manpower_in_true_faith_provinces
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "global_monthly_devastation" => {
@@ -3140,10 +3140,10 @@ pub fn apply_modifier(
                 .country_global_monthly_devastation
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_monthly_devastation
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -3153,10 +3153,10 @@ pub fn apply_modifier(
                 .country_monarch_military_power
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_monarch_military_power
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "center_of_trade_upgrade_cost" => {
@@ -3164,10 +3164,10 @@ pub fn apply_modifier(
                 .country_center_of_trade_upgrade_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_center_of_trade_upgrade_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "accept_vassalization_reasons" => {
@@ -3175,10 +3175,10 @@ pub fn apply_modifier(
                 .country_accept_vassalization_reasons
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_accept_vassalization_reasons
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "brahmins_hindu_loyalty_modifier" => {
@@ -3186,10 +3186,10 @@ pub fn apply_modifier(
                 .country_brahmins_hindu_loyalty_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_brahmins_hindu_loyalty_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "brahmins_muslim_loyalty_modifier" => {
@@ -3197,10 +3197,10 @@ pub fn apply_modifier(
                 .country_brahmins_muslim_loyalty_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_brahmins_muslim_loyalty_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -3210,10 +3210,10 @@ pub fn apply_modifier(
                 .country_tolerance_of_heathens_capacity
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_tolerance_of_heathens_capacity
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "possible_mil_policy" => {
@@ -3221,10 +3221,10 @@ pub fn apply_modifier(
                 .country_possible_mil_policy
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_possible_mil_policy
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "curia_powers_cost" => {
@@ -3232,10 +3232,10 @@ pub fn apply_modifier(
                 .country_curia_powers_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_curia_powers_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "expand_administration_cost" => {
@@ -3243,10 +3243,10 @@ pub fn apply_modifier(
                 .country_expand_administration_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_expand_administration_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "loyalty_change_on_revoked" => {
@@ -3254,10 +3254,10 @@ pub fn apply_modifier(
                 .country_loyalty_change_on_revoked
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_loyalty_change_on_revoked
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -3267,10 +3267,10 @@ pub fn apply_modifier(
                 .country_great_project_upgrade_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_great_project_upgrade_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "gold_depletion_chance_modifier" => {
@@ -3278,10 +3278,10 @@ pub fn apply_modifier(
                 .country_gold_depletion_chance_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_gold_depletion_chance_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "global_supply_limit_modifier" => {
@@ -3289,10 +3289,10 @@ pub fn apply_modifier(
                 .country_global_supply_limit_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_supply_limit_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "general_cost" => {
@@ -3300,10 +3300,10 @@ pub fn apply_modifier(
                 .country_general_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_general_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "leader_cost" => {
@@ -3311,10 +3311,10 @@ pub fn apply_modifier(
                 .country_leader_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_leader_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -3324,10 +3324,10 @@ pub fn apply_modifier(
                 .country_cavalry_fire
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_cavalry_fire
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "war_taxes_cost_modifier" => {
@@ -3335,10 +3335,10 @@ pub fn apply_modifier(
                 .country_war_taxes_cost_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_war_taxes_cost_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "vaisyas_loyalty_modifier" => {
@@ -3346,10 +3346,10 @@ pub fn apply_modifier(
                 .country_vaisyas_loyalty_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_vaisyas_loyalty_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "max_hostile_attrition" => {
@@ -3357,10 +3357,10 @@ pub fn apply_modifier(
                 .country_max_hostile_attrition
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_max_hostile_attrition
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "nobles_influence_modifier" => {
@@ -3368,10 +3368,10 @@ pub fn apply_modifier(
                 .country_nobles_influence_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_nobles_influence_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -3381,10 +3381,10 @@ pub fn apply_modifier(
                 .country_free_mil_policy
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_free_mil_policy
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "free_adm_policy" => {
@@ -3392,10 +3392,10 @@ pub fn apply_modifier(
                 .country_free_adm_policy
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_free_adm_policy
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "free_dip_policy" => {
@@ -3403,10 +3403,10 @@ pub fn apply_modifier(
                 .country_free_dip_policy
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_free_dip_policy
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "possible_dip_policy" => {
@@ -3414,10 +3414,10 @@ pub fn apply_modifier(
                 .country_possible_dip_policy_alt
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_possible_dip_policy_alt
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "free_policy" => {
@@ -3425,10 +3425,10 @@ pub fn apply_modifier(
                 .country_free_policy
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_free_policy
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "monarch_diplomatic_power" => {
@@ -3436,10 +3436,10 @@ pub fn apply_modifier(
                 .country_monarch_diplomatic_power
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_monarch_diplomatic_power
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "monarch_admin_power" => {
@@ -3447,10 +3447,10 @@ pub fn apply_modifier(
                 .country_monarch_admin_power
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_monarch_admin_power
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "country_military_power" => {
@@ -3458,10 +3458,10 @@ pub fn apply_modifier(
                 .country_country_military_power
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_country_military_power
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "monarch_power_tribute" => {
@@ -3469,10 +3469,10 @@ pub fn apply_modifier(
                 .country_monarch_power_tribute
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_monarch_power_tribute
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -3482,10 +3482,10 @@ pub fn apply_modifier(
                 .country_missionary_maintenance_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_missionary_maintenance_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "enforce_religion_cost" => {
@@ -3493,10 +3493,10 @@ pub fn apply_modifier(
                 .country_enforce_religion_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_enforce_religion_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "tolerance_of_heretics_capacity" => {
@@ -3504,10 +3504,10 @@ pub fn apply_modifier(
                 .country_tolerance_of_heretics_capacity
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_tolerance_of_heretics_capacity
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "overextension_impact_modifier" => {
@@ -3515,10 +3515,10 @@ pub fn apply_modifier(
                 .country_overextension_impact_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_overextension_impact_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "state_governing_cost" => {
@@ -3526,10 +3526,10 @@ pub fn apply_modifier(
                 .country_state_governing_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_state_governing_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "min_autonomy_in_territories" => {
@@ -3537,10 +3537,10 @@ pub fn apply_modifier(
                 .country_min_autonomy_in_territories
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_min_autonomy_in_territories
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "autonomy_change_time" => {
@@ -3548,10 +3548,10 @@ pub fn apply_modifier(
                 .country_autonomy_change_time
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_autonomy_change_time
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "expand_infrastructure_cost_modifier" => {
@@ -3559,10 +3559,10 @@ pub fn apply_modifier(
                 .country_expand_infrastructure_cost_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_expand_infrastructure_cost_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -3572,10 +3572,10 @@ pub fn apply_modifier(
                 .country_adm_advisor_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_adm_advisor_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "dip_advisor_cost" => {
@@ -3583,10 +3583,10 @@ pub fn apply_modifier(
                 .country_dip_advisor_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_dip_advisor_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "same_religion_advisor_cost" => {
@@ -3594,10 +3594,10 @@ pub fn apply_modifier(
                 .country_same_religion_advisor_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_same_religion_advisor_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "reverse_relation_with_same_religion" => {
@@ -3605,10 +3605,10 @@ pub fn apply_modifier(
                 .country_reverse_relation_with_same_religion
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_reverse_relation_with_same_religion
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "reduced_liberty_desire_on_other_continent" => {
@@ -3616,10 +3616,10 @@ pub fn apply_modifier(
                 .country_reduced_liberty_desire_on_other_continent
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_reduced_liberty_desire_on_other_continent
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "rival_change_cost" => {
@@ -3627,10 +3627,10 @@ pub fn apply_modifier(
                 .country_rival_change_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_rival_change_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "stability_cost_to_declare_war" => {
@@ -3638,10 +3638,10 @@ pub fn apply_modifier(
                 .country_stability_cost_to_declare_war
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_stability_cost_to_declare_war
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -3651,10 +3651,10 @@ pub fn apply_modifier(
                 .country_ship_power_propagation
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_ship_power_propagation
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "vassal_naval_forcelimit_bonus" => {
@@ -3662,10 +3662,10 @@ pub fn apply_modifier(
                 .country_vassal_naval_forcelimit_bonus
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_vassal_naval_forcelimit_bonus
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "admiral_cost" => {
@@ -3673,10 +3673,10 @@ pub fn apply_modifier(
                 .country_admiral_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_admiral_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "flagship_cost" => {
@@ -3684,10 +3684,10 @@ pub fn apply_modifier(
                 .country_flagship_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_flagship_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "heavy_ship_cost" => {
@@ -3695,10 +3695,10 @@ pub fn apply_modifier(
                 .country_heavy_ship_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_heavy_ship_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "artillery_fire" => {
@@ -3706,10 +3706,10 @@ pub fn apply_modifier(
                 .country_artillery_fire
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_artillery_fire
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "artillery_shock" => {
@@ -3717,10 +3717,10 @@ pub fn apply_modifier(
                 .country_artillery_shock
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_artillery_shock
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "infantry_shock" => {
@@ -3728,10 +3728,10 @@ pub fn apply_modifier(
                 .country_infantry_shock
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_infantry_shock
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "global_naval_barrage_cost" => {
@@ -3739,10 +3739,10 @@ pub fn apply_modifier(
                 .country_global_naval_barrage_cost
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_naval_barrage_cost
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "landing_penalty" => {
@@ -3750,10 +3750,10 @@ pub fn apply_modifier(
                 .country_landing_penalty
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_landing_penalty
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 
@@ -3763,10 +3763,10 @@ pub fn apply_modifier(
                 .country_monthly_gold_inflation_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_monthly_gold_inflation_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "global_prosperity_growth" => {
@@ -3774,10 +3774,10 @@ pub fn apply_modifier(
                 .country_global_prosperity_growth
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_prosperity_growth
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "spy_action_cost_modifier" => {
@@ -3785,10 +3785,10 @@ pub fn apply_modifier(
                 .country_spy_action_cost_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_spy_action_cost_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "global_allowed_num_of_buildings" => {
@@ -3796,10 +3796,10 @@ pub fn apply_modifier(
                 .country_global_allowed_num_of_buildings
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_global_allowed_num_of_buildings
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
         "special_unit_cost_modifier" => {
@@ -3807,10 +3807,10 @@ pub fn apply_modifier(
                 .country_special_unit_cost_modifier
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             modifiers
                 .country_special_unit_cost_modifier
-                .insert(tag.to_string(), current + entry.value);
+                .insert(tag.to_string(), current + Mod32::from_fixed(entry.value));
             true
         }
 

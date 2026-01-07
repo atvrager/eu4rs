@@ -8,7 +8,7 @@ use eu4sim_core::state::{
 use eu4sim_core::subjects::{RawSubjectType, SubjectTypeRegistry};
 use eu4sim_core::systems::ideas::{recalculate_idea_modifiers, ModifierStubTracker};
 use eu4sim_core::trade::{CountryTradeState, TradeNodeId, TradeNodeState, TradeTopology};
-use eu4sim_core::{Fixed, WorldState};
+use eu4sim_core::{Fixed, Mod32, WorldState};
 use std::collections::HashMap as StdHashMap;
 use std::path::Path;
 
@@ -325,9 +325,9 @@ pub fn load_initial_state(
             religion: hist.religion.clone(),
             culture: hist.culture.clone(),
             trade_goods_id: goods_id,
-            base_tax: Fixed::from_f32(hist.base_tax.unwrap_or(0.0)),
-            base_production: Fixed::from_f32(hist.base_production.unwrap_or(0.0)),
-            base_manpower: Fixed::from_f32(hist.base_manpower.unwrap_or(0.0)),
+            base_tax: Mod32::from_f32(hist.base_tax.unwrap_or(0.0)),
+            base_production: Mod32::from_f32(hist.base_production.unwrap_or(0.0)),
+            base_manpower: Mod32::from_f32(hist.base_manpower.unwrap_or(0.0)),
             // Note: hist.capital is the city NAME, not whether it's a country capital
             // Country capitals are defined in country history files as province IDs
             // TODO: Load country capitals and give them forts
@@ -349,7 +349,7 @@ pub fn load_initial_state(
             building_construction: None,
             has_port: false, // TODO: Detect from coastal + port buildings
             is_in_hre: hist.hre.unwrap_or(false),
-            devastation: Fixed::ZERO,
+            devastation: Mod32::ZERO,
         };
         provinces.insert(id, p.clone());
 

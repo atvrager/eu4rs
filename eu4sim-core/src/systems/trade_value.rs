@@ -14,6 +14,7 @@
 //! from trade nodes, not directly from production.
 
 use crate::fixed::Fixed;
+use crate::fixed_generic::Mod32;
 use crate::state::{Tag, WorldState};
 
 /// Runs the monthly trade value tick.
@@ -54,7 +55,7 @@ pub fn run_trade_value_tick(state: &mut WorldState) {
 /// where: `goods_produced = base_production × 0.2`
 fn calculate_local_values(state: &mut WorldState) {
     // Base production multiplier (EU4: 0.2)
-    let base_mult = Fixed::from_f32(eu4data::defines::economy::BASE_PRODUCTION_MULTIPLIER);
+    let base_mult = Mod32::from_f32(eu4data::defines::economy::BASE_PRODUCTION_MULTIPLIER);
 
     for (&province_id, province) in state.provinces.iter() {
         // Skip provinces without trade goods
@@ -68,22 +69,24 @@ fn calculate_local_values(state: &mut WorldState) {
         };
 
         // Calculate goods produced
-        let goods_produced = province.base_production.mul(base_mult);
+        let goods_produced = province.base_production * base_mult;
 
-        // Get effective price
+        // Get effective price (convert Fixed base price to Mod32)
         let base_price = state
             .base_goods_prices
             .get(&goods_id)
             .copied()
             .unwrap_or(Fixed::ONE);
-        let price = state.modifiers.effective_price(goods_id, base_price);
+        let price = state
+            .modifiers
+            .effective_price(goods_id, Mod32::from_fixed(base_price));
 
         // Trade value = goods × price
-        let trade_value = goods_produced.mul(price);
+        let trade_value = goods_produced * price;
 
         // Accumulate to node's local value
         if let Some(node) = state.trade_nodes.get_mut(&node_id) {
-            node.local_value += trade_value;
+            node.local_value += trade_value.to_fixed();
         }
     }
 }
@@ -187,20 +190,21 @@ fn propagate_trade_value(state: &mut WorldState) {
 
         // Apply country trade_steering modifiers for countries with steering merchants
         // Each country's modifier increases their steering effectiveness
-        let mut steering_mod_sum = Fixed::ZERO;
+        let mut steering_mod_sum = Mod32::ZERO;
         for tag in &steering_countries {
             let steering_mod = state
                 .modifiers
                 .country_trade_steering
                 .get(tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
             steering_mod_sum += steering_mod;
         }
 
         // Apply average steering modifier to magnification
         let modifier_factor = if !steering_countries.is_empty() {
-            Fixed::ONE + steering_mod_sum.div(Fixed::from_int(steering_countries.len() as i64))
+            Fixed::ONE
+                + (steering_mod_sum / Mod32::from_int(steering_countries.len() as i32)).to_fixed()
         } else {
             Fixed::ONE
         };
@@ -282,7 +286,7 @@ mod tests {
             ProvinceState {
                 owner: Some("SWE".to_string()),
                 trade_goods_id: Some(TradegoodId(0)),
-                base_production: Fixed::from_int(5),
+                base_production: Mod32::from_int(5),
                 trade: ProvinceTradeState::default(),
                 ..Default::default()
             },
@@ -356,7 +360,7 @@ mod tests {
             ProvinceState {
                 owner: Some("SWE".to_string()),
                 trade_goods_id: Some(TradegoodId(0)), // grain
-                base_production: Fixed::from_int(10),
+                base_production: Mod32::from_int(10),
                 trade: ProvinceTradeState::default(),
                 ..Default::default()
             },
@@ -394,7 +398,7 @@ mod tests {
         state
             .modifiers
             .goods_price_mods
-            .insert(TradegoodId(0), Fixed::from_f32(0.5));
+            .insert(TradegoodId(0), Mod32::from_f32(0.5));
 
         run_trade_value_tick(&mut state);
 

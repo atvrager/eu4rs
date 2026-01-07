@@ -14,6 +14,7 @@
 //! ```
 
 use crate::fixed::Fixed;
+use crate::fixed_generic::Mod32;
 use crate::state::{CelestialReformId, WorldState};
 
 /// Celestial Empire constants from defines.
@@ -255,7 +256,7 @@ pub fn run_celestial_tick(state: &mut WorldState) {
 
 /// Calculate total development of all tributaries of the emperor.
 fn calculate_tributary_development(state: &WorldState, emperor_tag: &str) -> Fixed {
-    let mut total_dev = Fixed::ZERO;
+    let mut total_dev = Mod32::ZERO;
 
     for (subject_tag, relationship) in &state.diplomacy.subjects {
         // Check if this is a tributary of the emperor
@@ -278,7 +279,7 @@ fn calculate_tributary_development(state: &WorldState, emperor_tag: &str) -> Fix
         }
     }
 
-    total_dev
+    total_dev.to_fixed()
 }
 
 /// Calculate development-weighted devastation for the emperor's provinces.
@@ -286,18 +287,18 @@ fn calculate_tributary_development(state: &WorldState, emperor_tag: &str) -> Fix
 /// Returns the sum of (province_dev * province_devastation%) for all emperor-owned provinces.
 /// This represents the "devastated development" used in mandate calculation.
 fn calculate_devastated_development(state: &WorldState, emperor_tag: &str) -> Fixed {
-    let mut devastated_dev = Fixed::ZERO;
+    let mut devastated_dev = Mod32::ZERO;
 
     for province in state.provinces.values() {
         if province.owner.as_deref() == Some(emperor_tag) {
             let dev = province.base_tax + province.base_production + province.base_manpower;
             // Devastation is 0-100, divide by 100 to get percentage
-            let devastation_pct = province.devastation.div(Fixed::from_int(100));
-            devastated_dev += dev.mul(devastation_pct);
+            let devastation_pct = province.devastation / Mod32::from_int(100);
+            devastated_dev += dev * devastation_pct;
         }
     }
 
-    devastated_dev
+    devastated_dev.to_fixed()
 }
 
 /// Run yearly meritocracy tick for the Celestial Empire.
@@ -525,10 +526,10 @@ mod tests {
             1,
             ProvinceState {
                 owner: Some("MNG".to_string()),
-                base_tax: Fixed::from_int(33),
-                base_production: Fixed::from_int(34),
-                base_manpower: Fixed::from_int(33),
-                devastation: Fixed::from_int(50), // 50% devastation
+                base_tax: Mod32::from_int(33),
+                base_production: Mod32::from_int(34),
+                base_manpower: Mod32::from_int(33),
+                devastation: Mod32::from_int(50), // 50% devastation
                 ..Default::default()
             },
         );
@@ -560,10 +561,10 @@ mod tests {
             1,
             ProvinceState {
                 owner: Some("MNG".to_string()),
-                base_tax: Fixed::from_int(10),
-                base_production: Fixed::from_int(10),
-                base_manpower: Fixed::from_int(10),
-                devastation: Fixed::from_int(100), // 100% devastation
+                base_tax: Mod32::from_int(10),
+                base_production: Mod32::from_int(10),
+                base_manpower: Mod32::from_int(10),
+                devastation: Mod32::from_int(100), // 100% devastation
                 ..Default::default()
             },
         );
@@ -825,9 +826,9 @@ mod tests {
             100,
             ProvinceState {
                 owner: Some("KOR".to_string()),
-                base_tax: Fixed::from_int(66),
-                base_production: Fixed::from_int(67),
-                base_manpower: Fixed::from_int(67),
+                base_tax: Mod32::from_int(66),
+                base_production: Mod32::from_int(67),
+                base_manpower: Mod32::from_int(67),
                 ..Default::default()
             },
         );

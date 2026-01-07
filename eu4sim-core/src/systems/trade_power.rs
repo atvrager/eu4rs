@@ -12,6 +12,7 @@
 //! This creates the "steer to home" gameplay loop.
 
 use crate::fixed::Fixed;
+use crate::fixed_generic::Mod32;
 use crate::state::{Tag, WorldState};
 use crate::trade::{MerchantAction, TradeNodeId};
 use std::collections::HashMap;
@@ -123,7 +124,7 @@ pub fn run_trade_power_tick(state: &mut WorldState) {
 
 /// Calculate trade power from provinces for each country in each node.
 fn calculate_provincial_power(state: &mut WorldState) {
-    let dev_mult = Fixed::from_f32(DEV_POWER_MULTIPLIER);
+    let dev_mult = Mod32::from_f32(DEV_POWER_MULTIPLIER);
 
     for (&province_id, province) in state.provinces.iter() {
         // Skip unowned provinces
@@ -139,14 +140,14 @@ fn calculate_provincial_power(state: &mut WorldState) {
         // Calculate base power from development
         // Total dev = tax + production + manpower
         let total_dev = province.base_tax + province.base_production + province.base_manpower;
-        let mut power = total_dev.mul(dev_mult);
+        let mut power = total_dev * dev_mult;
 
         // Add Center of Trade bonus
         let cot_bonus = match province.trade.center_of_trade {
-            1 => Fixed::from_int(COT_LEVEL_1_BONUS),
-            2 => Fixed::from_int(COT_LEVEL_2_BONUS),
-            3 => Fixed::from_int(COT_LEVEL_3_BONUS),
-            _ => Fixed::ZERO,
+            1 => Mod32::from_int(COT_LEVEL_1_BONUS as i32),
+            2 => Mod32::from_int(COT_LEVEL_2_BONUS as i32),
+            3 => Mod32::from_int(COT_LEVEL_3_BONUS as i32),
+            _ => Mod32::ZERO,
         };
         power += cot_bonus;
 
@@ -156,15 +157,15 @@ fn calculate_provincial_power(state: &mut WorldState) {
             .country_trade_power
             .get(owner)
             .copied()
-            .unwrap_or(Fixed::ZERO);
-        let modified_power = power.mul(Fixed::ONE + trade_power_mod);
+            .unwrap_or(Mod32::ZERO);
+        let modified_power = power * (Mod32::ONE + trade_power_mod);
 
         // Accumulate power to country in node
         if let Some(node) = state.trade_nodes.get_mut(&node_id) {
             *node
                 .country_power
                 .entry(owner.clone())
-                .or_insert(Fixed::ZERO) += modified_power;
+                .or_insert(Fixed::ZERO) += modified_power.to_fixed();
         }
     }
 }
@@ -259,9 +260,9 @@ mod tests {
             1,
             ProvinceState {
                 owner: Some("SWE".to_string()),
-                base_tax: Fixed::from_int(3),
-                base_production: Fixed::from_int(3),
-                base_manpower: Fixed::from_int(3),
+                base_tax: Mod32::from_int(3),
+                base_production: Mod32::from_int(3),
+                base_manpower: Mod32::from_int(3),
                 trade: ProvinceTradeState::default(),
                 ..Default::default()
             },
@@ -383,9 +384,9 @@ mod tests {
             2,
             ProvinceState {
                 owner: Some("DAN".to_string()),
-                base_tax: Fixed::from_int(5),
-                base_production: Fixed::from_int(5),
-                base_manpower: Fixed::from_int(5),
+                base_tax: Mod32::from_int(5),
+                base_production: Mod32::from_int(5),
+                base_manpower: Mod32::from_int(5),
                 trade: ProvinceTradeState::default(),
                 ..Default::default()
             },

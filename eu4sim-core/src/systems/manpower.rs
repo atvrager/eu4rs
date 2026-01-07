@@ -1,4 +1,5 @@
 use crate::fixed::Fixed;
+use crate::fixed_generic::Mod32;
 use crate::state::WorldState;
 use eu4data::defines::manpower as defines;
 use std::collections::HashMap;
@@ -24,23 +25,21 @@ pub fn run_manpower_tick(state: &mut WorldState) {
                 .province_autonomy
                 .get(&id)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
+                .unwrap_or(Mod32::ZERO);
 
             // Apply coring-based floor: uncored = max(base, 75%)
             let floor = crate::systems::coring::effective_autonomy(province, owner);
             let raw_autonomy = base_autonomy.max(floor);
 
-            let autonomy = raw_autonomy.clamp(Fixed::ZERO, Fixed::ONE);
+            let autonomy = raw_autonomy.clamp(Mod32::ZERO, Mod32::ONE);
 
-            let factor = Fixed::ONE - autonomy;
-            let prov_max = province
-                .base_manpower
-                .mul(Fixed::from_int(defines::MEN_PER_DEV))
-                .mul(factor);
+            let factor = Mod32::ONE - autonomy;
+            let prov_max =
+                province.base_manpower * Mod32::from_int(defines::MEN_PER_DEV as i32) * factor;
 
             *country_max_manpower
                 .entry(owner.clone())
-                .or_insert(Fixed::ZERO) += prov_max;
+                .or_insert(Fixed::ZERO) += prov_max.to_fixed();
         }
     }
 
@@ -60,8 +59,8 @@ pub fn run_manpower_tick(state: &mut WorldState) {
                 .country_manpower
                 .get(&tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
-            let max = base_max.mul(Fixed::ONE + manpower_mod);
+                .unwrap_or(Mod32::ZERO);
+            let max = base_max.mul(Fixed::ONE + manpower_mod.to_fixed());
 
             // Recovery: Max / 120 (120 months = 10 years)
             let base_recovery = max.div(Fixed::from_int(defines::RECOVERY_MONTHS));
@@ -72,8 +71,8 @@ pub fn run_manpower_tick(state: &mut WorldState) {
                 .country_manpower_recovery_speed
                 .get(&tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
-            let recovery = base_recovery.mul(Fixed::ONE + recovery_speed_mod);
+                .unwrap_or(Mod32::ZERO);
+            let recovery = base_recovery.mul(Fixed::ONE + recovery_speed_mod.to_fixed());
 
             // Only grant recovery if below max (don't recover while overcapped)
             if country.manpower < max {
@@ -102,7 +101,7 @@ mod tests {
         let mut cores = std::collections::HashSet::new();
         cores.insert("SWE".to_string());
         let province = ProvinceState {
-            base_manpower: Fixed::from_f32(1.0),
+            base_manpower: Mod32::from_f32(1.0),
             owner: Some("SWE".to_string()),
             cores,
             ..Default::default()
@@ -127,7 +126,7 @@ mod tests {
     #[test]
     fn test_manpower_cap() {
         let province = ProvinceState {
-            base_manpower: Fixed::from_f32(1.0),
+            base_manpower: Mod32::from_f32(1.0),
             owner: Some("SWE".to_string()),
             ..Default::default()
         };
@@ -153,7 +152,7 @@ mod tests {
             autonomy in -2.0..2.0f32
         ) {
             let province = ProvinceState {
-                base_manpower: Fixed::from_f32(10.0), // 10k men
+                base_manpower: Mod32::from_f32(10.0), // 10k men
                 owner: Some("SWE".to_string()),
                 ..Default::default()
             };
@@ -167,7 +166,7 @@ mod tests {
             state.countries.get_mut("SWE").unwrap().manpower = Fixed::ZERO;
 
             // Set crazy autonomy
-            state.modifiers.province_autonomy.insert(1, Fixed::from_f32(autonomy));
+            state.modifiers.province_autonomy.insert(1, Mod32::from_f32(autonomy));
 
             run_manpower_tick(&mut state);
 

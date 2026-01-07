@@ -1,4 +1,5 @@
 use crate::fixed::Fixed;
+use crate::fixed_generic::Mod32;
 use crate::input::{Command, DevType, PlayerInputs};
 use crate::metrics::SimMetrics;
 use crate::profiling::{frame_mark_daily, frame_mark_monthly};
@@ -723,8 +724,8 @@ pub fn available_commands(
     for inst in institutions {
         if !country.embraced_institutions.contains(&inst) {
             // Check 10% presence and gold (simplified check for available_commands)
-            let mut total_dev = Fixed::ZERO;
-            let mut present_dev = Fixed::ZERO;
+            let mut total_dev = Mod32::ZERO;
+            let mut present_dev = Mod32::ZERO;
             for prov in state.provinces.values() {
                 if prov.owner.as_deref() == Some(country_tag) {
                     let dev = prov.base_tax + prov.base_production + prov.base_manpower;
@@ -735,8 +736,8 @@ pub fn available_commands(
                 }
             }
 
-            if total_dev > Fixed::ZERO && (present_dev / total_dev) >= Fixed::from_raw(1000) {
-                let cost = (total_dev - present_dev) * Fixed::from_int(2);
+            if total_dev > Mod32::ZERO && (present_dev / total_dev) >= Mod32::from_raw(1000) {
+                let cost = (total_dev - present_dev).to_fixed() * Fixed::from_int(2);
                 if country.treasury >= cost {
                     available.push(Command::EmbraceInstitution { institution: inst });
                 }
@@ -1452,8 +1453,8 @@ fn execute_command(
                 .country_morale
                 .get(country_tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
-            let max_morale = base_morale.mul(Fixed::ONE + morale_mod);
+                .unwrap_or(Mod32::ZERO);
+            let max_morale = base_morale.mul(Fixed::ONE + morale_mod.to_fixed());
 
             if let Some(army_id) = existing_army_id {
                 if let Some(army) = state.armies.get_mut(&army_id) {
@@ -4314,22 +4315,22 @@ fn calculate_peace_terms_cost(
 /// - Higher impact on neighbors and countries with good relations
 fn apply_aggressive_expansion(state: &mut WorldState, conqueror: &str, provinces: &[ProvinceId]) {
     // Calculate total development conquered
-    let total_dev: i64 = provinces
+    let total_dev: Mod32 = provinces
         .iter()
         .filter_map(|&prov_id| {
             state
                 .provinces
                 .get(&prov_id)
-                .map(|p| (p.base_tax + p.base_production + p.base_manpower).0)
+                .map(|p| p.base_tax + p.base_production + p.base_manpower)
         })
-        .sum();
+        .fold(Mod32::ZERO, |acc, v| acc + v);
 
-    if total_dev == 0 {
+    if total_dev == Mod32::ZERO {
         return;
     }
 
     let ae_per_dev = Fixed::ONE; // 1 AE per 1 dev
-    let base_ae = Fixed::from_int(total_dev) * ae_per_dev;
+    let base_ae = total_dev.to_fixed() * ae_per_dev;
 
     // Apply ae_impact modifier
     let ae_impact_mod = state
@@ -4337,8 +4338,8 @@ fn apply_aggressive_expansion(state: &mut WorldState, conqueror: &str, provinces
         .country_ae_impact
         .get(conqueror)
         .copied()
-        .unwrap_or(Fixed::ZERO);
-    let total_ae = base_ae.mul(Fixed::ONE + ae_impact_mod);
+        .unwrap_or(Mod32::ZERO);
+    let total_ae = base_ae.mul(Fixed::ONE + ae_impact_mod.to_fixed());
 
     // Apply AE to all countries
     let country_tags: Vec<String> = state.countries.keys().cloned().collect();

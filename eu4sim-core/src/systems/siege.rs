@@ -7,6 +7,7 @@
 //! - Roll of 1 = disease outbreak, roll of 14 = wall breach
 
 use crate::fixed::Fixed;
+use crate::fixed_generic::Mod32;
 use crate::state::{ArmyId, ProvinceId, RegimentType, Siege, WorldState};
 use eu4data::defines::siege as defines;
 use tracing::instrument;
@@ -139,9 +140,9 @@ fn resolve_siege_phase(state: &mut WorldState, province_id: ProvinceId) {
             .country_defensiveness
             .get(&siege.defender)
             .copied()
-            .unwrap_or(crate::fixed::Fixed::ZERO);
-        let effective_fort_level = crate::fixed::Fixed::from_int(base_fort_level as i64)
-            .mul(crate::fixed::Fixed::ONE + defensiveness_mod)
+            .unwrap_or(Mod32::ZERO);
+        let effective_fort_level = (Mod32::from_int(base_fort_level)
+            * (Mod32::ONE + defensiveness_mod))
             .to_f32()
             .round() as i32;
 

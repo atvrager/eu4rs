@@ -1,5 +1,7 @@
 //\! Unit tests for ideas.rs idea group system.
 use super::*;
+use crate::fixed::Fixed;
+use crate::fixed_generic::Mod32;
 use crate::ideas::{CountryIdeaState, IdeaDef, IdeaGroupDef};
 
 fn make_test_registry() -> IdeaGroupRegistry {
@@ -57,7 +59,7 @@ fn test_apply_modifier_implemented() {
     assert!(applied);
     assert_eq!(
         modifiers.country_tax_modifier.get("FRA"),
-        Some(&Fixed::from_f32(0.10))
+        Some(&Mod32::from_f32(0.10))
     );
 }
 
@@ -87,7 +89,7 @@ fn test_apply_discipline_modifier() {
     assert!(applied);
     assert_eq!(
         modifiers.country_discipline.get("PRU"),
-        Some(&Fixed::from_f32(0.05))
+        Some(&Mod32::from_f32(0.05))
     );
 }
 
@@ -109,7 +111,7 @@ fn test_apply_morale_modifier() {
     // Both should sum
     assert_eq!(
         modifiers.country_morale.get("FRA"),
-        Some(&Fixed::from_f32(0.25))
+        Some(&Mod32::from_f32(0.25))
     );
 }
 
@@ -123,7 +125,7 @@ fn test_apply_unit_power_modifiers() {
     assert!(apply_modifier(&mut modifiers, "SWE", &inf_entry, &tracker));
     assert_eq!(
         modifiers.country_infantry_power.get("SWE"),
-        Some(&Fixed::from_f32(0.10))
+        Some(&Mod32::from_f32(0.10))
     );
 
     // Cavalry power with alias
@@ -133,7 +135,7 @@ fn test_apply_unit_power_modifiers() {
     assert!(apply_modifier(&mut modifiers, "POL", &cav_entry2, &tracker));
     assert_eq!(
         modifiers.country_cavalry_power.get("POL"),
-        Some(&Fixed::from_f32(0.25))
+        Some(&Mod32::from_f32(0.25))
     );
 
     // Artillery power
@@ -141,7 +143,7 @@ fn test_apply_unit_power_modifiers() {
     assert!(apply_modifier(&mut modifiers, "FRA", &art_entry, &tracker));
     assert_eq!(
         modifiers.country_artillery_power.get("FRA"),
-        Some(&Fixed::from_f32(0.05))
+        Some(&Mod32::from_f32(0.05))
     );
 }
 
@@ -157,7 +159,7 @@ fn test_apply_trade_modifiers() {
     assert!(apply_modifier(&mut modifiers, "NED", &entry2, &tracker));
     assert_eq!(
         modifiers.country_goods_produced.get("NED"),
-        Some(&Fixed::from_f32(0.15))
+        Some(&Mod32::from_f32(0.15))
     );
 
     // trade_efficiency
@@ -165,7 +167,7 @@ fn test_apply_trade_modifiers() {
     assert!(apply_modifier(&mut modifiers, "VEN", &entry3, &tracker));
     assert_eq!(
         modifiers.country_trade_efficiency.get("VEN"),
-        Some(&Fixed::from_f32(0.20))
+        Some(&Mod32::from_f32(0.20))
     );
 
     // global_trade_power
@@ -173,7 +175,7 @@ fn test_apply_trade_modifiers() {
     assert!(apply_modifier(&mut modifiers, "POR", &entry4, &tracker));
     assert_eq!(
         modifiers.country_trade_power.get("POR"),
-        Some(&Fixed::from_f32(0.15))
+        Some(&Mod32::from_f32(0.15))
     );
 
     // trade_steering
@@ -181,7 +183,7 @@ fn test_apply_trade_modifiers() {
     assert!(apply_modifier(&mut modifiers, "GEN", &entry5, &tracker));
     assert_eq!(
         modifiers.country_trade_steering.get("GEN"),
-        Some(&Fixed::from_f32(0.25))
+        Some(&Mod32::from_f32(0.25))
     );
 }
 
@@ -195,7 +197,7 @@ fn test_apply_administrative_modifiers() {
     assert!(apply_modifier(&mut modifiers, "FRA", &entry1, &tracker));
     assert_eq!(
         modifiers.country_development_cost.get("FRA"),
-        Some(&Fixed::from_f32(-0.10))
+        Some(&Mod32::from_f32(-0.10))
     );
 
     // core_creation
@@ -203,7 +205,7 @@ fn test_apply_administrative_modifiers() {
     assert!(apply_modifier(&mut modifiers, "ADM", &entry2, &tracker));
     assert_eq!(
         modifiers.country_core_creation.get("ADM"),
-        Some(&Fixed::from_f32(-0.25))
+        Some(&Mod32::from_f32(-0.25))
     );
 
     // ae_impact
@@ -211,7 +213,7 @@ fn test_apply_administrative_modifiers() {
     assert!(apply_modifier(&mut modifiers, "DIP", &entry3, &tracker));
     assert_eq!(
         modifiers.country_ae_impact.get("DIP"),
-        Some(&Fixed::from_f32(-0.20))
+        Some(&Mod32::from_f32(-0.20))
     );
 
     // diplomatic_reputation
@@ -219,7 +221,7 @@ fn test_apply_administrative_modifiers() {
     assert!(apply_modifier(&mut modifiers, "AUS", &entry4, &tracker));
     assert_eq!(
         modifiers.country_diplomatic_reputation.get("AUS"),
-        Some(&Fixed::from_f32(2.0))
+        Some(&Mod32::from_f32(2.0))
     );
 }
 
@@ -233,7 +235,7 @@ fn test_apply_maintenance_modifiers() {
     assert!(apply_modifier(&mut modifiers, "PRU", &entry1, &tracker));
     assert_eq!(
         modifiers.country_infantry_cost.get("PRU"),
-        Some(&Fixed::from_f32(-0.10))
+        Some(&Mod32::from_f32(-0.10))
     );
 
     // cavalry_cost
@@ -241,7 +243,7 @@ fn test_apply_maintenance_modifiers() {
     assert!(apply_modifier(&mut modifiers, "POL", &entry2, &tracker));
     assert_eq!(
         modifiers.country_cavalry_cost.get("POL"),
-        Some(&Fixed::from_f32(-0.15))
+        Some(&Mod32::from_f32(-0.15))
     );
 
     // mercenary_cost (with alias)
@@ -251,7 +253,7 @@ fn test_apply_maintenance_modifiers() {
     assert!(apply_modifier(&mut modifiers, "VEN", &entry4, &tracker));
     assert_eq!(
         modifiers.country_mercenary_cost.get("VEN"),
-        Some(&Fixed::from_f32(-0.35))
+        Some(&Mod32::from_f32(-0.35))
     );
 }
 
@@ -265,7 +267,7 @@ fn test_apply_manpower_stats_modifiers() {
     assert!(apply_modifier(&mut modifiers, "MOS", &entry1, &tracker));
     assert_eq!(
         modifiers.country_manpower.get("MOS"),
-        Some(&Fixed::from_f32(0.25))
+        Some(&Mod32::from_f32(0.25))
     );
 
     // prestige
@@ -273,7 +275,7 @@ fn test_apply_manpower_stats_modifiers() {
     assert!(apply_modifier(&mut modifiers, "FRA", &entry2, &tracker));
     assert_eq!(
         modifiers.country_prestige.get("FRA"),
-        Some(&Fixed::from_f32(1.0))
+        Some(&Mod32::from_f32(1.0))
     );
 
     // devotion (theocracy government stat)
@@ -281,7 +283,7 @@ fn test_apply_manpower_stats_modifiers() {
     assert!(apply_modifier(&mut modifiers, "PAP", &entry3, &tracker));
     assert_eq!(
         modifiers.country_devotion.get("PAP"),
-        Some(&Fixed::from_f32(0.5))
+        Some(&Mod32::from_f32(0.5))
     );
 
     // horde_unity (steppe horde government stat)
@@ -289,7 +291,7 @@ fn test_apply_manpower_stats_modifiers() {
     assert!(apply_modifier(&mut modifiers, "KZH", &entry4, &tracker));
     assert_eq!(
         modifiers.country_horde_unity.get("KZH"),
-        Some(&Fixed::from_f32(1.0))
+        Some(&Mod32::from_f32(1.0))
     );
 
     // legitimacy (monarchy government stat)
@@ -297,7 +299,7 @@ fn test_apply_manpower_stats_modifiers() {
     assert!(apply_modifier(&mut modifiers, "CAS", &entry5, &tracker));
     assert_eq!(
         modifiers.country_legitimacy.get("CAS"),
-        Some(&Fixed::from_f32(0.5))
+        Some(&Mod32::from_f32(0.5))
     );
 }
 
@@ -311,7 +313,7 @@ fn test_apply_government_and_stability_modifiers() {
     assert!(apply_modifier(&mut modifiers, "VEN", &entry1, &tracker));
     assert_eq!(
         modifiers.country_republican_tradition.get("VEN"),
-        Some(&Fixed::from_f32(0.5))
+        Some(&Mod32::from_f32(0.5))
     );
 
     // meritocracy (celestial empire government stat)
@@ -319,7 +321,7 @@ fn test_apply_government_and_stability_modifiers() {
     assert!(apply_modifier(&mut modifiers, "MNG", &entry2, &tracker));
     assert_eq!(
         modifiers.country_meritocracy.get("MNG"),
-        Some(&Fixed::from_f32(1.0))
+        Some(&Mod32::from_f32(1.0))
     );
 
     // defensiveness (fort defense bonus)
@@ -327,7 +329,7 @@ fn test_apply_government_and_stability_modifiers() {
     assert!(apply_modifier(&mut modifiers, "BYZ", &entry3, &tracker));
     assert_eq!(
         modifiers.country_defensiveness.get("BYZ"),
-        Some(&Fixed::from_f32(0.25))
+        Some(&Mod32::from_f32(0.25))
     );
 
     // global_unrest (province unrest modifier)
@@ -335,7 +337,7 @@ fn test_apply_government_and_stability_modifiers() {
     assert!(apply_modifier(&mut modifiers, "PRU", &entry4, &tracker));
     assert_eq!(
         modifiers.country_unrest.get("PRU"),
-        Some(&Fixed::from_f32(-2.0))
+        Some(&Mod32::from_f32(-2.0))
     );
 
     // stability_cost_modifier (stability increase cost)
@@ -343,7 +345,7 @@ fn test_apply_government_and_stability_modifiers() {
     assert!(apply_modifier(&mut modifiers, "FRA", &entry5, &tracker));
     assert_eq!(
         modifiers.country_stability_cost.get("FRA"),
-        Some(&Fixed::from_f32(-0.10))
+        Some(&Mod32::from_f32(-0.10))
     );
 }
 
@@ -357,7 +359,7 @@ fn test_apply_tolerance_and_economy_modifiers() {
     assert!(apply_modifier(&mut modifiers, "SPA", &entry1, &tracker));
     assert_eq!(
         modifiers.country_tolerance_own.get("SPA"),
-        Some(&Fixed::from_f32(2.0))
+        Some(&Mod32::from_f32(2.0))
     );
 
     // global_trade_goods_size_modifier
@@ -365,7 +367,7 @@ fn test_apply_tolerance_and_economy_modifiers() {
     assert!(apply_modifier(&mut modifiers, "ENG", &entry2, &tracker));
     assert_eq!(
         modifiers.country_trade_goods_size.get("ENG"),
-        Some(&Fixed::from_f32(0.10))
+        Some(&Mod32::from_f32(0.10))
     );
 
     // build_cost
@@ -373,7 +375,7 @@ fn test_apply_tolerance_and_economy_modifiers() {
     assert!(apply_modifier(&mut modifiers, "PRU", &entry3, &tracker));
     assert_eq!(
         modifiers.country_build_cost.get("PRU"),
-        Some(&Fixed::from_f32(-0.10))
+        Some(&Mod32::from_f32(-0.10))
     );
 
     // manpower_recovery_speed
@@ -381,7 +383,7 @@ fn test_apply_tolerance_and_economy_modifiers() {
     assert!(apply_modifier(&mut modifiers, "RUS", &entry4, &tracker));
     assert_eq!(
         modifiers.country_manpower_recovery_speed.get("RUS"),
-        Some(&Fixed::from_f32(0.20))
+        Some(&Mod32::from_f32(0.20))
     );
 
     // hostile_attrition
@@ -389,7 +391,7 @@ fn test_apply_tolerance_and_economy_modifiers() {
     assert!(apply_modifier(&mut modifiers, "SWE", &entry5, &tracker));
     assert_eq!(
         modifiers.country_hostile_attrition.get("SWE"),
-        Some(&Fixed::from_f32(1.0))
+        Some(&Mod32::from_f32(1.0))
     );
 }
 
@@ -403,7 +405,7 @@ fn test_apply_diplomatic_and_culture_modifiers() {
     assert!(apply_modifier(&mut modifiers, "FRA", &entry1, &tracker));
     assert_eq!(
         modifiers.country_diplomatic_upkeep.get("FRA"),
-        Some(&Fixed::from_f32(1.0))
+        Some(&Mod32::from_f32(1.0))
     );
 
     // idea_cost
@@ -411,7 +413,7 @@ fn test_apply_diplomatic_and_culture_modifiers() {
     assert!(apply_modifier(&mut modifiers, "PRU", &entry2, &tracker));
     assert_eq!(
         modifiers.country_idea_cost.get("PRU"),
-        Some(&Fixed::from_f32(-0.10))
+        Some(&Mod32::from_f32(-0.10))
     );
 
     // merchants
@@ -419,7 +421,7 @@ fn test_apply_diplomatic_and_culture_modifiers() {
     assert!(apply_modifier(&mut modifiers, "VEN", &entry3, &tracker));
     assert_eq!(
         modifiers.country_merchants.get("VEN"),
-        Some(&Fixed::from_f32(1.0))
+        Some(&Mod32::from_f32(1.0))
     );
 
     // global_missionary_strength
@@ -427,7 +429,7 @@ fn test_apply_diplomatic_and_culture_modifiers() {
     assert!(apply_modifier(&mut modifiers, "SPA", &entry4, &tracker));
     assert_eq!(
         modifiers.country_missionary_strength.get("SPA"),
-        Some(&Fixed::from_f32(0.02))
+        Some(&Mod32::from_f32(0.02))
     );
 
     // num_accepted_cultures
@@ -435,7 +437,7 @@ fn test_apply_diplomatic_and_culture_modifiers() {
     assert!(apply_modifier(&mut modifiers, "TUR", &entry5, &tracker));
     assert_eq!(
         modifiers.country_num_accepted_cultures.get("TUR"),
-        Some(&Fixed::from_f32(2.0))
+        Some(&Mod32::from_f32(2.0))
     );
 }
 
@@ -466,19 +468,19 @@ fn test_recalculate_idea_modifiers() {
     // Check tax modifier was applied (0.10 start + 0.05 bonus = 0.15)
     assert_eq!(
         modifiers.country_tax_modifier.get("TST"),
-        Some(&Fixed::from_f32(0.15))
+        Some(&Mod32::from_f32(0.15))
     );
 
     // Check land maintenance was applied
     assert_eq!(
         modifiers.land_maintenance_modifier.get("TST"),
-        Some(&Fixed::from_f32(-0.10))
+        Some(&Mod32::from_f32(-0.10))
     );
 
     // Check global_manpower_modifier was applied
     assert_eq!(
         modifiers.country_manpower.get("TST"),
-        Some(&Fixed::from_f32(0.15))
+        Some(&Mod32::from_f32(0.15))
     );
 }
 
@@ -509,7 +511,7 @@ fn test_apply_diplomacy_modifiers() {
     );
     assert_eq!(
         modifiers.country_improve_relation_modifier.get("TST"),
-        Some(&Fixed::from_f32(0.25))
+        Some(&Mod32::from_f32(0.25))
     );
 
     // Test diplomats (additive)
@@ -524,7 +526,7 @@ fn test_apply_diplomacy_modifiers() {
     );
     assert_eq!(
         modifiers.country_diplomats.get("TST"),
-        Some(&Fixed::from_int(1))
+        Some(&Mod32::from_int(1))
     );
 
     // Test diplomatic_annexation_cost
@@ -539,7 +541,7 @@ fn test_apply_diplomacy_modifiers() {
     );
     assert_eq!(
         modifiers.country_diplomatic_annexation_cost.get("TST"),
-        Some(&Fixed::from_f32(-0.25))
+        Some(&Mod32::from_f32(-0.25))
     );
 }
 
@@ -560,7 +562,7 @@ fn test_apply_technology_modifiers() {
     );
     assert_eq!(
         modifiers.country_technology_cost.get("TST"),
-        Some(&Fixed::from_f32(-0.10))
+        Some(&Mod32::from_f32(-0.10))
     );
 
     // Test adm_tech_cost_modifier
@@ -575,7 +577,7 @@ fn test_apply_technology_modifiers() {
     );
     assert_eq!(
         modifiers.country_adm_tech_cost.get("TST"),
-        Some(&Fixed::from_f32(-0.05))
+        Some(&Mod32::from_f32(-0.05))
     );
 }
 
@@ -596,7 +598,7 @@ fn test_apply_force_limit_modifiers() {
     );
     assert_eq!(
         modifiers.country_land_forcelimit.get("TST"),
-        Some(&Fixed::from_f32(0.50))
+        Some(&Mod32::from_f32(0.50))
     );
 
     // Test naval_forcelimit_modifier
@@ -611,7 +613,7 @@ fn test_apply_force_limit_modifiers() {
     );
     assert_eq!(
         modifiers.country_naval_forcelimit.get("TST"),
-        Some(&Fixed::from_f32(0.33))
+        Some(&Mod32::from_f32(0.33))
     );
 }
 
@@ -632,7 +634,7 @@ fn test_apply_tradition_modifiers() {
     );
     assert_eq!(
         modifiers.country_army_tradition.get("TST"),
-        Some(&Fixed::from_int(1))
+        Some(&Mod32::from_int(1))
     );
 
     // Test army_tradition_decay
@@ -647,7 +649,7 @@ fn test_apply_tradition_modifiers() {
     );
     assert_eq!(
         modifiers.country_army_tradition_decay.get("TST"),
-        Some(&Fixed::from_f32(-0.01))
+        Some(&Mod32::from_f32(-0.01))
     );
 
     // Test navy_tradition
@@ -662,7 +664,7 @@ fn test_apply_tradition_modifiers() {
     );
     assert_eq!(
         modifiers.country_navy_tradition.get("TST"),
-        Some(&Fixed::from_int(1))
+        Some(&Mod32::from_int(1))
     );
 }
 
@@ -683,7 +685,7 @@ fn test_apply_combat_modifiers() {
     );
     assert_eq!(
         modifiers.country_fire_damage.get("TST"),
-        Some(&Fixed::from_f32(0.10))
+        Some(&Mod32::from_f32(0.10))
     );
 
     // Test shock_damage
@@ -698,7 +700,7 @@ fn test_apply_combat_modifiers() {
     );
     assert_eq!(
         modifiers.country_shock_damage.get("TST"),
-        Some(&Fixed::from_f32(0.10))
+        Some(&Mod32::from_f32(0.10))
     );
 
     // Test naval_morale
@@ -713,7 +715,7 @@ fn test_apply_combat_modifiers() {
     );
     assert_eq!(
         modifiers.country_naval_morale.get("TST"),
-        Some(&Fixed::from_f32(0.15))
+        Some(&Mod32::from_f32(0.15))
     );
 }
 
@@ -734,7 +736,7 @@ fn test_apply_tolerance_modifiers() {
     );
     assert_eq!(
         modifiers.country_tolerance_heretic.get("TST"),
-        Some(&Fixed::from_int(2))
+        Some(&Mod32::from_int(2))
     );
 
     // Test tolerance_heathen
@@ -749,7 +751,7 @@ fn test_apply_tolerance_modifiers() {
     );
     assert_eq!(
         modifiers.country_tolerance_heathen.get("TST"),
-        Some(&Fixed::from_int(1))
+        Some(&Mod32::from_int(1))
     );
 }
 
@@ -770,7 +772,7 @@ fn test_apply_colonization_modifiers() {
     );
     assert_eq!(
         modifiers.country_colonists.get("TST"),
-        Some(&Fixed::from_int(1))
+        Some(&Mod32::from_int(1))
     );
 
     // Test global_colonial_growth
@@ -785,7 +787,7 @@ fn test_apply_colonization_modifiers() {
     );
     assert_eq!(
         modifiers.country_global_colonial_growth.get("TST"),
-        Some(&Fixed::from_int(10))
+        Some(&Mod32::from_int(10))
     );
 }
 
@@ -817,7 +819,7 @@ fn test_modifier_stacking_new_modifiers() {
     // Should sum to 1.5
     assert_eq!(
         modifiers.country_army_tradition.get("TST"),
-        Some(&Fixed::from_f32(1.5))
+        Some(&Mod32::from_f32(1.5))
     );
 }
 
@@ -924,19 +926,19 @@ fn test_apply_naval_modifiers() {
 
     assert_eq!(
         modifiers.country_light_ship_power.get("TST"),
-        Some(&Fixed::from_f32(0.20))
+        Some(&Mod32::from_f32(0.20))
     );
     assert_eq!(
         modifiers.country_heavy_ship_power.get("TST"),
-        Some(&Fixed::from_f32(0.15))
+        Some(&Mod32::from_f32(0.15))
     );
     assert_eq!(
         modifiers.country_naval_maintenance.get("TST"),
-        Some(&Fixed::from_f32(-0.10))
+        Some(&Mod32::from_f32(-0.10))
     );
     assert_eq!(
         modifiers.country_naval_attrition.get("TST"),
-        Some(&Fixed::from_f32(-0.25))
+        Some(&Mod32::from_f32(-0.25))
     );
 }
 
@@ -960,11 +962,11 @@ fn test_apply_mercenary_modifiers() {
 
     assert_eq!(
         modifiers.country_mercenary_discipline.get("TST"),
-        Some(&Fixed::from_f32(0.05))
+        Some(&Mod32::from_f32(0.05))
     );
     assert_eq!(
         modifiers.country_mercenary_manpower.get("TST"),
-        Some(&Fixed::from_f32(0.25))
+        Some(&Mod32::from_f32(0.25))
     );
 }
 
@@ -1000,19 +1002,19 @@ fn test_apply_war_and_diplomacy_modifiers() {
 
     assert_eq!(
         modifiers.country_unjustified_demands.get("TST"),
-        Some(&Fixed::from_f32(-0.50))
+        Some(&Mod32::from_f32(-0.50))
     );
     assert_eq!(
         modifiers.country_province_warscore_cost.get("TST"),
-        Some(&Fixed::from_f32(-0.10))
+        Some(&Mod32::from_f32(-0.10))
     );
     assert_eq!(
         modifiers.country_envoy_travel_time.get("TST"),
-        Some(&Fixed::from_f32(-0.25))
+        Some(&Mod32::from_f32(-0.25))
     );
     assert_eq!(
         modifiers.country_reduced_liberty_desire.get("TST"),
-        Some(&Fixed::from_int(-10))
+        Some(&Mod32::from_int(-10))
     );
 }
 
@@ -1054,23 +1056,23 @@ fn test_apply_recruitment_and_economy_modifiers() {
 
     assert_eq!(
         modifiers.country_global_regiment_cost.get("TST"),
-        Some(&Fixed::from_f32(-0.10))
+        Some(&Mod32::from_f32(-0.10))
     );
     assert_eq!(
         modifiers.country_global_regiment_recruit_speed.get("TST"),
-        Some(&Fixed::from_f32(0.25))
+        Some(&Mod32::from_f32(0.25))
     );
     assert_eq!(
         modifiers.country_interest.get("TST"),
-        Some(&Fixed::from_f32(-0.50))
+        Some(&Mod32::from_f32(-0.50))
     );
     assert_eq!(
         modifiers.country_prestige_from_land.get("TST"),
-        Some(&Fixed::from_f32(0.10))
+        Some(&Mod32::from_f32(0.10))
     );
     assert_eq!(
         modifiers.country_loot_amount.get("TST"),
-        Some(&Fixed::from_f32(0.50))
+        Some(&Mod32::from_f32(0.50))
     );
 }
 
@@ -1106,19 +1108,19 @@ fn test_apply_leader_modifiers() {
 
     assert_eq!(
         modifiers.country_leader_land_fire.get("TST"),
-        Some(&Fixed::from_int(1))
+        Some(&Mod32::from_int(1))
     );
     assert_eq!(
         modifiers.country_leader_siege.get("TST"),
-        Some(&Fixed::from_int(1))
+        Some(&Mod32::from_int(1))
     );
     assert_eq!(
         modifiers.country_leader_naval_fire.get("TST"),
-        Some(&Fixed::from_int(1))
+        Some(&Mod32::from_int(1))
     );
     assert_eq!(
         modifiers.country_leader_naval_manuever.get("TST"),
-        Some(&Fixed::from_int(1))
+        Some(&Mod32::from_int(1))
     );
 }
 
@@ -1148,15 +1150,15 @@ fn test_apply_government_reform_modifiers() {
 
     assert_eq!(
         modifiers.country_reform_progress_growth.get("TST"),
-        Some(&Fixed::from_f32(0.25))
+        Some(&Mod32::from_f32(0.25))
     );
     assert_eq!(
         modifiers.country_administrative_efficiency.get("TST"),
-        Some(&Fixed::from_f32(0.05))
+        Some(&Mod32::from_f32(0.05))
     );
     assert_eq!(
         modifiers.country_yearly_absolutism.get("TST"),
-        Some(&Fixed::from_f32(0.50))
+        Some(&Mod32::from_f32(0.50))
     );
 }
 
@@ -1186,15 +1188,15 @@ fn test_apply_estate_loyalty_modifiers() {
 
     assert_eq!(
         modifiers.country_burghers_loyalty.get("TST"),
-        Some(&Fixed::from_f32(0.10))
+        Some(&Mod32::from_f32(0.10))
     );
     assert_eq!(
         modifiers.country_nobles_loyalty.get("TST"),
-        Some(&Fixed::from_f32(0.10))
+        Some(&Mod32::from_f32(0.10))
     );
     assert_eq!(
         modifiers.country_church_loyalty.get("TST"),
-        Some(&Fixed::from_f32(0.10))
+        Some(&Mod32::from_f32(0.10))
     );
 }
 
@@ -1236,23 +1238,23 @@ fn test_apply_combat_and_reinforcement_modifiers() {
 
     assert_eq!(
         modifiers.country_recover_army_morale_speed.get("TST"),
-        Some(&Fixed::from_f32(0.10))
+        Some(&Mod32::from_f32(0.10))
     );
     assert_eq!(
         modifiers.country_fire_damage_received.get("TST"),
-        Some(&Fixed::from_f32(-0.10))
+        Some(&Mod32::from_f32(-0.10))
     );
     assert_eq!(
         modifiers.country_cavalry_flanking.get("TST"),
-        Some(&Fixed::from_f32(0.50))
+        Some(&Mod32::from_f32(0.50))
     );
     assert_eq!(
         modifiers.country_cav_to_inf_ratio.get("TST"),
-        Some(&Fixed::from_f32(0.25))
+        Some(&Mod32::from_f32(0.25))
     );
     assert_eq!(
         modifiers.country_reinforce_speed.get("TST"),
-        Some(&Fixed::from_f32(0.33))
+        Some(&Mod32::from_f32(0.33))
     );
 }
 
@@ -1288,19 +1290,19 @@ fn test_apply_espionage_and_tradition_modifiers() {
 
     assert_eq!(
         modifiers.country_global_spy_defence.get("TST"),
-        Some(&Fixed::from_f32(0.20))
+        Some(&Mod32::from_f32(0.20))
     );
     assert_eq!(
         modifiers.country_rebel_support_efficiency.get("TST"),
-        Some(&Fixed::from_f32(0.50))
+        Some(&Mod32::from_f32(0.50))
     );
     assert_eq!(
         modifiers.country_navy_tradition_decay.get("TST"),
-        Some(&Fixed::from_f32(-0.01))
+        Some(&Mod32::from_f32(-0.01))
     );
     assert_eq!(
         modifiers.country_army_tradition_from_battle.get("TST"),
-        Some(&Fixed::from_f32(0.50))
+        Some(&Mod32::from_f32(0.50))
     );
 }
 
@@ -1382,7 +1384,7 @@ fn test_apply_final_naval_modifiers() {
     assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
     assert_eq!(
         modifiers.country_sunk_ship_morale_hit_recieved.get(tag),
-        Some(&Fixed::from_f32(-0.33))
+        Some(&Mod32::from_f32(-0.33))
     );
 
     // Test sailors_recovery_speed
@@ -1390,7 +1392,7 @@ fn test_apply_final_naval_modifiers() {
     assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
     assert_eq!(
         modifiers.country_sailors_recovery_speed.get(tag),
-        Some(&Fixed::from_f32(0.2))
+        Some(&Mod32::from_f32(0.2))
     );
 
     // Test own_coast_naval_combat_bonus
@@ -1398,7 +1400,7 @@ fn test_apply_final_naval_modifiers() {
     assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
     assert_eq!(
         modifiers.country_own_coast_naval_combat_bonus.get(tag),
-        Some(&Fixed::from_int(1))
+        Some(&Mod32::from_int(1))
     );
 }
 
@@ -1413,7 +1415,7 @@ fn test_apply_tech_cost_modifiers() {
     assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
     assert_eq!(
         modifiers.country_mil_tech_cost.get(tag),
-        Some(&Fixed::from_f32(-0.1))
+        Some(&Mod32::from_f32(-0.1))
     );
 
     // Test dip_tech_cost_modifier
@@ -1421,7 +1423,7 @@ fn test_apply_tech_cost_modifiers() {
     assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
     assert_eq!(
         modifiers.country_dip_tech_cost.get(tag),
-        Some(&Fixed::from_f32(-0.05))
+        Some(&Mod32::from_f32(-0.05))
     );
 
     // Test stacking multiple sources
@@ -1429,7 +1431,7 @@ fn test_apply_tech_cost_modifiers() {
     assert!(apply_modifier(&mut modifiers, tag, &entry2, &stubs));
     assert_eq!(
         modifiers.country_mil_tech_cost.get(tag),
-        Some(&Fixed::from_f32(-0.15))
+        Some(&Mod32::from_f32(-0.15))
     );
 }
 
@@ -1444,7 +1446,7 @@ fn test_apply_government_modifiers() {
     assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
     assert_eq!(
         modifiers.country_max_absolutism.get(tag),
-        Some(&Fixed::from_int(5))
+        Some(&Mod32::from_int(5))
     );
 
     // Test num_of_pronoiars
@@ -1452,7 +1454,7 @@ fn test_apply_government_modifiers() {
     assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
     assert_eq!(
         modifiers.country_num_of_pronoiars.get(tag),
-        Some(&Fixed::from_int(2))
+        Some(&Mod32::from_int(2))
     );
 
     // Test max_revolutionary_zeal
@@ -1460,7 +1462,7 @@ fn test_apply_government_modifiers() {
     assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
     assert_eq!(
         modifiers.country_max_revolutionary_zeal.get(tag),
-        Some(&Fixed::from_int(10))
+        Some(&Mod32::from_int(10))
     );
 
     // Test possible_policy
@@ -1468,7 +1470,7 @@ fn test_apply_government_modifiers() {
     assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
     assert_eq!(
         modifiers.country_possible_policy.get(tag),
-        Some(&Fixed::from_int(1))
+        Some(&Mod32::from_int(1))
     );
 }
 
@@ -1483,7 +1485,7 @@ fn test_apply_power_projection_modifiers() {
     assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
     assert_eq!(
         modifiers.country_power_projection_from_insults.get(tag),
-        Some(&Fixed::from_f32(0.5))
+        Some(&Mod32::from_f32(0.5))
     );
 }
 
@@ -1498,7 +1500,7 @@ fn test_apply_rebellion_modifiers() {
     assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
     assert_eq!(
         modifiers.country_harsh_treatment_cost.get(tag),
-        Some(&Fixed::from_f32(-0.25))
+        Some(&Mod32::from_f32(-0.25))
     );
 }
 
@@ -1513,7 +1515,7 @@ fn test_apply_leader_pool_modifiers() {
     assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
     assert_eq!(
         modifiers.country_free_leader_pool.get(tag),
-        Some(&Fixed::from_int(1))
+        Some(&Mod32::from_int(1))
     );
 }
 
@@ -1528,7 +1530,7 @@ fn test_apply_innovation_modifiers() {
     assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
     assert_eq!(
         modifiers.country_embracement_cost.get(tag),
-        Some(&Fixed::from_f32(-0.1))
+        Some(&Mod32::from_f32(-0.1))
     );
 }
 
@@ -1543,7 +1545,7 @@ fn test_apply_artillery_cost_modifiers() {
     assert!(apply_modifier(&mut modifiers, tag, &entry, &stubs));
     assert_eq!(
         modifiers.country_artillery_cost.get(tag),
-        Some(&Fixed::from_f32(-0.15))
+        Some(&Mod32::from_f32(-0.15))
     );
 }
 

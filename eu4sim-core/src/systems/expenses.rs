@@ -1,4 +1,5 @@
 use crate::fixed::Fixed;
+use crate::fixed_generic::Mod32;
 use crate::state::{Tag, WorldState};
 use eu4data::defines::economy as defines;
 use std::collections::HashMap;
@@ -25,17 +26,17 @@ pub fn calculate_maintenance_costs(state: &WorldState) -> HashMap<Tag, Fixed> {
                     .country_infantry_cost
                     .get(&army.owner)
                     .copied()
-                    .unwrap_or(Fixed::ZERO),
+                    .unwrap_or(Mod32::ZERO),
                 crate::state::RegimentType::Cavalry => state
                     .modifiers
                     .country_cavalry_cost
                     .get(&army.owner)
                     .copied()
-                    .unwrap_or(Fixed::ZERO),
-                crate::state::RegimentType::Artillery => Fixed::ZERO,
+                    .unwrap_or(Mod32::ZERO),
+                crate::state::RegimentType::Artillery => Mod32::ZERO,
             };
 
-            let modified_cost = base_cost.mul(Fixed::ONE + type_mod);
+            let modified_cost = base_cost.mul(Fixed::ONE + type_mod.to_fixed());
             cost += modified_cost;
         }
 
@@ -45,8 +46,8 @@ pub fn calculate_maintenance_costs(state: &WorldState) -> HashMap<Tag, Fixed> {
             .land_maintenance_modifier
             .get(&army.owner)
             .copied()
-            .unwrap_or(Fixed::ZERO);
-        let factor = Fixed::ONE + modifier;
+            .unwrap_or(Mod32::ZERO);
+        let factor = Fixed::ONE + modifier.to_fixed();
         let final_cost = cost.mul(factor);
 
         *costs.entry(army.owner.clone()).or_insert(Fixed::ZERO) += final_cost;
@@ -61,13 +62,13 @@ pub fn calculate_maintenance_costs(state: &WorldState) -> HashMap<Tag, Fixed> {
 
             // Apply ship-type specific cost modifier
             let type_mod = match ship.type_ {
-                crate::state::ShipType::HeavyShip => Fixed::ZERO,
-                crate::state::ShipType::LightShip => Fixed::ZERO,
-                crate::state::ShipType::Galley => Fixed::ZERO,
-                crate::state::ShipType::Transport => Fixed::ZERO,
+                crate::state::ShipType::HeavyShip => Mod32::ZERO,
+                crate::state::ShipType::LightShip => Mod32::ZERO,
+                crate::state::ShipType::Galley => Mod32::ZERO,
+                crate::state::ShipType::Transport => Mod32::ZERO,
             };
 
-            let modified_cost = base_cost.mul(Fixed::ONE + type_mod);
+            let modified_cost = base_cost.mul(Fixed::ONE + type_mod.to_fixed());
             cost += modified_cost;
         }
 
@@ -77,8 +78,8 @@ pub fn calculate_maintenance_costs(state: &WorldState) -> HashMap<Tag, Fixed> {
             .country_naval_maintenance
             .get(&fleet.owner)
             .copied()
-            .unwrap_or(Fixed::ZERO);
-        let factor = Fixed::ONE + modifier;
+            .unwrap_or(Mod32::ZERO);
+        let factor = Fixed::ONE + modifier.to_fixed();
         let final_cost = cost.mul(factor);
 
         *costs.entry(fleet.owner.clone()).or_insert(Fixed::ZERO) += final_cost;
@@ -109,17 +110,17 @@ pub fn run_expenses_tick(state: &mut WorldState) {
                     .country_infantry_cost
                     .get(&army.owner)
                     .copied()
-                    .unwrap_or(Fixed::ZERO),
+                    .unwrap_or(Mod32::ZERO),
                 crate::state::RegimentType::Cavalry => state
                     .modifiers
                     .country_cavalry_cost
                     .get(&army.owner)
                     .copied()
-                    .unwrap_or(Fixed::ZERO),
-                crate::state::RegimentType::Artillery => Fixed::ZERO, // No artillery_cost modifier yet
+                    .unwrap_or(Mod32::ZERO),
+                crate::state::RegimentType::Artillery => Mod32::ZERO, // No artillery_cost modifier yet
             };
 
-            let modified_cost = base_cost.mul(Fixed::ONE + type_mod);
+            let modified_cost = base_cost.mul(Fixed::ONE + type_mod.to_fixed());
             cost += modified_cost;
         }
         *army_costs.entry(army.owner.clone()).or_insert(Fixed::ZERO) += cost;
@@ -135,9 +136,9 @@ pub fn run_expenses_tick(state: &mut WorldState) {
                     .land_maintenance_modifier
                     .get(&tag)
                     .copied()
-                    .unwrap_or(Fixed::ZERO);
+                    .unwrap_or(Mod32::ZERO);
 
-                let factor = Fixed::ONE + modifier;
+                let factor = Fixed::ONE + modifier.to_fixed();
                 let final_cost = base_cost.mul(factor);
 
                 country.treasury -= final_cost;
@@ -159,13 +160,13 @@ pub fn run_expenses_tick(state: &mut WorldState) {
             // TODO: Different ship types have different costs in EU4
             // For now, use the same cost for all ship types
             let type_mod = match ship.type_ {
-                crate::state::ShipType::HeavyShip => Fixed::ZERO, // Could be 4x base
-                crate::state::ShipType::LightShip => Fixed::ZERO, // 1x base
-                crate::state::ShipType::Galley => Fixed::ZERO,    // 0.75x base
-                crate::state::ShipType::Transport => Fixed::ZERO, // 0.75x base
+                crate::state::ShipType::HeavyShip => Mod32::ZERO, // Could be 4x base
+                crate::state::ShipType::LightShip => Mod32::ZERO, // 1x base
+                crate::state::ShipType::Galley => Mod32::ZERO,    // 0.75x base
+                crate::state::ShipType::Transport => Mod32::ZERO, // 0.75x base
             };
 
-            let modified_cost = base_cost.mul(Fixed::ONE + type_mod);
+            let modified_cost = base_cost.mul(Fixed::ONE + type_mod.to_fixed());
             cost += modified_cost;
         }
         *fleet_costs
@@ -182,9 +183,9 @@ pub fn run_expenses_tick(state: &mut WorldState) {
                     .country_naval_maintenance
                     .get(&tag)
                     .copied()
-                    .unwrap_or(Fixed::ZERO);
+                    .unwrap_or(Mod32::ZERO);
 
-                let factor = Fixed::ONE + modifier;
+                let factor = Fixed::ONE + modifier.to_fixed();
                 let final_cost = base_cost.mul(factor);
 
                 country.treasury -= final_cost;
@@ -216,9 +217,9 @@ pub fn run_expenses_tick(state: &mut WorldState) {
                     .fort_maintenance_modifier
                     .get(&tag)
                     .copied()
-                    .unwrap_or(Fixed::ZERO);
+                    .unwrap_or(Mod32::ZERO);
 
-                let factor = Fixed::ONE + modifier;
+                let factor = Fixed::ONE + modifier.to_fixed();
                 let final_cost = base_cost.mul(factor);
 
                 country.treasury -= final_cost;
@@ -304,9 +305,9 @@ mod tests {
                     owner: Some("SWE".into()),
                     fort_level: 1,
                     is_mothballed: false,
-                    base_tax: Fixed::ONE,
-                    base_production: Fixed::ONE,
-                    base_manpower: Fixed::ONE,
+                    base_tax: Mod32::ONE,
+                    base_production: Mod32::ONE,
+                    base_manpower: Mod32::ONE,
                     ..Default::default()
                 },
             )
@@ -371,9 +372,9 @@ mod tests {
                     owner: Some("SWE".into()),
                     fort_level: 1,
                     is_mothballed: false,
-                    base_tax: Fixed::ONE,
-                    base_production: Fixed::ONE,
-                    base_manpower: Fixed::ONE,
+                    base_tax: Mod32::ONE,
+                    base_production: Mod32::ONE,
+                    base_manpower: Mod32::ONE,
                     ..Default::default()
                 },
             )

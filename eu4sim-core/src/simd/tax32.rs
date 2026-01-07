@@ -156,6 +156,15 @@ pub fn calculate_taxes32(inputs: &[TaxInput32]) -> Vec<TaxOutput32> {
     outputs
 }
 
+/// Returns the actual SIMD target being used for tax32 calculations.
+///
+/// This uses the same dispatch logic as `calculate_taxes_batch32` to report
+/// which variant was selected at runtime.
+#[multiversion(targets("x86_64+avx2+fma", "x86_64+avx2", "x86_64+sse4.1",))]
+pub fn tax32_selected_target() -> multiversion::target::Target {
+    multiversion::target::selected_target!()
+}
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -202,6 +211,37 @@ mod tests {
         let input = TaxInput32::from_f32(10.0, -2.0, 0.0, 0.0);
         let output = calculate_tax_scalar32(&input);
         assert!(output.monthly_income >= 0);
+    }
+
+    /// Verify which SIMD target is actually being dispatched.
+    ///
+    /// Run: cargo test -p eu4sim-core --release test_dispatch_target -- --nocapture
+    #[test]
+    fn test_dispatch_target() {
+        let target = tax32_selected_target();
+        let target_str = format!("{:?}", target);
+
+        // Extract feature names for readable output
+        let features: Vec<&str> = target
+            .features()
+            .map(|f| f.name())
+            .collect();
+
+        println!("\n=== tax32 dispatch target ===");
+        println!("Dispatched to: {:?}", features);
+        println!("CPU supports:  {}", crate::simd::SimdFeatures::detect().best_level());
+
+        // Confirm we got AVX2+FMA (our best target)
+        let has_avx2 = features.contains(&"avx2");
+        let has_fma = features.contains(&"fma");
+        println!("Using AVX2: {}, FMA: {}", has_avx2, has_fma);
+
+        // Should be one of our defined targets (or default/fallback)
+        assert!(
+            target_str.contains("avx2") || target_str.contains("sse") || target_str.contains("Default"),
+            "Unexpected target: {:?}",
+            target
+        );
     }
 }
 

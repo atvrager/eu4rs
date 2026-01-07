@@ -86,6 +86,7 @@ pub use estates::{
     PrivilegeId,
 };
 pub use fixed::Fixed;
+pub use fixed_generic::Mod32;
 pub use government::{
     CountryGovernmentState, GovernmentCategory, GovernmentRegistry, GovernmentTypeId, ReformId,
 };

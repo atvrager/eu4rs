@@ -4,6 +4,7 @@
 //! `goods_produced × goods_price × (1 + efficiency) × (1 - autonomy)`
 
 use crate::fixed::Fixed;
+use crate::fixed_generic::Mod32;
 use crate::state::{Tag, WorldState};
 use std::collections::HashMap;
 use tracing::instrument;
@@ -13,13 +14,13 @@ use tracing::instrument;
 #[derive(Debug, Clone)]
 pub struct EconomyConfig {
     /// Goods produced per point of base_production (EU4: 0.2)
-    pub base_production_multiplier: Fixed,
+    pub base_production_multiplier: Mod32,
 }
 
 impl Default for EconomyConfig {
     fn default() -> Self {
         Self {
-            base_production_multiplier: Fixed::from_f32(
+            base_production_multiplier: Mod32::from_f32(
                 eu4data::defines::economy::BASE_PRODUCTION_MULTIPLIER,
             ),
         }
@@ -50,10 +51,8 @@ pub fn run_production_tick(state: &mut WorldState, config: &EconomyConfig) {
             continue;
         };
 
-        // Goods produced = base_production × 0.2 (all Fixed)
-        let base_goods_produced = province
-            .base_production
-            .mul(config.base_production_multiplier);
+        // Goods produced = base_production × 0.2 (all Mod32)
+        let base_goods_produced = province.base_production * config.base_production_multiplier;
 
         // Apply country goods_produced modifiers (both goods_produced and global_trade_goods_size stack)
         let goods_produced_mod = state
@@ -61,23 +60,23 @@ pub fn run_production_tick(state: &mut WorldState, config: &EconomyConfig) {
             .country_goods_produced
             .get(owner)
             .copied()
-            .unwrap_or(Fixed::ZERO);
+            .unwrap_or(Mod32::ZERO);
         let trade_goods_size_mod = state
             .modifiers
             .country_trade_goods_size
             .get(owner)
             .copied()
-            .unwrap_or(Fixed::ZERO);
+            .unwrap_or(Mod32::ZERO);
         let goods_produced =
-            base_goods_produced.mul(Fixed::ONE + goods_produced_mod + trade_goods_size_mod);
+            base_goods_produced * (Mod32::ONE + goods_produced_mod + trade_goods_size_mod);
 
         // Effective price (base + event modifier)
         // TODO(review): Log warning when price is missing to catch data integrity bugs
         let base_price = state
             .base_goods_prices
             .get(&goods_id)
-            .copied()
-            .unwrap_or(Fixed::ONE);
+            .map(|f| Mod32::from_fixed(*f))
+            .unwrap_or(Mod32::ONE);
         let price = state.modifiers.effective_price(goods_id, base_price);
 
         // Efficiency: (1 + efficiency_bonus)
@@ -86,8 +85,8 @@ pub fn run_production_tick(state: &mut WorldState, config: &EconomyConfig) {
             .province_production_efficiency
             .get(&province_id)
             .copied()
-            .unwrap_or(Fixed::ZERO);
-        let efficiency_factor = Fixed::ONE + efficiency;
+            .unwrap_or(Mod32::ZERO);
+        let efficiency_factor = Mod32::ONE + efficiency;
 
         // Autonomy: (1 - autonomy)
         // Clamp to [0, 1] to prevent negative income
@@ -97,30 +96,27 @@ pub fn run_production_tick(state: &mut WorldState, config: &EconomyConfig) {
             .province_autonomy
             .get(&province_id)
             .copied()
-            .unwrap_or(Fixed::ZERO);
+            .unwrap_or(Mod32::ZERO);
 
         // Apply coring-based floor: uncored = max(base, 75%)
         let floor = crate::systems::coring::effective_autonomy(province, owner);
         let raw_autonomy = base_autonomy.max(floor);
 
-        let autonomy = raw_autonomy.clamp(Fixed::ZERO, Fixed::ONE);
-        let autonomy_factor = Fixed::ONE - autonomy;
+        let autonomy = raw_autonomy.clamp(Mod32::ZERO, Mod32::ONE);
+        let autonomy_factor = Mod32::ONE - autonomy;
 
         // Yearly production income: goods × price × efficiency × autonomy
-        let yearly_income = goods_produced
-            .mul(price)
-            .mul(efficiency_factor)
-            .mul(autonomy_factor);
+        let yearly_income = goods_produced * price * efficiency_factor * autonomy_factor;
 
         // Monthly income = Yearly / 12
         let monthly_income =
-            yearly_income.div(Fixed::from_int(eu4data::defines::economy::MONTHS_PER_YEAR));
+            yearly_income / Mod32::from_int(eu4data::defines::economy::MONTHS_PER_YEAR as i32);
 
         // Ensure non-negative (production shouldn't reduce treasury)
-        let safe_income = monthly_income.max(Fixed::ZERO);
+        let safe_income = monthly_income.max(Mod32::ZERO);
 
-        // Aggregate to owner
-        *income_deltas.entry(owner.clone()).or_insert(Fixed::ZERO) += safe_income;
+        // Aggregate to owner (convert Mod32 -> Fixed for treasury)
+        *income_deltas.entry(owner.clone()).or_insert(Fixed::ZERO) += safe_income.to_fixed();
     }
 
     // Apply production income to country treasuries
@@ -180,7 +176,7 @@ mod tests {
             ProvinceState {
                 owner: Some("SWE".to_string()),
                 trade_goods_id: Some(TradegoodId(0)),
-                base_production: Fixed::from_int(5),
+                base_production: Mod32::from_int(5),
                 cores,
                 ..Default::default()
             },
@@ -219,7 +215,7 @@ mod tests {
             ProvinceState {
                 owner: None,
                 trade_goods_id: Some(TradegoodId(0)),
-                base_production: Fixed::from_int(5),
+                base_production: Mod32::from_int(5),
                 ..Default::default()
             },
         );
@@ -243,7 +239,7 @@ mod tests {
         state
             .modifiers
             .province_production_efficiency
-            .insert(1, Fixed::from_f32(0.5));
+            .insert(1, Mod32::from_f32(0.5));
 
         run_production_tick(&mut state, &config);
 
@@ -264,7 +260,7 @@ mod tests {
         state
             .modifiers
             .province_autonomy
-            .insert(1, Fixed::from_f32(0.5));
+            .insert(1, Mod32::from_f32(0.5));
 
         run_production_tick(&mut state, &config);
 
@@ -304,8 +300,8 @@ mod tests {
             let config = EconomyConfig::default();
 
             // Set random modifiers
-            state.modifiers.province_autonomy.insert(1, Fixed::from_f32(autonomy));
-            state.modifiers.province_production_efficiency.insert(1, Fixed::from_f32(efficiency));
+            state.modifiers.province_autonomy.insert(1, Mod32::from_f32(autonomy));
+            state.modifiers.province_production_efficiency.insert(1, Mod32::from_f32(efficiency));
 
             run_production_tick(&mut state, &config);
 

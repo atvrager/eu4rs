@@ -4,6 +4,7 @@
 
 use crate::buildings::{BuildingConstruction, BuildingDef};
 use crate::fixed::Fixed;
+use crate::fixed_generic::Mod32;
 use crate::modifiers::{BuildingId, GameModifiers, TradegoodId};
 use crate::state::{CountryState, HashMap, ProvinceId, ProvinceState, Tag, Terrain, WorldState};
 use tracing::instrument;
@@ -88,8 +89,7 @@ impl std::error::Error for BuildingError {}
 ///
 /// Formula: base 2 + floor(dev/10) + terrain modifier, capped at 12.
 pub fn max_building_slots(province: &ProvinceState, terrain: Option<Terrain>) -> u8 {
-    let dev =
-        (province.base_tax + province.base_production + province.base_manpower).to_int() as i32;
+    let dev = (province.base_tax + province.base_production + province.base_manpower).to_int();
 
     // Base 2 + floor(dev/10)
     let base = 2 + (dev / 10);
@@ -568,8 +568,11 @@ pub fn recompute_province_modifiers(
 
     // Update or remove province modifiers
     // Pattern: insert if non-zero, remove if zero
+    // Convert Fixed -> Mod32 for GameModifiers
     if tax_mod != Fixed::ZERO {
-        modifiers.province_tax_modifier.insert(province_id, tax_mod);
+        modifiers
+            .province_tax_modifier
+            .insert(province_id, Mod32::from_fixed(tax_mod));
     } else {
         modifiers.province_tax_modifier.remove(&province_id);
     }
@@ -577,7 +580,7 @@ pub fn recompute_province_modifiers(
     if prod_eff != Fixed::ZERO {
         modifiers
             .province_production_efficiency
-            .insert(province_id, prod_eff);
+            .insert(province_id, Mod32::from_fixed(prod_eff));
     } else {
         modifiers
             .province_production_efficiency
@@ -587,7 +590,7 @@ pub fn recompute_province_modifiers(
     if trade_power != Fixed::ZERO {
         modifiers
             .province_trade_power
-            .insert(province_id, trade_power);
+            .insert(province_id, Mod32::from_fixed(trade_power));
     } else {
         modifiers.province_trade_power.remove(&province_id);
     }
@@ -595,7 +598,7 @@ pub fn recompute_province_modifiers(
     if manpower_mod != Fixed::ZERO {
         modifiers
             .province_manpower_modifier
-            .insert(province_id, manpower_mod);
+            .insert(province_id, Mod32::from_fixed(manpower_mod));
     } else {
         modifiers.province_manpower_modifier.remove(&province_id);
     }
@@ -603,7 +606,7 @@ pub fn recompute_province_modifiers(
     if sailors_mod != Fixed::ZERO {
         modifiers
             .province_sailors_modifier
-            .insert(province_id, sailors_mod);
+            .insert(province_id, Mod32::from_fixed(sailors_mod));
     } else {
         modifiers.province_sailors_modifier.remove(&province_id);
     }
@@ -611,7 +614,7 @@ pub fn recompute_province_modifiers(
     if defensiveness != Fixed::ZERO {
         modifiers
             .province_defensiveness
-            .insert(province_id, defensiveness);
+            .insert(province_id, Mod32::from_fixed(defensiveness));
     } else {
         modifiers.province_defensiveness.remove(&province_id);
     }
@@ -619,13 +622,15 @@ pub fn recompute_province_modifiers(
     if ship_repair != Fixed::ZERO {
         modifiers
             .province_ship_repair
-            .insert(province_id, ship_repair);
+            .insert(province_id, Mod32::from_fixed(ship_repair));
     } else {
         modifiers.province_ship_repair.remove(&province_id);
     }
 
     if ship_cost != Fixed::ZERO {
-        modifiers.province_ship_cost.insert(province_id, ship_cost);
+        modifiers
+            .province_ship_cost
+            .insert(province_id, Mod32::from_fixed(ship_cost));
     } else {
         modifiers.province_ship_cost.remove(&province_id);
     }
@@ -633,7 +638,7 @@ pub fn recompute_province_modifiers(
     if trade_goods != Fixed::ZERO {
         modifiers
             .province_trade_goods_size
-            .insert(province_id, trade_goods);
+            .insert(province_id, Mod32::from_fixed(trade_goods));
     } else {
         modifiers.province_trade_goods_size.remove(&province_id);
     }
@@ -672,13 +677,13 @@ pub fn recompute_country_modifiers_from_buildings(state: &mut WorldState) {
         }
     }
 
-    // Update country modifiers
+    // Update country modifiers (convert to Mod32 for GameModifiers)
     for (tag, value) in land_fl {
         if value != 0 {
             state
                 .modifiers
                 .country_land_forcelimit
-                .insert(tag, Fixed::from_int(value as i64));
+                .insert(tag, Mod32::from_int(value));
         }
     }
 
@@ -687,7 +692,7 @@ pub fn recompute_country_modifiers_from_buildings(state: &mut WorldState) {
             state
                 .modifiers
                 .country_naval_forcelimit
-                .insert(tag, Fixed::from_int(value as i64));
+                .insert(tag, Mod32::from_int(value));
         }
     }
 
@@ -696,7 +701,7 @@ pub fn recompute_country_modifiers_from_buildings(state: &mut WorldState) {
             state
                 .modifiers
                 .country_global_ship_recruit_speed
-                .insert(tag, value);
+                .insert(tag, Mod32::from_fixed(value));
         }
     }
 }
@@ -752,9 +757,9 @@ mod tests {
             religion: None,
             culture: None,
             trade_goods_id: Some(TradegoodId(1)), // Grain
-            base_production: Fixed::from_int(5),
-            base_tax: Fixed::from_int(5),
-            base_manpower: Fixed::from_int(5),
+            base_production: Mod32::from_int(5),
+            base_tax: Mod32::from_int(5),
+            base_manpower: Mod32::from_int(5),
             fort_level: 0,
             is_capital: false,
             is_mothballed: false,
@@ -769,7 +774,7 @@ mod tests {
             buildings: BuildingSet::default(),
             building_construction: None,
             has_port: true,
-            devastation: Fixed::ZERO,
+            devastation: Mod32::ZERO,
         }
     }
 
@@ -818,9 +823,9 @@ mod tests {
         assert_eq!(max_building_slots(&province, Some(Terrain::Plains)), 3);
 
         // Higher dev
-        province.base_tax = Fixed::from_int(10);
-        province.base_production = Fixed::from_int(10);
-        province.base_manpower = Fixed::from_int(10);
+        province.base_tax = Mod32::from_int(10);
+        province.base_production = Mod32::from_int(10);
+        province.base_manpower = Mod32::from_int(10);
         // dev = 30, slots = 2 + 3 = 5
         assert_eq!(max_building_slots(&province, Some(Terrain::Plains)), 5);
     }
@@ -1016,11 +1021,11 @@ mod tests {
         recompute_province_modifiers(province_id, &province, &defs, &mut modifiers);
         assert_eq!(
             modifiers.province_tax_modifier.get(&province_id),
-            Some(&Fixed::from_f32(0.4))
+            Some(&Mod32::from_f32(0.4))
         );
         assert_eq!(
             modifiers.province_production_efficiency.get(&province_id),
-            Some(&Fixed::from_f32(0.1))
+            Some(&Mod32::from_f32(0.1))
         );
 
         // Add workshop (modifiers should stack)
@@ -1028,11 +1033,11 @@ mod tests {
         recompute_province_modifiers(province_id, &province, &defs, &mut modifiers);
         assert_eq!(
             modifiers.province_production_efficiency.get(&province_id),
-            Some(&Fixed::from_f32(0.6)) // 0.1 + 0.5
+            Some(&Mod32::from_f32(0.6)) // 0.1 + 0.5
         );
         assert_eq!(
             modifiers.province_trade_power.get(&province_id),
-            Some(&Fixed::from_f32(0.5))
+            Some(&Mod32::from_f32(0.5))
         );
     }
 
@@ -1054,15 +1059,15 @@ mod tests {
 
         assert_eq!(
             modifiers.province_sailors_modifier.get(&province_id),
-            Some(&Fixed::from_f32(0.5))
+            Some(&Mod32::from_f32(0.5))
         );
         assert_eq!(
             modifiers.province_ship_cost.get(&province_id),
-            Some(&Fixed::from_f32(-0.1))
+            Some(&Mod32::from_f32(-0.1))
         );
         assert_eq!(
             modifiers.province_ship_repair.get(&province_id),
-            Some(&Fixed::from_f32(0.25))
+            Some(&Mod32::from_f32(0.25))
         );
     }
 
@@ -1082,7 +1087,7 @@ mod tests {
 
         assert_eq!(
             modifiers.province_defensiveness.get(&province_id),
-            Some(&Fixed::from_f32(0.25))
+            Some(&Mod32::from_f32(0.25))
         );
     }
 
@@ -1102,7 +1107,7 @@ mod tests {
 
         assert_eq!(
             modifiers.province_trade_goods_size.get(&province_id),
-            Some(&Fixed::ONE)
+            Some(&Mod32::ONE)
         );
     }
 }

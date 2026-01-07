@@ -10,6 +10,7 @@
 //! The first year (1444) is prorated based on months elapsed since game start.
 
 use crate::fixed::Fixed;
+use crate::fixed_generic::Mod32;
 use crate::state::{TributeType, WorldState};
 use tracing::instrument;
 
@@ -195,7 +196,7 @@ pub fn run_tribute_payments(state: &mut WorldState) {
 /// Calculate annual manpower recovery for a country.
 /// Based on sum of base_manpower from owned provinces × 1000 (men per dev).
 fn calculate_annual_manpower(state: &WorldState, tag: &str) -> Fixed {
-    let mut total_base_manpower = Fixed::ZERO;
+    let mut total_base_manpower = Mod32::ZERO;
 
     for province in state.provinces.values() {
         if province.owner.as_deref() == Some(tag) {
@@ -205,12 +206,12 @@ fn calculate_annual_manpower(state: &WorldState, tag: &str) -> Fixed {
 
     // Convert base manpower (development) to actual men
     // Each point of manpower dev = 250 men/year base (before modifiers)
-    total_base_manpower.mul(Fixed::from_int(250))
+    (total_base_manpower * Mod32::from_int(250)).to_fixed()
 }
 
 /// Calculate total development for a country.
 fn calculate_total_development(state: &WorldState, tag: &str) -> Fixed {
-    let mut total_dev = Fixed::ZERO;
+    let mut total_dev = Mod32::ZERO;
 
     for province in state.provinces.values() {
         if province.owner.as_deref() == Some(tag) {
@@ -218,7 +219,7 @@ fn calculate_total_development(state: &WorldState, tag: &str) -> Fixed {
         }
     }
 
-    total_dev
+    total_dev.to_fixed()
 }
 
 /// Apply gold tribute transfer.
@@ -511,7 +512,7 @@ mod tests {
             prov_id,
             crate::state::ProvinceState {
                 owner: Some("KOR".to_string()),
-                base_manpower: Fixed::from_int(10),
+                base_manpower: Mod32::from_int(10),
                 ..Default::default()
             },
         );
@@ -571,9 +572,9 @@ mod tests {
             prov_id,
             crate::state::ProvinceState {
                 owner: Some("KOR".to_string()),
-                base_tax: Fixed::from_int(50),
-                base_production: Fixed::from_int(45),
-                base_manpower: Fixed::from_int(50),
+                base_tax: Mod32::from_int(50),
+                base_production: Mod32::from_int(45),
+                base_manpower: Mod32::from_int(50),
                 ..Default::default()
             },
         );
@@ -628,9 +629,9 @@ mod tests {
             prov_id,
             crate::state::ProvinceState {
                 owner: Some("KOR".to_string()),
-                base_tax: Fixed::from_int(200),
-                base_production: Fixed::from_int(150),
-                base_manpower: Fixed::from_int(150),
+                base_tax: Mod32::from_int(200),
+                base_production: Mod32::from_int(150),
+                base_manpower: Mod32::from_int(150),
                 ..Default::default()
             },
         );

@@ -1,5 +1,6 @@
 //\! Unit tests for step.rs simulation stepping.
 use super::*;
+use crate::fixed_generic::Mod32;
 use crate::state::{Date, ProvinceState};
 use crate::testing::WorldStateBuilder;
 
@@ -257,7 +258,7 @@ fn test_declare_war_nonexistent_country() {
 fn test_dev_purchasing_full_cycle() {
     let mut state = WorldStateBuilder::new()
         .with_country("SWE")
-        .with_province_full(1, Some("SWE"), None, Fixed::from_int(5))
+        .with_province_full(1, Some("SWE"), None, Mod32::from_int(5))
         .build();
 
     // Generate mana (9 months × 6/month = 54 mana each)
@@ -279,7 +280,7 @@ fn test_dev_purchasing_full_cycle() {
     let prov = state.provinces.get(&1).unwrap();
 
     assert_eq!(swe.adm_mana, Fixed::from_int(4)); // 54 - 50
-    assert_eq!(prov.base_tax, Fixed::from_int(2)); // 1 + 1
+    assert_eq!(prov.base_tax, Mod32::from_int(2)); // 1 + 1
 
     // Insufficient mana should fail
     let cmd2 = Command::DevelopProvince {
@@ -293,7 +294,7 @@ fn test_dev_purchasing_full_cycle() {
 fn test_dev_purchasing_all_types() {
     let mut state = WorldStateBuilder::new()
         .with_country("SWE")
-        .with_province_full(1, Some("SWE"), None, Fixed::from_int(5))
+        .with_province_full(1, Some("SWE"), None, Mod32::from_int(5))
         .build();
 
     // Generate mana (25 months × 6/month = 150 mana each)
@@ -350,9 +351,9 @@ fn test_dev_purchasing_all_types() {
 
     // Verify all dev types increased
     let prov = state.provinces.get(&1).unwrap();
-    assert_eq!(prov.base_tax, Fixed::from_int(2)); // 1 + 1
-    assert_eq!(prov.base_production, Fixed::from_int(6)); // 5 + 1
-    assert_eq!(prov.base_manpower, Fixed::from_int(2)); // 1 + 1
+    assert_eq!(prov.base_tax, Mod32::from_int(2)); // 1 + 1
+    assert_eq!(prov.base_production, Mod32::from_int(6)); // 5 + 1
+    assert_eq!(prov.base_manpower, Mod32::from_int(2)); // 1 + 1
 }
 
 #[test]
@@ -360,7 +361,7 @@ fn test_dev_purchasing_not_owned() {
     let mut state = WorldStateBuilder::new()
         .with_country("SWE")
         .with_country("DEN")
-        .with_province_full(1, Some("DEN"), None, Fixed::from_int(5))
+        .with_province_full(1, Some("DEN"), None, Mod32::from_int(5))
         .build();
 
     // Give SWE mana

@@ -10,6 +10,7 @@
 
 use crate::buildings::BuildingDef;
 use crate::fixed::Fixed;
+use crate::fixed_generic::Mod32;
 use crate::modifiers::{BuildingId, TradegoodId};
 use crate::state::{ProvinceId, ProvinceState, Tag};
 use std::collections::HashMap;
@@ -77,16 +78,16 @@ pub fn calculate_force_limits(
             .province_autonomy
             .get(&prov_id)
             .copied()
-            .unwrap_or(Fixed::ZERO);
+            .unwrap_or(Mod32::ZERO);
 
         // Apply coring floor (uncored provinces have minimum 75% autonomy)
         let floor = crate::systems::coring::effective_autonomy(province, tag);
-        let autonomy = raw_autonomy.max(floor).clamp(Fixed::ZERO, Fixed::ONE);
-        let autonomy_mult = Fixed::ONE - autonomy;
+        let autonomy = raw_autonomy.max(floor).clamp(Mod32::ZERO, Mod32::ONE);
+        let autonomy_mult = Mod32::ONE - autonomy;
 
         // Development contribution
         let total_dev = province.base_tax + province.base_production + province.base_manpower;
-        let dev_contrib = total_dev.mul(fl_per_dev);
+        let dev_contrib = total_dev.to_fixed() * fl_per_dev;
 
         // Land FL: dev + grain bonus + building bonuses
         let mut prov_land_fl = dev_contrib;
@@ -113,8 +114,8 @@ pub fn calculate_force_limits(
         }
 
         // Apply autonomy reduction to province contributions
-        land_province_contrib += prov_land_fl.mul(autonomy_mult);
-        naval_province_contrib += prov_naval_fl.mul(autonomy_mult);
+        land_province_contrib += prov_land_fl * autonomy_mult.to_fixed();
+        naval_province_contrib += prov_naval_fl * autonomy_mult.to_fixed();
     }
 
     // Base + province contributions
@@ -126,12 +127,14 @@ pub fn calculate_force_limits(
         .country_land_forcelimit
         .get(tag)
         .copied()
-        .unwrap_or(Fixed::ZERO);
+        .unwrap_or(Mod32::ZERO)
+        .to_fixed();
     let naval_mod = modifiers
         .country_naval_forcelimit
         .get(tag)
         .copied()
-        .unwrap_or(Fixed::ZERO);
+        .unwrap_or(Mod32::ZERO)
+        .to_fixed();
 
     // Final calculation: base * (1 + modifier)
     // Note: The building contributions are already in country_*_forcelimit from

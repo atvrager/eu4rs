@@ -2003,10 +2003,9 @@ impl App {
                 water_color
             } else if let Some(province) = world_state.provinces.get(&province_id) {
                 // Calculate total development
-                use eu4sim_core::fixed::Fixed;
                 let dev_total =
                     province.base_tax + province.base_production + province.base_manpower;
-                let dev_f32 = Fixed::to_f32(dev_total);
+                let dev_f32 = dev_total.to_f32();
 
                 // Color gradient based on development
                 // 0-10: low (dark green)

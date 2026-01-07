@@ -1,4 +1,4 @@
-use crate::fixed::Fixed;
+use crate::fixed_generic::Mod32;
 use crate::state::{Tag, War, WorldState};
 use tracing::instrument;
 
@@ -65,12 +65,12 @@ pub fn recalculate_war_scores(state: &mut WorldState) {
 /// Returns (attacker_occupation_score, defender_occupation_score)
 fn calculate_occupation_scores(state: &WorldState, war: &War) -> (u8, u8) {
     // Calculate total development for each side
-    let mut attacker_total_dev = Fixed::ZERO;
-    let mut defender_total_dev = Fixed::ZERO;
+    let mut attacker_total_dev = Mod32::ZERO;
+    let mut defender_total_dev = Mod32::ZERO;
 
     // Calculate occupied development
-    let mut attacker_occupied_dev = Fixed::ZERO; // Dev occupied by attackers (in defender territory)
-    let mut defender_occupied_dev = Fixed::ZERO; // Dev occupied by defenders (in attacker territory)
+    let mut attacker_occupied_dev = Mod32::ZERO; // Dev occupied by attackers (in defender territory)
+    let mut defender_occupied_dev = Mod32::ZERO; // Dev occupied by defenders (in attacker territory)
 
     // Track occupied provinces for debugging
     let mut occupied_provinces: Vec<(u32, String, String)> = Vec::new();
@@ -117,15 +117,15 @@ fn calculate_occupation_scores(state: &WorldState, war: &War) -> (u8, u8) {
     }
 
     // Calculate occupation scores: (occupied_dev / enemy_total_dev) * MAX_OCCUPATION_SCORE
-    let attacker_occ_score = if defender_total_dev > Fixed::ZERO {
-        let ratio = attacker_occupied_dev.div(defender_total_dev);
+    let attacker_occ_score = if defender_total_dev > Mod32::ZERO {
+        let ratio = attacker_occupied_dev / defender_total_dev;
         (ratio.to_f32() * MAX_OCCUPATION_SCORE as f32).round() as u8
     } else {
         0
     };
 
-    let defender_occ_score = if attacker_total_dev > Fixed::ZERO {
-        let ratio = defender_occupied_dev.div(attacker_total_dev);
+    let defender_occ_score = if attacker_total_dev > Mod32::ZERO {
+        let ratio = defender_occupied_dev / attacker_total_dev;
         (ratio.to_f32() * MAX_OCCUPATION_SCORE as f32).round() as u8
     } else {
         0
@@ -269,9 +269,9 @@ mod tests {
                         } else {
                             Some("DEF".into())
                         },
-                        base_tax: Fixed::from_int(1),
-                        base_production: Fixed::ZERO,
-                        base_manpower: Fixed::ZERO,
+                        base_tax: Mod32::from_int(1),
+                        base_production: Mod32::ZERO,
+                        base_manpower: Mod32::ZERO,
                         ..Default::default()
                     });
                 }
@@ -317,9 +317,9 @@ mod tests {
                     state.provinces.insert(i, crate::state::ProvinceState {
                         owner: Some("DEF".into()),
                         controller: Some("ATK".into()),
-                        base_tax: Fixed::from_int(dev_per_province as i64),
-                        base_production: Fixed::ZERO,
-                        base_manpower: Fixed::ZERO,
+                        base_tax: Mod32::from_int(dev_per_province as i32),
+                        base_production: Mod32::ZERO,
+                        base_manpower: Mod32::ZERO,
                         ..Default::default()
                     });
                 }
@@ -379,9 +379,9 @@ mod tests {
                         } else {
                             Some("DEF".into())
                         },
-                        base_tax: Fixed::from_int(1),
-                        base_production: Fixed::ZERO,
-                        base_manpower: Fixed::ZERO,
+                        base_tax: Mod32::from_int(1),
+                        base_production: Mod32::ZERO,
+                        base_manpower: Mod32::ZERO,
                         ..Default::default()
                     });
                 }
@@ -416,9 +416,9 @@ mod tests {
                         } else {
                             Some("DEF".into())
                         },
-                        base_tax: Fixed::from_int(1),
-                        base_production: Fixed::ZERO,
-                        base_manpower: Fixed::ZERO,
+                        base_tax: Mod32::from_int(1),
+                        base_production: Mod32::ZERO,
+                        base_manpower: Mod32::ZERO,
                         ..Default::default()
                     });
                 }

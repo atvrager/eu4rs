@@ -1,4 +1,5 @@
 use crate::fixed::Fixed;
+use crate::fixed_generic::Mod32;
 use crate::state::WorldState;
 
 /// Monthly decay rates (EU4 approximations)
@@ -25,8 +26,8 @@ pub fn run_stats_tick(state: &mut WorldState) {
                 .country_prestige
                 .get(&tag)
                 .copied()
-                .unwrap_or(Fixed::ZERO);
-            country.prestige.add(prestige_gain);
+                .unwrap_or(Mod32::ZERO);
+            country.prestige.add(prestige_gain.to_fixed());
 
             // Prestige decays toward 0 - Fame is but a shadow that shrinks as the sun moves.
             country.prestige.decay_toward(Fixed::ZERO, DECAY_RATE);

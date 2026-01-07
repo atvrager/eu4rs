@@ -1,4 +1,5 @@
 use crate::fixed::Fixed;
+use crate::fixed_generic::Mod32;
 use crate::input::DevType;
 use crate::state::{ProvinceId, Tag, WorldState};
 use anyhow::{anyhow, Result};
@@ -37,8 +38,10 @@ pub fn develop_province(
         .country_development_cost
         .get(&country)
         .copied()
-        .unwrap_or(Fixed::ZERO);
-    let cost = base_cost.mul(Fixed::ONE + dev_cost_mod).max(Fixed::ONE); // Minimum cost of 1
+        .unwrap_or(Mod32::ZERO);
+    let cost = base_cost
+        .mul(Fixed::ONE + dev_cost_mod.to_fixed())
+        .max(Fixed::ONE); // Minimum cost of 1
 
     match dev_type {
         DevType::Tax => {
@@ -46,21 +49,21 @@ pub fn develop_province(
                 return Err(anyhow!("Not enough ADM mana to develop province"));
             }
             country_state.adm_mana -= cost;
-            province.base_tax += Fixed::from_int(1);
+            province.base_tax += Mod32::from_int(1);
         }
         DevType::Production => {
             if country_state.dip_mana < cost {
                 return Err(anyhow!("Not enough DIP mana to develop province"));
             }
             country_state.dip_mana -= cost;
-            province.base_production += Fixed::from_int(1);
+            province.base_production += Mod32::from_int(1);
         }
         DevType::Manpower => {
             if country_state.mil_mana < cost {
                 return Err(anyhow!("Not enough MIL mana to develop province"));
             }
             country_state.mil_mana -= cost;
-            province.base_manpower += Fixed::from_int(1);
+            province.base_manpower += Mod32::from_int(1);
         }
     }
 

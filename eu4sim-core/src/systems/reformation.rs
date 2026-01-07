@@ -141,7 +141,8 @@ fn process_centers(state: &mut WorldState, adjacency: Option<&AdjacencyGraph>) {
             // Calculate conversion chance using Fixed arithmetic
             // Formula: threshold = base_chance * (10 / (10 + dev))
             // Higher development = more resistance to religious change
-            let dev = neighbor.base_tax + neighbor.base_production + neighbor.base_manpower;
+            let dev =
+                (neighbor.base_tax + neighbor.base_production + neighbor.base_manpower).to_fixed();
             let denominator = ten + dev;
             let dev_modifier = ten.div(denominator);
             let threshold = base_chance.mul(dev_modifier);
@@ -216,6 +217,7 @@ fn expire_centers(state: &mut WorldState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixed_generic::Mod32;
     use crate::state::Date;
 
     #[test]
@@ -242,7 +244,7 @@ mod tests {
         let prov = crate::state::ProvinceState {
             religion: Some("catholic".to_string()),
             owner: Some("BRA".to_string()),
-            base_tax: crate::fixed::Fixed::from_int(5),
+            base_tax: Mod32::from_int(5),
             ..Default::default()
         };
         state.provinces.insert(50, prov);

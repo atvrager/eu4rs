@@ -193,6 +193,25 @@ pub type Prestige16 = Fx16<100>; // Prestige/stability (±327 range, 0.01 precis
 pub type Mod32 = Fx32<10000>; // Modifiers, rates (±214k range, 0.0001 precision)
 pub type Mod64 = Fx64<10000>; // Large aggregates (±922T range, 0.0001 precision)
 
+// ============================================================================
+// Interop with original Fixed type
+// ============================================================================
+
+impl Mod32 {
+    /// Convert from the original Fixed type (may truncate large values).
+    #[inline]
+    pub fn from_fixed(other: crate::fixed::Fixed) -> Self {
+        // Both use scale 10000, just narrow i64 -> i32
+        Fixed(other.raw() as i32)
+    }
+
+    /// Convert to the original Fixed type (widening, lossless).
+    #[inline]
+    pub fn to_fixed(self) -> crate::fixed::Fixed {
+        crate::fixed::Fixed::from_raw(self.0 as i64)
+    }
+}
+
 impl<B: FixedBacking, const SCALE: u32> Fixed<B, SCALE> {
     /// The scale factor for this fixed-point type.
     pub const SCALE: u32 = SCALE;

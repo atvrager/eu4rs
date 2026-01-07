@@ -10,39 +10,42 @@
 //! - **Autonomy Floor**: 75% for uncored, 0% for cored
 
 use crate::fixed::Fixed;
+use crate::fixed_generic::Mod32;
 use crate::state::{CoringProgress, Date, ProvinceId, ProvinceState, Tag, WorldState};
 use tracing::instrument;
 
 /// Cost to core a province: 10 ADM per development point.
-pub const CORING_COST_PER_DEV: i64 = 10;
+pub const CORING_COST_PER_DEV: i32 = 10;
 
 /// Base time to core a province: 36 months.
 pub const BASE_CORING_TIME: u8 = 36;
 
 /// Autonomy floor for uncored provinces (75%).
-pub const UNCORED_AUTONOMY_FLOOR: Fixed = Fixed::from_raw(7500);
+pub const UNCORED_AUTONOMY_FLOOR: Mod32 = Mod32::from_raw(7500);
 
 /// Calculate the ADM cost to core a province.
+/// Returns Fixed since ADM costs can be large and interact with treasury.
 pub fn calculate_coring_cost(province: &ProvinceState) -> Fixed {
-    let dev = province.base_tax + province.base_production + province.base_manpower;
-    dev * Fixed::from_int(CORING_COST_PER_DEV)
+    let dev = province_development(province);
+    // Convert to Fixed for large-value calculations
+    dev.to_fixed() * Fixed::from_int(CORING_COST_PER_DEV as i64)
 }
 
 /// Calculate total development of a province.
-pub fn province_development(province: &ProvinceState) -> Fixed {
+pub fn province_development(province: &ProvinceState) -> Mod32 {
     province.base_tax + province.base_production + province.base_manpower
 }
 
 /// Calculate the effective autonomy for income/manpower calculations.
 /// Uncored provinces have a 75% floor; cored provinces use base autonomy (0 for now).
-pub fn effective_autonomy(province: &ProvinceState, owner: &Tag) -> Fixed {
+pub fn effective_autonomy(province: &ProvinceState, owner: &Tag) -> Mod32 {
     // We don't track base autonomy yet, assume 0
-    let base = Fixed::ZERO;
+    let base = Mod32::ZERO;
 
     // Uncored provinces have +75% autonomy floor
     let has_core = province.cores.contains(owner);
     let floor = if has_core {
-        Fixed::ZERO
+        Mod32::ZERO
     } else {
         UNCORED_AUTONOMY_FLOOR
     };
@@ -88,9 +91,10 @@ pub fn start_coring(
         .country_core_creation
         .get(&country)
         .copied()
-        .unwrap_or(Fixed::ZERO);
-    let cost_factor = Fixed::ONE + core_creation_mod;
-    let cost = base_cost.mul(cost_factor).max(Fixed::ONE); // Minimum cost of 1
+        .unwrap_or(Mod32::ZERO);
+    let cost_factor = Mod32::ONE + core_creation_mod;
+    // Convert Mod32 factor to Fixed for multiplication with Fixed base_cost
+    let cost = (base_cost * cost_factor.to_fixed()).max(Fixed::ONE); // Minimum cost of 1
 
     let country_state = state
         .countries
@@ -186,21 +190,22 @@ pub fn tick_coring(state: &mut WorldState) {
 /// Called after peace deals or at the start of each month.
 pub fn recalculate_overextension(state: &mut WorldState) {
     // Collect uncored development per country
-    let mut uncored_dev: std::collections::HashMap<Tag, Fixed> = std::collections::HashMap::new();
+    let mut uncored_dev: std::collections::HashMap<Tag, Mod32> = std::collections::HashMap::new();
 
     for province in state.provinces.values() {
         if let Some(owner) = &province.owner {
             if !province.cores.contains(owner) {
                 let dev = province_development(province);
-                *uncored_dev.entry(owner.clone()).or_insert(Fixed::ZERO) += dev;
+                *uncored_dev.entry(owner.clone()).or_insert(Mod32::ZERO) += dev;
             }
         }
     }
 
     // Update country overextension (1 dev = 1% OE)
+    // Convert to Fixed for storage in CountryState
     for (tag, country) in state.countries.iter_mut() {
-        let oe = uncored_dev.get(tag).copied().unwrap_or(Fixed::ZERO);
-        country.overextension = oe;
+        let oe = uncored_dev.get(tag).copied().unwrap_or(Mod32::ZERO);
+        country.overextension = oe.to_fixed();
     }
 }
 
@@ -212,9 +217,9 @@ mod tests {
     #[test]
     fn test_coring_cost_calculation() {
         let province = ProvinceState {
-            base_tax: Fixed::from_int(5),
-            base_production: Fixed::from_int(5),
-            base_manpower: Fixed::from_int(5),
+            base_tax: Mod32::from_int(5),
+            base_production: Mod32::from_int(5),
+            base_manpower: Mod32::from_int(5),
             ..Default::default()
         };
 
@@ -231,7 +236,7 @@ mod tests {
         province.cores.insert("FRA".into());
 
         let autonomy = effective_autonomy(&province, &"FRA".into());
-        assert_eq!(autonomy, Fixed::ZERO);
+        assert_eq!(autonomy, Mod32::ZERO);
     }
 
     #[test]
@@ -345,9 +350,9 @@ mod tests {
 
         // Set development
         let p2 = state.provinces.get_mut(&2).unwrap();
-        p2.base_tax = Fixed::from_int(5);
-        p2.base_production = Fixed::from_int(5);
-        p2.base_manpower = Fixed::from_int(5);
+        p2.base_tax = Mod32::from_int(5);
+        p2.base_production = Mod32::from_int(5);
+        p2.base_manpower = Mod32::from_int(5);
 
         recalculate_overextension(&mut state);
 

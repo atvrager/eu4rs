@@ -1,5 +1,6 @@
 use crate::buildings::BuildingSet;
 use crate::fixed::Fixed;
+use crate::fixed_generic::Mod32;
 use crate::modifiers::{BuildingId, GameModifiers, TradegoodId};
 use crate::state::{CountryState, Date, HashMap, ProvinceId, ProvinceState, Terrain, WorldState};
 use crate::trade::{ProvinceTradeState, TradeTopology};
@@ -98,9 +99,9 @@ impl WorldStateBuilder {
                 religion: None,
                 culture: None,
                 trade_goods_id: None,
-                base_production: Fixed::ONE,
-                base_tax: Fixed::ONE,
-                base_manpower: Fixed::ONE,
+                base_production: Mod32::ONE,
+                base_tax: Mod32::ONE,
+                base_manpower: Mod32::ONE,
                 fort_level: 0,
                 is_capital: false,
                 is_mothballed: false,
@@ -115,7 +116,7 @@ impl WorldStateBuilder {
                 building_construction: None,
                 has_port: false,
                 is_in_hre: false,
-                devastation: Fixed::ZERO,
+                devastation: Mod32::ZERO,
             },
         );
         self
@@ -142,7 +143,7 @@ impl WorldStateBuilder {
         id: ProvinceId,
         owner_tag: Option<&str>,
         trade_goods_id: Option<TradegoodId>,
-        base_production: Fixed,
+        base_production: Mod32,
     ) -> Self {
         let mut cores = std::collections::HashSet::new();
         if let Some(tag) = owner_tag {
@@ -157,8 +158,8 @@ impl WorldStateBuilder {
                 culture: None,
                 trade_goods_id,
                 base_production,
-                base_tax: Fixed::ONE,
-                base_manpower: Fixed::ONE,
+                base_tax: Mod32::ONE,
+                base_manpower: Mod32::ONE,
                 fort_level: 0,
                 is_capital: false,
                 is_mothballed: false,
@@ -173,7 +174,7 @@ impl WorldStateBuilder {
                 building_construction: None,
                 has_port: false,
                 is_in_hre: false,
-                devastation: Fixed::ZERO,
+                devastation: Mod32::ZERO,
             },
         );
         self
@@ -253,11 +254,11 @@ mod tests {
     fn test_with_province_full() {
         let grain = TradegoodId(0);
         let state = WorldStateBuilder::default()
-            .with_province_full(1, Some("SWE"), Some(grain), Fixed::from_int(5))
+            .with_province_full(1, Some("SWE"), Some(grain), Mod32::from_int(5))
             .with_goods_price(grain, Fixed::from_f32(2.5))
             .build();
 
-        assert_eq!(state.provinces[&1].base_production, Fixed::from_int(5));
+        assert_eq!(state.provinces[&1].base_production, Mod32::from_int(5));
         assert_eq!(state.provinces[&1].trade_goods_id, Some(grain));
         assert_eq!(state.base_goods_prices[&grain], Fixed::from_f32(2.5));
     }

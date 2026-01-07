@@ -255,6 +255,7 @@ mod tests {
     #[test]
     fn test_apply_policy_modifiers() {
         use crate::fixed::Fixed;
+        use crate::fixed_generic::Mod32;
 
         let mut registry = PolicyRegistry::new();
         let mut modifiers = GameModifiers::default();
@@ -277,7 +278,7 @@ mod tests {
 
         assert_eq!(
             modifiers.country_discipline.get(&tag),
-            Some(&Fixed::from_f32(0.05))
+            Some(&Mod32::from_f32(0.05))
         );
     }
 

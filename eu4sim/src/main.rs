@@ -26,7 +26,7 @@ mod tui;
 /// Create minimal mock state for CI testing (no game files needed)
 fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGraph) {
     use eu4sim_core::state::{Army, CountryState, ProvinceState, Regiment, RegimentType, Terrain};
-    use eu4sim_core::{BoundedFixed, BoundedInt, Fixed};
+    use eu4sim_core::{BoundedFixed, BoundedInt, Fixed, Mod32};
 
     // Create 3 mock countries with adjacent provinces
     let mut provinces = std::collections::HashMap::new();
@@ -111,9 +111,9 @@ fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGra
                 religion: countries[owner].religion.clone(),
                 culture: Some("test_culture".to_string()),
                 trade_goods_id: None,
-                base_tax: Fixed::from_int(5),
-                base_production: Fixed::from_int(5),
-                base_manpower: Fixed::from_int(3),
+                base_tax: Mod32::from_int(5),
+                base_production: Mod32::from_int(5),
+                base_manpower: Mod32::from_int(3),
                 fort_level: if id == 1 || id == 3 { 1 } else { 0 },
                 is_capital: id == 1,
                 is_mothballed: false,
@@ -128,7 +128,7 @@ fn create_mock_state(seed: u64) -> (WorldState, eu4data::adjacency::AdjacencyGra
                 building_construction: None,
                 has_port: false,
                 is_in_hre: false,
-                devastation: Fixed::ZERO,
+                devastation: Mod32::ZERO,
             },
         );
     }
@@ -243,8 +243,8 @@ fn calculate_top_countries(state: &WorldState, count: usize) -> HashSet<String> 
     let mut dev_by_country: HashMap<String, i64> = HashMap::new();
     for prov in state.provinces.values() {
         if let Some(owner) = &prov.owner {
-            let dev = prov.base_tax.0 + prov.base_production.0 + prov.base_manpower.0;
-            *dev_by_country.entry(owner.clone()).or_default() += dev;
+            let dev = prov.base_tax.raw() + prov.base_production.raw() + prov.base_manpower.raw();
+            *dev_by_country.entry(owner.clone()).or_default() += dev as i64;
         }
     }
 
@@ -1652,7 +1652,7 @@ fn main() -> Result<()> {
 mod tests {
     use super::*;
     use eu4sim_core::state::{CountryState, Date, ProvinceState};
-    use eu4sim_core::Fixed;
+    use eu4sim_core::Mod32;
 
     /// Create a minimal WorldState with N countries and provinces
     #[allow(clippy::field_reassign_with_default)]
@@ -1666,9 +1666,9 @@ mod tests {
             // Create a province with this development
             let prov = ProvinceState {
                 owner: Some(tag.clone()),
-                base_tax: Fixed::from_int(*dev / 3),
-                base_production: Fixed::from_int(*dev / 3),
-                base_manpower: Fixed::from_int(*dev / 3),
+                base_tax: Mod32::from_int((*dev / 3) as i32),
+                base_production: Mod32::from_int((*dev / 3) as i32),
+                base_manpower: Mod32::from_int((*dev / 3) as i32),
                 ..Default::default()
             };
             state.provinces.insert((i + 1) as u32, prov);

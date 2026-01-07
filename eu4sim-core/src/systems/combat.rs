@@ -6,6 +6,7 @@
 //! 10:1 strength ratio at battle end causes stackwipe.
 
 use crate::fixed::Fixed;
+use crate::fixed_generic::Mod32;
 use crate::state::{
     ArmyId, Battle, BattleId, BattleLine, BattleResult, CombatPhase, ProvinceId, RegimentType,
     Terrain, WorldState,
@@ -423,21 +424,21 @@ fn calculate_side_damage(
                         .country_infantry_power
                         .get(&army.owner)
                         .copied()
-                        .unwrap_or(Fixed::ZERO),
+                        .unwrap_or(Mod32::ZERO),
                     RegimentType::Cavalry => state
                         .modifiers
                         .country_cavalry_power
                         .get(&army.owner)
                         .copied()
-                        .unwrap_or(Fixed::ZERO),
+                        .unwrap_or(Mod32::ZERO),
                     RegimentType::Artillery => state
                         .modifiers
                         .country_artillery_power
                         .get(&army.owner)
                         .copied()
-                        .unwrap_or(Fixed::ZERO),
+                        .unwrap_or(Mod32::ZERO),
                 };
-                let modified_base = Fixed::from_f32(base).mul(Fixed::ONE + unit_power);
+                let modified_base = Fixed::from_f32(base).mul(Fixed::ONE + unit_power.to_fixed());
 
                 // Damage formula: base * (effective_dice + 5) / 10 * (strength / 1000)
                 let dice_factor =
@@ -465,8 +466,9 @@ fn calculate_side_damage(
                         .country_artillery_power
                         .get(&army.owner)
                         .copied()
-                        .unwrap_or(Fixed::ZERO);
-                    let modified_base = Fixed::from_f32(base).mul(Fixed::ONE + unit_power);
+                        .unwrap_or(Mod32::ZERO);
+                    let modified_base =
+                        Fixed::from_f32(base).mul(Fixed::ONE + unit_power.to_fixed());
 
                     let dice_factor =
                         Fixed::from_int(effective_dice as i64 + 5).div(Fixed::from_int(10));
@@ -485,8 +487,8 @@ fn calculate_side_damage(
             .country_discipline
             .get(owner)
             .copied()
-            .unwrap_or(Fixed::ZERO);
-        total_damage = total_damage.mul(Fixed::ONE + discipline);
+            .unwrap_or(Mod32::ZERO);
+        total_damage = total_damage.mul(Fixed::ONE + discipline.to_fixed());
     }
 
     // Apply terrain penalty to attacker (considers maneuver difference and river crossing)

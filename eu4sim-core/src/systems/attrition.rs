@@ -122,6 +122,7 @@ fn is_hostile_territory(state: &WorldState, province_id: ProvinceId, army_ids: &
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixed_generic::Mod32;
     use crate::state::{Army, ProvinceState, Regiment, RegimentType};
     use crate::testing::WorldStateBuilder;
 
@@ -141,9 +142,9 @@ mod tests {
                 1,
                 ProvinceState {
                     owner: Some("SWE".into()),
-                    base_tax: Fixed::from_int(5),
-                    base_production: Fixed::from_int(5),
-                    base_manpower: Fixed::from_int(5),
+                    base_tax: Mod32::from_int(5),
+                    base_production: Mod32::from_int(5),
+                    base_manpower: Mod32::from_int(5),
                     ..Default::default()
                 },
             )
@@ -188,9 +189,9 @@ mod tests {
                 1,
                 ProvinceState {
                     owner: Some("SWE".into()),
-                    base_tax: Fixed::from_int(5),
-                    base_production: Fixed::from_int(5),
-                    base_manpower: Fixed::from_int(5),
+                    base_tax: Mod32::from_int(5),
+                    base_production: Mod32::from_int(5),
+                    base_manpower: Mod32::from_int(5),
                     ..Default::default()
                 },
             )
@@ -240,9 +241,9 @@ mod tests {
                 1,
                 ProvinceState {
                     owner: Some("SWE".into()),
-                    base_tax: Fixed::from_int(5),
-                    base_production: Fixed::from_int(5),
-                    base_manpower: Fixed::from_int(5),
+                    base_tax: Mod32::from_int(5),
+                    base_production: Mod32::from_int(5),
+                    base_manpower: Mod32::from_int(5),
                     ..Default::default()
                 },
             )
@@ -291,9 +292,9 @@ mod tests {
                 ProvinceState {
                     owner: Some("DEN".into()),
                     controller: Some("DEN".into()),
-                    base_tax: Fixed::from_int(5),
-                    base_production: Fixed::from_int(5),
-                    base_manpower: Fixed::from_int(5),
+                    base_tax: Mod32::from_int(5),
+                    base_production: Mod32::from_int(5),
+                    base_manpower: Mod32::from_int(5),
                     ..Default::default()
                 },
             )
@@ -354,9 +355,9 @@ mod tests {
             .with_province_state(
                 1,
                 ProvinceState {
-                    base_tax: Fixed::from_int(3),
-                    base_production: Fixed::from_int(4),
-                    base_manpower: Fixed::from_int(5),
+                    base_tax: Mod32::from_int(3),
+                    base_production: Mod32::from_int(4),
+                    base_manpower: Mod32::from_int(5),
                     ..Default::default()
                 },
             )
@@ -374,9 +375,9 @@ mod tests {
                 1,
                 ProvinceState {
                     owner: Some("SWE".into()),
-                    base_tax: Fixed::ONE,
-                    base_production: Fixed::ONE,
-                    base_manpower: Fixed::ONE,
+                    base_tax: Mod32::ONE,
+                    base_production: Mod32::ONE,
+                    base_manpower: Mod32::ONE,
                     ..Default::default()
                 },
             )

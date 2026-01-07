@@ -1,4 +1,6 @@
+#[cfg(test)]
 use crate::fixed::Fixed;
+use crate::fixed_generic::Mod32;
 use crate::state::{ProvinceId, ProvinceState, Tag, WorldState};
 use eu4data::defines::economy as defines;
 use rayon::prelude::*;
@@ -8,8 +10,8 @@ use tracing::instrument;
 /// Result of calculating taxation for a single province
 struct ProvinceTaxResult {
     owner: Tag,
-    income: Fixed,
-    base_tax: Fixed,
+    income: Mod32,
+    base_tax: Mod32,
 }
 
 /// Calculate tax income for a single province (pure function)
@@ -18,30 +20,30 @@ fn calculate_province_tax(
     province_id: ProvinceId,
     province: &ProvinceState,
     owner: &Tag,
-    local_mod: Fixed,
-    national_mod: Fixed,
-    base_autonomy: Fixed,
+    local_mod: Mod32,
+    national_mod: Mod32,
+    base_autonomy: Mod32,
 ) -> ProvinceTaxResult {
     // Apply coring-based floor: uncored = max(base, 75%)
     let floor = crate::systems::coring::effective_autonomy(province, owner);
     let raw_autonomy = base_autonomy.max(floor);
-    let autonomy = raw_autonomy.clamp(Fixed::ZERO, Fixed::ONE);
+    let autonomy = raw_autonomy.clamp(Mod32::ZERO, Mod32::ONE);
 
     // Efficiency = 100% + National% + Local%
-    let efficiency = Fixed::ONE + national_mod + local_mod;
-    let autonomy_factor = Fixed::ONE - autonomy;
+    let efficiency = Mod32::ONE + national_mod + local_mod;
+    let autonomy_factor = Mod32::ONE - autonomy;
 
     // Yearly Income
-    let yearly_income = province.base_tax.mul(efficiency).mul(autonomy_factor);
+    let yearly_income = province.base_tax * efficiency * autonomy_factor;
 
     // Monthly Income = Yearly / 12
-    let monthly_income = yearly_income.div(Fixed::from_int(defines::MONTHS_PER_YEAR));
+    let monthly_income = yearly_income / Mod32::from_int(defines::MONTHS_PER_YEAR as i32);
 
     // Ensure non-negative income just in case efficiency < -100%
-    let safe_income = monthly_income.max(Fixed::ZERO);
+    let safe_income = monthly_income.max(Mod32::ZERO);
 
     // Detailed logging for Korea
-    if owner == "KOR" && safe_income > Fixed::ZERO {
+    if owner == "KOR" && safe_income > Mod32::ZERO {
         log::trace!(
             "Province {}: base_tax={:.1}, efficiency={:.2}, autonomy={:.2}, monthly={:.3}",
             province_id,
@@ -75,21 +77,21 @@ pub fn run_taxation_tick(state: &mut WorldState) {
                     .province_tax_modifier
                     .get(&province_id)
                     .copied()
-                    .unwrap_or(Fixed::ZERO);
+                    .unwrap_or(Mod32::ZERO);
 
                 let national_mod = state
                     .modifiers
                     .country_tax_modifier
                     .get(owner)
                     .copied()
-                    .unwrap_or(Fixed::ZERO);
+                    .unwrap_or(Mod32::ZERO);
 
                 let base_autonomy = state
                     .modifiers
                     .province_autonomy
                     .get(&province_id)
                     .copied()
-                    .unwrap_or(Fixed::ZERO);
+                    .unwrap_or(Mod32::ZERO);
 
                 (
                     province_id,
@@ -125,34 +127,37 @@ pub fn run_taxation_tick(state: &mut WorldState) {
     };
 
     // PHASE 3: Aggregate results (sequential)
-    let mut income_deltas: HashMap<Tag, Fixed> = HashMap::new();
+    // Use Mod32 for accumulation, convert to Fixed at end
+    let mut income_deltas: HashMap<Tag, Mod32> = HashMap::new();
     let mut province_count: HashMap<Tag, usize> = HashMap::new();
-    let mut total_base_tax: HashMap<Tag, Fixed> = HashMap::new();
+    let mut total_base_tax: HashMap<Tag, Mod32> = HashMap::new();
 
     for result in tax_results {
         *income_deltas
             .entry(result.owner.clone())
-            .or_insert(Fixed::ZERO) += result.income;
+            .or_insert(Mod32::ZERO) += result.income;
         *province_count.entry(result.owner.clone()).or_insert(0) += 1;
-        *total_base_tax.entry(result.owner).or_insert(Fixed::ZERO) += result.base_tax;
+        *total_base_tax.entry(result.owner).or_insert(Mod32::ZERO) += result.base_tax;
     }
 
     // 2. Add base income for all countries with provinces
     // Every country gets 1 ducat/month just for existing
-    let base_monthly_income = Fixed::ONE;
+    let base_monthly_income = Mod32::ONE;
     for tag in province_count.keys() {
-        *income_deltas.entry(tag.clone()).or_insert(Fixed::ZERO) += base_monthly_income;
+        *income_deltas.entry(tag.clone()).or_insert(Mod32::ZERO) += base_monthly_income;
     }
 
     // 3. Apply to Treasury and record for display
+    // Convert Mod32 to Fixed for treasury (which needs large range)
     for (tag, delta) in income_deltas {
         if let Some(country) = state.countries.get_mut(&tag) {
-            country.treasury += delta;
-            country.income.taxation += delta;
+            let delta_fixed = delta.to_fixed();
+            country.treasury += delta_fixed;
+            country.income.taxation += delta_fixed;
 
             if tag == "KOR" {
                 let prov_count = province_count.get(&tag).copied().unwrap_or(0);
-                let base_tax_total = total_base_tax.get(&tag).copied().unwrap_or(Fixed::ZERO);
+                let base_tax_total = total_base_tax.get(&tag).copied().unwrap_or(Mod32::ZERO);
                 log::debug!(
                     "Taxation: KOR +{:.2} ducats from {} provinces (total base_tax={:.1}, avg monthly={:.3}/province, treasury now: {:.2})",
                     delta.to_f32(),
@@ -182,7 +187,7 @@ mod tests {
         let mut cores = std::collections::HashSet::new();
         cores.insert("SWE".to_string());
         let province = ProvinceState {
-            base_tax: Fixed::from_f32(12.0),
+            base_tax: Mod32::from_f32(12.0),
             owner: Some("SWE".to_string()),
             cores,
             ..Default::default()
@@ -212,7 +217,7 @@ mod tests {
         let mut cores = std::collections::HashSet::new();
         cores.insert("SWE".to_string());
         let province = ProvinceState {
-            base_tax: Fixed::from_f32(12.0),
+            base_tax: Mod32::from_f32(12.0),
             owner: Some("SWE".to_string()),
             cores,
             ..Default::default()
@@ -230,11 +235,11 @@ mod tests {
         state
             .modifiers
             .country_tax_modifier
-            .insert("SWE".to_string(), Fixed::from_f32(0.5));
+            .insert("SWE".to_string(), Mod32::from_f32(0.5));
         state
             .modifiers
             .province_autonomy
-            .insert(1, Fixed::from_f32(0.5));
+            .insert(1, Mod32::from_f32(0.5));
 
         run_taxation_tick(&mut state);
 
@@ -249,7 +254,7 @@ mod tests {
             efficiency_mod in -2.0..2.0f32
         ) {
             let province = ProvinceState {
-                base_tax: Fixed::from_f32(12.0), // Base 12 = 1.0 monthly base
+                base_tax: Mod32::from_f32(12.0), // Base 12 = 1.0 monthly base
                 owner: Some("SWE".to_string()),
                 ..Default::default()
             };
@@ -261,8 +266,8 @@ mod tests {
 
             state.countries.get_mut("SWE").unwrap().treasury = Fixed::ZERO;
 
-            state.modifiers.province_autonomy.insert(1, Fixed::from_f32(autonomy));
-            state.modifiers.country_tax_modifier.insert("SWE".to_string(), Fixed::from_f32(efficiency_mod));
+            state.modifiers.province_autonomy.insert(1, Mod32::from_f32(autonomy));
+            state.modifiers.country_tax_modifier.insert("SWE".to_string(), Mod32::from_f32(efficiency_mod));
 
             run_taxation_tick(&mut state);
 

@@ -1,4 +1,4 @@
-use crate::fixed::Fixed;
+use crate::fixed_generic::Mod32;
 use crate::state::{InstitutionId, Tag, WorldState};
 use anyhow::{anyhow, Result};
 use std::collections::HashSet;
@@ -77,8 +77,8 @@ pub fn embrace_institution(
     }
 
     // Check if at least 10% of development has the institution present
-    let mut total_dev = Fixed::ZERO;
-    let mut present_dev = Fixed::ZERO;
+    let mut total_dev = Mod32::ZERO;
+    let mut present_dev = Mod32::ZERO;
 
     for province in state.provinces.values() {
         if province.owner.as_ref() == Some(&country) {
@@ -96,7 +96,7 @@ pub fn embrace_institution(
         }
     }
 
-    if total_dev > Fixed::ZERO && (present_dev / total_dev) < Fixed::from_raw(1000) {
+    if total_dev > Mod32::ZERO && (present_dev / total_dev) < Mod32::from_raw(1000) {
         // 0.10 in SCALE=10000
         return Err(anyhow!(
             "Less than 10% of development has present institution {}",
@@ -106,7 +106,7 @@ pub fn embrace_institution(
 
     // Cost: 2.0 gold per non-present development point
     let non_present_dev = total_dev - present_dev;
-    let cost = non_present_dev * Fixed::from_int(2);
+    let cost = (non_present_dev * Mod32::from_int(2)).to_fixed();
 
     if country_state.treasury < cost {
         return Err(anyhow!(
