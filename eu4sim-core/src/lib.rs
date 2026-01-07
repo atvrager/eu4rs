@@ -60,6 +60,7 @@ pub mod training_capnp {
     include!(concat!(env!("OUT_DIR"), "/training_capnp.rs"));
 }
 pub mod fixed;
+pub mod fixed_generic;
 pub mod government;
 pub mod ideas;
 pub mod input;

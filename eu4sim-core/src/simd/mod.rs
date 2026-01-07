@@ -31,6 +31,7 @@
 //! ```
 
 pub mod tax;
+pub mod tax32;
 
 /// Detect available SIMD features at runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
