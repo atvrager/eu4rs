@@ -1964,8 +1964,7 @@ fn find_tracy_capture() -> Option<String> {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
+            .is_ok()
         {
             return Some(name.to_string());
         }
@@ -2023,10 +2022,18 @@ fn run_profile(args: ProfileArgs) -> Result<()> {
     )?;
 
     println!("[1/4] Building eu4sim with Tracy support...");
-    let build_status = Command::new("cargo")
-        .args(["build", "--release", "-p", "eu4sim", "--features", "tracy"])
-        .status()
-        .context("Failed to run cargo build")?;
+    let mut build_cmd = Command::new("cargo");
+    build_cmd.args(["build", "--release", "-p", "eu4sim", "--features", "tracy"]);
+
+    // Fix for esaxx-rs linking issue on Windows (force dynamic CRT)
+    // This resolves LNK1319 where esaxx-rs static CRT conflicts with project dynamic CRT
+    #[cfg(windows)]
+    {
+        build_cmd.env("CFLAGS", "/MD");
+        build_cmd.env("CXXFLAGS", "/MD");
+    }
+
+    let build_status = build_cmd.status().context("Failed to run cargo build")?;
 
     if !build_status.success() {
         anyhow::bail!("Build failed");
