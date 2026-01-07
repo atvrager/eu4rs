@@ -267,6 +267,33 @@ SIMD (Single Instruction Multiple Data) processes multiple values in one CPU ins
 | AVX2 | 256-bit | 8 | 4 |
 | AVX-512 | 512-bit | 16 | 8 |
 
+### Fixed-Point Types for SIMD
+
+We use two fixed-point types with different trade-offs:
+
+| Type | Backing | Range | Precision | SIMD Lanes (AVX2) | Use Case |
+|------|---------|-------|-----------|-------------------|----------|
+| `Fixed` | i64 | ±922T | 0.0001 | 4 | Treasury, large aggregates |
+| `Mod32` | i32 | ±214k | 0.0001 | **8** | Province stats, modifiers |
+
+**Key insight**: `i32 × i32 → i64` fits in AVX2's `_mm256_mul_epi32`, while `i64 × i64 → i128` forces scalar fallback.
+
+```rust
+// Mod32: SIMD-friendly multiplication
+impl Mul for Mod32 {
+    fn mul(self, other: Self) -> Self {
+        // i32 * i32 = i64, no i128 needed!
+        let wide = self.0 as i64 * other.0 as i64;
+        Mod32((wide / SCALE as i64) as i32)
+    }
+}
+```
+
+**Benchmark results** (3000 provinces, 1000 iterations):
+- i64 (Fixed): 6.30 ns/province
+- i32 (Mod32): 2.71 ns/province
+- **Speedup: 2.16x**
+
 ### Runtime Dispatch with `multiversion`
 
 The `multiversion` crate generates multiple function versions and selects at runtime:
@@ -285,6 +312,21 @@ pub fn calculate_batch(inputs: &[Input], outputs: &mut [Output]) {
         *output = process(input);
     }
 }
+```
+
+**Verifying dispatch at runtime:**
+
+```rust
+#[multiversion(targets("x86_64+avx2+fma", "x86_64+avx2", "x86_64+sse4.1",))]
+pub fn selected_target() -> multiversion::target::Target {
+    multiversion::target::selected_target!()
+}
+
+// In test:
+let target = selected_target();
+let features: Vec<&str> = target.features().map(|f| f.name()).collect();
+println!("Dispatched to: {:?}", features);
+// Output: ["avx", "avx2", "fma", ...]
 ```
 
 ### Validation Pattern
@@ -318,12 +360,10 @@ LLVM autovectorization is fragile. It **cannot** vectorize:
 
 | Pattern | Why | Workaround |
 |---------|-----|------------|
-| i128 operations | No SIMD support for 128-bit ints | Use i32/i64, explicit SIMD |
+| i128 operations | No SIMD support for 128-bit ints | Use `Mod32` (i32) instead of `Fixed` (i64) |
 | Complex indexing | Can't prove bounds safety | Use iterators, `chunks_exact` |
 | Early returns | Branches break vectorization | Hoist conditions outside loop |
 | Function calls | Non-inlined calls are barriers | `#[inline(always)]` or LTO |
-
-**Current `Fixed` type uses i64 with i128 intermediates for multiplication, which prevents autovectorization.**
 
 ### Checking Vectorization
 
@@ -332,43 +372,210 @@ LLVM autovectorization is fragile. It **cannot** vectorize:
 cargo install cargo-show-asm
 
 # View generated assembly
-cargo asm --lib eu4sim_core::simd::tax::calculate_taxes_batch
+cargo asm --lib eu4sim_core::simd::tax32::calculate_taxes_batch32
 
 # Look for:
 #   vmulps, vaddps  → Vectorized (good)
 #   vmulss, vaddss  → Scalar (bad)
 ```
 
-### Future: Fixed32 for SIMD
+### SIMD Module Structure
 
-To enable effective SIMD, consider a smaller fixed-point type:
+See `eu4sim-core/src/simd/`:
+
+```
+simd/
+├── mod.rs         # SimdFeatures detection, SimdLevel enum
+├── tax.rs         # i64 (Fixed) batch - baseline reference
+└── tax32.rs       # i32 (Mod32) batch - production SIMD
+```
+
+**tax32.rs exports:**
+- `TaxInput32` / `TaxOutput32`: Packed batch data (i32 raw values)
+- `calculate_tax_scalar32`: Golden reference implementation
+- `calculate_taxes_batch32`: Multiversion dispatch (AVX2+FMA, AVX2, SSE4.1)
+- `tax32_selected_target`: Runtime dispatch verification
+
+**Benchmark:** `cargo test -p eu4sim-core --release bench_i32_vs_i64 -- --nocapture`
+
+## Hybrid Pattern: Rayon + SIMD
+
+### The Best of Both Worlds
+
+For systems with many entities grouped by owner (countries), combine:
+- **Rayon**: Parallel across groups (countries)
+- **SIMD**: Vectorized within each group (provinces)
+
+```
+┌──────────────────────────────────────────────────┐
+│              run_taxation_tick                    │
+├──────────────────────────────────────────────────┤
+│ Phase 1: Group provinces by owner                │
+│          Pre-compute modifiers                   │
+├──────────────────────────────────────────────────┤
+│ Phase 2: Rayon par_iter over countries           │
+│          ├─ FRA: [128 provinces] → SIMD batch    │
+│          ├─ ENG: [64 provinces]  → SIMD batch    │
+│          └─ ...                                  │
+├──────────────────────────────────────────────────┤
+│ Phase 3: Apply results to country state          │
+└──────────────────────────────────────────────────┘
+```
+
+### Implementation Pattern
 
 ```rust
-/// Fixed-point with i32 storage (SIMD-friendly)
-/// Max representable: ±214,748 with 0.0001 precision
-pub struct Fixed32(i32);
+use rayon::prelude::*;
+use crate::simd::tax32::{calculate_taxes_batch32, TaxInput32, TaxOutput32};
 
-impl Fixed32 {
-    const SCALE: i32 = 10000;
+pub fn run_system_tick(state: &mut WorldState) {
+    // PHASE 1: Group entities by owner, prepare SIMD inputs
+    let mut entities_by_owner: HashMap<Tag, Vec<(EntityId, TaxInput32)>> = HashMap::new();
 
-    // i32 × i32 = i64, fits in SIMD without i128
-    fn mul(self, other: Fixed32) -> Fixed32 {
-        Fixed32(((self.0 as i64 * other.0 as i64) / Self::SCALE as i64) as i32)
+    for (&id, entity) in state.entities.iter() {
+        let Some(owner) = entity.owner.as_ref() else { continue };
+
+        // Pre-compute all modifiers, effective values
+        let input = TaxInput32::new(
+            entity.base_value,
+            get_modifier(state, owner),
+            get_local_mod(state, id),
+            compute_effective_factor(entity, owner),
+        );
+
+        entities_by_owner.entry(owner.clone()).or_default().push((id, input));
+    }
+
+    // PHASE 2: Parallel + SIMD computation
+    let results: Vec<(Tag, Mod32)> = {
+        let _span = tracing::info_span!("system_simd", owners = entities_by_owner.len()).entered();
+
+        entities_by_owner
+            .into_par_iter()
+            .map(|(tag, entity_data)| {
+                // Per-owner tracing span
+                let _span = tracing::trace_span!("owner_batch", owner = %tag, count = entity_data.len()).entered();
+
+                // Extract SIMD inputs
+                let inputs: Vec<TaxInput32> = entity_data.iter().map(|(_, i)| *i).collect();
+
+                // SIMD batch calculation
+                let mut outputs = vec![TaxOutput32::default(); inputs.len()];
+                calculate_taxes_batch32(&inputs, &mut outputs);
+
+                // Sum results
+                let total: Mod32 = outputs.iter()
+                    .map(|o| Mod32::from_raw(o.monthly_income))
+                    .fold(Mod32::ZERO, |acc, x| acc + x);
+
+                (tag, total)
+            })
+            .collect()
+    };
+
+    // PHASE 3: Apply to state (sequential)
+    for (tag, value) in results {
+        if let Some(owner_state) = state.owners.get_mut(&tag) {
+            owner_state.accumulated += value.to_fixed();
+        }
     }
 }
 ```
 
-This would allow AVX2 to process 8 provinces per instruction.
+### Key Benefits
 
-### Example: Tax SIMD Module
+1. **Scalability**: Rayon distributes ~200 countries across CPU cores
+2. **Vectorization**: Each country's provinces processed 8-at-a-time (AVX2)
+3. **Cache efficiency**: Provinces grouped by owner have better locality
+4. **Observability**: Tracing spans at both country and batch level
 
-See `eu4sim-core/src/simd/tax.rs`:
+### When to Use Hybrid Pattern
 
-- `TaxInput` / `TaxOutput`: Packed batch data
-- `calculate_tax_scalar`: Golden reference implementation
-- `calculate_taxes_batch`: Multiversion dispatch
-- Proptest validation: Ensures bit-exact results
-- Benchmark: `cargo test -p eu4sim-core --release bench_scalar_vs_batch -- --nocapture`
+Use hybrid rayon+SIMD when:
+- You have **grouped entities** (provinces by country, units by army)
+- **Batch size per group** is >32 (enough for SIMD benefit)
+- The **computation is arithmetic-heavy** (multiplications, divisions)
+- You need **per-group tracing** for debugging
+
+Use pure rayon when:
+- Entities are independent (no grouping)
+- Computation involves complex branching
+- I/O or allocation dominates
+
+Use pure SIMD when:
+- All entities can be processed in one batch
+- No per-entity tracing needed
+- Maximum throughput is critical
+
+## Designing SIMD-First Systems
+
+When building new economic/simulation systems, follow this pattern:
+
+### 1. Choose the Right Fixed-Point Type
+
+```rust
+// For province-level stats (base_tax, production, manpower)
+pub base_tax: Mod32,    // i32, ±214k range, 8 SIMD lanes
+
+// For country-level aggregates (treasury, total income)
+pub treasury: Fixed,     // i64, ±922T range, 4 SIMD lanes
+```
+
+### 2. Define Packed Input/Output Structs
+
+```rust
+#[derive(Debug, Clone, Copy, Default)]
+#[repr(C, align(16))]  // Align for efficient SIMD loads
+pub struct SystemInput32 {
+    pub base_value: i32,     // raw Mod32
+    pub modifier_a: i32,
+    pub modifier_b: i32,
+    pub factor: i32,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+#[repr(C)]
+pub struct SystemOutput32 {
+    pub result: i32,
+}
+```
+
+### 3. Implement Golden Scalar First
+
+```rust
+pub fn calculate_scalar(input: &SystemInput32) -> SystemOutput32 {
+    const SCALE: i32 = 10000;
+    // ... pure arithmetic with i64 intermediates
+}
+```
+
+### 4. Add Multiversion Batch Function
+
+```rust
+#[multiversion(targets("x86_64+avx2+fma", "x86_64+avx2", "x86_64+sse4.1",))]
+pub fn calculate_batch(inputs: &[SystemInput32], outputs: &mut [SystemOutput32]) {
+    for (input, output) in inputs.iter().zip(outputs.iter_mut()) {
+        // Same logic as scalar - compiler will vectorize
+    }
+}
+```
+
+### 5. Add Proptest Validation
+
+```rust
+proptest! {
+    #[test]
+    fn batch_matches_scalar(input in any_input()) {
+        let scalar = calculate_scalar(&input);
+        let batch = calculate_batch(&[input])[0];
+        prop_assert_eq!(scalar, batch);
+    }
+}
+```
+
+### 6. Integrate with Hybrid Pattern
+
+Use grouping + rayon + SIMD batch as shown above.
 
 ---
 

@@ -66,6 +66,37 @@ Total power scales with regiment strength (men count).
 - **Army Removal**: Armies with no regiments are removed from the map
 
 ### Technical Details
-- **Fixed Point**: Uses `i64` scaled by 10,000 for precision (1.0000).
-- **Determinism**: All calculations are strictly deterministic for lockstep networking.
-- **Daily Combat**: Combat resolution runs every simulation tick (daily)
+
+#### Fixed-Point Arithmetic
+
+The simulation uses two fixed-point types for deterministic calculations:
+
+| Type | Backing | Range | Precision | Use Case |
+|------|---------|-------|-----------|----------|
+| `Fixed` | i64 | ±922 trillion | 0.0001 | Treasury, mana pools, large aggregates |
+| `Mod32` | i32 | ±214,000 | 0.0001 | Province stats, modifiers, SIMD batches |
+
+**Why two types?**
+- `Mod32` enables SIMD vectorization (8 values per AVX2 instruction)
+- `Fixed` handles large accumulations without overflow
+- Convert at boundaries: `mod32.to_fixed()` when adding to treasury
+
+#### SIMD-Accelerated Taxation
+
+The taxation system uses hybrid rayon + SIMD processing:
+
+1. **Group by owner**: Provinces collected per country
+2. **SIMD batch**: Each country's provinces processed with AVX2 (8 at a time)
+3. **Rayon parallel**: Countries processed across CPU cores
+
+See `eu4sim-core/src/simd/tax32.rs` and `eu4sim-core/src/systems/taxation.rs`.
+
+**Performance**: ~2.16x faster than scalar i64 implementation.
+
+#### Determinism
+- All calculations use integer fixed-point (no floating-point)
+- SIMD implementations validated against scalar golden implementations via proptest
+- Strict bit-exact reproducibility for lockstep networking
+
+#### Daily Combat
+Combat resolution runs every simulation tick (daily)
