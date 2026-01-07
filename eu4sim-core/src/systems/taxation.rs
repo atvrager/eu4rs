@@ -1,169 +1,129 @@
 #[cfg(test)]
 use crate::fixed::Fixed;
 use crate::fixed_generic::Mod32;
-use crate::state::{ProvinceId, ProvinceState, Tag, WorldState};
-use eu4data::defines::economy as defines;
+use crate::simd::tax32::{calculate_taxes_batch32, TaxInput32, TaxOutput32};
+use crate::state::{ProvinceId, Tag, WorldState};
 use rayon::prelude::*;
 use std::collections::HashMap;
 use tracing::instrument;
 
-/// Result of calculating taxation for a single province
-struct ProvinceTaxResult {
-    owner: Tag,
-    income: Mod32,
-    base_tax: Mod32,
-}
-
-/// Calculate tax income for a single province (pure function)
-#[instrument(skip_all, name = "province_tax")]
-fn calculate_province_tax(
-    province_id: ProvinceId,
-    province: &ProvinceState,
-    owner: &Tag,
-    local_mod: Mod32,
-    national_mod: Mod32,
-    base_autonomy: Mod32,
-) -> ProvinceTaxResult {
-    // Apply coring-based floor: uncored = max(base, 75%)
-    let floor = crate::systems::coring::effective_autonomy(province, owner);
-    let raw_autonomy = base_autonomy.max(floor);
-    let autonomy = raw_autonomy.clamp(Mod32::ZERO, Mod32::ONE);
-
-    // Efficiency = 100% + National% + Local%
-    let efficiency = Mod32::ONE + national_mod + local_mod;
-    let autonomy_factor = Mod32::ONE - autonomy;
-
-    // Yearly Income
-    let yearly_income = province.base_tax * efficiency * autonomy_factor;
-
-    // Monthly Income = Yearly / 12
-    let monthly_income = yearly_income / Mod32::from_int(defines::MONTHS_PER_YEAR as i32);
-
-    // Ensure non-negative income just in case efficiency < -100%
-    let safe_income = monthly_income.max(Mod32::ZERO);
-
-    // Detailed logging for Korea
-    if owner == "KOR" && safe_income > Mod32::ZERO {
-        log::trace!(
-            "Province {}: base_tax={:.1}, efficiency={:.2}, autonomy={:.2}, monthly={:.3}",
-            province_id,
-            province.base_tax.to_f32(),
-            efficiency.to_f32(),
-            autonomy.to_f32(),
-            safe_income.to_f32()
-        );
-    }
-
-    ProvinceTaxResult {
-        owner: owner.clone(),
-        income: safe_income,
-        base_tax: province.base_tax,
-    }
-}
-
 /// Runs monthly taxation calculations.
 ///
 /// Formula: (Base Tax) * (1 + National Mod + Local Mod) * (1 - Autonomy) / 12
+///
+/// Uses SIMD-accelerated batch processing when provinces are grouped by owner.
 #[instrument(skip_all, name = "taxation")]
 pub fn run_taxation_tick(state: &mut WorldState) {
-    // PHASE 1: Extract province data for parallel processing
-    let province_inputs: Vec<_> = state
-        .provinces
-        .iter()
-        .filter_map(|(&province_id, province)| {
-            province.owner.as_ref().map(|owner| {
-                let local_mod = state
-                    .modifiers
-                    .province_tax_modifier
-                    .get(&province_id)
-                    .copied()
-                    .unwrap_or(Mod32::ZERO);
+    // PHASE 1: Group provinces by owner for efficient SIMD batching
+    let mut provinces_by_owner: HashMap<Tag, Vec<(ProvinceId, TaxInput32, Mod32)>> = HashMap::new();
 
-                let national_mod = state
-                    .modifiers
-                    .country_tax_modifier
-                    .get(owner)
-                    .copied()
-                    .unwrap_or(Mod32::ZERO);
+    for (&province_id, province) in state.provinces.iter() {
+        let Some(owner) = province.owner.as_ref() else {
+            continue;
+        };
 
-                let base_autonomy = state
-                    .modifiers
-                    .province_autonomy
-                    .get(&province_id)
-                    .copied()
-                    .unwrap_or(Mod32::ZERO);
+        let local_mod = state
+            .modifiers
+            .province_tax_modifier
+            .get(&province_id)
+            .copied()
+            .unwrap_or(Mod32::ZERO);
 
-                (
-                    province_id,
-                    province,
-                    owner.clone(),
-                    local_mod,
-                    national_mod,
-                    base_autonomy,
-                )
-            })
-        })
-        .collect();
+        let national_mod = state
+            .modifiers
+            .country_tax_modifier
+            .get(owner)
+            .copied()
+            .unwrap_or(Mod32::ZERO);
 
-    // PHASE 2: Calculate income in parallel
-    let tax_results: Vec<ProvinceTaxResult> = {
+        let base_autonomy = state
+            .modifiers
+            .province_autonomy
+            .get(&province_id)
+            .copied()
+            .unwrap_or(Mod32::ZERO);
+
+        // Pre-compute effective autonomy including coring floor
+        let floor = crate::systems::coring::effective_autonomy(province, owner);
+        let effective_autonomy = base_autonomy.max(floor);
+
+        let input = TaxInput32::new(
+            province.base_tax,
+            national_mod,
+            local_mod,
+            effective_autonomy,
+        );
+
+        provinces_by_owner.entry(owner.clone()).or_default().push((
+            province_id,
+            input,
+            province.base_tax,
+        ));
+    }
+
+    // PHASE 2: Calculate income per country using SIMD batches in parallel
+    let country_results: Vec<(Tag, Mod32, usize, Mod32)> = {
         let _span =
-            tracing::info_span!("provinces_parallel", count = province_inputs.len()).entered();
-        province_inputs
+            tracing::info_span!("taxation_simd", countries = provinces_by_owner.len()).entered();
+
+        provinces_by_owner
             .into_par_iter()
-            .map(
-                |(province_id, province, owner, local_mod, national_mod, base_autonomy)| {
-                    calculate_province_tax(
-                        province_id,
-                        province,
-                        &owner,
-                        local_mod,
-                        national_mod,
-                        base_autonomy,
-                    )
-                },
-            )
+            .map(|(tag, province_data)| {
+                let province_count = province_data.len();
+
+                // Per-country span for tracing
+                let _country_span = tracing::trace_span!(
+                    "country_tax",
+                    country = %tag,
+                    provinces = province_count
+                )
+                .entered();
+
+                // Extract SIMD inputs and base_tax totals
+                let (inputs, base_taxes): (Vec<TaxInput32>, Vec<Mod32>) = province_data
+                    .iter()
+                    .map(|(_, input, base_tax)| (*input, *base_tax))
+                    .unzip();
+
+                // SIMD batch calculation
+                let mut outputs = vec![TaxOutput32::default(); inputs.len()];
+                calculate_taxes_batch32(&inputs, &mut outputs);
+
+                // Sum results
+                let total_income: Mod32 = outputs
+                    .iter()
+                    .map(|o| Mod32::from_raw(o.monthly_income))
+                    .fold(Mod32::ZERO, |acc, x| acc + x);
+
+                let total_base_tax: Mod32 = base_taxes
+                    .iter()
+                    .copied()
+                    .fold(Mod32::ZERO, |acc, x| acc + x);
+
+                (tag, total_income, province_count, total_base_tax)
+            })
             .collect()
     };
 
-    // PHASE 3: Aggregate results (sequential)
-    // Use Mod32 for accumulation, convert to Fixed at end
-    let mut income_deltas: HashMap<Tag, Mod32> = HashMap::new();
-    let mut province_count: HashMap<Tag, usize> = HashMap::new();
-    let mut total_base_tax: HashMap<Tag, Mod32> = HashMap::new();
-
-    for result in tax_results {
-        *income_deltas
-            .entry(result.owner.clone())
-            .or_insert(Mod32::ZERO) += result.income;
-        *province_count.entry(result.owner.clone()).or_insert(0) += 1;
-        *total_base_tax.entry(result.owner).or_insert(Mod32::ZERO) += result.base_tax;
-    }
-
-    // 2. Add base income for all countries with provinces
-    // Every country gets 1 ducat/month just for existing
+    // PHASE 3: Apply results to country state
     let base_monthly_income = Mod32::ONE;
-    for tag in province_count.keys() {
-        *income_deltas.entry(tag.clone()).or_insert(Mod32::ZERO) += base_monthly_income;
-    }
 
-    // 3. Apply to Treasury and record for display
-    // Convert Mod32 to Fixed for treasury (which needs large range)
-    for (tag, delta) in income_deltas {
+    for (tag, provincial_income, prov_count, base_tax_total) in country_results {
+        // Add base income (every country with provinces gets 1 ducat/month)
+        let total_income = provincial_income + base_monthly_income;
+
         if let Some(country) = state.countries.get_mut(&tag) {
-            let delta_fixed = delta.to_fixed();
+            let delta_fixed = total_income.to_fixed();
             country.treasury += delta_fixed;
             country.income.taxation += delta_fixed;
 
             if tag == "KOR" {
-                let prov_count = province_count.get(&tag).copied().unwrap_or(0);
-                let base_tax_total = total_base_tax.get(&tag).copied().unwrap_or(Mod32::ZERO);
                 log::debug!(
                     "Taxation: KOR +{:.2} ducats from {} provinces (total base_tax={:.1}, avg monthly={:.3}/province, treasury now: {:.2})",
-                    delta.to_f32(),
+                    total_income.to_f32(),
                     prov_count,
                     base_tax_total.to_f32(),
-                    (delta.to_f32() / prov_count as f32),
+                    (total_income.to_f32() / prov_count as f32),
                     country.treasury.to_f32()
                 );
             }

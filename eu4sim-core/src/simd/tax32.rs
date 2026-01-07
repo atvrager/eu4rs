@@ -222,14 +222,14 @@ mod tests {
         let target_str = format!("{:?}", target);
 
         // Extract feature names for readable output
-        let features: Vec<&str> = target
-            .features()
-            .map(|f| f.name())
-            .collect();
+        let features: Vec<&str> = target.features().map(|f| f.name()).collect();
 
         println!("\n=== tax32 dispatch target ===");
         println!("Dispatched to: {:?}", features);
-        println!("CPU supports:  {}", crate::simd::SimdFeatures::detect().best_level());
+        println!(
+            "CPU supports:  {}",
+            crate::simd::SimdFeatures::detect().best_level()
+        );
 
         // Confirm we got AVX2+FMA (our best target)
         let has_avx2 = features.contains(&"avx2");
@@ -238,7 +238,9 @@ mod tests {
 
         // Should be one of our defined targets (or default/fallback)
         assert!(
-            target_str.contains("avx2") || target_str.contains("sse") || target_str.contains("Default"),
+            target_str.contains("avx2")
+                || target_str.contains("sse")
+                || target_str.contains("Default"),
             "Unexpected target: {:?}",
             target
         );
