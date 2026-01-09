@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 description = "EU4 source port - playable game binary"
 
+[lib]
+name = "eu4game"
+path = "src/lib.rs"
+
 [dependencies]
 # GPU Rendering
 wgpu = "0.20.0"

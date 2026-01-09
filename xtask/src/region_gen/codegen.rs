@@ -84,9 +84,13 @@ fn generate_region_constants(regions: &[ResolvedRegion]) -> String {
     let mut output = String::new();
 
     // Generate top bar regions
-    output.push_str("// ============================================================================\n");
+    output.push_str(
+        "// ============================================================================\n",
+    );
     output.push_str("// Calibrated UI Regions (1920x1080)\n");
-    output.push_str("// ============================================================================\n\n");
+    output.push_str(
+        "// ============================================================================\n\n",
+    );
 
     let top_bar_regions: Vec<_> = regions
         .iter()
@@ -117,9 +121,13 @@ fn generate_region_constants(regions: &[ResolvedRegion]) -> String {
         .collect();
 
     if !province_panel_regions.is_empty() {
-        output.push_str("// ============================================================================\n");
+        output.push_str(
+            "// ============================================================================\n",
+        );
         output.push_str("// Province Panel Regions (when province selected)\n");
-        output.push_str("// ============================================================================\n\n");
+        output.push_str(
+            "// ============================================================================\n\n",
+        );
 
         for region in province_panel_regions {
             output.push_str(&format!(

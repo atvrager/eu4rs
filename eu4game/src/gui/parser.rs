@@ -337,7 +337,7 @@ fn parse_window_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
                 }
                 "Orientation" | "orientation" => {
                     if let Some(s) = get_string_value(get_assignment_value(child)) {
-                        orientation = Orientation::from_str(&s);
+                        orientation = Orientation::parse(&s);
                     }
                 }
                 "iconType" => {
@@ -430,7 +430,7 @@ fn parse_icon_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
                 }
                 "Orientation" | "orientation" => {
                     if let Some(s) = get_string_value(get_assignment_value(child)) {
-                        orientation = Orientation::from_str(&s);
+                        orientation = Orientation::parse(&s);
                     }
                 }
                 "scale" => {
@@ -497,12 +497,12 @@ fn parse_textbox_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
                 }
                 "format" => {
                     if let Some(s) = get_string_value(get_assignment_value(child)) {
-                        format = TextFormat::from_str(&s);
+                        format = TextFormat::parse(&s);
                     }
                 }
                 "Orientation" | "orientation" => {
                     if let Some(s) = get_string_value(get_assignment_value(child)) {
-                        orientation = Orientation::from_str(&s);
+                        orientation = Orientation::parse(&s);
                     }
                 }
                 "text" => {
@@ -563,7 +563,7 @@ fn parse_button_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
                 }
                 "Orientation" | "orientation" => {
                     if let Some(s) = get_string_value(get_assignment_value(child)) {
-                        orientation = Orientation::from_str(&s);
+                        orientation = Orientation::parse(&s);
                     }
                 }
                 "shortcut" => {
@@ -626,7 +626,7 @@ fn parse_checkbox_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
                 }
                 "Orientation" | "orientation" => {
                     if let Some(s) = get_string_value(get_assignment_value(child)) {
-                        orientation = Orientation::from_str(&s);
+                        orientation = Orientation::parse(&s);
                     }
                 }
                 _ => {}
@@ -676,7 +676,7 @@ fn parse_editbox_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
                 }
                 "Orientation" | "orientation" => {
                     if let Some(s) = get_string_value(get_assignment_value(child)) {
-                        orientation = Orientation::from_str(&s);
+                        orientation = Orientation::parse(&s);
                     }
                 }
                 "max_characters" | "maxCharacters" => {
@@ -729,7 +729,7 @@ fn parse_listbox_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
                 }
                 "Orientation" | "orientation" => {
                     if let Some(s) = get_string_value(get_assignment_value(child)) {
-                        orientation = Orientation::from_str(&s);
+                        orientation = Orientation::parse(&s);
                     }
                 }
                 "spacing" => {
@@ -793,7 +793,7 @@ fn parse_scrollbar_type(node: Option<&EU4TxtParseNode>) -> Option<GuiElement> {
                 }
                 "Orientation" | "orientation" => {
                     if let Some(s) = get_string_value(get_assignment_value(child)) {
-                        orientation = Orientation::from_str(&s);
+                        orientation = Orientation::parse(&s);
                     }
                 }
                 "maxValue" | "maxvalue" => {

@@ -103,8 +103,8 @@ pub enum Orientation {
 }
 
 impl Orientation {
-    /// Parse from EU4 orientation string.
-    pub fn from_str(s: &str) -> Self {
+    /// Parse from EU4 orientation string (infallible, defaults to UpperLeft).
+    pub fn parse(s: &str) -> Self {
         match s.to_uppercase().as_str() {
             "UPPER_LEFT" => Orientation::UpperLeft,
             "UPPER_RIGHT" => Orientation::UpperRight,
@@ -128,7 +128,8 @@ pub enum TextFormat {
 }
 
 impl TextFormat {
-    pub fn from_str(s: &str) -> Self {
+    /// Parse from EU4 text format string (infallible, defaults to Left).
+    pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "center" | "centre" => TextFormat::Center,
             "right" => TextFormat::Right,

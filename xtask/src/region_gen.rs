@@ -5,7 +5,9 @@
 //! Rust code for `eu4-bridge/src/regions.rs`.
 
 pub mod codegen;
+pub mod gui_parser;
 pub mod mapping;
+pub mod position_calculator;
 pub mod resolver;
 pub mod types;
 
@@ -73,7 +75,11 @@ fn write_output_file(path: &str, content: &str) -> anyhow::Result<()> {
     let mut file = fs::File::create(output_path)?;
     file.write_all(content.as_bytes())?;
 
-    println!("  Wrote {} bytes to: {}", content.len(), output_path.display());
+    println!(
+        "  Wrote {} bytes to: {}",
+        content.len(),
+        output_path.display()
+    );
 
     Ok(())
 }
