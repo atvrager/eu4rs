@@ -215,9 +215,38 @@ impl GreedyAI {
 
             // Call-to-arms: honor alliances
             Command::JoinWar { war_id, .. } => {
-                // Almost always honor alliances (affects trust)
+                // Honor alliances by default, but factor in our current situation
                 if state.pending_call_to_arms.iter().any(|(w, _)| w == war_id) {
-                    Self::SCORE_HONOR_ALLIANCE // High priority to maintain alliances
+                    let in_debt = state.own_country.treasury < crate::fixed::Fixed::ZERO
+                        || state.own_country.loans > 0;
+                    let low_manpower =
+                        state.own_country.manpower < crate::fixed::Fixed::from_int(5000);
+
+                    // Reduce priority if in debt or low on manpower, but still honor
+                    if in_debt || low_manpower {
+                        Self::SCORE_HONOR_ALLIANCE - 500 // Lower priority but still positive
+                    } else {
+                        Self::SCORE_HONOR_ALLIANCE // High priority to maintain alliances
+                    }
+                } else {
+                    -100 // Not a valid CTA
+                }
+            }
+
+            Command::DeclineCallToArms { war_id } => {
+                // Only decline if we're in dire circumstances (debt + low manpower)
+                if state.pending_call_to_arms.iter().any(|(w, _)| w == war_id) {
+                    let in_debt = state.own_country.treasury < crate::fixed::Fixed::ZERO
+                        || state.own_country.loans > 0;
+                    let very_low_manpower =
+                        state.own_country.manpower < crate::fixed::Fixed::from_int(2000);
+
+                    // Only score positively if both in debt AND out of manpower
+                    if in_debt && very_low_manpower {
+                        300 // Consider declining to avoid bankruptcy/collapse
+                    } else {
+                        -1000 // Default: don't decline (hurts trust and alliance)
+                    }
                 } else {
                     -100 // Not a valid CTA
                 }
@@ -582,6 +611,9 @@ mod tests {
         let ai = GreedyAI::new();
         let mut state = dummy_state();
         state.pending_call_to_arms.push((42, "FRA".to_string()));
+        // Set high manpower and treasury so priority isn't reduced
+        state.own_country.manpower = crate::fixed::Fixed::from_int(10000);
+        state.own_country.treasury = crate::fixed::Fixed::from_int(500);
 
         let cmd = Command::JoinWar {
             war_id: 42,
@@ -589,7 +621,7 @@ mod tests {
         };
         let score = ai.score_command(&cmd, &state);
 
-        // Should honor alliance
+        // Should honor alliance with full priority
         assert_eq!(score, 1500);
     }
 

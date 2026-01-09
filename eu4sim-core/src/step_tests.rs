@@ -4,6 +4,10 @@ use crate::fixed_generic::Mod32;
 use crate::state::{Date, ProvinceState};
 use crate::testing::WorldStateBuilder;
 
+// Include alliance enforcement tests
+#[path = "alliance_enforcement_tests.rs"]
+mod alliance_enforcement_tests;
+
 #[test]
 fn test_step_world_advances_date() {
     let state = WorldStateBuilder::new().date(1444, 11, 11).build();

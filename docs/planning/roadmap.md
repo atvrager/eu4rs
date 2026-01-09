@@ -218,10 +218,15 @@ Expanded AI capabilities and economic depth.
   - 25+ test cases covering all commands and integration points
 
 ### In Progress
-- [ ] **Alliance Enforcement**: Defensive pact call-to-arms
-  - Data structures exist, `CallAllyToWar` / `JoinWar` commands defined
-  - Pending diplomacy queue implemented
-  - **Missing**: Acceptance logic, honor penalty
+- [x] **Alliance Enforcement**: Defensive pact call-to-arms ✅
+  - Call-to-arms acceptance and decline mechanics
+  - Trust system (bilateral 0-100 tracking)
+  - AI acceptance scoring (trust, debt, stability factors)
+  - Decline penalties: -25 prestige, alliance break, -10 trust with all allies
+  - Accept bonuses: +5 trust with caller
+  - Conflict detection (prevents impossible war configurations)
+  - AI integration: GreedyBot scoring for `JoinWar` and `DeclineCallToArms`
+  - 14 comprehensive tests covering all mechanics
 - [ ] **Religion Commands**: 3 stubbed commands need implementation
   - `AssignMissionary`, `RecallMissionary`, `ConvertCountryReligion`
 - [ ] **Casus Belli System**: War justification mechanics beyond no-CB
@@ -417,7 +422,7 @@ Before starting work on a feature:
 3. **Follow property-based testing** workflow ([guide](../development/testing/property-based-testing.md))
 4. **Run CI** before committing: `cargo xtask ci`
 
-**Priority**: Phase 6 advanced diplomacy. Focus on alliance enforcement and diplomatic commands.
+**Priority**: Phase 6 completion (religion commands, casus belli system). Phase 7 advanced economy systems.
 
 ---
 

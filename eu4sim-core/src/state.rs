@@ -1399,6 +1399,11 @@ pub struct DiplomacyState {
     /// Pending military access requests awaiting response: (requester, grantor) -> date requested
     #[serde(default)]
     pub pending_access_requests: HashMap<(Tag, Tag), Date>,
+    /// Trust values between countries: (Tag1, Tag2) -> trust (0-100).
+    /// Stored in sorted order (smaller tag first) to avoid duplication.
+    /// Higher trust = more likely to honor calls-to-arms, less aggressive expansion impact.
+    #[serde(default)]
+    pub trust: HashMap<(Tag, Tag), Fixed>,
 }
 
 impl DiplomacyState {
@@ -1449,6 +1454,72 @@ impl DiplomacyState {
             (a.to_string(), b.to_string())
         } else {
             (b.to_string(), a.to_string())
+        }
+    }
+
+    // === Trust methods ===
+
+    /// Get the trust value between two countries (0-100).
+    /// Returns 50 (neutral) if no trust value is set.
+    pub fn get_trust(&self, tag1: &str, tag2: &str) -> Fixed {
+        let key = Self::sorted_pair(tag1, tag2);
+        self.trust.get(&key).copied().unwrap_or(Fixed::from_int(50))
+    }
+
+    /// Set the trust value between two countries (0-100).
+    /// Values are clamped to the valid range.
+    pub fn set_trust(&mut self, tag1: &str, tag2: &str, value: Fixed) {
+        let key = Self::sorted_pair(tag1, tag2);
+        let clamped = value.clamp(Fixed::ZERO, Fixed::from_int(100));
+        if clamped.to_f32() > 0.01 {
+            self.trust.insert(key, clamped);
+        } else {
+            // Remove zero trust entries to save memory
+            self.trust.remove(&key);
+        }
+    }
+
+    /// Modify trust between two countries by a delta amount.
+    /// Values are clamped to 0-100 range.
+    pub fn modify_trust(&mut self, tag1: &str, tag2: &str, delta: Fixed) {
+        let current = self.get_trust(tag1, tag2);
+        let new_value = current + delta;
+        self.set_trust(tag1, tag2, new_value);
+    }
+
+    // === Alliance methods ===
+
+    /// Check if two countries have an alliance.
+    pub fn has_alliance(&self, tag1: &str, tag2: &str) -> bool {
+        let key = Self::sorted_pair(tag1, tag2);
+        matches!(self.relations.get(&key), Some(RelationType::Alliance))
+    }
+
+    /// Get all allies of a country.
+    pub fn get_allies(&self, tag: &str) -> Vec<Tag> {
+        self.relations
+            .iter()
+            .filter_map(|((t1, t2), rel_type)| {
+                if matches!(rel_type, RelationType::Alliance) {
+                    if t1 == tag {
+                        Some(t2.clone())
+                    } else if t2 == tag {
+                        Some(t1.clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Remove an alliance between two countries.
+    pub fn remove_alliance(&mut self, tag1: &str, tag2: &str) {
+        let key = Self::sorted_pair(tag1, tag2);
+        if matches!(self.relations.get(&key), Some(RelationType::Alliance)) {
+            self.relations.remove(&key);
         }
     }
 

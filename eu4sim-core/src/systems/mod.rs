@@ -1,6 +1,7 @@
 //! Simulation systems.
 
 pub mod advisors;
+pub mod alliance;
 pub mod attrition;
 pub mod buildings;
 pub mod celestial;
@@ -33,6 +34,10 @@ pub mod tribute;
 pub mod war_score;
 
 pub use advisors::run_advisor_cost_tick;
+pub use alliance::{
+    accept_call_to_arms, calculate_cta_acceptance_score, decline_call_to_arms,
+    would_create_conflicting_war,
+};
 pub use attrition::run_attrition_tick;
 pub use buildings::{
     available_buildings, can_build, cancel_construction_conquest, cancel_construction_manual,

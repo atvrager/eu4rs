@@ -195,12 +195,12 @@ impl WorldState {
 
 ---
 
-### 4. Call-to-Arms
+### 4. Call-to-Arms & Alliance Enforcement
 
-**Location**: `eu4sim-core/src/step.rs`
-**State**: `eu4sim-core/src/state.rs::CountryState::pending_call_to_arms`
+**Location**: `eu4sim-core/src/systems/alliance.rs`, `eu4sim-core/src/step.rs`
+**State**: `eu4sim-core/src/state.rs::CountryState::pending_call_to_arms`, `DiplomacyState::trust`
 
-Allies automatically join wars when called.
+Complete EU4-authentic alliance enforcement system with trust mechanics, acceptance logic, and decline penalties.
 
 #### Mechanics
 
@@ -219,30 +219,79 @@ fn call_allies_to_war(state: &mut WorldState, war_id: WarId, declarer: &Tag, is_
 }
 ```
 
+#### Trust System
+
+Bilateral trust tracking (0-100 scale) affects diplomatic decisions:
+
+```rust
+// Trust stored in DiplomacyState
+pub trust: HashMap<(Tag, Tag), Fixed>
+
+// Trust modifiers:
+// - Accept CtA: +5 trust with caller
+// - Decline CtA: -10 trust with ALL allies
+```
+
+#### AI Acceptance Scoring
+
+```rust
+pub fn calculate_cta_acceptance_score(
+    state: &WorldState,
+    ally: &Tag,
+    caller: &Tag,
+    war_id: WarId,
+) -> i32 {
+    // Trust factor (±50 points swing):
+    //   Above 50: +0.5 per point
+    //   Below 50: -2 per point
+
+    // Debt penalty: -1000 if loans > 0 or treasury < 0
+
+    // Stability penalty: -50 per missing point below 0
+}
+```
+
 #### Commands
 
 ```rust
 pub enum Command {
-    CallAllyToWar { ally: Tag, war_id: WarId },  // Request ally join
-    JoinWar { war_id: WarId, side: WarSide },    // Accept CtA
+    CallAllyToWar { ally: Tag, war_id: WarId },    // Request ally join
+    JoinWar { war_id: WarId, side: WarSide },      // Accept CtA
+    DeclineCallToArms { war_id: WarId },           // Decline CtA
 }
 ```
 
-#### Pending CtA Cleanup
+#### Decline Penalties
+
+Per EU4 wiki mechanics:
+- **-25 prestige** (significant diplomatic cost)
+- **Alliance breaks** with the caller
+- **-10 trust** with ALL allies (reputation damage)
+- **Pending CtA removed** from queue
+
+#### Accept Bonuses
+
+- **+5 trust** with the caller (strengthens relationship)
+- **Join war** on the specified side
+- **Pending CtA removed** from queue
+
+#### Conflict Detection
 
 ```rust
-// Pending calls removed on:
-// - War ends (peace deal)
-// - Ally joins war
-// - Ally declines (AI decision)
+pub fn would_create_conflicting_war(state: &WorldState, ally: &Tag, war_id: WarId) -> bool {
+    // Returns true if:
+    // - Ally is already at war with any participant
+    // - Ally is allied to anyone on the opposing side
+}
 ```
 
 **Integration**:
 - Defensive allies join automatically in `declare_war_command()`
 - Offensive allies get pending CtA in `pending_call_to_arms`
-- AI can choose to accept/decline via `JoinWar` command
+- AI can accept via `JoinWar` or decline via `DeclineCallToArms`
+- GreedyBot scores both options based on country situation (debt, manpower, trust)
 
-**Testing**: 5 tests verify defensive auto-join, offensive pending, multi-ally, command availability, cleanup
+**Testing**: 14 tests verify defensive auto-join, offensive pending, multi-ally, command availability, cleanup, decline penalties, accept bonuses, trust mechanics, conflict detection, and AI scoring
 
 ---
 
@@ -612,7 +661,7 @@ impl WorldState {
 | **T1** | General Pips | 3 | ~150 |
 | **T1** | Sieges | 5 | ~450 |
 | **T1** | Zone of Control | 4 | ~100 |
-| **T1** | Call-to-Arms | 5 | ~200 |
+| **T1** | Call-to-Arms & Alliance Enforcement | 14 | ~400 |
 | **T2** | Attrition | 6 | ~250 |
 | **T2** | River Crossings | 1 | ~50 |
 | **T3** | Naval Combat | 9 | ~800 |

@@ -1108,6 +1108,8 @@ pub fn available_commands(
     if let Some(country_state) = state.countries.get(country_tag) {
         for (&war_id, &side) in &country_state.pending_call_to_arms {
             available.push(Command::JoinWar { war_id, side });
+            // Also allow declining (with penalties)
+            available.push(Command::DeclineCallToArms { war_id });
         }
     }
 
@@ -2566,12 +2568,13 @@ fn execute_command(
                 .is_some();
 
             if !has_pending {
-                // Can only join if you have a pending call
-                return Ok(()); // Silently ignore (not an error, just invalid action)
+                return Err(ActionError::InvalidAction {
+                    reason: format!("No pending call-to-arms for war {}", war_id),
+                });
             }
 
-            // Join the war
-            join_war(state, country_tag, *war_id, *side);
+            // Accept the call-to-arms (grants trust bonus, removes pending CTA)
+            crate::systems::accept_call_to_arms(state, &country_tag.to_string(), *war_id, *side);
             log::info!("{} joined war {} as {:?}", country_tag, war_id, side);
 
             Ok(())
@@ -2595,14 +2598,20 @@ fn execute_command(
             }
 
             // Check if ally has an alliance
-            use crate::state::RelationType;
-            let has_alliance = state.diplomacy.relations.iter().any(|((a, b), rel)| {
-                *rel == RelationType::Alliance
-                    && ((a == country_tag && b == ally) || (b == country_tag && a == ally))
-            });
+            if !state.diplomacy.has_alliance(country_tag, ally) {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("{} is not your ally", ally),
+                });
+            }
 
-            if !has_alliance {
-                return Ok(()); // Silently ignore - no alliance
+            // Check for conflicting wars (ally already at war with a participant)
+            if crate::systems::would_create_conflicting_war(state, ally, *war_id) {
+                return Err(ActionError::InvalidAction {
+                    reason: format!(
+                        "{} cannot join due to conflicting alliances or existing wars",
+                        ally
+                    ),
+                });
             }
 
             // Create pending call-to-arms for the ally
@@ -3933,6 +3942,27 @@ fn execute_command(
             }
             // TODO: Unlock Imperial Ban CB against target
             log::info!("Emperor {} issues imperial ban on {}", country_tag, target);
+            Ok(())
+        }
+
+        // ===== ALLIANCE ENFORCEMENT COMMANDS =====
+        Command::DeclineCallToArms { war_id } => {
+            // Validate country has pending CTA for this war
+            let has_pending_cta = state
+                .countries
+                .get(country_tag)
+                .and_then(|c| c.pending_call_to_arms.get(war_id))
+                .is_some();
+
+            if !has_pending_cta {
+                return Err(ActionError::InvalidAction {
+                    reason: format!("No pending call-to-arms for war {}", war_id),
+                });
+            }
+
+            // Decline the call-to-arms (penalties apply)
+            crate::systems::decline_call_to_arms(state, &country_tag.to_string(), *war_id);
+            log::info!("{} declined call-to-arms for war {}", country_tag, war_id);
             Ok(())
         }
 

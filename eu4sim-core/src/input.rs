@@ -108,6 +108,11 @@ pub enum Command {
         ally: Tag,
         war_id: WarId,
     },
+    /// Decline a call-to-arms from an ally.
+    /// Penalties: -25 prestige, alliance breaks, -10 trust with all allies.
+    DeclineCallToArms {
+        war_id: WarId,
+    },
 
     // Tech & Institutions
     BuyTech {
