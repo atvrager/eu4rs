@@ -6,6 +6,7 @@ use std::env;
 use std::process::{Command, Stdio};
 
 mod personalize;
+mod region_gen;
 mod train;
 
 #[derive(Parser)]
@@ -41,6 +42,22 @@ enum Commands {
         /// Update eu4data/src/generated/categories.rs and schema.rs
         #[arg(long)]
         update: bool,
+    },
+
+    /// Generate eu4-bridge OCR regions from EU4 GUI files
+    GenerateRegions {
+        /// Path to EU4 installation (auto-detected if not provided)
+        #[arg(long)]
+        game_path: Option<String>,
+        /// Output file path (default: eu4-bridge/src/regions.rs)
+        #[arg(short, long)]
+        output: Option<String>,
+        /// Print to stdout instead of writing file
+        #[arg(long)]
+        dry_run: bool,
+        /// Check mode: fail if generated differs from committed (for CI)
+        #[arg(long)]
+        check: bool,
     },
 
     /// Verify the HEAD commit follows project conventions (post-commit check)
@@ -230,6 +247,13 @@ fn main() -> Result<()> {
             discover,
             update,
         } => run_coverage(eu4_path, doc_gen, discover, update),
+
+        Commands::GenerateRegions {
+            game_path,
+            output,
+            dry_run,
+            check,
+        } => run_generate_regions(game_path, output, dry_run, check),
 
         Commands::VerifyCommit => run_verify_commit(),
 
@@ -682,6 +706,61 @@ fn run_coverage(
 
     // Always print to terminal
     println!("{}", report.to_terminal());
+
+    Ok(())
+}
+
+fn run_generate_regions(
+    game_path: Option<String>,
+    output: Option<String>,
+    dry_run: bool,
+    check: bool,
+) -> Result<()> {
+    let game_path_str = match game_path {
+        Some(p) => p,
+        None => {
+            // Auto-detect
+            match eu4data::path::detect_game_path() {
+                Some(p) => {
+                    println!("🔎 Auto-detected EU4 path: {:?}", p);
+                    p.to_string_lossy().to_string()
+                }
+                None => {
+                    println!("⚠️  Could not detect EU4 installation.");
+                    println!("Please provide a path via --game-path <PATH>");
+                    return Ok(());
+                }
+            }
+        }
+    };
+
+    let output_path = output.as_deref().unwrap_or("eu4-bridge/src/regions.rs");
+
+    if check {
+        // CI mode: generate and compare to existing file
+        println!("Checking if {} is up to date...", output_path);
+        let generated = region_gen::generate_regions(&game_path_str, Some(output_path), true)?;
+
+        if std::path::Path::new(output_path).exists() {
+            let existing = std::fs::read_to_string(output_path)?;
+            if generated.trim() != existing.trim() {
+                anyhow::bail!(
+                    "{} is out of date!\nRun: cargo xtask generate-regions",
+                    output_path
+                );
+            }
+            println!("✅ {} is up to date", output_path);
+        } else {
+            anyhow::bail!("{} does not exist", output_path);
+        }
+    } else {
+        // Generate mode
+        let _generated = region_gen::generate_regions(&game_path_str, Some(output_path), dry_run)?;
+
+        if !dry_run {
+            println!("✅ Generated {}", output_path);
+        }
+    }
 
     Ok(())
 }
