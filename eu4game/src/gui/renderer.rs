@@ -34,6 +34,7 @@ use super::speed_controls;
 use super::sprite_cache::{SpriteBorder, SpriteCache};
 use super::topbar;
 use super::types::{self, GfxDatabase, GuiAction, GuiState, HitBox, Orientation};
+use super::widget_cache::WidgetCache;
 use super::{interner, parse_gfx_file};
 use crate::bmfont::BitmapFontCache;
 use crate::render::SpriteRenderer;
@@ -52,6 +53,9 @@ pub struct GuiRenderer {
     sprite_cache: SpriteCache,
     /// Bitmap font cache.
     font_cache: BitmapFontCache,
+    /// Unified widget cache (Phase 2: for generated rendering code).
+    #[allow(dead_code)] // Will be used by generated panel renderers
+    pub(crate) widget_cache: WidgetCache,
     /// Legacy speed controls layout (Phase 3.5: rendering metadata only).
     pub(crate) speed_controls_layout: SpeedControlsLayout,
     /// Macro-based speed controls widgets (Phase 3.5).
@@ -258,6 +262,7 @@ impl GuiRenderer {
             interner,
             sprite_cache: SpriteCache::new(game_path.to_path_buf()),
             font_cache: BitmapFontCache::new(game_path),
+            widget_cache: WidgetCache::new(),
             speed_controls_layout,
             speed_controls,
             topbar_layout,

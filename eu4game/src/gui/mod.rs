@@ -17,6 +17,7 @@ pub mod parser;
 pub mod sprite_cache;
 #[allow(dead_code)]
 pub mod types;
+pub mod widget_cache;
 
 // Phase 2: Generic UI Binder system
 pub mod binder;
@@ -100,6 +101,10 @@ pub use renderer::GuiRenderer;
 // Sprite cache
 #[allow(unused_imports)] // Public API
 pub use sprite_cache::{SpriteBorder, SpriteCache};
+
+// Widget cache
+#[allow(unused_imports)] // Public API
+pub use widget_cache::WidgetCache;
 
 // Core GUI types
 #[allow(unused_imports)] // Public API

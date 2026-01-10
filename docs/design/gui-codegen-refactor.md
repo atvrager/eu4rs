@@ -2,7 +2,7 @@
 
 **Design Document**
 
-**Status:** In Progress (Phase 0, 1 Complete)
+**Status:** In Progress (Phase 0, 1, 2 Complete)
 **Author:** Claude (with user guidance)
 **Created:** 2026-01-09
 **Target:** eu4game GUI rendering system
@@ -29,8 +29,8 @@ This document describes a refactor of the GUI rendering system from **code-drive
 |-------|------|---------------|--------|-------------|
 | **Phase 0** | Quick fix for observer text | ~20 lines | ✅ Complete | Observer mode fully functional |
 | **Phase 1** | Build code generator (3 files) | +800 lines | ✅ Complete | `cargo xtask generate-gui-renderer` command |
-| **Phase 2** | Implement widget cache | +200 lines | 🔄 Next | Unified sprite/font caching |
-| **Phase 3** | Proof of concept (left panel) | +300 generated | Pending | Left panel uses generated code |
+| **Phase 2** | Implement widget cache | +120 lines | ✅ Complete | Unified sprite/font caching |
+| **Phase 3** | Proof of concept (left panel) | +300 generated | 🔄 Next | Left panel uses generated code |
 | **Phase 4** | Port all panels | +1000 generated | Pending | All panels use generated code |
 | **Phase 5** | Build automation | +50 lines | Pending | Auto-regeneration on .gui changes |
 | **Phase 6** | Delete legacy code | -4000 lines | Pending | Clean, maintainable codebase |
