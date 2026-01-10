@@ -1,6 +1,15 @@
 //! Country selection left panel for singleplayer screen.
 //!
 //! Contains bookmarks list, save games list, date widget, and back button.
+//!
+//! # Observer Mode UI (Repurposed from Multiplayer)
+//!
+//! The `observe_mode_button` and `observe_mode_title` are originally from EU4's
+//! multiplayer lobby UI (`frontend.gui` multiplayer view). We're repurposing them
+//! for single player to enable headless testing and AI-only simulations.
+//!
+//! **Deviation from vanilla EU4**: In the actual game, observer mode is only
+//! available in multiplayer. We expose it in single player for development/testing.
 
 use super::core::UiAction;
 use super::primitives::{GuiButton, GuiEditBox, GuiListbox, GuiText};
@@ -78,6 +87,11 @@ pub struct CountrySelectLeftPanel {
     /// When enabled, starts the game in observer mode without a player country.
     #[gui(name = "observe_mode_button")]
     pub observe_mode_button: GuiButton,
+
+    /// Text label for observer mode ("OBSERVE_MODE").
+    /// Positioned next to the observe_mode_button checkbox.
+    #[gui(name = "observe_mode_title")]
+    pub observe_mode_title: GuiText,
 }
 
 impl CountrySelectLeftPanel {
@@ -89,6 +103,8 @@ impl CountrySelectLeftPanel {
         use crate::gui::core::DatePart;
 
         self.back_button.set_action(UiAction::Back);
+        self.observe_mode_button
+            .set_action(UiAction::ToggleObserveMode);
 
         // Year buttons: up1/down1 = +/-1, up2/down2 = +/-10, up3/down3 = +/-100
         self.year_up_1
@@ -120,6 +136,11 @@ impl CountrySelectLeftPanel {
     pub fn poll_actions(&mut self) -> Option<UiAction> {
         // Back button
         if let Some(action) = self.back_button.poll_click() {
+            return Some(action);
+        }
+
+        // Observer mode button
+        if let Some(action) = self.observe_mode_button.poll_click() {
             return Some(action);
         }
 
@@ -178,6 +199,7 @@ mod tests {
             day_down: GuiButton::placeholder(),
             back_button: GuiButton::placeholder(),
             observe_mode_button: GuiButton::placeholder(),
+            observe_mode_title: GuiText::placeholder(),
         };
 
         assert_eq!(panel.back_button.name(), "<placeholder>");
@@ -203,6 +225,7 @@ mod tests {
             day_down: GuiButton::placeholder(),
             back_button: GuiButton::placeholder(),
             observe_mode_button: GuiButton::placeholder(),
+            observe_mode_title: GuiText::placeholder(),
         };
 
         panel.init_actions();
@@ -242,6 +265,7 @@ mod tests {
             day_down: GuiButton::placeholder(),
             back_button: GuiButton::placeholder(),
             observe_mode_button: GuiButton::placeholder(),
+            observe_mode_title: GuiText::placeholder(),
         };
 
         // No clicks, should return None

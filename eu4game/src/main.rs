@@ -3100,7 +3100,10 @@ impl App {
 }
 
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    // Suppress noisy wgpu D3D12 validation errors that don't affect functionality
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .filter_module("wgpu_hal::auxil::dxgi::exception", log::LevelFilter::Off)
+        .init();
 
     log::info!("EU4 Source Port starting...");
 
@@ -3179,3 +3182,7 @@ fn main() {
 #[cfg(test)]
 #[path = "main_tests.rs"]
 mod main_tests;
+
+#[cfg(test)]
+#[path = "observer_mode_tests.rs"]
+mod observer_mode_tests;

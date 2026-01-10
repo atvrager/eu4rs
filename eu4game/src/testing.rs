@@ -289,6 +289,26 @@ impl GuiTestHarness {
         None
     }
 
+    /// Simulate a click at the specified screen coordinates.
+    ///
+    /// Returns the GUI action triggered by the click, if any.
+    /// Must be called after `render_to_image()` to populate hit boxes.
+    #[allow(dead_code)]
+    pub fn click(&mut self, x: f32, y: f32) -> Option<crate::gui::GuiAction> {
+        self.gui_renderer.handle_click(x, y, &self.gui_state)
+    }
+
+    /// Simulate a click on a named button.
+    ///
+    /// Finds the button by name, clicks its center, and returns the action.
+    /// Returns `None` if the button wasn't found.
+    /// Must be called after `render_to_image()` to populate hit boxes.
+    #[allow(dead_code)]
+    pub fn click_button(&mut self, button_name: &str) -> Option<crate::gui::GuiAction> {
+        let (x, y) = self.find_button_center(button_name)?;
+        self.click(x, y)
+    }
+
     // ========================================
     // Rendering
     // ========================================

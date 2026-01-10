@@ -2098,6 +2098,63 @@ impl GuiRenderer {
                 ));
             }
 
+            // TODO(architecture): This manual rendering defeats the purpose of our data-driven
+            // layout engine. Should walk the GUI tree and render widgets generically instead.
+
+            // Render observer mode text label (quick fix - manually added)
+            // NOTE: This is from multiplayer UI, repurposed for single-player observer mode
+            let pos = panel.observe_mode_title.position();
+            let orientation = panel.observe_mode_title.orientation();
+            if let Some(font_idx) = self
+                .font_bind_groups
+                .iter()
+                .position(|(name, _)| name == "vic_18")
+                && let Some(loaded) = self.font_cache.get("vic_18", device, queue)
+            {
+                let font = &loaded.font;
+                let text = "OBSERVE_MODE"; // TODO: Localize this
+                let text_width = font.measure_width(text);
+
+                // Calculate screen position using LOWER_LEFT orientation
+                let text_screen_pos = resolve_position(
+                    pos,
+                    orientation,
+                    (text_width as u32, 20), // Approximate text height
+                    screen_size,
+                );
+
+                let mut cursor_x = text_screen_pos.0;
+                let cursor_y = text_screen_pos.1;
+
+                for c in text.chars() {
+                    if let Some(glyph) = font.get_glyph(c) {
+                        let glyph_x = cursor_x + glyph.xoffset as f32;
+                        let glyph_y = cursor_y + glyph.yoffset as f32;
+                        let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
+                            (glyph_x, glyph_y),
+                            (glyph.width, glyph.height),
+                            screen_size,
+                        );
+                        let (u_min, v_min, u_max, v_max) = font.glyph_uv(glyph);
+                        let font_bind_group = &self.font_bind_groups[font_idx].1;
+                        sprite_renderer.draw_uv(
+                            render_pass,
+                            font_bind_group,
+                            queue,
+                            clip_x,
+                            clip_y,
+                            clip_w,
+                            clip_h,
+                            u_min,
+                            v_min,
+                            u_max,
+                            v_max,
+                        );
+                        cursor_x += glyph.xadvance as f32;
+                    }
+                }
+            }
+
             // Render date widget with background, arrows, and text
             // datewidget window is at (10, 401) relative to left panel
             const DATEWIDGET_X: i32 = 10;
