@@ -11,7 +11,3 @@ pub mod gui {
     pub mod parser;
     pub mod types;
 }
-
-pub mod generated {
-    pub mod gui;
-}

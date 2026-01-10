@@ -7,6 +7,7 @@ mod bmfont;
 mod camera;
 mod dds;
 mod flags;
+mod generated;
 mod gui;
 mod input;
 mod render;

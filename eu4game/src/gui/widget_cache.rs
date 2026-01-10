@@ -7,11 +7,12 @@ use super::sprite_cache::SpriteCache;
 use super::types::GfxDatabase;
 use crate::render::SpriteRenderer;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Cached sprite with bind group and dimensions.
 #[allow(dead_code)] // Used by generated rendering code in Phase 3
 pub struct CachedSprite {
-    pub bind_group: wgpu::BindGroup,
+    pub bind_group: Arc<wgpu::BindGroup>,
     pub dimensions: (u32, u32),
     pub num_frames: u32,
 }
@@ -29,7 +30,7 @@ pub struct CachedFont {
 #[allow(dead_code)] // Used by generated rendering code in Phase 3
 pub struct WidgetCache {
     /// Sprite cache (name -> CachedSprite with bind group).
-    sprites: HashMap<String, CachedSprite>,
+    pub(crate) sprites: HashMap<String, CachedSprite>,
     /// Font cache (name -> CachedFont with bind group).
     fonts: HashMap<String, CachedFont>,
 }
@@ -45,7 +46,7 @@ impl WidgetCache {
 
     /// Gets or loads a sprite, creating bind group if needed.
     ///
-    /// Returns a cached sprite with bind group and dimensions ready for rendering.
+    /// Returns Some if the sprite was loaded successfully, None if sprite not found in database.
     #[allow(dead_code)] // Used by generated rendering code in Phase 3
     #[allow(clippy::too_many_arguments)]
     pub fn get_or_load_sprite(
@@ -56,41 +57,38 @@ impl WidgetCache {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         sprite_renderer: &SpriteRenderer,
-    ) -> &CachedSprite {
-        // Use HashMap::entry API for lazy loading
-        self.sprites
-            .entry(sprite_name.to_string())
-            .or_insert_with(|| {
-                // Look up sprite in GFX database
-                let sprite_info = gfx_db.get(sprite_name).unwrap_or_else(|| {
-                    panic!("Sprite '{}' not found in GFX database", sprite_name)
-                });
+    ) -> Option<&CachedSprite> {
+        // Check if already cached
+        if self.sprites.contains_key(sprite_name) {
+            return self.sprites.get(sprite_name);
+        }
 
-                // Load texture from sprite cache
-                let (view, w, h) = sprite_cache
-                    .get(&sprite_info.texture_file, device, queue)
-                    .unwrap_or_else(|| {
-                        panic!("Failed to load texture for sprite '{}'", sprite_name)
-                    });
+        // Look up sprite in GFX database
+        let sprite_info = gfx_db.get(sprite_name)?;
 
-                // Create bind group
-                let bind_group = sprite_renderer.create_bind_group(device, view);
+        // Load texture from sprite cache
+        let (view, w, h) = sprite_cache.get(&sprite_info.texture_file, device, queue)?;
 
-                log::debug!(
-                    "Loaded sprite '{}': {} -> {}x{} ({} frames)",
-                    sprite_name,
-                    sprite_info.texture_file,
-                    w,
-                    h,
-                    sprite_info.num_frames
-                );
+        // Create bind group
+        let bind_group = sprite_renderer.create_bind_group(device, view);
 
-                CachedSprite {
-                    bind_group,
-                    dimensions: (w, h),
-                    num_frames: sprite_info.num_frames.max(1),
-                }
-            })
+        log::debug!(
+            "Loaded sprite '{}': {} -> {}x{} ({} frames)",
+            sprite_name,
+            sprite_info.texture_file,
+            w,
+            h,
+            sprite_info.num_frames
+        );
+
+        let cached = CachedSprite {
+            bind_group: Arc::new(bind_group),
+            dimensions: (w, h),
+            num_frames: sprite_info.num_frames.max(1),
+        };
+
+        self.sprites.insert(sprite_name.to_string(), cached);
+        self.sprites.get(sprite_name)
     }
 
     /// Gets or loads a font, creating bind group if needed.

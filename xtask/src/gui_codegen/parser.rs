@@ -27,12 +27,9 @@ pub fn parse_all_gui_files(game_path: &Path) -> Result<HashMap<String, GuiElemen
         let elements = parse_gui_file(&frontend_path, &interner)
             .map_err(|e| anyhow::anyhow!("Failed to parse frontend.gui: {}", e))?;
 
-        // Index all top-level windows by name
+        // Index all windows (including nested ones) by name
         for (_symbol, element) in elements {
-            if let GuiElement::Window { ref name, .. } = element {
-                println!("  Found window: {}", name);
-                trees.insert(name.clone(), element);
-            }
+            find_windows_recursive(&element, &mut trees);
         }
     } else {
         println!(
@@ -49,10 +46,7 @@ pub fn parse_all_gui_files(game_path: &Path) -> Result<HashMap<String, GuiElemen
             .map_err(|e| anyhow::anyhow!("Failed to parse topbar.gui: {}", e))?;
 
         for (_symbol, element) in elements {
-            if let GuiElement::Window { ref name, .. } = element {
-                println!("  Found window: {}", name);
-                trees.insert(name.clone(), element);
-            }
+            find_windows_recursive(&element, &mut trees);
         }
     }
 
@@ -64,15 +58,25 @@ pub fn parse_all_gui_files(game_path: &Path) -> Result<HashMap<String, GuiElemen
             .map_err(|e| anyhow::anyhow!("Failed to parse speed_controls.gui: {}", e))?;
 
         for (_symbol, element) in elements {
-            if let GuiElement::Window { ref name, .. } = element {
-                println!("  Found window: {}", name);
-                trees.insert(name.clone(), element);
-            }
+            find_windows_recursive(&element, &mut trees);
         }
     }
 
     println!("Parsed {} total windows", trees.len());
     Ok(trees)
+}
+
+/// Recursively find all Window elements and add them to the trees map.
+fn find_windows_recursive(element: &GuiElement, trees: &mut HashMap<String, GuiElement>) {
+    if let GuiElement::Window { ref name, .. } = element {
+        println!("  Found window: {}", name);
+        trees.insert(name.clone(), element.clone());
+    }
+
+    // Recurse into children
+    for child in element.children() {
+        find_windows_recursive(child, trees);
+    }
 }
 
 /// Extract panel information from a GUI element tree.

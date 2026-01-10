@@ -25,6 +25,7 @@ eu4data/src/generated/types/*
 
 # Auto-generated GUI panel renderers
 eu4game/src/generated/gui/*_panel.rs
+*.bak
 .mal_token.json
 
 # Observer output files

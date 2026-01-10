@@ -14,7 +14,11 @@
 //! Generated panel files will be included here once generated.
 
 // Generated panel modules will be declared here
-// Example:
-// pub mod left_panel;
-// pub mod topbar_panel;
-// pub mod speed_controls_panel;
+// Phase 3: Feature-gated for A/B testing (manual vs generated rendering)
+#[cfg(feature = "generated-renderer")]
+#[allow(dead_code, unused_variables, clippy::all)]
+pub mod country_selection_panel;
+
+#[cfg(feature = "generated-renderer")]
+#[allow(dead_code, unused_variables, clippy::all)]
+pub mod left_panel;

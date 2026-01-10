@@ -102,17 +102,31 @@ fn write_output_file(dir: &str, panel_name: &str, content: &str) -> anyhow::Resu
     use std::fs;
     use std::io::Write;
 
-    let dir_path = Path::new(dir);
-    fs::create_dir_all(dir_path)?;
+    let output_path = if dir.ends_with(".rs") {
+        // User provided full path to output file
+        Path::new(dir).to_path_buf()
+    } else {
+        // User provided directory, construct filename
+        let dir_path = Path::new(dir);
+        fs::create_dir_all(dir_path)?;
 
-    let filename = format!("{}_panel.rs", panel_name);
-    let output_path = dir_path.join(&filename);
+        // Use panel name as-is if it already ends with _panel, otherwise add suffix
+        let filename = if panel_name.ends_with("_panel") {
+            format!("{}.rs", panel_name)
+        } else {
+            format!("{}_panel.rs", panel_name)
+        };
+        dir_path.join(&filename)
+    };
 
-    // Create backup if file exists
+    // Ensure parent directory exists
+    if let Some(parent) = output_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    // Delete old file if it exists (cleaner than backup for generated code)
     if output_path.exists() {
-        let backup_path = output_path.with_extension("rs.bak");
-        fs::copy(&output_path, &backup_path)?;
-        println!("Backed up existing file to: {}", backup_path.display());
+        fs::remove_file(&output_path)?;
     }
 
     // Write new content
@@ -124,6 +138,17 @@ fn write_output_file(dir: &str, panel_name: &str, content: &str) -> anyhow::Resu
         content.len(),
         output_path.display()
     );
+
+    // Auto-format the generated file
+    let status = std::process::Command::new("rustfmt")
+        .arg(&output_path)
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {}
+        Ok(_) => println!("Warning: rustfmt failed (continuing anyway)"),
+        Err(e) => println!("Warning: Failed to run rustfmt: {} (continuing anyway)", e),
+    }
 
     Ok(())
 }

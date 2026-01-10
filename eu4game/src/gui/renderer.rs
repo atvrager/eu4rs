@@ -45,12 +45,12 @@ use std::path::Path;
 /// GUI renderer that uses EU4's authentic layout and sprites.
 pub struct GuiRenderer {
     /// Sprite database from .gfx files.
-    gfx_db: GfxDatabase,
+    pub(crate) gfx_db: GfxDatabase,
     /// String interner for efficient widget naming and lookups.
     #[allow(dead_code)]
     pub interner: interner::StringInterner,
     /// Sprite texture cache.
-    sprite_cache: SpriteCache,
+    pub(crate) sprite_cache: SpriteCache,
     /// Bitmap font cache.
     font_cache: BitmapFontCache,
     /// Unified widget cache (Phase 2: for generated rendering code).
@@ -69,10 +69,10 @@ pub struct GuiRenderer {
     country_select_layout: CountrySelectLayout,
     /// Macro-based country select panel widgets (Phase 3.5).
     #[allow(dead_code)] // Used in render_country_select_only (test-only)
-    country_select_panel: Option<CountrySelectRightPanel>,
+    pub(crate) country_select_panel: Option<CountrySelectRightPanel>,
     /// Country selection left panel (Phase 8.5.1).
     #[allow(dead_code)] // Phase 8.5.2 rendering integration
-    left_panel: Option<CountrySelectLeftPanel>,
+    pub(crate) left_panel: Option<CountrySelectLeftPanel>,
     /// Left panel window layout (Phase 8.5.2).
     #[allow(dead_code)] // Will be used for rendering in Part 2
     left_panel_layout: super::layout_types::FrontendPanelLayout,
@@ -119,7 +119,7 @@ pub struct GuiRenderer {
     /// Cached font bind groups by font name.
     font_bind_groups: Vec<(String, wgpu::BindGroup)>,
     /// Hit boxes for interactive elements (screen pixel coords).
-    hit_boxes: Vec<(String, HitBox)>,
+    pub(crate) hit_boxes: Vec<(String, HitBox)>,
     /// Currently hovered button name (for visual feedback).
     hovered_button: Option<String>,
     /// Background sprite dimensions.
@@ -1385,6 +1385,7 @@ impl GuiRenderer {
         screen_size: (u32, u32),
         start_date: Option<&eu4data::Eu4Date>,
     ) {
+        // Ensure all textures and fonts are loaded
         self.ensure_textures(device, queue, sprite_renderer);
         self.ensure_font(device, queue, sprite_renderer);
         self.ensure_country_select_textures(device, queue, sprite_renderer);
@@ -1400,6 +1401,12 @@ impl GuiRenderer {
         let start_year = start_date.map(|d| d.year()).unwrap_or(1444);
         if let Some(ref mut panel) = self.top_panel {
             let _ = panel.update(crate::gui::core::MapMode::Political, start_year);
+        }
+
+        // Phase 3: Generated rendering for left panel (proof of concept)
+        #[cfg(feature = "generated-renderer")]
+        {
+            self.render_left_generated(screen_size, sprite_renderer, render_pass, device, queue);
         }
 
         // Phase 1: Load ALL textures for ALL panels (must be done before any rendering)
@@ -1837,6 +1844,8 @@ impl GuiRenderer {
         }
 
         // Render left panel (back button + date widget buttons)
+        // Skip manual left panel when using generated renderer
+        #[cfg(not(feature = "generated-renderer"))]
         if let Some(ref panel) = self.left_panel {
             let left_anchor = get_window_anchor(
                 self.left_panel_layout.window_pos,
