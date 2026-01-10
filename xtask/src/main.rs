@@ -5,6 +5,7 @@ use reqwest::blocking::Client;
 use std::env;
 use std::process::{Command, Stdio};
 
+mod gui_codegen;
 mod personalize;
 mod region_gen;
 mod train;
@@ -58,6 +59,25 @@ enum Commands {
         /// Check mode: fail if generated differs from committed (for CI)
         #[arg(long)]
         check: bool,
+    },
+
+    /// Generate GUI renderer code from .gui files (build-time code generation)
+    GenerateGuiRenderer {
+        /// Path to EU4 installation (auto-detected if not provided)
+        #[arg(long)]
+        game_path: Option<String>,
+        /// Panel name to generate ("left", "topbar", "speed_controls", or "all")
+        #[arg(short, long, default_value = "all")]
+        panel: String,
+        /// Output directory (default: eu4game/src/generated/gui)
+        #[arg(short, long)]
+        output: Option<String>,
+        /// Print to stdout instead of writing files
+        #[arg(long)]
+        dry_run: bool,
+        /// Check mode: fail if generated differs from committed (for CI)
+        #[arg(long)]
+        verify: bool,
     },
 
     /// Verify the HEAD commit follows project conventions (post-commit check)
@@ -254,6 +274,14 @@ fn main() -> Result<()> {
             dry_run,
             check,
         } => run_generate_regions(game_path, output, dry_run, check),
+
+        Commands::GenerateGuiRenderer {
+            game_path,
+            panel,
+            output,
+            dry_run,
+            verify,
+        } => run_generate_gui_renderer(game_path, panel, output, dry_run, verify),
 
         Commands::VerifyCommit => run_verify_commit(),
 
@@ -759,6 +787,69 @@ fn run_generate_regions(
 
         if !dry_run {
             println!("✅ Generated {}", output_path);
+        }
+    }
+
+    Ok(())
+}
+
+fn run_generate_gui_renderer(
+    game_path: Option<String>,
+    panel: String,
+    output: Option<String>,
+    dry_run: bool,
+    verify: bool,
+) -> Result<()> {
+    let game_path_str = match game_path {
+        Some(p) => p,
+        None => {
+            // Auto-detect
+            match eu4data::path::detect_game_path() {
+                Some(p) => {
+                    println!("🔎 Auto-detected EU4 path: {:?}", p);
+                    p.to_string_lossy().to_string()
+                }
+                None => {
+                    println!("⚠️  Could not detect EU4 installation.");
+                    println!("Please provide a path via --game-path <PATH>");
+                    return Ok(());
+                }
+            }
+        }
+    };
+
+    let output_dir = output.as_deref().unwrap_or("eu4game/src/generated/gui");
+
+    if verify {
+        // CI mode: generate and compare to existing files
+        println!("Verifying generated GUI renderer code is up to date...");
+        let generated = gui_codegen::generate_gui_renderer(
+            &game_path_str,
+            &panel,
+            Some(output_dir),
+            true, // dry-run mode for comparison
+        )?;
+
+        let expected_file = format!("{}/{}_panel.rs", output_dir, panel.replace('-', "_"));
+        if std::path::Path::new(&expected_file).exists() {
+            let existing = std::fs::read_to_string(&expected_file)?;
+            if generated.trim() != existing.trim() {
+                anyhow::bail!(
+                    "{} is out of date!\nRun: cargo xtask generate-gui-renderer",
+                    expected_file
+                );
+            }
+            println!("✅ {} is up to date", expected_file);
+        } else {
+            anyhow::bail!("{} does not exist", expected_file);
+        }
+    } else {
+        // Generate mode
+        let _generated =
+            gui_codegen::generate_gui_renderer(&game_path_str, &panel, Some(output_dir), dry_run)?;
+
+        if !dry_run {
+            println!("✅ Generated GUI renderer code for panel: {}", panel);
         }
     }
 
