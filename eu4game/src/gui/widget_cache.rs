@@ -4,10 +4,33 @@
 //! replacing the multiple separate caches used in the manual renderer.
 
 use super::sprite_cache::SpriteCache;
-use super::types::GfxDatabase;
+use super::types::{GfxDatabase, HitBox};
 use crate::render::SpriteRenderer;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+/// Sprite draw command for two-phase rendering.
+///
+/// NOTE: Currently unused but kept for future use.
+#[derive(Clone)]
+#[allow(dead_code)]
+pub struct SpriteDrawCmd {
+    pub bind_group: Arc<wgpu::BindGroup>,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+/// Hit box registration for split-phase rendering.
+///
+/// Used by generated rendering code to collect hit boxes before registering them.
+#[derive(Clone)]
+#[allow(dead_code)]
+pub struct HitBoxCmd {
+    pub name: String,
+    pub hit_box: HitBox,
+}
 
 /// Cached sprite with bind group and dimensions.
 #[allow(dead_code)] // Used by generated rendering code in Phase 3

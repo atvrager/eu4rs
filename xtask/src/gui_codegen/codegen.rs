@@ -35,12 +35,15 @@ pub fn generate_panel(panel_name: &str, gui_trees: &HashMap<String, GuiElement>)
     writeln!(&mut output, "use crate::gui::GuiRenderer;")?;
     writeln!(
         &mut output,
-        "use crate::gui::types::{{HitBox, Orientation}};"
-    )?;
-    writeln!(
-        &mut output,
         "use crate::gui::layout::{{get_window_anchor, position_from_anchor, resolve_position}};"
     )?;
+    writeln!(&mut output, "use crate::gui::sprite_cache::SpriteCache;")?;
+    writeln!(
+        &mut output,
+        "use crate::gui::types::{{GfxDatabase, HitBox, Orientation}};"
+    )?;
+    writeln!(&mut output, "use crate::gui::widget_cache::WidgetCache;")?;
+    writeln!(&mut output, "use crate::gui::{{HitBoxCmd, SpriteDrawCmd}};")?;
     writeln!(&mut output, "use crate::render::SpriteRenderer;")?;
     writeln!(&mut output)?;
 
@@ -80,52 +83,96 @@ fn generate_panel_from_tree(panel_name: &str, tree: &GuiElement) -> Result<Strin
     generate_panel_renderer(&panel_info)
 }
 
-/// Generate a complete panel rendering method.
+/// Generate a complete panel rendering using split load/render methods.
 fn generate_panel_renderer(panel: &PanelInfo) -> Result<String> {
     let mut code = String::new();
 
-    // Generate method signature with explicit lifetime
+    // Generate both load and render methods
     writeln!(&mut code, "impl GuiRenderer {{")?;
+
+    // Generate load method
+    let load_method = generate_load_method(panel)?;
+    writeln!(&mut code, "{}", load_method)?;
+    writeln!(&mut code)?;
+
+    // Generate render method
+    let render_method = generate_render_method(panel)?;
+    writeln!(&mut code, "{}", render_method)?;
+
+    writeln!(&mut code, "}}")?;
+
+    Ok(code)
+}
+
+/// Generate sprite loading method (mutable borrow of widget_cache).
+fn generate_load_method(panel: &PanelInfo) -> Result<String> {
+    let mut code = String::new();
+
+    let method_name = format!("load_{}_sprites", panel.name.replace('-', "_"));
+
+    writeln!(&mut code, "    pub(crate) fn {}(", method_name)?;
+    writeln!(&mut code, "        widget_cache: &mut WidgetCache,")?;
+    writeln!(&mut code, "        gfx_db: &GfxDatabase,")?;
+    writeln!(&mut code, "        sprite_cache: &mut SpriteCache,")?;
+    writeln!(&mut code, "        device: &wgpu::Device,")?;
+    writeln!(&mut code, "        queue: &wgpu::Queue,")?;
+    writeln!(&mut code, "        sprite_renderer: &SpriteRenderer,")?;
+    writeln!(&mut code, "    ) {{")?;
+
     writeln!(
         &mut code,
-        "    pub(crate) fn render_{}_generated<'a>(&'a mut self,",
-        panel.name.replace('-', "_")
+        "        // Load all sprites for {} panel",
+        panel.name
     )?;
+
+    for widget in &panel.widgets {
+        if needs_sprite(widget) {
+            let sprite_name = widget.sprite_name.as_ref().unwrap();
+            writeln!(&mut code, "        widget_cache.get_or_load_sprite(")?;
+            writeln!(&mut code, "            \"{}\",", sprite_name)?;
+            writeln!(&mut code, "            gfx_db,")?;
+            writeln!(&mut code, "            sprite_cache,")?;
+            writeln!(&mut code, "            device,")?;
+            writeln!(&mut code, "            queue,")?;
+            writeln!(&mut code, "            sprite_renderer,")?;
+            writeln!(&mut code, "        );")?;
+        }
+    }
+
+    writeln!(&mut code, "    }}")?;
+
+    Ok(code)
+}
+
+/// Generate rendering method (immutable borrow of widget_cache, tied to 'a).
+fn generate_render_method(panel: &PanelInfo) -> Result<String> {
+    let mut code = String::new();
+
+    let method_name = format!("render_{}", panel.name.replace('-', "_"));
+
+    // Determine panel type
+    let panel_type = match panel.name.as_str() {
+        "left" => "CountrySelectLeftPanel",
+        "top" => "CountrySelectTopPanel",
+        "right" | "country_selection_panel" => "CountrySelectRightPanel",
+        "topbar" => "TopBar",
+        "speed_controls" => "SpeedControls",
+        _ => "CountrySelectRightPanel",
+    };
+
+    writeln!(&mut code, "    pub(crate) fn {}<'a>(", method_name)?;
     writeln!(&mut code, "        screen_size: (u32, u32),")?;
     writeln!(&mut code, "        sprite_renderer: &'a SpriteRenderer,")?;
     writeln!(&mut code, "        render_pass: &mut wgpu::RenderPass<'a>,")?;
-    writeln!(&mut code, "        device: &wgpu::Device,")?;
     writeln!(&mut code, "        queue: &wgpu::Queue,")?;
+    writeln!(&mut code, "        panel: &{},", panel_type)?;
+    writeln!(&mut code, "        widget_cache: &'a WidgetCache,")?;
+    writeln!(&mut code, "        hit_boxes: &mut Vec<(String, HitBox)>,")?;
     writeln!(&mut code, "    ) {{")?;
-    writeln!(&mut code)?;
 
-    // Determine which panel field to access based on panel name
-    let panel_field = match panel.name.as_str() {
-        "left" => "left_panel",
-        "top" => "top_panel",
-        "right" | "country_selection_panel" => "country_select_panel",
-        _ => "country_select_panel", // Default fallback
-    };
+    writeln!(&mut code, "        // Render {} panel", panel.name)?;
 
-    writeln!(
-        &mut code,
-        "        // Access panel from self.{}",
-        panel_field
-    )?;
-    writeln!(
-        &mut code,
-        "        let panel = match self.{}.as_ref() {{",
-        panel_field
-    )?;
-    writeln!(&mut code, "            Some(p) => p,")?;
-    writeln!(
-        &mut code,
-        "            None => return, // No panel to render"
-    )?;
-    writeln!(&mut code, "        }};")?;
-
-    // Generate window anchor calculation
-    writeln!(&mut code)?;
+    // Generate window anchor
     writeln!(
         &mut code,
         "        let window_anchor = get_window_anchor({:?}, Orientation::{:?}, screen_size);",
@@ -133,57 +180,48 @@ fn generate_panel_renderer(panel: &PanelInfo) -> Result<String> {
     )?;
     writeln!(&mut code)?;
 
-    // Three-pass rendering to avoid borrow checker issues:
-    // Pass 1: Load all sprites (completes mutable borrows)
-    writeln!(&mut code, "        // Pass 1: Load all sprites into cache")?;
-    for widget in &panel.widgets {
-        if needs_sprite(widget) {
-            let sprite_name = widget.sprite_name.as_ref().unwrap();
-            writeln!(&mut code, "        self.widget_cache.get_or_load_sprite(")?;
-            writeln!(&mut code, "            \"{}\",", sprite_name)?;
-            writeln!(&mut code, "            &self.gfx_db,")?;
-            writeln!(&mut code, "            &mut self.sprite_cache,")?;
-            writeln!(&mut code, "            device,")?;
-            writeln!(&mut code, "            queue,")?;
-            writeln!(&mut code, "            sprite_renderer,")?;
-            writeln!(&mut code, "        );")?;
-        }
-    }
+    // Collect hit boxes
+    writeln!(&mut code, "        let mut local_hit_boxes = Vec::new();")?;
     writeln!(&mut code)?;
 
-    // Pass 2 & 3: Render each widget (combined to handle missing sprites gracefully)
-    writeln!(
-        &mut code,
-        "        // Pass 2 & 3: Render widgets (skip if sprite not loaded)"
-    )?;
+    // Render all widgets
     for widget in &panel.widgets {
         if needs_sprite(widget) {
             let sprite_name = widget.sprite_name.as_ref().unwrap();
             let sprite_var = format!("sprite_{}", widget.name.to_lowercase().replace('-', "_"));
 
-            // Start conditional block for this widget
+            writeln!(&mut code, "        // Widget: {}", widget.name)?;
             writeln!(
                 &mut code,
-                "        if let Some({}) = self.widget_cache.sprites.get(\"{}\") {{",
+                "        if let Some({}) = widget_cache.sprites.get(\"{}\") {{",
                 sprite_var, sprite_name
             )?;
 
-            // Generate widget rendering code inside the block
-            let widget_code = generate_widget_rendering(widget)?;
-            for line in widget_code.lines() {
-                writeln!(&mut code, "    {}", line)?; // Add extra indentation
-            }
+            let render_code = generate_widget_render(widget)?;
+            writeln!(&mut code, "{}", render_code)?;
 
-            writeln!(&mut code, "        }}")?; // Close conditional block
+            writeln!(&mut code, "        }}")?;
+            writeln!(&mut code)?;
         } else {
-            // Non-sprite widgets (text, etc.) render unconditionally
-            let widget_code = generate_widget_rendering(widget)?;
-            writeln!(&mut code, "{}", widget_code)?;
+            writeln!(
+                &mut code,
+                "        // Text widget: {} (not yet implemented)",
+                widget.name
+            )?;
+            writeln!(&mut code)?;
         }
     }
 
+    // Register hit boxes
+    writeln!(&mut code, "        // Register hit boxes")?;
+    writeln!(&mut code, "        for cmd in local_hit_boxes {{")?;
+    writeln!(
+        &mut code,
+        "            hit_boxes.push((cmd.name, cmd.hit_box));"
+    )?;
+    writeln!(&mut code, "        }}")?;
+
     writeln!(&mut code, "    }}")?;
-    writeln!(&mut code, "}}")?;
 
     Ok(code)
 }
@@ -194,13 +232,12 @@ fn needs_sprite(widget: &WidgetInfo) -> bool {
         && widget.sprite_name.is_some()
 }
 
-/// Generate rendering code for a single widget.
-fn generate_widget_rendering(widget: &WidgetInfo) -> Result<String> {
+/// Generate rendering code for a single widget (Phase 2: render directly).
+fn generate_widget_render(widget: &WidgetInfo) -> Result<String> {
     match widget.widget_type {
-        WidgetType::Button => emit_button_rendering(widget),
-        WidgetType::TextBox => emit_text_rendering(widget),
-        WidgetType::Icon => emit_icon_rendering(widget),
-        WidgetType::Listbox | WidgetType::EditBox => {
+        WidgetType::Button => emit_button_render(widget),
+        WidgetType::Icon => emit_icon_render(widget),
+        WidgetType::TextBox | WidgetType::Listbox | WidgetType::EditBox => {
             // These widgets need special handling, skip for now
             Ok(format!(
                 "        // TODO: Generate rendering for {} ({})",
@@ -212,17 +249,15 @@ fn generate_widget_rendering(widget: &WidgetInfo) -> Result<String> {
     }
 }
 
-/// Generate button rendering code (Pass 2 - sprite already loaded in Pass 1).
-fn emit_button_rendering(widget: &WidgetInfo) -> Result<String> {
+/// Generate button rendering code (Phase 2: render directly + collect hit box).
+fn emit_button_render(widget: &WidgetInfo) -> Result<String> {
     let mut code = String::new();
 
-    writeln!(&mut code, "        // Button: {}", widget.name)?;
-
-    if let Some(_sprite) = &widget.sprite_name {
+    if let Some(_sprite_name) = &widget.sprite_name {
         let sprite_var = format!("sprite_{}", widget.name.to_lowercase().replace('-', "_"));
         let pos_var = format!("pos_{}", widget.name.to_lowercase().replace('-', "_"));
 
-        // Calculate position (sprite already loaded in Pass 1)
+        // Calculate position
         // Use resolve_position for LOWER_* orientations (screen-relative)
         // Use position_from_anchor for other orientations (window-relative)
         let use_resolve = matches!(
@@ -232,104 +267,95 @@ fn emit_button_rendering(widget: &WidgetInfo) -> Result<String> {
         );
 
         if use_resolve {
-            writeln!(&mut code, "        let {} = resolve_position(", pos_var)?;
-            writeln!(&mut code, "            {:?},", widget.position)?;
+            writeln!(&mut code, "            let {} = resolve_position(", pos_var)?;
+            writeln!(&mut code, "                {:?},", widget.position)?;
             writeln!(
                 &mut code,
-                "            Orientation::{:?},",
+                "                Orientation::{:?},",
                 widget.orientation
             )?;
-            writeln!(&mut code, "            {}.dimensions,", sprite_var)?;
-            writeln!(&mut code, "            screen_size")?;
-            writeln!(&mut code, "        );")?;
+            writeln!(&mut code, "                {}.dimensions,", sprite_var)?;
+            writeln!(&mut code, "                screen_size")?;
+            writeln!(&mut code, "            );")?;
         } else {
-            writeln!(&mut code, "        let {} = position_from_anchor(", pos_var)?;
-            writeln!(&mut code, "            window_anchor,")?;
-            writeln!(&mut code, "            {:?},", widget.position)?;
             writeln!(
                 &mut code,
-                "            Orientation::{:?},",
+                "            let {} = position_from_anchor(",
+                pos_var
+            )?;
+            writeln!(&mut code, "                window_anchor,")?;
+            writeln!(&mut code, "                {:?},", widget.position)?;
+            writeln!(
+                &mut code,
+                "                Orientation::{:?},",
                 widget.orientation
             )?;
-            writeln!(&mut code, "            {}.dimensions", sprite_var)?;
-            writeln!(&mut code, "        );")?;
+            writeln!(&mut code, "                {}.dimensions", sprite_var)?;
+            writeln!(&mut code, "            );")?;
         }
         writeln!(&mut code)?;
 
-        // Render sprite
-        writeln!(&mut code, "        sprite_renderer.draw(")?;
-        writeln!(&mut code, "            render_pass,")?;
-        writeln!(&mut code, "            {}.bind_group.as_ref(),", sprite_var)?;
-        writeln!(&mut code, "            queue,")?;
-        writeln!(&mut code, "            {}.0,", pos_var)?;
-        writeln!(&mut code, "            {}.1,", pos_var)?;
-        writeln!(&mut code, "            {}.dimensions.0 as f32,", sprite_var)?;
-        writeln!(&mut code, "            {}.dimensions.1 as f32,", sprite_var)?;
-        writeln!(&mut code, "        );")?;
-        writeln!(&mut code)?;
-
-        // Register hit box
+        // Render sprite directly
+        writeln!(&mut code, "            sprite_renderer.draw(")?;
+        writeln!(&mut code, "                render_pass,")?;
         writeln!(
             &mut code,
-            "        self.hit_boxes.push((\"{}\".to_string(), HitBox {{",
+            "                {}.bind_group.as_ref(),",
+            sprite_var
+        )?;
+        writeln!(&mut code, "                queue,")?;
+        writeln!(&mut code, "                {}.0,", pos_var)?;
+        writeln!(&mut code, "                {}.1,", pos_var)?;
+        writeln!(
+            &mut code,
+            "                {}.dimensions.0 as f32,",
+            sprite_var
+        )?;
+        writeln!(
+            &mut code,
+            "                {}.dimensions.1 as f32,",
+            sprite_var
+        )?;
+        writeln!(&mut code, "            );")?;
+        writeln!(&mut code)?;
+
+        // Collect hit box
+        writeln!(&mut code, "            local_hit_boxes.push(HitBoxCmd {{")?;
+        writeln!(
+            &mut code,
+            "                name: \"{}\".to_string(),",
             widget.name
         )?;
-        writeln!(&mut code, "            x: {}.0, y: {}.1,", pos_var, pos_var)?;
+        writeln!(&mut code, "                hit_box: HitBox {{")?;
+        writeln!(&mut code, "                    x: {}.0,", pos_var)?;
+        writeln!(&mut code, "                    y: {}.1,", pos_var)?;
         writeln!(
             &mut code,
-            "            width: {}.dimensions.0 as f32,",
+            "                    width: {}.dimensions.0 as f32,",
             sprite_var
         )?;
         writeln!(
             &mut code,
-            "            height: {}.dimensions.1 as f32,",
+            "                    height: {}.dimensions.1 as f32,",
             sprite_var
         )?;
-        writeln!(&mut code, "        }}));")?;
-        writeln!(&mut code)?;
+        writeln!(&mut code, "                }},")?;
+        writeln!(&mut code, "            }});")?;
     }
 
     Ok(code)
 }
 
-/// Generate text rendering code.
-fn emit_text_rendering(widget: &WidgetInfo) -> Result<String> {
+/// Generate icon rendering code (Phase 2: render directly).
+/// Icons don't have hit boxes, only sprite draws.
+fn emit_icon_render(widget: &WidgetInfo) -> Result<String> {
     let mut code = String::new();
 
-    writeln!(
-        &mut code,
-        "        // Text: {} (Phase 4+ - text rendering not yet implemented)",
-        widget.name
-    )?;
-
-    if let Some(font) = &widget.font {
-        writeln!(&mut code, "        // Font: {}", font)?;
-        writeln!(&mut code, "        // Position: {:?}", widget.position)?;
-        writeln!(
-            &mut code,
-            "        // Orientation: {:?}",
-            widget.orientation
-        )?;
-        if let Some(default_text) = &widget.text {
-            writeln!(&mut code, "        // Default text: \"{}\"", default_text)?;
-        }
-    }
-    writeln!(&mut code)?;
-
-    Ok(code)
-}
-
-/// Generate icon rendering code (Pass 2 - sprite already loaded in Pass 1).
-fn emit_icon_rendering(widget: &WidgetInfo) -> Result<String> {
-    let mut code = String::new();
-
-    writeln!(&mut code, "        // Icon: {}", widget.name)?;
-
-    if let Some(_sprite) = &widget.sprite_name {
+    if let Some(_sprite_name) = &widget.sprite_name {
         let sprite_var = format!("sprite_{}", widget.name.to_lowercase().replace('-', "_"));
         let pos_var = format!("pos_{}", widget.name.to_lowercase().replace('-', "_"));
 
-        // Calculate position (sprite already loaded in Pass 1)
+        // Calculate position
         // Use resolve_position for LOWER_* orientations (screen-relative)
         // Use position_from_anchor for other orientations (window-relative)
         let use_resolve = matches!(
@@ -339,41 +365,56 @@ fn emit_icon_rendering(widget: &WidgetInfo) -> Result<String> {
         );
 
         if use_resolve {
-            writeln!(&mut code, "        let {} = resolve_position(", pos_var)?;
-            writeln!(&mut code, "            {:?},", widget.position)?;
+            writeln!(&mut code, "            let {} = resolve_position(", pos_var)?;
+            writeln!(&mut code, "                {:?},", widget.position)?;
             writeln!(
                 &mut code,
-                "            Orientation::{:?},",
+                "                Orientation::{:?},",
                 widget.orientation
             )?;
-            writeln!(&mut code, "            {}.dimensions,", sprite_var)?;
-            writeln!(&mut code, "            screen_size")?;
-            writeln!(&mut code, "        );")?;
+            writeln!(&mut code, "                {}.dimensions,", sprite_var)?;
+            writeln!(&mut code, "                screen_size")?;
+            writeln!(&mut code, "            );")?;
         } else {
-            writeln!(&mut code, "        let {} = position_from_anchor(", pos_var)?;
-            writeln!(&mut code, "            window_anchor,")?;
-            writeln!(&mut code, "            {:?},", widget.position)?;
             writeln!(
                 &mut code,
-                "            Orientation::{:?},",
+                "            let {} = position_from_anchor(",
+                pos_var
+            )?;
+            writeln!(&mut code, "                window_anchor,")?;
+            writeln!(&mut code, "                {:?},", widget.position)?;
+            writeln!(
+                &mut code,
+                "                Orientation::{:?},",
                 widget.orientation
             )?;
-            writeln!(&mut code, "            {}.dimensions", sprite_var)?;
-            writeln!(&mut code, "        );")?;
+            writeln!(&mut code, "                {}.dimensions", sprite_var)?;
+            writeln!(&mut code, "            );")?;
         }
         writeln!(&mut code)?;
 
-        // Render sprite
-        writeln!(&mut code, "        sprite_renderer.draw(")?;
-        writeln!(&mut code, "            render_pass,")?;
-        writeln!(&mut code, "            {}.bind_group.as_ref(),", sprite_var)?;
-        writeln!(&mut code, "            queue,")?;
-        writeln!(&mut code, "            {}.0,", pos_var)?;
-        writeln!(&mut code, "            {}.1,", pos_var)?;
-        writeln!(&mut code, "            {}.dimensions.0 as f32,", sprite_var)?;
-        writeln!(&mut code, "            {}.dimensions.1 as f32,", sprite_var)?;
-        writeln!(&mut code, "        );")?;
-        writeln!(&mut code)?;
+        // Render sprite directly (icons don't have hit boxes)
+        writeln!(&mut code, "            sprite_renderer.draw(")?;
+        writeln!(&mut code, "                render_pass,")?;
+        writeln!(
+            &mut code,
+            "                {}.bind_group.as_ref(),",
+            sprite_var
+        )?;
+        writeln!(&mut code, "                queue,")?;
+        writeln!(&mut code, "                {}.0,", pos_var)?;
+        writeln!(&mut code, "                {}.1,", pos_var)?;
+        writeln!(
+            &mut code,
+            "                {}.dimensions.0 as f32,",
+            sprite_var
+        )?;
+        writeln!(
+            &mut code,
+            "                {}.dimensions.1 as f32,",
+            sprite_var
+        )?;
+        writeln!(&mut code, "            );")?;
     }
 
     Ok(code)

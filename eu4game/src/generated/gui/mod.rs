@@ -22,3 +22,19 @@ pub mod country_selection_panel;
 #[cfg(feature = "generated-renderer")]
 #[allow(dead_code, unused_variables, clippy::all)]
 pub mod left_panel;
+
+#[cfg(feature = "generated-renderer")]
+#[allow(dead_code, unused_variables, clippy::all)]
+pub mod topbar_panel;
+
+#[cfg(feature = "generated-renderer")]
+#[allow(dead_code, unused_variables, clippy::all)]
+pub mod speed_controls_panel;
+
+#[cfg(feature = "generated-renderer")]
+#[allow(dead_code, unused_variables, clippy::all)]
+pub mod top_panel;
+
+#[cfg(feature = "generated-renderer")]
+#[allow(dead_code, unused_variables, clippy::all)]
+pub mod right_panel;

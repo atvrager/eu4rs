@@ -60,11 +60,11 @@ pub struct GuiRenderer {
     pub(crate) speed_controls_layout: SpeedControlsLayout,
     /// Macro-based speed controls widgets (Phase 3.5).
     #[allow(dead_code)] // Used in render_speed_controls_only
-    speed_controls: Option<speed_controls::SpeedControls>,
+    pub(crate) speed_controls: Option<speed_controls::SpeedControls>,
     /// Legacy topbar layout (Phase 3.5: rendering metadata only).
     pub(crate) topbar_layout: TopBarLayout,
     /// Macro-based topbar text widgets (Phase 3.5).
-    topbar: Option<topbar::TopBar>,
+    pub(crate) topbar: Option<topbar::TopBar>,
     /// Legacy country selection panel layout (Phase 3.5: rendering metadata only).
     country_select_layout: CountrySelectLayout,
     /// Macro-based country select panel widgets (Phase 3.5).
@@ -78,7 +78,7 @@ pub struct GuiRenderer {
     left_panel_layout: super::layout_types::FrontendPanelLayout,
     /// Country selection top panel (Phase 8.5.1).
     #[allow(dead_code)] // Phase 8.5.2 rendering integration
-    top_panel: Option<CountrySelectTopPanel>,
+    pub(crate) top_panel: Option<CountrySelectTopPanel>,
     /// Top panel window layout (Phase 8.5.2).
     #[allow(dead_code)] // Will be used for rendering in Part 2
     top_panel_layout: super::layout_types::FrontendPanelLayout,
@@ -743,135 +743,408 @@ impl GuiRenderer {
         self.ensure_font(device, queue, sprite_renderer);
         self.ensure_topbar_textures(device, queue, sprite_renderer);
 
-        // Collect topbar draw commands first (to avoid borrowing self during draw)
-        let topbar_draws: Vec<(usize, f32, f32, f32, f32)> = {
-            let topbar_anchor = get_window_anchor(
-                self.topbar_layout.window_pos,
-                self.topbar_layout.orientation,
-                screen_size,
+        // Phase 4: Generated rendering with split load/render (feature-gated)
+        #[cfg(feature = "generated-renderer")]
+        {
+            // Phase 4a: Load all sprites (mutable borrows)
+            GuiRenderer::load_topbar_sprites(
+                &mut self.widget_cache,
+                &self.gfx_db,
+                &mut self.sprite_cache,
+                device,
+                queue,
+                sprite_renderer,
+            );
+            GuiRenderer::load_speed_controls_sprites(
+                &mut self.widget_cache,
+                &self.gfx_db,
+                &mut self.sprite_cache,
+                device,
+                queue,
+                sprite_renderer,
             );
 
-            let mut draws = Vec::new();
+            // Phase 4b: Render all panels (immutable borrows)
+            if let Some(ref topbar) = self.topbar {
+                GuiRenderer::render_topbar(
+                    screen_size,
+                    sprite_renderer,
+                    render_pass,
+                    queue,
+                    topbar,
+                    &self.widget_cache,
+                    &mut self.hit_boxes,
+                );
+            }
+            if let Some(ref speed_controls) = self.speed_controls {
+                GuiRenderer::render_speed_controls(
+                    screen_size,
+                    sprite_renderer,
+                    render_pass,
+                    queue,
+                    speed_controls,
+                    &self.widget_cache,
+                    &mut self.hit_boxes,
+                );
+            }
+        }
 
-            // Backgrounds first
-            for bg in &self.topbar_layout.backgrounds {
-                if let Some(idx) = self
-                    .topbar_icons
-                    .iter()
-                    .position(|(name, _, _, _)| name == &bg.sprite)
+        // Manual rendering (legacy) - only active when generated-renderer feature is disabled
+        #[cfg(not(feature = "generated-renderer"))]
+        {
+            // Collect topbar draw commands first (to avoid borrowing self during draw)
+            let topbar_draws: Vec<(usize, f32, f32, f32, f32)> = {
+                let topbar_anchor = get_window_anchor(
+                    self.topbar_layout.window_pos,
+                    self.topbar_layout.orientation,
+                    screen_size,
+                );
+
+                let mut draws = Vec::new();
+
+                // Backgrounds first
+                for bg in &self.topbar_layout.backgrounds {
+                    if let Some(idx) = self
+                        .topbar_icons
+                        .iter()
+                        .position(|(name, _, _, _)| name == &bg.sprite)
+                    {
+                        let (_, _, w, h) = &self.topbar_icons[idx];
+                        let screen_pos = position_from_anchor(
+                            topbar_anchor,
+                            bg.position,
+                            bg.orientation,
+                            (*w, *h),
+                        );
+                        let (clip_x, clip_y, clip_w, clip_h) =
+                            rect_to_clip_space(screen_pos, (*w, *h), screen_size);
+                        draws.push((idx, clip_x, clip_y, clip_w, clip_h));
+                    }
+                }
+
+                // Icons
+                for icon in &self.topbar_layout.icons {
+                    if let Some(idx) = self
+                        .topbar_icons
+                        .iter()
+                        .position(|(name, _, _, _)| name == &icon.sprite)
+                    {
+                        let (_, _, w, h) = &self.topbar_icons[idx];
+                        let screen_pos = position_from_anchor(
+                            topbar_anchor,
+                            icon.position,
+                            icon.orientation,
+                            (*w, *h),
+                        );
+                        let (clip_x, clip_y, clip_w, clip_h) =
+                            rect_to_clip_space(screen_pos, (*w, *h), screen_size);
+                        draws.push((idx, clip_x, clip_y, clip_w, clip_h));
+                    }
+                }
+
+                draws
+            };
+
+            // Execute topbar draws
+            for (idx, clip_x, clip_y, clip_w, clip_h) in topbar_draws {
+                let bind_group = &self.topbar_icons[idx].1;
+                sprite_renderer.draw(
+                    render_pass,
+                    bind_group,
+                    queue,
+                    clip_x,
+                    clip_y,
+                    clip_w,
+                    clip_h,
+                );
+            }
+
+            // Draw topbar texts if country data is available
+            if let Some(ref country) = state.country
+                && let Some(ref font_bind_group) = self.font_bind_group
+            {
+                let topbar_anchor = get_window_anchor(
+                    self.topbar_layout.window_pos,
+                    self.topbar_layout.orientation,
+                    screen_size,
+                );
+
+                // Update topbar widgets with current country state
+                if let Some(ref mut topbar) = self.topbar {
+                    topbar.update(country);
+                }
+
+                // Get font for text rendering (reuse existing font from speed controls)
+                let font_name = &self.speed_controls_layout.date_font; // vic_18
+                if let Some(loaded) = self.font_cache.get(font_name, device, queue)
+                    && let Some(ref topbar) = self.topbar
                 {
-                    let (_, _, w, h) = &self.topbar_icons[idx];
-                    let screen_pos =
-                        position_from_anchor(topbar_anchor, bg.position, bg.orientation, (*w, *h));
-                    let (clip_x, clip_y, clip_w, clip_h) =
-                        rect_to_clip_space(screen_pos, (*w, *h), screen_size);
-                    draws.push((idx, clip_x, clip_y, clip_w, clip_h));
+                    let font = &loaded.font;
+
+                    // Helper closure to render a single text widget
+                    let mut render_text = |widget: &primitives::GuiText| {
+                        let value = widget.text();
+                        if value.is_empty() {
+                            return; // Skip empty/placeholder widgets
+                        }
+
+                        let text_screen_pos = position_from_anchor(
+                            topbar_anchor,
+                            widget.position(),
+                            widget.orientation(),
+                            widget.max_dimensions(),
+                        );
+
+                        // Measure text width for alignment
+                        let text_width = font.measure_width(value);
+
+                        // Calculate starting X based on format (alignment)
+                        let border_size = widget.border_size();
+                        let (max_width, _max_height) = widget.max_dimensions();
+                        let start_x = match widget.format() {
+                            types::TextFormat::Left => text_screen_pos.0 + border_size.0 as f32,
+                            types::TextFormat::Center => {
+                                text_screen_pos.0 + (max_width as f32 - text_width) / 2.0
+                            }
+                            types::TextFormat::Right => {
+                                text_screen_pos.0 + max_width as f32
+                                    - text_width
+                                    - border_size.0 as f32
+                            }
+                        };
+
+                        let mut cursor_x = start_x;
+                        let cursor_y = text_screen_pos.1 + border_size.1 as f32;
+
+                        for c in value.chars() {
+                            if let Some(glyph) = font.get_glyph(c) {
+                                if glyph.width > 0 && glyph.height > 0 {
+                                    let glyph_x = cursor_x + glyph.xoffset as f32;
+                                    let glyph_y = cursor_y + glyph.yoffset as f32;
+                                    let (u_min, v_min, u_max, v_max) = font.glyph_uv(glyph);
+                                    let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
+                                        (glyph_x, glyph_y),
+                                        (glyph.width, glyph.height),
+                                        screen_size,
+                                    );
+                                    sprite_renderer.draw_uv(
+                                        render_pass,
+                                        font_bind_group,
+                                        queue,
+                                        clip_x,
+                                        clip_y,
+                                        clip_w,
+                                        clip_h,
+                                        u_min,
+                                        v_min,
+                                        u_max,
+                                        v_max,
+                                    );
+                                }
+                                cursor_x += glyph.xadvance as f32;
+                            }
+                        }
+                    };
+
+                    // Render all topbar text widgets
+                    render_text(&topbar.text_gold);
+                    render_text(&topbar.text_manpower);
+                    render_text(&topbar.text_sailors);
+                    render_text(&topbar.text_stability);
+                    render_text(&topbar.text_prestige);
+                    render_text(&topbar.text_corruption);
+                    render_text(&topbar.text_ADM);
+                    render_text(&topbar.text_DIP);
+                    render_text(&topbar.text_MIL);
+                    render_text(&topbar.text_merchants);
+                    render_text(&topbar.text_settlers);
+                    render_text(&topbar.text_diplomats);
+                    render_text(&topbar.text_missionaries);
                 }
             }
 
-            // Icons
-            for icon in &self.topbar_layout.icons {
+            // Get window anchor point - window is just an anchor, not a rectangle
+            let window_anchor = get_window_anchor(
+                self.speed_controls_layout.window_pos,
+                self.speed_controls_layout.orientation,
+                screen_size,
+            );
+
+            // Draw background at its own position relative to window anchor
+            if let Some(ref bind_group) = self.bg_bind_group {
+                let bg_screen_pos = position_from_anchor(
+                    window_anchor,
+                    self.speed_controls_layout.bg_pos,
+                    self.speed_controls_layout.bg_orientation,
+                    self.bg_size,
+                );
+
+                let (clip_x, clip_y, clip_w, clip_h) =
+                    rect_to_clip_space(bg_screen_pos, self.bg_size, screen_size);
+
+                sprite_renderer.draw(
+                    render_pass,
+                    bind_group,
+                    queue,
+                    clip_x,
+                    clip_y,
+                    clip_w,
+                    clip_h,
+                );
+            }
+
+            // Draw button backgrounds/chrome BEFORE speed indicator and text
+            // (button_pause is a background element that goes behind the date)
+            let button_draws: Vec<(usize, f32, f32, f32, f32)> = {
+                let mut draws = Vec::new();
+                for (name, pos, orientation, _) in &self.speed_controls_layout.buttons {
+                    // Find the bind group index for this button
+                    if let Some(idx) = self
+                        .button_bind_groups
+                        .iter()
+                        .position(|(n, _, _, _)| n == name)
+                    {
+                        let (_, _, w, h) = &self.button_bind_groups[idx];
+                        let screen_pos =
+                            position_from_anchor(window_anchor, *pos, *orientation, (*w, *h));
+                        let (clip_x, clip_y, clip_w, clip_h) =
+                            rect_to_clip_space(screen_pos, (*w, *h), screen_size);
+                        draws.push((idx, clip_x, clip_y, clip_w, clip_h));
+                    }
+                }
+                draws
+            };
+
+            for (idx, clip_x, clip_y, clip_w, clip_h) in button_draws {
+                let bind_group = &self.button_bind_groups[idx].1;
+                sprite_renderer.draw(
+                    render_pass,
+                    bind_group,
+                    queue,
+                    clip_x,
+                    clip_y,
+                    clip_w,
+                    clip_h,
+                );
+            }
+
+            // Draw additional icons (score icon, etc.)
+            for icon in &self.speed_controls_layout.icons {
                 if let Some(idx) = self
-                    .topbar_icons
+                    .speed_icon_bind_groups
                     .iter()
-                    .position(|(name, _, _, _)| name == &icon.sprite)
+                    .position(|(sprite, _, _, _)| sprite == &icon.sprite)
                 {
-                    let (_, _, w, h) = &self.topbar_icons[idx];
+                    let (_, _, w, h) = &self.speed_icon_bind_groups[idx];
                     let screen_pos = position_from_anchor(
-                        topbar_anchor,
+                        window_anchor,
                         icon.position,
                         icon.orientation,
                         (*w, *h),
                     );
                     let (clip_x, clip_y, clip_w, clip_h) =
                         rect_to_clip_space(screen_pos, (*w, *h), screen_size);
-                    draws.push((idx, clip_x, clip_y, clip_w, clip_h));
+                    let bind_group = &self.speed_icon_bind_groups[idx].1;
+                    sprite_renderer.draw(
+                        render_pass,
+                        bind_group,
+                        queue,
+                        clip_x,
+                        clip_y,
+                        clip_w,
+                        clip_h,
+                    );
                 }
             }
 
-            draws
-        };
+            // Draw speed indicator
+            if let Some(ref bind_group) = self.speed_bind_group {
+                // Select frame based on state
+                // EU4 speed_indicator.dds: frames 0-4 = speeds 1-5, frame 5 = paused
+                let frame = if state.paused {
+                    5
+                } else {
+                    (state.speed.saturating_sub(1)).min(4)
+                };
 
-        // Execute topbar draws
-        for (idx, clip_x, clip_y, clip_w, clip_h) in topbar_draws {
-            let bind_group = &self.topbar_icons[idx].1;
-            sprite_renderer.draw(
-                render_pass,
-                bind_group,
-                queue,
-                clip_x,
-                clip_y,
-                clip_w,
-                clip_h,
-            );
-        }
+                // Speed indicator position relative to window anchor
+                let speed_screen_pos = position_from_anchor(
+                    window_anchor,
+                    self.speed_controls_layout.speed_pos,
+                    self.speed_controls_layout.speed_orientation,
+                    self.speed_size,
+                );
 
-        // Draw topbar texts if country data is available
-        if let Some(ref country) = state.country
-            && let Some(ref font_bind_group) = self.font_bind_group
-        {
-            let topbar_anchor = get_window_anchor(
-                self.topbar_layout.window_pos,
-                self.topbar_layout.orientation,
-                screen_size,
-            );
+                // Get UVs for this frame
+                if let Some(sprite) = self.gfx_db.get(&self.speed_controls_layout.speed_sprite) {
+                    let (u_min, v_min, u_max, v_max) = sprite.frame_uv(frame);
 
-            // Update topbar widgets with current country state
-            if let Some(ref mut topbar) = self.topbar {
-                topbar.update(country);
+                    let (clip_x, clip_y, clip_w, clip_h) =
+                        rect_to_clip_space(speed_screen_pos, self.speed_size, screen_size);
+
+                    sprite_renderer.draw_uv(
+                        render_pass,
+                        bind_group,
+                        queue,
+                        clip_x,
+                        clip_y,
+                        clip_w,
+                        clip_h,
+                        u_min,
+                        v_min,
+                        u_max,
+                        v_max,
+                    );
+                }
             }
 
-            // Get font for text rendering (reuse existing font from speed controls)
-            let font_name = &self.speed_controls_layout.date_font; // vic_18
-            if let Some(loaded) = self.font_cache.get(font_name, device, queue)
-                && let Some(ref topbar) = self.topbar
-            {
-                let font = &loaded.font;
+            // Draw date text using bitmap font (on top of buttons)
+            // Text position relative to window anchor
+            let text_box_size = (
+                self.speed_controls_layout.date_max_width,
+                self.speed_controls_layout.date_max_height,
+            );
+            let date_screen_pos = position_from_anchor(
+                window_anchor,
+                self.speed_controls_layout.date_pos,
+                self.speed_controls_layout.date_orientation,
+                text_box_size,
+            );
 
-                // Helper closure to render a single text widget
-                let mut render_text = |widget: &primitives::GuiText| {
-                    let value = widget.text();
-                    if value.is_empty() {
-                        return; // Skip empty/placeholder widgets
-                    }
+            // Render text using bitmap font
+            if let Some(ref font_bind_group) = self.font_bind_group {
+                let font_name = &self.speed_controls_layout.date_font;
+                if let Some(loaded) = self.font_cache.get(font_name, device, queue) {
+                    let font = &loaded.font;
 
-                    let text_screen_pos = position_from_anchor(
-                        topbar_anchor,
-                        widget.position(),
-                        widget.orientation(),
-                        widget.max_dimensions(),
-                    );
+                    // Measure text width for centering
+                    let text_width = font.measure_width(&state.date);
 
-                    // Measure text width for alignment
-                    let text_width = font.measure_width(value);
+                    // Apply border/padding
+                    // In EU4, borderSize.y is top offset, format=centre is horizontal only
+                    let border = self.speed_controls_layout.date_border_size;
 
-                    // Calculate starting X based on format (alignment)
-                    let border_size = widget.border_size();
-                    let (max_width, _max_height) = widget.max_dimensions();
-                    let start_x = match widget.format() {
-                        types::TextFormat::Left => text_screen_pos.0 + border_size.0 as f32,
-                        types::TextFormat::Center => {
-                            text_screen_pos.0 + (max_width as f32 - text_width) / 2.0
-                        }
-                        types::TextFormat::Right => {
-                            text_screen_pos.0 + max_width as f32 - text_width - border_size.0 as f32
-                        }
-                    };
+                    // Center horizontally within text box
+                    let start_x = date_screen_pos.0 + (text_box_size.0 as f32 - text_width) / 2.0;
+                    // Vertical: use borderSize.y as top offset (not centering)
+                    let start_y = date_screen_pos.1 + border.1 as f32;
 
                     let mut cursor_x = start_x;
-                    let cursor_y = text_screen_pos.1 + border_size.1 as f32;
 
-                    for c in value.chars() {
+                    for c in state.date.chars() {
                         if let Some(glyph) = font.get_glyph(c) {
                             if glyph.width > 0 && glyph.height > 0 {
                                 let glyph_x = cursor_x + glyph.xoffset as f32;
-                                let glyph_y = cursor_y + glyph.yoffset as f32;
+                                let glyph_y = start_y + glyph.yoffset as f32;
+
                                 let (u_min, v_min, u_max, v_max) = font.glyph_uv(glyph);
+
                                 let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
                                     (glyph_x, glyph_y),
                                     (glyph.width, glyph.height),
                                     screen_size,
                                 );
+
                                 sprite_renderer.draw_uv(
                                     render_pass,
                                     font_bind_group,
@@ -889,260 +1162,47 @@ impl GuiRenderer {
                             cursor_x += glyph.xadvance as f32;
                         }
                     }
+                }
+            }
+
+            // Register hit boxes for speed controls from parsed button positions
+            for (name, pos, orientation, sprite_name) in &self.speed_controls_layout.buttons {
+                // Get button size from sprite dimensions if available
+                let button_size = self
+                    .gfx_db
+                    .get(sprite_name)
+                    .and_then(|sprite| {
+                        self.sprite_cache
+                            .get_dimensions(&sprite.texture_file)
+                            .map(|(w, h)| (w as f32, h as f32))
+                    })
+                    .unwrap_or((32.0, 32.0)); // Fallback if sprite not found
+
+                let button_screen_pos = position_from_anchor(
+                    window_anchor,
+                    *pos,
+                    *orientation,
+                    (button_size.0 as u32, button_size.1 as u32),
+                );
+
+                let hit_box = HitBox {
+                    x: button_screen_pos.0,
+                    y: button_screen_pos.1,
+                    width: button_size.0,
+                    height: button_size.1,
                 };
 
-                // Render all topbar text widgets
-                render_text(&topbar.text_gold);
-                render_text(&topbar.text_manpower);
-                render_text(&topbar.text_sailors);
-                render_text(&topbar.text_stability);
-                render_text(&topbar.text_prestige);
-                render_text(&topbar.text_corruption);
-                render_text(&topbar.text_ADM);
-                render_text(&topbar.text_DIP);
-                render_text(&topbar.text_MIL);
-                render_text(&topbar.text_merchants);
-                render_text(&topbar.text_settlers);
-                render_text(&topbar.text_diplomats);
-                render_text(&topbar.text_missionaries);
+                // Map button names to action names
+                let action_name = match name.as_str() {
+                    "button_speedup" => "speed_up",
+                    "button_speeddown" => "speed_down",
+                    "button_pause" => "pause",
+                    _ => name.as_str(),
+                };
+
+                self.hit_boxes.push((action_name.to_string(), hit_box));
             }
-        }
-
-        // Get window anchor point - window is just an anchor, not a rectangle
-        let window_anchor = get_window_anchor(
-            self.speed_controls_layout.window_pos,
-            self.speed_controls_layout.orientation,
-            screen_size,
-        );
-
-        // Draw background at its own position relative to window anchor
-        if let Some(ref bind_group) = self.bg_bind_group {
-            let bg_screen_pos = position_from_anchor(
-                window_anchor,
-                self.speed_controls_layout.bg_pos,
-                self.speed_controls_layout.bg_orientation,
-                self.bg_size,
-            );
-
-            let (clip_x, clip_y, clip_w, clip_h) =
-                rect_to_clip_space(bg_screen_pos, self.bg_size, screen_size);
-
-            sprite_renderer.draw(
-                render_pass,
-                bind_group,
-                queue,
-                clip_x,
-                clip_y,
-                clip_w,
-                clip_h,
-            );
-        }
-
-        // Draw button backgrounds/chrome BEFORE speed indicator and text
-        // (button_pause is a background element that goes behind the date)
-        let button_draws: Vec<(usize, f32, f32, f32, f32)> = {
-            let mut draws = Vec::new();
-            for (name, pos, orientation, _) in &self.speed_controls_layout.buttons {
-                // Find the bind group index for this button
-                if let Some(idx) = self
-                    .button_bind_groups
-                    .iter()
-                    .position(|(n, _, _, _)| n == name)
-                {
-                    let (_, _, w, h) = &self.button_bind_groups[idx];
-                    let screen_pos =
-                        position_from_anchor(window_anchor, *pos, *orientation, (*w, *h));
-                    let (clip_x, clip_y, clip_w, clip_h) =
-                        rect_to_clip_space(screen_pos, (*w, *h), screen_size);
-                    draws.push((idx, clip_x, clip_y, clip_w, clip_h));
-                }
-            }
-            draws
-        };
-
-        for (idx, clip_x, clip_y, clip_w, clip_h) in button_draws {
-            let bind_group = &self.button_bind_groups[idx].1;
-            sprite_renderer.draw(
-                render_pass,
-                bind_group,
-                queue,
-                clip_x,
-                clip_y,
-                clip_w,
-                clip_h,
-            );
-        }
-
-        // Draw additional icons (score icon, etc.)
-        for icon in &self.speed_controls_layout.icons {
-            if let Some(idx) = self
-                .speed_icon_bind_groups
-                .iter()
-                .position(|(sprite, _, _, _)| sprite == &icon.sprite)
-            {
-                let (_, _, w, h) = &self.speed_icon_bind_groups[idx];
-                let screen_pos =
-                    position_from_anchor(window_anchor, icon.position, icon.orientation, (*w, *h));
-                let (clip_x, clip_y, clip_w, clip_h) =
-                    rect_to_clip_space(screen_pos, (*w, *h), screen_size);
-                let bind_group = &self.speed_icon_bind_groups[idx].1;
-                sprite_renderer.draw(
-                    render_pass,
-                    bind_group,
-                    queue,
-                    clip_x,
-                    clip_y,
-                    clip_w,
-                    clip_h,
-                );
-            }
-        }
-
-        // Draw speed indicator
-        if let Some(ref bind_group) = self.speed_bind_group {
-            // Select frame based on state
-            // EU4 speed_indicator.dds: frames 0-4 = speeds 1-5, frame 5 = paused
-            let frame = if state.paused {
-                5
-            } else {
-                (state.speed.saturating_sub(1)).min(4)
-            };
-
-            // Speed indicator position relative to window anchor
-            let speed_screen_pos = position_from_anchor(
-                window_anchor,
-                self.speed_controls_layout.speed_pos,
-                self.speed_controls_layout.speed_orientation,
-                self.speed_size,
-            );
-
-            // Get UVs for this frame
-            if let Some(sprite) = self.gfx_db.get(&self.speed_controls_layout.speed_sprite) {
-                let (u_min, v_min, u_max, v_max) = sprite.frame_uv(frame);
-
-                let (clip_x, clip_y, clip_w, clip_h) =
-                    rect_to_clip_space(speed_screen_pos, self.speed_size, screen_size);
-
-                sprite_renderer.draw_uv(
-                    render_pass,
-                    bind_group,
-                    queue,
-                    clip_x,
-                    clip_y,
-                    clip_w,
-                    clip_h,
-                    u_min,
-                    v_min,
-                    u_max,
-                    v_max,
-                );
-            }
-        }
-
-        // Draw date text using bitmap font (on top of buttons)
-        // Text position relative to window anchor
-        let text_box_size = (
-            self.speed_controls_layout.date_max_width,
-            self.speed_controls_layout.date_max_height,
-        );
-        let date_screen_pos = position_from_anchor(
-            window_anchor,
-            self.speed_controls_layout.date_pos,
-            self.speed_controls_layout.date_orientation,
-            text_box_size,
-        );
-
-        // Render text using bitmap font
-        if let Some(ref font_bind_group) = self.font_bind_group {
-            let font_name = &self.speed_controls_layout.date_font;
-            if let Some(loaded) = self.font_cache.get(font_name, device, queue) {
-                let font = &loaded.font;
-
-                // Measure text width for centering
-                let text_width = font.measure_width(&state.date);
-
-                // Apply border/padding
-                // In EU4, borderSize.y is top offset, format=centre is horizontal only
-                let border = self.speed_controls_layout.date_border_size;
-
-                // Center horizontally within text box
-                let start_x = date_screen_pos.0 + (text_box_size.0 as f32 - text_width) / 2.0;
-                // Vertical: use borderSize.y as top offset (not centering)
-                let start_y = date_screen_pos.1 + border.1 as f32;
-
-                let mut cursor_x = start_x;
-
-                for c in state.date.chars() {
-                    if let Some(glyph) = font.get_glyph(c) {
-                        if glyph.width > 0 && glyph.height > 0 {
-                            let glyph_x = cursor_x + glyph.xoffset as f32;
-                            let glyph_y = start_y + glyph.yoffset as f32;
-
-                            let (u_min, v_min, u_max, v_max) = font.glyph_uv(glyph);
-
-                            let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
-                                (glyph_x, glyph_y),
-                                (glyph.width, glyph.height),
-                                screen_size,
-                            );
-
-                            sprite_renderer.draw_uv(
-                                render_pass,
-                                font_bind_group,
-                                queue,
-                                clip_x,
-                                clip_y,
-                                clip_w,
-                                clip_h,
-                                u_min,
-                                v_min,
-                                u_max,
-                                v_max,
-                            );
-                        }
-                        cursor_x += glyph.xadvance as f32;
-                    }
-                }
-            }
-        }
-
-        // Register hit boxes for speed controls from parsed button positions
-        for (name, pos, orientation, sprite_name) in &self.speed_controls_layout.buttons {
-            // Get button size from sprite dimensions if available
-            let button_size = self
-                .gfx_db
-                .get(sprite_name)
-                .and_then(|sprite| {
-                    self.sprite_cache
-                        .get_dimensions(&sprite.texture_file)
-                        .map(|(w, h)| (w as f32, h as f32))
-                })
-                .unwrap_or((32.0, 32.0)); // Fallback if sprite not found
-
-            let button_screen_pos = position_from_anchor(
-                window_anchor,
-                *pos,
-                *orientation,
-                (button_size.0 as u32, button_size.1 as u32),
-            );
-
-            let hit_box = HitBox {
-                x: button_screen_pos.0,
-                y: button_screen_pos.1,
-                width: button_size.0,
-                height: button_size.1,
-            };
-
-            // Map button names to action names
-            let action_name = match name.as_str() {
-                "button_speedup" => "speed_up",
-                "button_speeddown" => "speed_down",
-                "button_pause" => "pause",
-                _ => name.as_str(),
-            };
-
-            self.hit_boxes.push((action_name.to_string(), hit_box));
-        }
+        } // end #[cfg(not(feature = "generated-renderer"))]
     }
 
     /// Render the main menu UI (Phase 9.7.2).
@@ -1403,10 +1463,19 @@ impl GuiRenderer {
             let _ = panel.update(crate::gui::core::MapMode::Political, start_year);
         }
 
-        // Phase 3: Generated rendering for left panel (proof of concept)
+        // Phase 3: Generated rendering with split load/render (feature-gated)
         #[cfg(feature = "generated-renderer")]
         {
-            self.render_left_generated(screen_size, sprite_renderer, render_pass, device, queue);
+            // Phase 3a: Load ALL sprites for ALL panels (mutable borrows, short-lived)
+            GuiRenderer::load_left_sprites(
+                &mut self.widget_cache,
+                &self.gfx_db,
+                &mut self.sprite_cache,
+                device,
+                queue,
+                sprite_renderer,
+            );
+            // Note: top and right are loaded later in Phase 4a
         }
 
         // Phase 1: Load ALL textures for ALL panels (must be done before any rendering)
@@ -1561,287 +1630,354 @@ impl GuiRenderer {
             }
         }
 
-        // Phase 2: Render all panels using loaded textures
-
-        // Render top panel (map mode buttons, year label)
-        if let Some(ref panel) = self.top_panel {
-            let top_anchor = get_window_anchor(
-                self.top_panel_layout.window_pos,
-                self.top_panel_layout.orientation,
-                screen_size,
+        // Phase 4: Generated rendering with split load/render (feature-gated)
+        #[cfg(feature = "generated-renderer")]
+        {
+            // Phase 4a: Load remaining sprites (mutable borrows, short-lived)
+            GuiRenderer::load_top_sprites(
+                &mut self.widget_cache,
+                &self.gfx_db,
+                &mut self.sprite_cache,
+                device,
+                queue,
+                sprite_renderer,
+            );
+            GuiRenderer::load_right_sprites(
+                &mut self.widget_cache,
+                &self.gfx_db,
+                &mut self.sprite_cache,
+                device,
+                queue,
+                sprite_renderer,
             );
 
-            // Clone widgets to avoid borrow conflicts
-            let buttons_to_render = vec![
-                (panel.mapmode_terrain.clone(), "mapmode_terrain"),
-                (panel.mapmode_political.clone(), "mapmode_political"),
-                (panel.mapmode_trade.clone(), "mapmode_trade"),
-                (panel.mapmode_religion.clone(), "mapmode_religion"),
-                (panel.mapmode_empire.clone(), "mapmode_empire"),
-                (panel.mapmode_diplomacy.clone(), "mapmode_diplomacy"),
-                (panel.mapmode_economy.clone(), "mapmode_economy"),
-                (panel.mapmode_region.clone(), "mapmode_region"),
-                (panel.mapmode_culture.clone(), "mapmode_culture"),
-                (panel.mapmode_players.clone(), "mapmode_players"),
-            ];
-            let year_label = panel.year_label.clone();
-            let select_label = panel.select_label.clone();
-            let _ = panel;
-
-            // Extract render data to avoid lifetime issues
-            // Tuple: (idx, pos, orientation, tex_w, tex_h, num_frames, action_name)
-            type ButtonRenderData = (usize, (i32, i32), Orientation, u32, u32, u32, String);
-            let mut button_render_data: Vec<ButtonRenderData> = Vec::new();
-            for (button, action_name) in &buttons_to_render {
-                if let Some(pos) = button.position()
-                    && let Some(orientation) = button.orientation()
-                {
-                    let button_name = button.name();
-                    if let Some(idx) = self
-                        .frontend_button_bind_groups
-                        .iter()
-                        .position(|(name, _, _, _, _)| name == button_name)
-                    {
-                        let (w, h, num_frames) = (
-                            self.frontend_button_bind_groups[idx].2,
-                            self.frontend_button_bind_groups[idx].3,
-                            self.frontend_button_bind_groups[idx].4,
-                        );
-                        button_render_data.push((
-                            idx,
-                            pos,
-                            orientation,
-                            w,
-                            h,
-                            num_frames,
-                            action_name.to_string(),
-                        ));
-                    }
-                }
-            }
-
-            // Render buttons using extracted data
-            for (idx, pos, orientation, tex_w, tex_h, num_frames, action_name) in button_render_data
-            {
-                // For multi-frame sprites, use per-frame width
-                let frame_w = tex_w / num_frames;
-                let button_screen_pos =
-                    position_from_anchor(top_anchor, pos, orientation, (frame_w, tex_h));
-                let (clip_x, clip_y, clip_w, clip_h) =
-                    rect_to_clip_space(button_screen_pos, (frame_w, tex_h), screen_size);
-
-                let bind_group = &self.frontend_button_bind_groups[idx].1;
-                // Use draw_uv to render only frame 0 (normal state)
-                let u_max = 1.0 / num_frames as f32;
-                sprite_renderer.draw_uv(
+            // Phase 4b: Render ALL panels (immutable borrows, tied to 'a)
+            if let Some(ref left_panel) = self.left_panel {
+                GuiRenderer::render_left(
+                    screen_size,
+                    sprite_renderer,
                     render_pass,
-                    bind_group,
                     queue,
-                    clip_x,
-                    clip_y,
-                    clip_w,
-                    clip_h,
-                    0.0,   // u_min
-                    0.0,   // v_min
-                    u_max, // u_max (1.0/num_frames for frame 0)
-                    1.0,   // v_max
+                    left_panel,
+                    &self.widget_cache,
+                    &mut self.hit_boxes,
+                );
+            }
+            if let Some(ref top_panel) = self.top_panel {
+                GuiRenderer::render_top(
+                    screen_size,
+                    sprite_renderer,
+                    render_pass,
+                    queue,
+                    top_panel,
+                    &self.widget_cache,
+                    &mut self.hit_boxes,
+                );
+            }
+            if let Some(ref country_select_panel) = self.country_select_panel {
+                GuiRenderer::render_right(
+                    screen_size,
+                    sprite_renderer,
+                    render_pass,
+                    queue,
+                    country_select_panel,
+                    &self.widget_cache,
+                    &mut self.hit_boxes,
+                );
+            }
+        }
+
+        // Manual rendering (legacy) - only active when generated-renderer feature is disabled
+        #[cfg(not(feature = "generated-renderer"))]
+        {
+            // Phase 2: Render all panels using loaded textures
+
+            // Render top panel (map mode buttons, year label)
+            if let Some(ref panel) = self.top_panel {
+                let top_anchor = get_window_anchor(
+                    self.top_panel_layout.window_pos,
+                    self.top_panel_layout.orientation,
+                    screen_size,
                 );
 
-                self.hit_boxes.push((
-                    action_name,
-                    HitBox {
-                        x: button_screen_pos.0,
-                        y: button_screen_pos.1,
-                        width: frame_w as f32,
-                        height: tex_h as f32,
-                    },
-                ));
-            }
+                // Clone widgets to avoid borrow conflicts
+                let buttons_to_render = vec![
+                    (panel.mapmode_terrain.clone(), "mapmode_terrain"),
+                    (panel.mapmode_political.clone(), "mapmode_political"),
+                    (panel.mapmode_trade.clone(), "mapmode_trade"),
+                    (panel.mapmode_religion.clone(), "mapmode_religion"),
+                    (panel.mapmode_empire.clone(), "mapmode_empire"),
+                    (panel.mapmode_diplomacy.clone(), "mapmode_diplomacy"),
+                    (panel.mapmode_economy.clone(), "mapmode_economy"),
+                    (panel.mapmode_region.clone(), "mapmode_region"),
+                    (panel.mapmode_culture.clone(), "mapmode_culture"),
+                    (panel.mapmode_players.clone(), "mapmode_players"),
+                ];
+                let year_label = panel.year_label.clone();
+                let select_label = panel.select_label.clone();
+                let _ = panel;
 
-            // Phase 1b: Load fonts for text labels
-            for text_widget in &[&year_label, &select_label] {
-                let font_name = text_widget.font();
-                if !self
-                    .font_bind_groups
-                    .iter()
-                    .any(|(name, _)| name == font_name)
-                    && let Some(loaded) = self.font_cache.get(font_name, device, queue)
-                {
-                    let bind_group = sprite_renderer.create_bind_group(device, &loaded.view);
-                    self.font_bind_groups
-                        .push((font_name.to_string(), bind_group));
-                    log::info!("Loaded font: {}", font_name);
-                }
-            }
-
-            // Phase 1c: Load fonts for button text (left panel and lobby controls)
-            // Collect all button fonts needed
-            let mut button_fonts_to_load: Vec<String> = Vec::new();
-            if let Some(ref panel) = self.left_panel {
-                for button in [
-                    &panel.back_button,
-                    &panel.year_up_1,
-                    &panel.year_down_1,
-                    &panel.year_up_2,
-                    &panel.year_down_2,
-                    &panel.year_up_3,
-                    &panel.year_down_3,
-                    &panel.month_up,
-                    &panel.month_down,
-                    &panel.day_up,
-                    &panel.day_down,
-                    &panel.observe_mode_button,
-                ] {
-                    if let Some(font_name) = button.button_font()
-                        && !button_fonts_to_load.contains(&font_name.to_string())
+                // Extract render data to avoid lifetime issues
+                // Tuple: (idx, pos, orientation, tex_w, tex_h, num_frames, action_name)
+                type ButtonRenderData = (usize, (i32, i32), Orientation, u32, u32, u32, String);
+                let mut button_render_data: Vec<ButtonRenderData> = Vec::new();
+                for (button, action_name) in &buttons_to_render {
+                    if let Some(pos) = button.position()
+                        && let Some(orientation) = button.orientation()
                     {
-                        button_fonts_to_load.push(font_name.to_string());
+                        let button_name = button.name();
+                        if let Some(idx) = self
+                            .frontend_button_bind_groups
+                            .iter()
+                            .position(|(name, _, _, _, _)| name == button_name)
+                        {
+                            let (w, h, num_frames) = (
+                                self.frontend_button_bind_groups[idx].2,
+                                self.frontend_button_bind_groups[idx].3,
+                                self.frontend_button_bind_groups[idx].4,
+                            );
+                            button_render_data.push((
+                                idx,
+                                pos,
+                                orientation,
+                                w,
+                                h,
+                                num_frames,
+                                action_name.to_string(),
+                            ));
+                        }
                     }
                 }
-            }
-            if let Some(ref panel) = self.lobby_controls {
-                for button in [
-                    &panel.play_button,
-                    &panel.random_country_button,
-                    &panel.nation_designer_button,
-                    &panel.random_new_world_button,
-                    &panel.enable_custom_nation_button,
-                ] {
-                    if let Some(font_name) = button.button_font()
-                        && !button_fonts_to_load.contains(&font_name.to_string())
+
+                // Render buttons using extracted data
+                for (idx, pos, orientation, tex_w, tex_h, num_frames, action_name) in
+                    button_render_data
+                {
+                    // For multi-frame sprites, use per-frame width
+                    let frame_w = tex_w / num_frames;
+                    let button_screen_pos =
+                        position_from_anchor(top_anchor, pos, orientation, (frame_w, tex_h));
+                    let (clip_x, clip_y, clip_w, clip_h) =
+                        rect_to_clip_space(button_screen_pos, (frame_w, tex_h), screen_size);
+
+                    let bind_group = &self.frontend_button_bind_groups[idx].1;
+                    // Use draw_uv to render only frame 0 (normal state)
+                    let u_max = 1.0 / num_frames as f32;
+                    sprite_renderer.draw_uv(
+                        render_pass,
+                        bind_group,
+                        queue,
+                        clip_x,
+                        clip_y,
+                        clip_w,
+                        clip_h,
+                        0.0,   // u_min
+                        0.0,   // v_min
+                        u_max, // u_max (1.0/num_frames for frame 0)
+                        1.0,   // v_max
+                    );
+
+                    self.hit_boxes.push((
+                        action_name,
+                        HitBox {
+                            x: button_screen_pos.0,
+                            y: button_screen_pos.1,
+                            width: frame_w as f32,
+                            height: tex_h as f32,
+                        },
+                    ));
+                }
+
+                // Phase 1b: Load fonts for text labels
+                for text_widget in &[&year_label, &select_label] {
+                    let font_name = text_widget.font();
+                    if !self
+                        .font_bind_groups
+                        .iter()
+                        .any(|(name, _)| name == font_name)
+                        && let Some(loaded) = self.font_cache.get(font_name, device, queue)
                     {
-                        button_fonts_to_load.push(font_name.to_string());
+                        let bind_group = sprite_renderer.create_bind_group(device, &loaded.view);
+                        self.font_bind_groups
+                            .push((font_name.to_string(), bind_group));
+                        log::info!("Loaded font: {}", font_name);
                     }
                 }
-            }
-            // Load collected button fonts
-            for font_name in button_fonts_to_load {
-                if !self
-                    .font_bind_groups
-                    .iter()
-                    .any(|(name, _)| name == &font_name)
-                    && let Some(loaded) = self.font_cache.get(&font_name, device, queue)
-                {
-                    let bind_group = sprite_renderer.create_bind_group(device, &loaded.view);
-                    self.font_bind_groups.push((font_name.clone(), bind_group));
-                    log::debug!("Loaded button font: {}", font_name);
+
+                // Phase 1c: Load fonts for button text (left panel and lobby controls)
+                // Collect all button fonts needed
+                let mut button_fonts_to_load: Vec<String> = Vec::new();
+                if let Some(ref panel) = self.left_panel {
+                    for button in [
+                        &panel.back_button,
+                        &panel.year_up_1,
+                        &panel.year_down_1,
+                        &panel.year_up_2,
+                        &panel.year_down_2,
+                        &panel.year_up_3,
+                        &panel.year_down_3,
+                        &panel.month_up,
+                        &panel.month_down,
+                        &panel.day_up,
+                        &panel.day_down,
+                        &panel.observe_mode_button,
+                    ] {
+                        if let Some(font_name) = button.button_font()
+                            && !button_fonts_to_load.contains(&font_name.to_string())
+                        {
+                            button_fonts_to_load.push(font_name.to_string());
+                        }
+                    }
                 }
-            }
-
-            // Load fonts for bookmark listbox (vic_18 for title, Arial12 for date)
-            // Also load vic_22 for datewidget year display
-            for font_name in ["vic_18", "Arial12", "vic_22"] {
-                if !self
-                    .font_bind_groups
-                    .iter()
-                    .any(|(name, _)| name == font_name)
-                    && let Some(loaded) = self.font_cache.get(font_name, device, queue)
-                {
-                    let bind_group = sprite_renderer.create_bind_group(device, &loaded.view);
-                    self.font_bind_groups
-                        .push((font_name.to_string(), bind_group));
-                    log::debug!("Loaded bookmark font: {}", font_name);
+                if let Some(ref panel) = self.lobby_controls {
+                    for button in [
+                        &panel.play_button,
+                        &panel.random_country_button,
+                        &panel.nation_designer_button,
+                        &panel.random_new_world_button,
+                        &panel.enable_custom_nation_button,
+                    ] {
+                        if let Some(font_name) = button.button_font()
+                            && !button_fonts_to_load.contains(&font_name.to_string())
+                        {
+                            button_fonts_to_load.push(font_name.to_string());
+                        }
+                    }
                 }
-            }
+                // Load collected button fonts
+                for font_name in button_fonts_to_load {
+                    if !self
+                        .font_bind_groups
+                        .iter()
+                        .any(|(name, _)| name == &font_name)
+                        && let Some(loaded) = self.font_cache.get(&font_name, device, queue)
+                    {
+                        let bind_group = sprite_renderer.create_bind_group(device, &loaded.view);
+                        self.font_bind_groups.push((font_name.clone(), bind_group));
+                        log::debug!("Loaded button font: {}", font_name);
+                    }
+                }
 
-            // Phase 2b: Render text labels
-            for text_widget in &[year_label, select_label] {
-                let font_name = text_widget.font();
-                let font_bind_group_idx = self
-                    .font_bind_groups
-                    .iter()
-                    .position(|(name, _)| name == font_name);
+                // Load fonts for bookmark listbox (vic_18 for title, Arial12 for date)
+                // Also load vic_22 for datewidget year display
+                for font_name in ["vic_18", "Arial12", "vic_22"] {
+                    if !self
+                        .font_bind_groups
+                        .iter()
+                        .any(|(name, _)| name == font_name)
+                        && let Some(loaded) = self.font_cache.get(font_name, device, queue)
+                    {
+                        let bind_group = sprite_renderer.create_bind_group(device, &loaded.view);
+                        self.font_bind_groups
+                            .push((font_name.to_string(), bind_group));
+                        log::debug!("Loaded bookmark font: {}", font_name);
+                    }
+                }
 
-                if let Some(idx) = font_bind_group_idx
-                    && let Some(loaded) = self.font_cache.get(font_name, device, queue)
-                {
-                    let font = &loaded.font;
-                    let value = text_widget.text();
+                // Phase 2b: Render text labels
+                for text_widget in &[year_label, select_label] {
+                    let font_name = text_widget.font();
+                    let font_bind_group_idx = self
+                        .font_bind_groups
+                        .iter()
+                        .position(|(name, _)| name == font_name);
 
-                    if !value.is_empty() {
-                        let pos = text_widget.position();
-                        let orientation = text_widget.orientation();
-                        let format = text_widget.format();
-                        let max_dimensions = text_widget.max_dimensions();
-                        let border_size = text_widget.border_size();
+                    if let Some(idx) = font_bind_group_idx
+                        && let Some(loaded) = self.font_cache.get(font_name, device, queue)
+                    {
+                        let font = &loaded.font;
+                        let value = text_widget.text();
 
-                        // Use screen-aware positioning for CENTER_UP elements
-                        let text_screen_pos = position_from_anchor_with_screen(
-                            top_anchor,
-                            pos,
-                            orientation,
-                            max_dimensions,
-                            screen_size,
-                        );
-                        let text_width = font.measure_width(value);
-                        let max_width = max_dimensions.0 as f32;
-                        let screen_width = screen_size.0 as f32;
+                        if !value.is_empty() {
+                            let pos = text_widget.position();
+                            let orientation = text_widget.orientation();
+                            let format = text_widget.format();
+                            let max_dimensions = text_widget.max_dimensions();
+                            let border_size = text_widget.border_size();
 
-                        // For CENTER_UP orientation with format=centre, center on screen
-                        // EU4 seems to center these text elements on screen rather than
-                        // positioning relative to the textbox bounds
-                        let start_x = match (format, orientation) {
-                            (types::TextFormat::Center, types::Orientation::CenterUp) => {
-                                // Center the text on screen
-                                (screen_width - text_width) / 2.0
-                            }
-                            (types::TextFormat::Left, _) => {
-                                text_screen_pos.0 + border_size.0 as f32
-                            }
-                            (types::TextFormat::Center, _) => {
-                                text_screen_pos.0 + (max_width - text_width) / 2.0
-                            }
-                            (types::TextFormat::Right, _) => {
-                                text_screen_pos.0 + max_width - text_width - border_size.0 as f32
-                            }
-                        };
+                            // Use screen-aware positioning for CENTER_UP elements
+                            let text_screen_pos = position_from_anchor_with_screen(
+                                top_anchor,
+                                pos,
+                                orientation,
+                                max_dimensions,
+                                screen_size,
+                            );
+                            let text_width = font.measure_width(value);
+                            let max_width = max_dimensions.0 as f32;
+                            let screen_width = screen_size.0 as f32;
 
-                        let mut cursor_x = start_x;
-                        let cursor_y = text_screen_pos.1 + border_size.1 as f32;
-
-                        for c in value.chars() {
-                            if let Some(glyph) = font.get_glyph(c) {
-                                if glyph.width == 0 || glyph.height == 0 {
-                                    cursor_x += glyph.xadvance as f32;
-                                    continue;
+                            // For CENTER_UP orientation with format=centre, center on screen
+                            // EU4 seems to center these text elements on screen rather than
+                            // positioning relative to the textbox bounds
+                            let start_x = match (format, orientation) {
+                                (types::TextFormat::Center, types::Orientation::CenterUp) => {
+                                    // Center the text on screen
+                                    (screen_width - text_width) / 2.0
                                 }
+                                (types::TextFormat::Left, _) => {
+                                    text_screen_pos.0 + border_size.0 as f32
+                                }
+                                (types::TextFormat::Center, _) => {
+                                    text_screen_pos.0 + (max_width - text_width) / 2.0
+                                }
+                                (types::TextFormat::Right, _) => {
+                                    text_screen_pos.0 + max_width
+                                        - text_width
+                                        - border_size.0 as f32
+                                }
+                            };
 
-                                let glyph_x = cursor_x + glyph.xoffset as f32;
-                                let glyph_y = cursor_y + glyph.yoffset as f32;
-                                let glyph_screen_pos = (glyph_x, glyph_y);
-                                let glyph_size = (glyph.width, glyph.height);
-                                let (clip_x, clip_y, clip_w, clip_h) =
-                                    rect_to_clip_space(glyph_screen_pos, glyph_size, screen_size);
+                            let mut cursor_x = start_x;
+                            let cursor_y = text_screen_pos.1 + border_size.1 as f32;
 
-                                let atlas_width = font.scale_w as f32;
-                                let atlas_height = font.scale_h as f32;
-                                let u_min = glyph.x as f32 / atlas_width;
-                                let v_min = glyph.y as f32 / atlas_height;
-                                let u_max = (glyph.x + glyph.width) as f32 / atlas_width;
-                                let v_max = (glyph.y + glyph.height) as f32 / atlas_height;
+                            for c in value.chars() {
+                                if let Some(glyph) = font.get_glyph(c) {
+                                    if glyph.width == 0 || glyph.height == 0 {
+                                        cursor_x += glyph.xadvance as f32;
+                                        continue;
+                                    }
 
-                                let font_bind_group = &self.font_bind_groups[idx].1;
-                                sprite_renderer.draw_uv(
-                                    render_pass,
-                                    font_bind_group,
-                                    queue,
-                                    clip_x,
-                                    clip_y,
-                                    clip_w,
-                                    clip_h,
-                                    u_min,
-                                    v_min,
-                                    u_max,
-                                    v_max,
-                                );
+                                    let glyph_x = cursor_x + glyph.xoffset as f32;
+                                    let glyph_y = cursor_y + glyph.yoffset as f32;
+                                    let glyph_screen_pos = (glyph_x, glyph_y);
+                                    let glyph_size = (glyph.width, glyph.height);
+                                    let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
+                                        glyph_screen_pos,
+                                        glyph_size,
+                                        screen_size,
+                                    );
 
-                                cursor_x += glyph.xadvance as f32;
+                                    let atlas_width = font.scale_w as f32;
+                                    let atlas_height = font.scale_h as f32;
+                                    let u_min = glyph.x as f32 / atlas_width;
+                                    let v_min = glyph.y as f32 / atlas_height;
+                                    let u_max = (glyph.x + glyph.width) as f32 / atlas_width;
+                                    let v_max = (glyph.y + glyph.height) as f32 / atlas_height;
+
+                                    let font_bind_group = &self.font_bind_groups[idx].1;
+                                    sprite_renderer.draw_uv(
+                                        render_pass,
+                                        font_bind_group,
+                                        queue,
+                                        clip_x,
+                                        clip_y,
+                                        clip_w,
+                                        clip_h,
+                                        u_min,
+                                        v_min,
+                                        u_max,
+                                        v_max,
+                                    );
+
+                                    cursor_x += glyph.xadvance as f32;
+                                }
                             }
                         }
                     }
                 }
             }
-        }
+        } // end #[cfg(not(feature = "generated-renderer"))] for top/right panels
 
         // Render left panel (back button + date widget buttons)
         // Skip manual left panel when using generated renderer

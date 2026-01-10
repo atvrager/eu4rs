@@ -2,9 +2,10 @@
 
 **Design Document**
 
-**Status:** In Progress (Phase 0, 1, 2 Complete)
+**Status:** In Progress (Phase 0-4 Complete, Phase 5-7 Pending)
 **Author:** Claude (with user guidance)
 **Created:** 2026-01-09
+**Last Updated:** 2026-01-09
 **Target:** eu4game GUI rendering system
 
 ---
@@ -30,9 +31,9 @@ This document describes a refactor of the GUI rendering system from **code-drive
 | **Phase 0** | Quick fix for observer text | ~20 lines | ✅ Complete | Observer mode fully functional |
 | **Phase 1** | Build code generator (3 files) | +800 lines | ✅ Complete | `cargo xtask generate-gui-renderer` command |
 | **Phase 2** | Implement widget cache | +120 lines | ✅ Complete | Unified sprite/font caching |
-| **Phase 3** | Proof of concept (left panel) | +300 generated | 🔄 Next | Left panel uses generated code |
-| **Phase 4** | Port all panels | +1000 generated | Pending | All panels use generated code |
-| **Phase 5** | Build automation | +50 lines | Pending | Auto-regeneration on .gui changes |
+| **Phase 3** | Proof of concept (left panel) | +300 generated | ✅ Complete | Left panel uses generated code |
+| **Phase 4** | Port all panels with split-phase | +1500 generated | ✅ Complete | All 5 panels use split load/render pattern |
+| **Phase 5** | Build automation | +50 lines | 🔄 Next | Auto-regeneration on .gui changes |
 | **Phase 6** | Delete legacy code | -4000 lines | Pending | Clean, maintainable codebase |
 | **Phase 7** | Parse all 114 GUI files | +100 lines | Future | Complete EU4 GUI coverage |
 
@@ -151,6 +152,69 @@ pub struct GuiRenderer {
     // ...
 }
 ```
+
+### Split-Phase Architecture (Phase 4 Discovery)
+
+During Phase 4 implementation, we discovered that passing `&'a mut WidgetCache` to generated methods created lifetime conflicts when calling multiple panel methods sequentially. The mutable borrow tied to `'a` prevented subsequent calls.
+
+**Solution: Split Load/Render Pattern**
+
+Each panel generates TWO methods instead of one:
+
+**1. Load Method** (short-lived mutable borrow):
+```rust
+pub(crate) fn load_speed_controls_sprites(
+    widget_cache: &mut WidgetCache,  // Mutable, but NOT tied to 'a
+    gfx_db: &GfxDatabase,
+    sprite_cache: &mut SpriteCache,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    sprite_renderer: &SpriteRenderer,
+) {
+    // Load all sprites into cache
+    widget_cache.get_or_load_sprite("GFX_date_bg", ...);
+    widget_cache.get_or_load_sprite("GFX_button_pause", ...);
+    // ...
+}
+```
+
+**2. Render Method** (long-lived immutable borrow):
+```rust
+pub(crate) fn render_speed_controls<'a>(
+    screen_size: (u32, u32),
+    sprite_renderer: &'a SpriteRenderer,
+    render_pass: &mut wgpu::RenderPass<'a>,
+    queue: &wgpu::Queue,
+    panel: &SpeedControls,
+    widget_cache: &'a WidgetCache,  // Immutable, tied to 'a
+    hit_boxes: &mut Vec<(String, HitBox)>,
+) {
+    // Render sprites from cache
+    if let Some(sprite) = widget_cache.sprites.get("GFX_date_bg") {
+        sprite_renderer.draw(render_pass, sprite.bind_group.as_ref(), ...);
+    }
+    // ...
+}
+```
+
+**Calling Pattern:**
+```rust
+// Phase 1: Load ALL sprites (mutable borrows, short-lived)
+load_topbar_sprites(&mut widget_cache, ...);
+load_speed_controls_sprites(&mut widget_cache, ...);
+load_left_sprites(&mut widget_cache, ...);
+
+// Phase 2: Render ALL panels (immutable borrows, tied to 'a)
+render_topbar(&widget_cache, ...);
+render_speed_controls(&widget_cache, ...);
+render_left(&widget_cache, ...);
+```
+
+**Why This Works:**
+- Load phase borrows end immediately after loading
+- Multiple short-lived mutable borrows don't conflict
+- Render phase uses immutable borrows (multiple allowed)
+- No lifetime `'a` conflicts between panels
 
 ## Implementation Plan
 

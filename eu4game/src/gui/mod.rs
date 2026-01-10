@@ -104,7 +104,7 @@ pub use sprite_cache::{SpriteBorder, SpriteCache};
 
 // Widget cache
 #[allow(unused_imports)] // Public API
-pub use widget_cache::WidgetCache;
+pub use widget_cache::{HitBoxCmd, SpriteDrawCmd, WidgetCache};
 
 // Core GUI types
 #[allow(unused_imports)] // Public API

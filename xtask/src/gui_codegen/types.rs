@@ -19,8 +19,10 @@ pub struct WidgetInfo {
     /// Orientation for position calculation.
     pub orientation: Orientation,
     /// Font name for text widgets.
+    #[allow(dead_code)]
     pub font: Option<String>,
     /// Initial text content for text widgets.
+    #[allow(dead_code)]
     pub text: Option<String>,
 }
 
