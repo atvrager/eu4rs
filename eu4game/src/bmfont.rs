@@ -265,7 +265,7 @@ impl BitmapFontCache {
                         self.fonts.get(font_name)
                     }
                     Err(e) => {
-                        log::warn!("Failed to load font texture: {}", e);
+                        log::warn!("Failed to load font texture for '{}': {}", font_name, e);
                         None
                     }
                 }

@@ -17,6 +17,7 @@ pub struct FrontendPanelLayout {
 
 /// Icon element from speed controls layout.
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Fields read by speed_controls logic but flagged by aggressive lints
 pub struct SpeedControlsIcon {
     pub name: String,
     pub sprite: String,

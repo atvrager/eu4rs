@@ -5,7 +5,7 @@
 **Status:** In Progress (Phase 0-4 Complete, Phase 5-7 Pending)
 **Author:** Claude (with user guidance)
 **Created:** 2026-01-09
-**Last Updated:** 2026-01-09
+**Last Updated:** 2026-01-10
 **Target:** eu4game GUI rendering system
 
 ---
@@ -32,7 +32,7 @@ This document describes a refactor of the GUI rendering system from **code-drive
 | **Phase 1** | Build code generator (3 files) | +800 lines | ✅ Complete | `cargo xtask generate-gui-renderer` command |
 | **Phase 2** | Implement widget cache | +120 lines | ✅ Complete | Unified sprite/font caching |
 | **Phase 3** | Proof of concept (left panel) | +300 generated | ✅ Complete | Left panel uses generated code |
-| **Phase 4** | Port all panels with split-phase | +1500 generated | ✅ Complete | All 5 panels use split load/render pattern |
+| **Phase 4** | Port all panels | +1500 generated | ✅ Complete | Multi-frame sprites, font loading, text rendering verified |
 | **Phase 5** | Build automation | +50 lines | 🔄 Next | Auto-regeneration on .gui changes |
 | **Phase 6** | Delete legacy code | -4000 lines | Pending | Clean, maintainable codebase |
 | **Phase 7** | Parse all 114 GUI files | +100 lines | Future | Complete EU4 GUI coverage |
@@ -215,6 +215,41 @@ render_left(&widget_cache, ...);
 - Multiple short-lived mutable borrows don't conflict
 - Render phase uses immutable borrows (multiple allowed)
 - No lifetime `'a` conflicts between panels
+
+### Multi-Frame Sprite Handling (Phase 4 Fix)
+
+EU4 uses multi-frame sprites for buttons and toggles where different states (normal, hover, pressed) are stored as horizontal frames in a single texture. The generator must render only frame 0 (normal state) rather than the entire texture.
+
+**Problem:** Using `sprite_renderer.draw()` for a 3-frame button (148x24 each, 444x24 total) squishes all frames into a 148x24 space, showing a corrupted triple-image.
+
+**Solution:** Generated code checks `num_frames > 1` and uses `draw_uv()` with UV coordinates:
+
+```rust
+if sprite.num_frames > 1 {
+    // Multi-frame sprite: render only frame 0
+    let frame_w = sprite.dimensions.0 / sprite.num_frames;
+    let (clip_x, clip_y, clip_w, clip_h) = rect_to_clip_space(
+        position,
+        (frame_w, sprite.dimensions.1),
+        screen_size
+    );
+    let u_max = 1.0 / sprite.num_frames as f32;
+    sprite_renderer.draw_uv(
+        render_pass,
+        sprite.bind_group.as_ref(),
+        queue,
+        clip_x, clip_y, clip_w, clip_h,
+        0.0, 0.0, u_max, 1.0,  // UV for frame 0 only
+    );
+}
+```
+
+**Key UV math:**
+- Frame 0: `u` range `[0.0, 1/num_frames)`
+- Frame 1: `u` range `[1/num_frames, 2/num_frames)`
+- etc.
+
+This is implemented in both `emit_button_render()` and `emit_icon_render()` in `codegen.rs`.
 
 ## Implementation Plan
 

@@ -52,6 +52,10 @@ impl GuiEditBox {
                 self.text = text.chars().take(max_len).collect();
                 self.cursor = self.text.len();
             }
+        } else {
+            // In placeholder mode, still set the text (for rendering)
+            self.text = text.to_string();
+            self.cursor = text.len();
         }
     }
 
@@ -151,6 +155,15 @@ impl GuiEditBox {
             .as_ref()
             .map(|d| d.orientation)
             .unwrap_or(Orientation::UpperLeft)
+    }
+
+    /// Get the font name (for rendering).
+    #[allow(dead_code)] // Used for rendering
+    pub fn font(&self) -> &str {
+        self.element
+            .as_ref()
+            .map(|d| d.font.as_str())
+            .unwrap_or("vic_22")
     }
 }
 

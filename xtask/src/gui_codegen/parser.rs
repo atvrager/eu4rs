@@ -102,7 +102,12 @@ pub fn extract_panel_info(tree: &GuiElement, panel_name: &str) -> Result<PanelIn
 
     // Walk tree and extract all widgets
     let mut widgets = Vec::new();
-    extract_widgets_recursive(tree, &mut widgets);
+
+    // Iterate children of the root window to avoid double-applying the root window's position
+    // (since panel.window_pos is handled separately by the renderer)
+    for child in tree.children() {
+        extract_widgets_recursive(child, &mut widgets, (0, 0));
+    }
 
     println!(
         "Extracted {} widgets from panel '{}'",
@@ -118,16 +123,31 @@ pub fn extract_panel_info(tree: &GuiElement, panel_name: &str) -> Result<PanelIn
     })
 }
 
-/// Recursively extract widgets from a GUI element tree.
-fn extract_widgets_recursive(element: &GuiElement, widgets: &mut Vec<WidgetInfo>) {
+/// Recursively extract widgets from a GUI element tree with position offset.
+fn extract_widgets_recursive(
+    element: &GuiElement,
+    widgets: &mut Vec<WidgetInfo>,
+    parent_offset: (i32, i32),
+) {
     // Try to convert this element to a widget
-    if let Some(widget) = WidgetInfo::from_element(element) {
+    if let Some(mut widget) = WidgetInfo::from_element(element) {
+        // Apply parent offset to usage position
+        widget.position.0 += parent_offset.0;
+        widget.position.1 += parent_offset.1;
         widgets.push(widget);
     }
 
+    // Calculate new offset for children
+    // Only containers (Windows) shift the coordinate system
+    let child_offset = if let GuiElement::Window { position, .. } = element {
+        (parent_offset.0 + position.0, parent_offset.1 + position.1)
+    } else {
+        parent_offset
+    };
+
     // Recurse into children (if any)
     for child in element.children() {
-        extract_widgets_recursive(child, widgets);
+        extract_widgets_recursive(child, widgets, child_offset);
     }
 }
 
@@ -145,6 +165,7 @@ mod tests {
             size: (100, 100),
             orientation: Orientation::UpperLeft,
             children: vec![
+                // Direct child
                 GuiElement::Button {
                     name: "test_button".to_string(),
                     position: (5, 5),
@@ -154,16 +175,23 @@ mod tests {
                     button_text: Some("Click me".to_string()),
                     button_font: Some("vic_18".to_string()),
                 },
-                GuiElement::TextBox {
-                    name: "test_label".to_string(),
-                    position: (5, 30),
-                    font: "vic_18".to_string(),
-                    max_width: 80,
-                    max_height: 20,
-                    format: eu4game::gui::types::TextFormat::Left,
+                // Nested container
+                GuiElement::Window {
+                    name: "nested_container".to_string(),
+                    position: (10, 10),
+                    size: (50, 50),
                     orientation: Orientation::UpperLeft,
-                    text: "Hello".to_string(),
-                    border_size: (0, 0),
+                    children: vec![GuiElement::TextBox {
+                        name: "nested_label".to_string(),
+                        position: (5, 5), // Should become (10+5, 10+5) = (15, 15) relative to root content
+                        font: "vic_18".to_string(),
+                        max_width: 80,
+                        max_height: 20,
+                        format: eu4game::gui::types::TextFormat::Left,
+                        orientation: Orientation::UpperLeft,
+                        text: "Nested".to_string(),
+                        border_size: (0, 0),
+                    }],
                 },
             ],
         };
@@ -171,9 +199,15 @@ mod tests {
         let panel = extract_panel_info(&tree, "test").expect("Should extract panel");
 
         assert_eq!(panel.name, "test");
-        assert_eq!(panel.window_pos, (10, 20));
+        assert_eq!(panel.window_pos, (10, 20)); // Root pos extracted
         assert_eq!(panel.widgets.len(), 2);
+
+        // Button: (5, 5) + (0, 0) = (5, 5)
         assert_eq!(panel.widgets[0].name, "test_button");
-        assert_eq!(panel.widgets[1].name, "test_label");
+        assert_eq!(panel.widgets[0].position, (5, 5));
+
+        // Label: (5, 5) + (10, 10) = (15, 15)
+        assert_eq!(panel.widgets[1].name, "nested_label");
+        assert_eq!(panel.widgets[1].position, (15, 15));
     }
 }

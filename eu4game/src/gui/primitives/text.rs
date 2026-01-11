@@ -27,6 +27,7 @@ struct TextBoxData {
     max_width: u32,
     max_height: u32,
     format: crate::gui::types::TextFormat,
+    #[allow(dead_code)] // Used in position calculation
     orientation: crate::gui::types::Orientation,
     /// Current text content (mutable).
     text: String,
@@ -60,11 +61,13 @@ impl GuiText {
     }
 
     /// Get the position (for rendering).
+    #[allow(dead_code)]
     pub fn position(&self) -> (i32, i32) {
         self.element.as_ref().map(|d| d.position).unwrap_or((0, 0))
     }
 
     /// Get the orientation (for rendering).
+    #[allow(dead_code)]
     pub fn orientation(&self) -> crate::gui::types::Orientation {
         self.element
             .as_ref()
@@ -73,6 +76,7 @@ impl GuiText {
     }
 
     /// Get the text format (for rendering).
+    #[allow(dead_code)]
     pub fn format(&self) -> crate::gui::types::TextFormat {
         self.element
             .as_ref()
@@ -81,6 +85,7 @@ impl GuiText {
     }
 
     /// Get the max dimensions (for rendering).
+    #[allow(dead_code)]
     pub fn max_dimensions(&self) -> (u32, u32) {
         self.element
             .as_ref()
@@ -89,6 +94,7 @@ impl GuiText {
     }
 
     /// Get the border size (for rendering).
+    #[allow(dead_code)]
     pub fn border_size(&self) -> (i32, i32) {
         self.element
             .as_ref()
@@ -97,6 +103,7 @@ impl GuiText {
     }
 
     /// Get the font name (for rendering).
+    #[allow(dead_code)]
     pub fn font(&self) -> &str {
         self.element
             .as_ref()

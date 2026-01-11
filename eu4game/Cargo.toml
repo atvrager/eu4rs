@@ -37,9 +37,5 @@ env_logger = "0.11.8"
 # Random number generation
 rand = "0.8.5"
 
-[features]
-# Phase 3: Enable generated GUI rendering code (for A/B testing vs manual rendering)
-generated-renderer = []
-
 [dev-dependencies]
 tempfile = "3.21"

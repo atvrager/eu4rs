@@ -31,19 +31,26 @@ pub fn generate_panel(panel_name: &str, gui_trees: &HashMap<String, GuiElement>)
     writeln!(&mut output, "// DO NOT EDIT - changes will be overwritten")?;
     writeln!(&mut output)?;
 
-    // Generate imports
+    // Generate imports - ordered to match rustfmt expectations
+    writeln!(&mut output, "#[allow(unused_imports)]")?;
+    writeln!(&mut output, "use crate::bmfont::BitmapFontCache;")?;
     writeln!(&mut output, "use crate::gui::GuiRenderer;")?;
+    writeln!(&mut output, "use crate::gui::HitBoxCmd;")?;
+    writeln!(&mut output, "#[allow(unused_imports)]")?;
+    writeln!(&mut output, "use crate::gui::layout::rect_to_clip_space;")?;
     writeln!(
         &mut output,
-        "use crate::gui::layout::{{get_window_anchor, position_from_anchor, resolve_position}};"
+        "#[allow(unused_imports)]\nuse crate::gui::layout::{{get_window_anchor, position_from_anchor, resolve_position}};"
     )?;
     writeln!(&mut output, "use crate::gui::sprite_cache::SpriteCache;")?;
     writeln!(
         &mut output,
-        "use crate::gui::types::{{GfxDatabase, HitBox, Orientation}};"
+        "#[allow(unused_imports)]\nuse crate::gui::types::{{GfxDatabase, HitBox, Orientation, TextFormat}};"
     )?;
-    writeln!(&mut output, "use crate::gui::widget_cache::WidgetCache;")?;
-    writeln!(&mut output, "use crate::gui::{{HitBoxCmd, SpriteDrawCmd}};")?;
+    writeln!(
+        &mut output,
+        "#[allow(unused_imports)]\nuse crate::gui::widget_cache::{{WidgetCache, render_gui_editbox, render_gui_text}};"
+    )?;
     writeln!(&mut output, "use crate::render::SpriteRenderer;")?;
     writeln!(&mut output)?;
 
@@ -104,7 +111,8 @@ fn generate_panel_renderer(panel: &PanelInfo) -> Result<String> {
     Ok(code)
 }
 
-/// Generate sprite loading method (mutable borrow of widget_cache).
+/// Generate sprite and font loading method (mutable borrow of widget_cache).
+/// Loads sprites for all widgets and fonts for textboxes with panel field mappings.
 fn generate_load_method(panel: &PanelInfo) -> Result<String> {
     let mut code = String::new();
 
@@ -114,6 +122,7 @@ fn generate_load_method(panel: &PanelInfo) -> Result<String> {
     writeln!(&mut code, "        widget_cache: &mut WidgetCache,")?;
     writeln!(&mut code, "        gfx_db: &GfxDatabase,")?;
     writeln!(&mut code, "        sprite_cache: &mut SpriteCache,")?;
+    writeln!(&mut code, "        font_cache: &mut BitmapFontCache,")?;
     writeln!(&mut code, "        device: &wgpu::Device,")?;
     writeln!(&mut code, "        queue: &wgpu::Queue,")?;
     writeln!(&mut code, "        sprite_renderer: &SpriteRenderer,")?;
@@ -121,9 +130,12 @@ fn generate_load_method(panel: &PanelInfo) -> Result<String> {
 
     writeln!(
         &mut code,
-        "        // Load all sprites for {} panel",
+        "        // Load sprites for {} panel",
         panel.name
     )?;
+
+    // Collect unique fonts needed by textboxes with panel field mappings
+    let mut fonts_needed: std::collections::HashSet<&str> = std::collections::HashSet::new();
 
     for widget in &panel.widgets {
         if needs_sprite(widget) {
@@ -132,6 +144,46 @@ fn generate_load_method(panel: &PanelInfo) -> Result<String> {
             writeln!(&mut code, "            \"{}\",", sprite_name)?;
             writeln!(&mut code, "            gfx_db,")?;
             writeln!(&mut code, "            sprite_cache,")?;
+            writeln!(&mut code, "            device,")?;
+            writeln!(&mut code, "            queue,")?;
+            writeln!(&mut code, "            sprite_renderer,")?;
+            writeln!(&mut code, "        );")?;
+        }
+
+        // Collect fonts for textboxes with panel field mappings
+        if widget.widget_type == WidgetType::TextBox {
+            let has_mapping = TEXTBOX_FIELD_MAPPINGS
+                .iter()
+                .any(|(p, w, _)| *p == panel.name && *w == widget.name);
+            if has_mapping {
+                let font_name = widget.font.as_deref().unwrap_or("vic_18");
+                fonts_needed.insert(font_name);
+            }
+        }
+
+        // Collect fonts for editboxes with panel field mappings
+        if widget.widget_type == WidgetType::EditBox {
+            let has_mapping = EDITBOX_FIELD_MAPPINGS
+                .iter()
+                .any(|(p, w, _, _)| *p == panel.name && *w == widget.name);
+            if has_mapping {
+                let font_name = widget.font.as_deref().unwrap_or("vic_22");
+                fonts_needed.insert(font_name);
+            }
+        }
+    }
+
+    // Generate font loading for collected fonts
+    if !fonts_needed.is_empty() {
+        writeln!(&mut code)?;
+        writeln!(
+            &mut code,
+            "        // Load fonts for textboxes with panel field mappings"
+        )?;
+        for font_name in fonts_needed {
+            writeln!(&mut code, "        widget_cache.get_or_load_font(")?;
+            writeln!(&mut code, "            \"{}\",", font_name)?;
+            writeln!(&mut code, "            font_cache,")?;
             writeln!(&mut code, "            device,")?;
             writeln!(&mut code, "            queue,")?;
             writeln!(&mut code, "            sprite_renderer,")?;
@@ -153,8 +205,11 @@ fn generate_render_method(panel: &PanelInfo) -> Result<String> {
     // Determine panel type
     let panel_type = match panel.name.as_str() {
         "left" => "CountrySelectLeftPanel",
+        "datewidget" => "CountrySelectLeftPanel", // Part of left panel
         "top" => "CountrySelectTopPanel",
-        "right" | "country_selection_panel" => "CountrySelectRightPanel",
+        "right" => "LobbyControlsPanel",
+        "country_selection_panel" => "CountrySelectRightPanel",
+        "mainmenu_panel_bottom" => "MainMenuPanel",
         "topbar" => "TopBar",
         "speed_controls" => "SpeedControls",
         _ => "CountrySelectRightPanel",
@@ -202,11 +257,17 @@ fn generate_render_method(panel: &PanelInfo) -> Result<String> {
 
             writeln!(&mut code, "        }}")?;
             writeln!(&mut code)?;
+        } else if widget.widget_type == WidgetType::TextBox {
+            let render_code = emit_textbox_render(widget, Some(&panel.name))?;
+            writeln!(&mut code, "{}", render_code)?;
+        } else if widget.widget_type == WidgetType::EditBox {
+            let render_code = emit_editbox_render(widget, Some(&panel.name))?;
+            writeln!(&mut code, "{}", render_code)?;
         } else {
             writeln!(
                 &mut code,
-                "        // Text widget: {} (not yet implemented)",
-                widget.name
+                "        // TODO: Widget {} ({:?}) not yet implemented",
+                widget.name, widget.widget_type
             )?;
             writeln!(&mut code)?;
         }
@@ -237,16 +298,123 @@ fn generate_widget_render(widget: &WidgetInfo) -> Result<String> {
     match widget.widget_type {
         WidgetType::Button => emit_button_render(widget),
         WidgetType::Icon => emit_icon_render(widget),
-        WidgetType::TextBox | WidgetType::Listbox | WidgetType::EditBox => {
-            // These widgets need special handling, skip for now
+        WidgetType::TextBox => emit_textbox_render(widget, None), // Panel name not available here
+        WidgetType::EditBox => emit_editbox_render(widget, None),
+        WidgetType::Listbox => {
+            // Listboxes need special handling, skip for now
             Ok(format!(
-                "        // TODO: Generate rendering for {} ({})",
-                widget.name,
-                widget_type_str(widget.widget_type)
+                "        // TODO: Widget {} (Listbox) not yet implemented",
+                widget.name
             ))
         }
         WidgetType::Window => Ok(String::new()), // Windows don't render directly
     }
+}
+
+/// Known panel-to-textbox field mappings.
+/// Maps (panel_name, gui_widget_name) -> rust_field_name.
+/// Only textboxes listed here will have rendering code generated.
+const TEXTBOX_FIELD_MAPPINGS: &[(&str, &str, &str)] = &[
+    // Left panel (country selection)
+    ("left", "daymonth", "daymonth"),
+    ("left", "observe_mode_title", "observe_mode_title"),
+    // More mappings can be added as panel types are extended
+];
+
+/// Known panel-to-editbox field mappings.
+/// Maps (panel_name, gui_widget_name) -> (rust_field_name, x_offset).
+/// x_offset is used to adjust centering (e.g., to align text with arrow buttons).
+const EDITBOX_FIELD_MAPPINGS: &[(&str, &str, &str, i32)] = &[
+    // datewidget panel - year editor (part of country selection left panel)
+    // x_offset of -19 centers the text with the arrow buttons (arrows center at x=141)
+    ("datewidget", "year", "year_editor", -19),
+];
+
+/// Generate TextBox rendering code using the generic render_gui_text helper.
+/// This is MUCH simpler than the old inline glyph rendering - just one function call!
+fn emit_textbox_render(widget: &WidgetInfo, panel_name: Option<&str>) -> Result<String> {
+    let mut code = String::new();
+
+    let font_name = widget.font.as_deref().unwrap_or("vic_18");
+
+    // Look up the field name mapping
+    let field_name = panel_name.and_then(|pname| {
+        TEXTBOX_FIELD_MAPPINGS
+            .iter()
+            .find(|(p, w, _)| *p == pname && *w == widget.name)
+            .map(|(_, _, field)| *field)
+    });
+
+    match field_name {
+        Some(field) => {
+            // Generate a simple call to the generic helper
+            // Pass the widget's accumulated position (includes all parent container offsets)
+            writeln!(
+                &mut code,
+                "        // TextBox: {} -> panel.{}",
+                widget.name, field
+            )?;
+            writeln!(
+                &mut code,
+                "        render_gui_text(&panel.{}, ({}, {}), window_anchor, widget_cache, sprite_renderer, render_pass, queue, screen_size);",
+                field, widget.position.0, widget.position.1
+            )?;
+        }
+        None => {
+            // No binding - emit a comment
+            writeln!(
+                &mut code,
+                "        // TextBox: {} (font: {}) - no panel field mapping",
+                widget.name, font_name
+            )?;
+        }
+    }
+
+    Ok(code)
+}
+
+/// Generate EditBox rendering code using the render_gui_editbox helper.
+fn emit_editbox_render(widget: &WidgetInfo, panel_name: Option<&str>) -> Result<String> {
+    let mut code = String::new();
+
+    let font_name = widget.font.as_deref().unwrap_or("vic_22");
+    let size = widget.size.unwrap_or((0, 0));
+
+    // Look up the field name mapping and x_offset
+    let mapping = panel_name.and_then(|pname| {
+        EDITBOX_FIELD_MAPPINGS
+            .iter()
+            .find(|(p, w, _, _)| *p == pname && *w == widget.name)
+            .map(|(_, _, field, x_offset)| (*field, *x_offset))
+    });
+
+    match mapping {
+        Some((field, x_offset)) => {
+            // Generate a call to the editbox rendering helper
+            // Apply x_offset to adjust centering (e.g., to align with arrow buttons)
+            let adjusted_x = widget.position.0 + x_offset;
+            writeln!(
+                &mut code,
+                "        // EditBox: {} -> panel.{}",
+                widget.name, field
+            )?;
+            writeln!(
+                &mut code,
+                "        render_gui_editbox(&panel.{}, ({}, {}), ({}, {}), window_anchor, widget_cache, sprite_renderer, render_pass, queue, screen_size);",
+                field, adjusted_x, widget.position.1, size.0, size.1
+            )?;
+        }
+        None => {
+            // No binding - emit a comment
+            writeln!(
+                &mut code,
+                "        // EditBox: {} (font: {}) - no panel field mapping",
+                widget.name, font_name
+            )?;
+        }
+    }
+
+    Ok(code)
 }
 
 /// Generate button rendering code (Phase 2: render directly + collect hit box).
@@ -256,10 +424,15 @@ fn emit_button_render(widget: &WidgetInfo) -> Result<String> {
     if let Some(_sprite_name) = &widget.sprite_name {
         let sprite_var = format!("sprite_{}", widget.name.to_lowercase().replace('-', "_"));
         let pos_var = format!("pos_{}", widget.name.to_lowercase().replace('-', "_"));
+        let size_var = format!("size_{}", widget.name.to_lowercase().replace('-', "_"));
+
+        writeln!(
+            &mut code,
+            "            let {} = {}.target_size.unwrap_or({}.dimensions);",
+            size_var, sprite_var, sprite_var
+        )?;
 
         // Calculate position
-        // Use resolve_position for LOWER_* orientations (screen-relative)
-        // Use position_from_anchor for other orientations (window-relative)
         let use_resolve = matches!(
             widget.orientation,
             eu4game::gui::types::Orientation::LowerLeft
@@ -274,7 +447,7 @@ fn emit_button_render(widget: &WidgetInfo) -> Result<String> {
                 "                Orientation::{:?},",
                 widget.orientation
             )?;
-            writeln!(&mut code, "                {}.dimensions,", sprite_var)?;
+            writeln!(&mut code, "                {},", size_var)?;
             writeln!(&mut code, "                screen_size")?;
             writeln!(&mut code, "            );")?;
         } else {
@@ -290,33 +463,131 @@ fn emit_button_render(widget: &WidgetInfo) -> Result<String> {
                 "                Orientation::{:?},",
                 widget.orientation
             )?;
-            writeln!(&mut code, "                {}.dimensions", sprite_var)?;
+            writeln!(&mut code, "                {}", size_var)?;
             writeln!(&mut code, "            );")?;
         }
         writeln!(&mut code)?;
 
-        // Render sprite directly
-        writeln!(&mut code, "            sprite_renderer.draw(")?;
-        writeln!(&mut code, "                render_pass,")?;
+        // Render sprite
         writeln!(
             &mut code,
-            "                {}.bind_group.as_ref(),",
-            sprite_var
-        )?;
-        writeln!(&mut code, "                queue,")?;
-        writeln!(&mut code, "                {}.0,", pos_var)?;
-        writeln!(&mut code, "                {}.1,", pos_var)?;
-        writeln!(
-            &mut code,
-            "                {}.dimensions.0 as f32,",
+            "            if let Some(border) = {}.border_size {{",
             sprite_var
         )?;
         writeln!(
             &mut code,
-            "                {}.dimensions.1 as f32,",
+            "                sprite_renderer.draw_cornered_tile("
+        )?;
+        writeln!(&mut code, "                    render_pass,")?;
+        writeln!(
+            &mut code,
+            "                    {}.bind_group.as_ref(),",
             sprite_var
         )?;
-        writeln!(&mut code, "            );")?;
+        writeln!(&mut code, "                    queue,")?;
+        writeln!(&mut code, "                    {}.0,", pos_var)?;
+        writeln!(&mut code, "                    {}.1,", pos_var)?;
+        writeln!(&mut code, "                    {}.0 as f32,", size_var)?;
+        writeln!(&mut code, "                    {}.1 as f32,", size_var)?;
+        writeln!(&mut code, "                    border.0 as f32,")?;
+        writeln!(&mut code, "                    border.1 as f32,")?;
+        writeln!(
+            &mut code,
+            "                    {}.dimensions.0,",
+            sprite_var
+        )?;
+        writeln!(
+            &mut code,
+            "                    {}.dimensions.1,",
+            sprite_var
+        )?;
+        writeln!(&mut code, "                    screen_size,")?;
+        writeln!(&mut code, "                );")?;
+        writeln!(
+            &mut code,
+            "            }} else if {}.num_frames > 1 {{",
+            sprite_var
+        )?;
+        // Multi-frame sprite: draw only frame 0 using UV coordinates
+        writeln!(
+            &mut code,
+            "                // Multi-frame sprite: render only frame 0"
+        )?;
+        writeln!(
+            &mut code,
+            "                let frame_w = {}.dimensions.0 / {}.num_frames;",
+            sprite_var, sprite_var
+        )?;
+        let clip_var = format!("clip_{}", widget.name.to_lowercase().replace('-', "_"));
+        writeln!(
+            &mut code,
+            "                let {} = rect_to_clip_space(",
+            clip_var
+        )?;
+        writeln!(
+            &mut code,
+            "                    ({}.0, {}.1),",
+            pos_var, pos_var
+        )?;
+        writeln!(
+            &mut code,
+            "                    (frame_w, {}.dimensions.1),",
+            sprite_var
+        )?;
+        writeln!(&mut code, "                    screen_size,")?;
+        writeln!(&mut code, "                );")?;
+        writeln!(
+            &mut code,
+            "                let u_max = 1.0 / {}.num_frames as f32;",
+            sprite_var
+        )?;
+        writeln!(&mut code, "                sprite_renderer.draw_uv(")?;
+        writeln!(&mut code, "                    render_pass,")?;
+        writeln!(
+            &mut code,
+            "                    {}.bind_group.as_ref(),",
+            sprite_var
+        )?;
+        writeln!(&mut code, "                    queue,")?;
+        writeln!(&mut code, "                    {}.0,", clip_var)?;
+        writeln!(&mut code, "                    {}.1,", clip_var)?;
+        writeln!(&mut code, "                    {}.2,", clip_var)?;
+        writeln!(&mut code, "                    {}.3,", clip_var)?;
+        writeln!(&mut code, "                    0.0, 0.0, u_max, 1.0,")?;
+        writeln!(&mut code, "                );")?;
+        writeln!(&mut code, "            }} else {{")?;
+        // Single-frame sprite: draw normally
+        writeln!(
+            &mut code,
+            "                let {} = rect_to_clip_space(",
+            clip_var
+        )?;
+        writeln!(
+            &mut code,
+            "                    ({}.0, {}.1),",
+            pos_var, pos_var
+        )?;
+        writeln!(
+            &mut code,
+            "                    ({}.0, {}.1),",
+            size_var, size_var
+        )?;
+        writeln!(&mut code, "                    screen_size,")?;
+        writeln!(&mut code, "                );")?;
+        writeln!(&mut code, "                sprite_renderer.draw(")?;
+        writeln!(&mut code, "                    render_pass,")?;
+        writeln!(
+            &mut code,
+            "                    {}.bind_group.as_ref(),",
+            sprite_var
+        )?;
+        writeln!(&mut code, "                    queue,")?;
+        writeln!(&mut code, "                    {}.0,", clip_var)?;
+        writeln!(&mut code, "                    {}.1,", clip_var)?;
+        writeln!(&mut code, "                    {}.2,", clip_var)?;
+        writeln!(&mut code, "                    {}.3,", clip_var)?;
+        writeln!(&mut code, "                );")?;
+        writeln!(&mut code, "            }}")?;
         writeln!(&mut code)?;
 
         // Collect hit box
@@ -331,13 +602,13 @@ fn emit_button_render(widget: &WidgetInfo) -> Result<String> {
         writeln!(&mut code, "                    y: {}.1,", pos_var)?;
         writeln!(
             &mut code,
-            "                    width: {}.dimensions.0 as f32,",
-            sprite_var
+            "                    width: {}.0 as f32,",
+            size_var
         )?;
         writeln!(
             &mut code,
-            "                    height: {}.dimensions.1 as f32,",
-            sprite_var
+            "                    height: {}.1 as f32,",
+            size_var
         )?;
         writeln!(&mut code, "                }},")?;
         writeln!(&mut code, "            }});")?;
@@ -354,10 +625,15 @@ fn emit_icon_render(widget: &WidgetInfo) -> Result<String> {
     if let Some(_sprite_name) = &widget.sprite_name {
         let sprite_var = format!("sprite_{}", widget.name.to_lowercase().replace('-', "_"));
         let pos_var = format!("pos_{}", widget.name.to_lowercase().replace('-', "_"));
+        let size_var = format!("size_{}", widget.name.to_lowercase().replace('-', "_"));
+
+        writeln!(
+            &mut code,
+            "            let {} = {}.target_size.unwrap_or({}.dimensions);",
+            size_var, sprite_var, sprite_var
+        )?;
 
         // Calculate position
-        // Use resolve_position for LOWER_* orientations (screen-relative)
-        // Use position_from_anchor for other orientations (window-relative)
         let use_resolve = matches!(
             widget.orientation,
             eu4game::gui::types::Orientation::LowerLeft
@@ -372,7 +648,7 @@ fn emit_icon_render(widget: &WidgetInfo) -> Result<String> {
                 "                Orientation::{:?},",
                 widget.orientation
             )?;
-            writeln!(&mut code, "                {}.dimensions,", sprite_var)?;
+            writeln!(&mut code, "                {},", size_var)?;
             writeln!(&mut code, "                screen_size")?;
             writeln!(&mut code, "            );")?;
         } else {
@@ -388,39 +664,138 @@ fn emit_icon_render(widget: &WidgetInfo) -> Result<String> {
                 "                Orientation::{:?},",
                 widget.orientation
             )?;
-            writeln!(&mut code, "                {}.dimensions", sprite_var)?;
+            writeln!(&mut code, "                {}", size_var)?;
             writeln!(&mut code, "            );")?;
         }
         writeln!(&mut code)?;
 
-        // Render sprite directly (icons don't have hit boxes)
-        writeln!(&mut code, "            sprite_renderer.draw(")?;
-        writeln!(&mut code, "                render_pass,")?;
+        // Render sprite
         writeln!(
             &mut code,
-            "                {}.bind_group.as_ref(),",
-            sprite_var
-        )?;
-        writeln!(&mut code, "                queue,")?;
-        writeln!(&mut code, "                {}.0,", pos_var)?;
-        writeln!(&mut code, "                {}.1,", pos_var)?;
-        writeln!(
-            &mut code,
-            "                {}.dimensions.0 as f32,",
+            "            if let Some(border) = {}.border_size {{",
             sprite_var
         )?;
         writeln!(
             &mut code,
-            "                {}.dimensions.1 as f32,",
+            "                sprite_renderer.draw_cornered_tile("
+        )?;
+        writeln!(&mut code, "                    render_pass,")?;
+        writeln!(
+            &mut code,
+            "                    {}.bind_group.as_ref(),",
             sprite_var
         )?;
-        writeln!(&mut code, "            );")?;
+        writeln!(&mut code, "                    queue,")?;
+        writeln!(&mut code, "                    {}.0,", pos_var)?;
+        writeln!(&mut code, "                    {}.1,", pos_var)?;
+        writeln!(&mut code, "                    {}.0 as f32,", size_var)?;
+        writeln!(&mut code, "                    {}.1 as f32,", size_var)?;
+        writeln!(&mut code, "                    border.0 as f32,")?;
+        writeln!(&mut code, "                    border.1 as f32,")?;
+        writeln!(
+            &mut code,
+            "                    {}.dimensions.0,",
+            sprite_var
+        )?;
+        writeln!(
+            &mut code,
+            "                    {}.dimensions.1,",
+            sprite_var
+        )?;
+        writeln!(&mut code, "                    screen_size,")?;
+        writeln!(&mut code, "                );")?;
+        writeln!(
+            &mut code,
+            "            }} else if {}.num_frames > 1 {{",
+            sprite_var
+        )?;
+        // Multi-frame sprite: draw only frame 0 using UV coordinates
+        writeln!(
+            &mut code,
+            "                // Multi-frame sprite: render only frame 0"
+        )?;
+        writeln!(
+            &mut code,
+            "                let frame_w = {}.dimensions.0 / {}.num_frames;",
+            sprite_var, sprite_var
+        )?;
+        let clip_var = format!("clip_{}", widget.name.to_lowercase().replace('-', "_"));
+        writeln!(
+            &mut code,
+            "                let {} = rect_to_clip_space(",
+            clip_var
+        )?;
+        writeln!(
+            &mut code,
+            "                    ({}.0, {}.1),",
+            pos_var, pos_var
+        )?;
+        writeln!(
+            &mut code,
+            "                    (frame_w, {}.dimensions.1),",
+            sprite_var
+        )?;
+        writeln!(&mut code, "                    screen_size,")?;
+        writeln!(&mut code, "                );")?;
+        writeln!(
+            &mut code,
+            "                let u_max = 1.0 / {}.num_frames as f32;",
+            sprite_var
+        )?;
+        writeln!(&mut code, "                sprite_renderer.draw_uv(")?;
+        writeln!(&mut code, "                    render_pass,")?;
+        writeln!(
+            &mut code,
+            "                    {}.bind_group.as_ref(),",
+            sprite_var
+        )?;
+        writeln!(&mut code, "                    queue,")?;
+        writeln!(&mut code, "                    {}.0,", clip_var)?;
+        writeln!(&mut code, "                    {}.1,", clip_var)?;
+        writeln!(&mut code, "                    {}.2,", clip_var)?;
+        writeln!(&mut code, "                    {}.3,", clip_var)?;
+        writeln!(&mut code, "                    0.0, 0.0, u_max, 1.0,")?;
+        writeln!(&mut code, "                );")?;
+        writeln!(&mut code, "            }} else {{")?;
+        // Single-frame sprite: draw normally
+        writeln!(
+            &mut code,
+            "                let {} = rect_to_clip_space(",
+            clip_var
+        )?;
+        writeln!(
+            &mut code,
+            "                    ({}.0, {}.1),",
+            pos_var, pos_var
+        )?;
+        writeln!(
+            &mut code,
+            "                    ({}.0, {}.1),",
+            size_var, size_var
+        )?;
+        writeln!(&mut code, "                    screen_size,")?;
+        writeln!(&mut code, "                );")?;
+        writeln!(&mut code, "                sprite_renderer.draw(")?;
+        writeln!(&mut code, "                    render_pass,")?;
+        writeln!(
+            &mut code,
+            "                    {}.bind_group.as_ref(),",
+            sprite_var
+        )?;
+        writeln!(&mut code, "                    queue,")?;
+        writeln!(&mut code, "                    {}.0,", clip_var)?;
+        writeln!(&mut code, "                    {}.1,", clip_var)?;
+        writeln!(&mut code, "                    {}.2,", clip_var)?;
+        writeln!(&mut code, "                    {}.3,", clip_var)?;
+        writeln!(&mut code, "                );")?;
+        writeln!(&mut code, "            }}")?;
     }
 
     Ok(code)
 }
 
 /// Convert widget type to string for comments.
+#[allow(dead_code)]
 fn widget_type_str(widget_type: WidgetType) -> &'static str {
     match widget_type {
         WidgetType::Button => "Button",

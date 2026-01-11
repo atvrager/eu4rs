@@ -8,33 +8,31 @@
 //! These files are generated from parsed `.gui` files. To modify rendering:
 //! 1. Update the `.gui` files in your EU4 installation
 //! 2. Re-run `cargo xtask generate-gui-renderer`
-//!
-//! # Files
-//!
-//! Generated panel files will be included here once generated.
 
-// Generated panel modules will be declared here
-// Phase 3: Feature-gated for A/B testing (manual vs generated rendering)
-#[cfg(feature = "generated-renderer")]
+// Generated panel modules - always compiled (no feature gates)
 #[allow(dead_code, unused_variables, clippy::all)]
 pub mod country_selection_panel;
 
-#[cfg(feature = "generated-renderer")]
 #[allow(dead_code, unused_variables, clippy::all)]
 pub mod left_panel;
 
-#[cfg(feature = "generated-renderer")]
+#[allow(dead_code, unused_variables, clippy::all)]
+pub mod datewidget_panel;
+
 #[allow(dead_code, unused_variables, clippy::all)]
 pub mod topbar_panel;
 
-#[cfg(feature = "generated-renderer")]
 #[allow(dead_code, unused_variables, clippy::all)]
 pub mod speed_controls_panel;
 
-#[cfg(feature = "generated-renderer")]
 #[allow(dead_code, unused_variables, clippy::all)]
 pub mod top_panel;
 
-#[cfg(feature = "generated-renderer")]
 #[allow(dead_code, unused_variables, clippy::all)]
 pub mod right_panel;
+
+#[allow(dead_code, unused_variables, clippy::all)]
+pub mod singleplayer_panel;
+
+#[allow(dead_code, unused_variables, clippy::all)]
+pub mod mainmenu_panel_bottom_panel;

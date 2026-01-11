@@ -16,14 +16,18 @@ pub struct WidgetInfo {
     pub sprite_name: Option<String>,
     /// Position in GUI file coordinates.
     pub position: (i32, i32),
+    /// Widget size (for editbox centering).
+    pub size: Option<(u32, u32)>,
     /// Orientation for position calculation.
     pub orientation: Orientation,
     /// Font name for text widgets.
-    #[allow(dead_code)]
     pub font: Option<String>,
     /// Initial text content for text widgets.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Reserved for text widget initialization
     pub text: Option<String>,
+    /// Text formatting (alignment).
+    #[allow(dead_code)] // Used by render_gui_text which reads from panel's GuiText
+    pub format: Option<eu4game::gui::types::TextFormat>,
 }
 
 /// Type of GUI widget.
@@ -76,9 +80,11 @@ impl WidgetInfo {
                 widget_type: WidgetType::Button,
                 sprite_name: Some(sprite_type.clone()),
                 position: *position,
+                size: None,
                 orientation: *orientation,
                 font: None,
                 text: button_text.clone(),
+                format: None,
             }),
             GuiElement::TextBox {
                 name,
@@ -86,15 +92,18 @@ impl WidgetInfo {
                 font,
                 orientation,
                 text,
+                format,
                 ..
             } => Some(Self {
                 name: name.clone(),
                 widget_type: WidgetType::TextBox,
                 sprite_name: None,
                 position: *position,
+                size: None,
                 orientation: *orientation,
                 font: Some(font.clone()),
                 text: Some(text.clone()),
+                format: Some(*format),
             }),
             GuiElement::Icon {
                 name,
@@ -107,9 +116,11 @@ impl WidgetInfo {
                 widget_type: WidgetType::Icon,
                 sprite_name: Some(sprite_type.clone()),
                 position: *position,
+                size: None,
                 orientation: *orientation,
                 font: None,
                 text: None,
+                format: None,
             }),
             GuiElement::Listbox {
                 name,
@@ -121,23 +132,29 @@ impl WidgetInfo {
                 widget_type: WidgetType::Listbox,
                 sprite_name: None,
                 position: *position,
+                size: None,
                 orientation: *orientation,
                 font: None,
                 text: None,
+                format: None,
             }),
             GuiElement::EditBox {
                 name,
                 position,
+                size,
                 orientation,
+                font,
                 ..
             } => Some(Self {
                 name: name.clone(),
                 widget_type: WidgetType::EditBox,
                 sprite_name: None,
                 position: *position,
+                size: Some(*size),
                 orientation: *orientation,
-                font: None,
+                font: Some(font.clone()),
                 text: None,
+                format: None,
             }),
             // Windows and other container types don't directly render
             _ => None,

@@ -14,7 +14,8 @@ use eu4_macros::GuiWindow;
 /// this struct binds to specific named text fields that display dynamic game data.
 #[derive(GuiWindow)]
 #[gui(window_name = "topbar")]
-#[allow(non_snake_case)] // Widget names match EU4 GUI file (text_ADM, text_DIP, text_MIL)
+#[allow(non_snake_case)] // Widget names match EU4 GUI file
+#[allow(dead_code)] // Fields are bound by macro but not all read in this crate yet
 pub struct TopBar {
     /// Treasury display (ducats)
     pub text_gold: GuiText,
@@ -61,6 +62,7 @@ impl TopBar {
     ///
     /// This method demonstrates the explicit data binding pattern:
     /// each game state value is manually mapped to its corresponding UI widget.
+    #[allow(dead_code)]
     pub fn update(&mut self, country: &CountryResources) {
         // Resources
         self.text_gold.set_text(&format!("{:.0}", country.treasury));
@@ -99,6 +101,7 @@ impl TopBar {
 /// - Under 100K: show full number with commas (e.g., "25,000")
 /// - 100K to 1M: show with K suffix (e.g., "150K")
 /// - 1M+: show with M suffix (e.g., "1.5M")
+#[allow(dead_code)]
 fn format_k(value: i32) -> String {
     if value >= 1_000_000 {
         let millions = value as f32 / 1_000_000.0;

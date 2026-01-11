@@ -194,6 +194,7 @@ impl SpriteCache {
 
     /// Get cached sprite dimensions without loading the texture.
     /// Returns None if not cached or file doesn't exist.
+    #[allow(dead_code)]
     pub fn get_dimensions(&self, texture_path: &str) -> Option<(u32, u32)> {
         // Check cache first
         if let Some(cached) = self.cache.get(texture_path) {

@@ -35,9 +35,9 @@ pub struct CountrySelectLeftPanel {
     #[gui(name = "year")]
     pub year_editor: GuiEditBox,
 
-    /// Day/month display label.
+    /// Day/month display label (e.g., "11th of November").
     #[gui(name = "daymonth")]
-    pub day_month_label: GuiText,
+    pub daymonth: GuiText,
 
     /// Year up button (ones digit).
     #[gui(name = "year_up1")]
@@ -130,6 +130,34 @@ impl CountrySelectLeftPanel {
             .set_action(UiAction::DateAdjust(DatePart::Day, -1));
     }
 
+    /// Update the date display labels.
+    ///
+    /// Sets the daymonth text to show the formatted date (e.g., "11 November")
+    /// and the year editor to show the year (e.g., "1444").
+    pub fn update_date(&mut self, date: &eu4data::Eu4Date) {
+        let day = date.day();
+        let month_name = match date.month() {
+            1 => "January",
+            2 => "February",
+            3 => "March",
+            4 => "April",
+            5 => "May",
+            6 => "June",
+            7 => "July",
+            8 => "August",
+            9 => "September",
+            10 => "October",
+            11 => "November",
+            12 => "December",
+            _ => "December",
+        };
+        let text = format!("{} {}", day, month_name);
+        self.daymonth.set_text(&text);
+
+        // Set year text
+        self.year_editor.set_text(&date.year().to_string());
+    }
+
     /// Poll all buttons for clicks and return any action.
     ///
     /// Returns the first action found, or None if no buttons were clicked.
@@ -186,7 +214,7 @@ mod tests {
             bookmarks_list: GuiListbox::placeholder(),
             save_games_list: GuiListbox::placeholder(),
             year_editor: GuiEditBox::placeholder(),
-            day_month_label: GuiText::placeholder(),
+            daymonth: GuiText::placeholder(),
             year_up_1: GuiButton::placeholder(),
             year_down_1: GuiButton::placeholder(),
             year_up_2: GuiButton::placeholder(),
@@ -212,7 +240,7 @@ mod tests {
             bookmarks_list: GuiListbox::placeholder(),
             save_games_list: GuiListbox::placeholder(),
             year_editor: GuiEditBox::placeholder(),
-            day_month_label: GuiText::placeholder(),
+            daymonth: GuiText::placeholder(),
             year_up_1: GuiButton::placeholder(),
             year_down_1: GuiButton::placeholder(),
             year_up_2: GuiButton::placeholder(),
@@ -252,7 +280,7 @@ mod tests {
             bookmarks_list: GuiListbox::placeholder(),
             save_games_list: GuiListbox::placeholder(),
             year_editor: GuiEditBox::placeholder(),
-            day_month_label: GuiText::placeholder(),
+            daymonth: GuiText::placeholder(),
             year_up_1: GuiButton::placeholder(),
             year_down_1: GuiButton::placeholder(),
             year_up_2: GuiButton::placeholder(),
